@@ -1,0 +1,1360 @@
+On the Complexity of Inverse Mixed Integer Linear
+                 Optimization
+
+
+
+
+               Aykut Bulut and Ted K. Ralphs
+  Department of Industrial and Systems Engineering, Lehigh University, USA
+
+
+
+
+                   COR@L Technical Report 15T-001-R6
+    On the Complexity of Inverse Mixed Integer Linear Optimization
+
+                           Aykut Bulut∗1 and Ted K. Ralphs†1
+          1
+              Department of Industrial and Systems Engineering, Lehigh University, USA
+
+
+                                    Original Publication: March 13, 2015
+                                     Last Revised: November 18, 2021
+
+
+
+                                                       Abstract
+
+           Inverse optimization is the problem of determining the values of missing input parameters for an
+       associated forward problem that are closest to given estimates and that will make a given target vector
+       optimal. This study is concerned with the relationship of a particular inverse mixed integer linear opti-
+       mization problem (MILP) to both the forward problem and the separation problem associated with its
+       feasible region. We show that a decision version of the inverse MILP in which a primal bound is verified
+       is coNP–complete, whereas primal bound verification for the associated forward problem is NP–complete,
+       and that the optimal value verification problems for both the inverse problem and the associated forward
+       problem are complete for the complexity class DP . We also describe a cutting-plane algorithm for solving
+       inverse MILPs that illustrates the close relationship between the separation problem for the convex hull
+       of solutions to a given MILP and the associated inverse problem. The inverse problem is shown to be
+       equivalent to the separation problem for the radial cone defined by all inequalities that are both valid for
+       the convex hull of solutions to the forward problem and binding at the target vector. Thus, the inverse,
+       forward, and separation problems can be said to be equivalent.
+
+       Keywords: Inverse optimization, mixed integer linear optimization, computational complexity, polyno-
+       mial hierarchy
+
+
+
+1      Introduction
+
+In this paper, we study the relationship of the inverse integer linear optimization problem to both the
+optimization problem from which it arose, which we refer to as the forward problem, and the associated
+separation problem. We show that these three problems have a strong relationship from an algorithmic
+standpoint by describing a cutting-plane algorithm for the inverse problem that uses the forward problem
+as an oracle and also solves the separation problem. From a complexity standpoint, we show that certain
+decision versions of these three problems are all complete for the complexity class DP , introduced originally
+by Papadimitriou and Yannakakis [1982]. Motivated by this analysis, we argue that the optimal value
+verification problem is a more natural decision problem to associate with many optimization problems and
+that DP may provide a more appropriate class in which to place difficult discrete optimization problems than
+the more commonly cited NP-hard.
+    ∗ E-mail: aykutblt@gmail.com
+    † E-mail: ted@lehigh.edu
+
+
+
+
+                                                            2
+An optimization problem is that of determining a member of a feasible set (an optimal solution) that mini-
+mizes the value of a given objective function. The feasible set is typically described as the points in a vector
+space satisfying a given set of equations, inequalities, and disjunctions (usually in the form of a requirement
+that the value of a certain element of the solution take on values in a discrete set).
+An inverse optimization problem, in contrast, is a related problem in which the description of the original
+forward optimization problem is incomplete (some parameters are missing or cannot be observed), but a full
+or partial solution can be observed. The goal is to determine values for the missing parameters with respect
+to which the given solution would be optimal for the resulting complete problem. Estimates for the missing
+parameters may be given, in which case the goal is to produce a set of parameters that is as close to the
+given estimates as possible by some metric.
+The forward optimization problem of interest in this paper is the mixed integer linear optimization problem
+
+                                                   max d> x,                                           (MILP)
+                                                   x∈S
+
+where d ∈ Qn and
+                                    S = {x ∈ Rn | Ax ≤ b} ∩ (Zr × Rn−r )
+for A ∈ Qm×n , b ∈ Qm and for some nonnegative integer r. In the case when r = 0, (MILP) is known simply
+as a linear optimization problem (LP).
+One can associate a number of different inverse problems with (MILP), depending on what parts of the
+description (A, b, d) are unknown and what form the objective function of the inverse problem takes. Here,
+we study the case in which the objective function d of the forward problem is the unknown element of the
+input, but in which A and b, along with a target vector x0 ∈ Qn , are given. A feasible solution to the inverse
+problem (which we refer to as a feasible objective) is any dˆ ∈ Rn for which dˆ> x0 = maxx∈S dˆ> x.
+It is important in the analysis that follows to be precise about the assumptions on the target vector x0 .
+Our initial informal statement of the problem implicitly assumed that x0 ∈ S, since otherwise, x0 cannot
+technically be an optimal solution, regardless of the objective function chosen. On the other hand, neither the
+more precise mathematical definition given in the preceding paragraph nor the mathematical formulations we
+introduce shortly require x0 ∈ S and both can be interpreted even when x0 6∈ S. As a practical matter when
+solving inverse problems in practice, this subtle distinction is usually not very important, since membership
+in S can be verified in a preprocessing step if necessary. However, in the context of complexity analysis and
+in considering the relationship of the inverse problem to the related separation and optimization problems,
+this point is important and we return to it. For example, if we do not make this assumption, the inverse
+optimization problem can be seen to be equivalent to both the separation problem and the problem of
+verifying a given dual bound on the optimal solution value of an MILP.
+For these and other reasons that will become clear, we do not assume x0 ∈ S, but this may make some
+aspects of what follows a bit ambiguous. To resolve any ambiguity, we replace S with the augmented set
+S + = S ∪ {x0 }, when appropriate, in the remainder of the paper.
+
+
+1.1    Formulations
+
+We now present several mathematical formulations of what we refer to from now on as the inverse mixed
+integer linear optimization problem (IMILP). A straightforward formulation of this problem that explains
+why we refer to the general class of problems as “inverse” problems is as that of computing the mathematical
+inverse of a function that is parametric in some part of the input to a given problem instance. In this case,
+the relevant function is
+                                           φ(d) = argmaxx∈S + d> x.
+
+
+
+                                                         3
+In terms of the function φ, a feasible objective is any element of the preimage φ−1 (x0 ). To make the IMILP
+an optimization problem in itself, we add an objective function f : Qn → Q, to obtain the general formulation
+
+                                                    min        f (d).                                      (INV)
+                                                 d∈φ−1 (x0 )
+
+The traditional objective function used for inverse problems in the literature is f (d) := kc − dk, the minimum
+norm distance from d to a given estimated objective function c ∈ Qn (the specific norm is not important for
+defining the problem, but we assume a p-norm when proving the formal results). This choice of objective,
+although standard, has some nonintuitive properties. First, it is not scale-invariant—scaling a given feasible
+objective dˆ changes the resulting objective function value. In other words, f (d)
+                                                                                 ˆ 6= f (λd)
+                                                                                           ˆ for λ 6= 1, so dˆ and
+  ˆ                                                                           ˆ        ˆ
+λd do not have the same objective function value, although it is clear that d and λd are equivalent solutions
+in most settings. Second, the objective function value is always nonnegative. Both these properties have
+implications we discuss further below.
+The formulation (INV) does not suggest any direct connection to existing methodology for solving math-
+ematical optimization problems, so we next discuss several alternative formulations of the problem as a
+standard mathematical optimization problem. We first consider the following formulation of the IMILP as
+the semi-infinite optimization problem
+
+                                       min      kc − dk,
+                                         d
+                                                                                                        (IMILP)
+                                       s.t.     d> x ≤ d> x0            ∀x ∈ S.
+
+As in the first formulation, d is a vector of variables, while c ∈ Qn is the given estimated objective function.
+Note that in (IMILP), if we instead let x0 vary, replacing it with a variable x, and interpret d as a fixed
+objective function, replacing kc − dk with the objective d> x of the forward problem (MILP), we get a
+reformulation of the forward problem (MILP) itself. This formulation can be made finite, in the case that S
+is bounded, by replacing the possibly infinite set of inequalities with only those corresponding to the extreme
+points of conv(S). In the unbounded case, we also need to include inequalities corresponding to the extreme
+rays.
+Problem (IMILP) can also be formulated as a conic optimization problem. Although this is not the traditional
+way of describing the problem mathematically, it is arguably the most intuitive representation and is the one
+that best highlights the underlying mathematical structure. The following cones and related sets all play
+important roles in what follows:
+
+                          K := {(y, d) ∈ Rn+1 | kc − dk ≤ y},
+                          K(γ) := {d ∈ Rn | (γ, d) ∈ K},
+                          K∗ (γ) := {x ∈ Rn | d> (x0 − x) ≤ 0 ∀d ∈ K(γ)},
+                          C(x0 ) := cone(S + − {x0 }) = cone({x − x0 | x ∈ S}), and
+                          C ◦ (x0 ) := {d ∈ Rn | d> (x − x0 ) ≤ 0 ∀x ∈ S}.
+
+Here, K is a norm cone, while K(γ) is a ball with center c and radius γ that is a level set of K and contains
+vectors whose objective value in (IMILP) is at most γ. K∗ (γ) is the set consisting of points, not necessarily
+in S, that have an objective function value greater than or equal to that of x0 for all the vectors in K(γ).
+K∗ (γ) can also be seen as the radial cone obtained by translating the dual of cone(K(γ)) from the origin to
+x0 (this is the reason for the slightly abused notation that is typically used to denote the dual of a cone).
+The set C ◦ (x0 ) is the set of feasible objectives of (IMILP) with target vector x0 and is precisely the polar
+of C(x0 ). C(x0 ), on the other hand, is a translation to the origin of the radial cone that is the intersection
+of the half-spaces associated with the facet-defining inequalities valid for conv(S + ) that are binding at x0 .
+Equivalently, it is the radial cone with vertex at x0 generated by rays x − x0 for all x ∈ S. The notational
+dependence on x0 in both sets is for convenience later when various target vectors will be constructed in the
+
+
+                                                          4
+                                 Figure 1: Two-dimensional inverse MILP
+
+
+reductions used in the complexity proofs. We should also point out that C ◦ (x0 ) is referred to as the normal
+cone at x0 in convex analysis and would be denoted as Nconv(S + ) (x0 ) in the standard notation [Rockafellar,
+1970]. Due to the obvious connections with the theory of polarity in discrete optimization, however, we
+maintain our alternative notation here.
+Finally, in terms of the cones and sets introduced, (IMILP) can be reformulated as
+                                                     min           y.                              (IMILP-C)
+                                                d∈K(y)∩C ◦ (x0 )
+
+Figure 1 illustrates the geometry of the inverse MILP. Here, S is the discrete set indicated by the black dots.
+The estimated objective function is c = (0, 2) and the target vector is x0 = (3, 1). The convex hull of S and
+the cone C ◦ (x0 ) (translated to x0 ) are shaded. The ellipsoids show the sets of points with a fixed distance
+to x0 + c for a given norm. The (unique) optimal solution for this example is vector d∗ , which is also the
+unique point of intersection of K(kc − d∗ k) and C ◦ (x0 ). The point x0 + d∗ is also illustrated.
+Figure 2 presents a more detailed picture of how the various cones and sets introduced so far are related by
+displaying sets conv(S), C ◦ (x0 ), cone(K(γ)), and K∗ (γ) for four different two-dimensional inverse problems
+with Euclidean norm. Notions of duality that underlie many of the concepts discussed in the paper can be
+seen in the relationships between these sets. K∗ (γ) and S can be thought of as being in the “primal space”
+with respect to the original problem (the space of primal solutions), whereas the cone C ◦ (x0 ) and the ball
+K(γ) can be thought of as being in the “dual space,” the space of directions. In the context of the inverse
+problem, these roles are reversed, e.g., C ◦ (x0 ) is the set of primal solutions for the inverse problem.
+The interpretation of the feasible region of (IMILP) as the polar of C(x0 ) leads to a third formulation in
+terms of the so-called 1-polar of conv(S), defined as
+                                  P 1 = {d ∈ Rn | d> x ≤ 1 ∀x ∈ conv(S)}.
+When conv(S) is full-dimensional and 0 ∈ int (conv(S)), the 1-polar is the set of all normalized inequalities
+valid for conv(S) (see [Schrijver, 1986] for definitions). Under these assumptions, (IMILP) can also be
+reformulated as
+                                              min    kc − ρdk
+                                              d,ρ
+
+                                              s.t.   d ∈ P 1,
+                                                     d> x0 ≥ 1,                                   (IMILP-1P)
+                                                     ρ ≥ 0.
+
+
+                                                        5
+                        (a) Instance 1                                      (b) Instance 2
+
+
+
+
+                        (c) Instance 3                                       (d) Instance 4
+
+
+        Figure 2: Pictorial illustration of sets conv(S), C ◦ (x0 ), K(γ), K∗ (γ) for 4 IMILP instances
+
+
+In (IMILP-1P), ρ is a multiplier that allows for scaling of the members of the 1-polar (which are normalized)
+in order to improve the objective function value, but otherwise plays no important role. It would seem to be
+more natural to require kck = 1 or normalize in some other way to avoid this scaling, but the presence of this
+scaling variable highlights that the usual formulation does have this rather unnatural feature. When d ∈ P 1 ,
+the single constraint d> x0 ≥ 1 is, in effect, equivalent to the exponential set of constraints in (IMILP), and
+ensures d is a feasible objective. Observe also that relaxing the constraint d> x0 ≥ 1 yields a problem similar
+to the classical separation problem, but with a different objective function. We revisit this idea in Section 2.
+Note that when conv(S + ) is not full-dimensional, any objective vector in the subspace orthogonal to the affine
+space containing conv(S + ) is a feasible objective for the inverse problem. If we let cS + be the projection of c
+onto the smallest affine space that contains S + and c⊥   S + be the projection of c onto the orthogonal subspace,
+so that c = cS + + c⊥
+                    S + , then whenever x 0
+                                            is in the relative interior of conv(S), c⊥
+                                                                                     S will be an optimal solution.
+On the other hand, when conv(S) is full-dimensional, the unique optimal solution is 0 whenever x0 is in the
+interior of conv(S).
+
+
+1.2    The Separation Problem
+
+The close relationship between the inverse problem (IMILP) and the separation problem for conv(S) should
+already be evident, but we now introduce this idea formally. Given an x̂ ∈ Qn , the separation problem
+for conv(S) is to determine whether x̂ ∈ conv(S) and, if not, to generate a hyperplane separating x̂ from
+conv(S). When x̂ 6∈ conv(S) and such a separating hyperplane exists, we can associate with each such
+
+
+                                                        6
+hyperplane a valid inequality, defined as follows.
+Definition 1. A valid inequality for a set Q is a pair (a, b) ∈ Qn+1 such that Q ⊆ {x ∈ Rn | a> x ≤ b}.
+The inequality is said to be violated by x̂ ∈ Qn if a> x̂ > b.
+
+Generating a separating hyperplane is equivalent to determining the existence of dˆ ∈ Rn such that
+
+                                             dˆ> x̂ > dˆ> x   ∀x ∈ S.
+
+In such a case, (dˆ> , maxx∈S dˆ> x) is an inequality valid for conv(S) that is violated by x̂ (therefore proving
+that x̂ 6∈ conv(S)). On the other hand, dˆ is feasible for (IMILP) if and only if
+
+                                             dˆ> x ≤ dˆ> x0   ∀x ∈ S,
+
+which similarly means that (dˆ> , dˆ> x0 ) is an inequality valid for conv(S). Thus, feasible solutions to (IMILP)
+can also be viewed as an inequality valid for conv(S) binding at x0 . Moreover, when x0 6∈ conv(S),
+(dˆ> , maxx∈S dˆ> x) is an inequality valid for conv(S) that is violated by x0 . This provides an informal
+argument for the equivalence of (IMILP) and the separation problem. More will be said about this in the
+following sections.
+
+
+1.3    Previous Work
+
+There are a range of different flavors of the inverse optimization problem. The inverse problem we investigate
+is to determine objective function coefficients that make a given solution optimal, but other flavors of inverse
+optimization include constructing a missing part of either the coefficient matrix or the right-hand sides.
+Heuberger [2004] provides a detailed survey of different types of inverse combinatorial optimization problems,
+including types for which the inverse problem seeks parameters other than objective function coefficients. A
+survey of solution procedures for specific combinatorial problems is provided, as well as a classification of
+the inverse problems that are common in the literature. According to this classification, the inverse problem
+we study in this paper is an unconstrained, single feasible objective, and unit weight norm inverse problem.
+Our results can be straightforwardly extended to some related cases, such as multiple given solutions.
+Cai et al. [1999] examine an inverse center location problem in which the aim is to construct part of the
+coefficient matrix that minimizes the distances between nodes for a given solution. It is shown that even
+though the center location problem is polynomially solvable, this particular inverse problem is NP-hard.
+This is done by way of a polynomial transformation of the satisfiability problem to the decision version of
+the inverse center location problem. This analysis indicates that the problem of constructing part of the
+coefficient matrix is harder than the forward version of the problem.
+Huang [2005] examines the inverse knapsack problem and inverse integer optimization problems. Pseu-
+dopolynomial algorithms for both the inverse knapsack problem and inverse problems for which the forward
+problem has a fixed number of constraints are presented. The latter is achieved by transforming the inverse
+problem to a shortest path problem on a directed graph.
+Schaefer [2009] studies general inverse integer optimization problems. Using super-additive duality, a polyhe-
+dral description of the set of all feasible objective functions is derived. This description has only continuous
+variables but an exponential number of constraints. A solution method using this polyhedral description is
+proposed. Finally, Wang [2009] suggests a cutting-plane algorithm similar to the one suggested below and
+presents computational results on several test problems with an implementation of this algorithm.
+The case when the feasible set is an explicitly described polyhedron is well-studied by Ahuja and Orlin
+[2001]. In their study, they analyze the shortest path, assignment, minimum cut, and minimum cost flow
+problems under the `1 and `∞ norms in detail. They also conclude that the inverse optimization problem
+
+
+                                                         7
+is polynomially solvable when the forward problem is polynomially solvable. The present study aims to
+generalize the result of Ahuja and Orlin to the case when the forward problem is not necessarily polynomially
+solvable, as well as to make connections to other well-known problems.
+In the remainder of the paper, we first introduce a cutting-plane algorithm for solving (IMILP) in the case
+of the `∞ and `1 norms. In Section 2, we show that for these norms, the problem can be expressed as an
+LP using standard techniques, albeit one with an exponential number of constraints. The reformulation can
+then be readily solved using a standard cutting-plane approach, as observed by Wang [2009]. On the other
+hand, in Section 4, we establish the computational complexity of the problem and show that it is the same
+for any p-norm.
+
+
+
+2    A Cutting-plane Algorithm
+
+In this section, we describe a basic cutting-plane algorithm for solving (IMILP) under the `1 and `∞ norms.
+The algorithm is conceptual in nature and presented in order to illustrate the relationship of the inverse
+problem to both the forward problem and the separation problem. A practical implementation of this
+algorithm would require additional sophistication and the development of such an implementation is not our
+goal in this paper.
+The first step in the algorithm is to formulate (IMILP) explicitly as an LP using standard linearization tech-
+niques. The objective function of the inverse MILP under the `1 norm can be linearized by the introduction
+of variable vector y, and associated constraints as shown below.
+
+                  z1−1 = min      θ
+                         d,y,θ
+                                       n
+                                       X
+                          s.t.    θ=         yi ,                                                  (IMILP-L1a)
+                                       i=1
+                                  ci − di ≤ yi                ∀i ∈ {1, 2, . . . , n},              (IMILP-L1b)
+                                  di − ci ≤ yi                ∀i ∈ {1, 2, . . . , n},              (IMILP-L1c)
+                                  d> x ≤ d> x0                ∀x ∈ S.                              (IMILP-L1d)
+
+For the case of the `∞ norm, the variable θ and two sets of constraints are introduced to linearize the
+problem.
+                  −1
+                 z∞  = min θ
+                         d,θ
+
+                         s.t.    ci − di ≤ θ                 ∀i ∈ {1, 2, . . . , n},             (IMILP-INFa)
+                                 di − ci ≤ θ                 ∀i ∈ {1, 2, . . . , n},             (IMILP-INFb)
+                                  >          > 0
+                                 d x≤d x                     ∀x ∈ S.                             (IMILP-INFc)
+
+Both (IMILP-L1) and (IMILP-INF) are continuous, semi-infinite optimization problems. To obtain a finite
+problem, one can replace the inequalities (IMILP-L1d) and (IMILP-INFc) with constraints (1) and (2)
+involving the finite set E of extreme points and R of rays of the convex hull of S.
+
+                                 d> x ≤ d> x0                               ∀x ∈ E,                          (1)
+                                 d> r ≤ 0                                   ∀r ∈ R.                          (2)
+
+Although constraints (1) and (2) yield a finite formulation, the cardinality of E and R may still be very
+large and generating them explicitly is likely to be very challenging. It is thus not practical to construct this
+mathematical program explicitly via a priori enumeration. The cutting-plane algorithm avoids explicitly
+
+
+                                                       8
+enumerating the inequalities in the formulation by generating them dynamically in the standard way. The
+algorithm described here is unsophisticated and although versions of it have appeared in the literature, we
+describe it again to illustrate the basic principles at work and to make the connection to a similar existing
+algorithm for solving the separation problem.
+We describe the algorithm only for the case of (IMILP-INF), as the extension to (IMILP-L1) is straightfor-
+ward. We assume S is bounded, so that conv(S) has no extreme rays and R = ∅. As previously observed,
+(IMILP-INF) is an LP with an exponential class (IMILP-INFc) of inequalities. Nevertheless, the well-known
+result of Grötschel et al. [1993] tells us that (IMILP-INF) can be solved efficiently using a cutting-plane
+algorithm, provided we can solve the problem of separating a given point from the feasible region efficiently.
+The constraints (IMILP-INFa) and (IMILP-INFb) can be explicitly enumerated, so we focus on generation
+of constraints (IMILP-INFc), which means we are solving the separation problem for set C ◦ (x0 ). For an
+arbitrary dˆ ∈ Rn , this separation problem is to either verify that dˆ ∈ C ◦ (x0 ) or determine a hyperplane
+separating dˆ from C ◦ (x0 ).
+
+The question of whether dˆ ∈ C ◦ (x0 ) is equivalent to asking whether dˆ> x ≤ dˆ> x0 for all x ∈ S. This can be
+answered by determining x∗ ∈ argmaxx∈S dˆ> x. When dˆ> x∗ > dˆ> x0 , then x∗ yields a new inequality valid
+                                  ˆ Otherwise, we have a proof that dˆ ∈ C ◦ (x0 ). Hence, the separation problem
+for C ◦ (x0 ) that is violated by d.
+      ◦ 0
+for C (x ) is equivalent to the forward problem.
+The algorithm alternates between solving a master problem and the separation problem just described, as
+usual. The initial master problem is an LP obtained by relaxing the constraints (IMILP-INFc) in (IMILP-INF).
+After solving the master problem, we attempt to separate its solution from the set C ◦ (x0 ) and either add
+the violated inequality or terminate, as appropriate. More formally, the master problem is to determine
+
+                            dk , θk ∈ argmin(d,θ) θ
+                                   
+
+                                              s.t.   ci − di ≤ θ    ∀i ∈ {1, 2, . . . , n},
+                                                                                                        (InvPk )
+                                                     di − ci ≤ θ    ∀i ∈ {1, 2, . . . , n},
+                                                     d> x ≤ d> x0            ∀x ∈ Ek−1
+
+and the separation problem is to determine
+
+                                            xk ∈ argmaxx∈S dk> x.                                           (Pk )
+
+Here, Ek = {x1 , . . . , xk } are the points in S generated so far (which are generally assumed to be extreme
+points of conv(S), but need not be in general). (InvPk ) is a relaxation of (IMILP-INF) consisting of only
+the valid inequalities corresponding to point in Ek . When (Pk ) is unbounded, then x0 is in the relative
+interior of conv(S) and d = c⊥    S is an optimal solution, as mentioned earlier. The overall procedure is given
+in Algorithm 1.
+To understand the nature of the algorithm, observe that in iteration k, the master problem is equivalent to
+an inverse problem in which S is replaced Ek . Equivalently, we are replacing C ◦ (x0 ) with the restricted set
+Ck◦ (x0 ), taken to be the polar of Ck (x0 ) = cone(Ek − {x0 }). Each member of S generated corresponds to a
+member of C(x0 ), so that the final product of the algorithm is a (partial) description of C(x0 ) and hence a
+partial description of C ◦ (x0 ). This is analogous to the way in which a traditional cutting-plane algorithm for
+solving the original forward problem generates a partial description of conv(S) and highlights the underlying
+duality between the H-representation and the V-representation of a polyhedron (see section 3.3).
+We illustrate by considering a small example. Let c = (2, −1), x0 = (0, 3) and S be as in Figure 3, where
+both x1 and x2 are integer and conv(S) is shown. The values of k, dk , and xk in iterations 1–3 are given in
+Table 1.
+
+
+
+
+                                                        9
+Algorithm 1 Cutting-plane algorithm for (IMILP-INF)
+ 1: k ← 0, E 1 ← ∅.
+ 2: do
+ 3:    k ← k + 1.
+ 4:    Solve (InvPk ) to determine dk , θk .
+ 5:   Solve (Pk ) to determine xk or show that (Pk ) is unbounded.
+ 6:   if (Pk ) unbounded then
+ 7:       θ∗ ← kck∞ , d∗ ← 0, STOP.
+ 8:   end if
+ 9:   Ek+1 ← Ek ∪ {xk }.
+10: while dk> (xk − x0 ) > 0
+11: θ ∗ ←   c − dk ∞ , d∗ ← dk , STOP.
+
+
+
+
+                        Figure 3: Feasible region and iterations of example problem
+
+
+                                       k         Ek              dk         xk      kc − dk k∞
+                      Initialization   1          ∅            (2, −1)     (3, 0)        0
+                       Iteration 1     2      {(3, 0)}        (0.5, 0.5)   (3, 1)       1.5
+                       Iteration 2     3   {(3, 0), (3, 1)}   (0.4, 0.6)   (3, 1)       1.6
+
+                             Table 1: k, dk , xk , and Ek values through iterations
+
+
+The (unique) optimal solution of this small example is d3 = (0.4, 0.6), and the optimal value is θ∗ =
+kc − d3 k∞ = 1.6.
+Figure 4 provides a geometric visualization of another small example, illustrating how the algorithm would
+proceed when the set S is the collection of integer points inside the polyhedron marked in blue. Here, the
+cone Ck (x0 ) is explicitly shown and its expansion can be seen as generators are added.
+Returning to the relationship of the inverse problem to the separation problem, observe that an essentially
+unmodified version of Algorithm 1 also solves the generic separation problem for conv(S) if we interpret x0
+as the point to be separated rather than the target point. When solving the separation problem, (InvPk )
+can be interpreted as the problem of separating x0 from conv(Ek ). To see this, note that the dual of (InvPk )
+is the problem of determining whether x0 can be expressed as a convex combination of the members of Ek ,
+i.e., the membership problem for conv(Ek ). When x0 6∈ conv(Ek ), the Farkas proof of the infeasibility of
+this LP is an inequality valid for conv(Ek ) and violated by x0 . (Pk ) is then interpreted as the problem of
+
+
+                                                         10
+            (a) Iteration 1                      (b) Iteration 2                     (c) Iteration 3
+
+
+                               Figure 4: Pictorial illustration of Algorithm 1
+
+
+determining whether that same inequality is valid for the full feasible set conv(S), i.e., determining whether
+there is a member of S that violates the inequality, exactly as in the inverse case.
+Figure 5 illustrates the application of the algorithm for the instance from Figure 4. The only modification
+is that we replace the objective function of the master problem (InvPk ) with one measuring the degree of
+violation of x0 , which is a standard measure of effectiveness for generated valid inequalities. Even without
+this modification, a violated valid inequality will be generated, but the change is to show that the stan-
+dard separation problem, in which there is no estimated objective, can also be solved with this algorithm.
+Inequalities generated in this way are sometimes called Fenchel cuts [Boyd, 1994].
+
+
+
+
+            (a) Iteration 1                      (b) Iteration 2                     (c) Iteration 3
+
+
+
+
+                              (d) Iteration 4                      (e) Iteration 5
+
+
+                   Figure 5: Pictorial illustration of algorithm for generating Fenchel cut
+
+
+                                                       11
+3     Computational Complexity
+
+In this section, we briefly review the major concepts in complexity theory and the classes into which (the
+decision versions of) optimizations problems are generally placed, as well as provide archetypal examples of
+the kinds of problems that fall into these classes. We mainly follow the framework of Garey and Johnson
+[1979], but since the material here will be familiar to most readers, we omit many details and refer the
+reader to either Garey and Johnson [1979] or the sweeping introduction to complexity given by Arora and
+Barak [2007] for a deeper introduction. We provide this brief, self-contained overview here to emphasize
+some concepts that are important but lesser known in the mathematical optimization literature. Among
+these are the definitions of the complexity classes DP and ∆p2 , which play a role in our results below, as well
+as the distinction between the polynomial Turing reductions introduced by Cook [1971] in his seminal work
+and the polynomial many-to-one reductions introduced by Karp [1972].
+The fundamentals of complexity theory and NP-completeness as laid out in the papers of Cook [1971],
+Karp [1972], Edmonds [1971], and others provide a rigorous framework within which problems arising in
+discrete optimization can be analyzed. The origins of the theory can be traced back to the earlier work
+on the Entscheidungsproblem by Turing [1937] and perhaps for that reason, it was originally developed to
+analyze decision problems, e.g., problems where the output is YES or NO. Although there exists a theory
+of complexity that applies directly to optimization problems [Krentel, 1987a, 1988, Vollmer and Wagner,
+1995]), most analyses are done by converting the optimization problem to an equivalent decision problem
+form.
+The decision problem form typically used for most discrete optimization problems is that of determining
+whether a given primal bound is valid (upper bound in the case of minimization or lower bound in the case
+of maximization), though we argue later that verification of the optimal value is more natural. For most
+problems of current practical interest, verification of the primal bound is either in the class P or the class
+NP. Notable exceptions are the bilevel (and other multilevel) optimization problems, whose decision versions
+are in higher levels of the so-called polynomial-time hierarchy[Stockmeyer, 1976a].
+
+
+3.1    Definitions
+
+In the framework of Garey and Johnson [1979], an algorithm is a procedure implemented using the well-
+known logic of a deterministic Turing machine (DTM), a simple model of a computer capable of sequentially
+executing a single program (we introduce a “nondeterministic” variant below). The input to the algorithm
+is a string in a given alphabet, which we assume is simply {0, 1}, since this is the alphabet on all modern
+computing devices. As such, the set of all possible input strings is denoted {0, 1}∗ . A problem (or problem
+class) is defined by describing what set of input strings (called instances) should produce the answer YES.
+In other words, each subset L of {0, 1}∗ , formally called a language in complexity theory, defines a different
+problem for which algorithms can be developed and analyzed. An algorithm is specified by describing its
+implementation as a DTM and is said to solve such a problem if the DTM correctly outputs YES if and only
+if the input string is in L. In this case, we say the DTM recognizes the language L and that members of L
+are the instances accepted by the DTM.
+
+
+Running Time and Complexity. The running time of an algorithm for a given problem is the worst-case
+number of steps/operations required by the associated DTM taken over all instances of that problem. This
+worst case is usually expressed as a function of the “size” of the input, since the worst case would otherwise
+be unbounded for any class with arbitrarily large instances. The size of the input is formally defined to be
+its encoding length, which is the length of the string representing the input in the given alphabet. Since we
+take the alphabet to be {0, 1}, the encoding length of an integer n is
+                                          hni = 1 + dlog2 (|n| + 1)e.
+
+
+                                                      12
+Further, the encoding length of a rational number r = p/q is hri = hpi + hqi. Encoding lengths play an
+important role in the complexity proofs of Section 4 below. We discuss these concepts in more detail in
+Section 3.3, but refer the reader to the book of Grötschel et al. [1993] for detailed coverage of definitions and
+concepts.
+The computational complexity of a given problem is the running time (function) of the “best” algorithm,
+where best is defined by ordering the running time functions according to their asymptotic growth rate
+(roughly speaking, two functions are compared asymptotically by taking the limit of their ratio as the
+instance size approaches infinity). For most problems of practical interest, the exact complexity is not
+known, so another way of comparing problems is by placing them into equivalence classes according to the
+notion of equivalence yielded by the operation of reduction.
+
+
+Reduction. A reduction is the means by which an algorithm for one class of problems (specified by, say,
+language L1 ) can be used as a subroutine within an algorithm for another class of problems (specified by,
+say, language L2 ). It is also the means by which problem equivalence and complexity classes are defined.
+In what follows, we refer to two notions of reduction, and the difference between them is important. The
+notion that is most relevant in the theory of NP-completeness is the polynomial many-to-one reduction of
+Karp [1972], commonly referred to as Karp reduction. There is a Karp reduction from a problem specified
+by language L2 to a problem specified by a language L1 if there exists a mapping f : {0, 1}∗ → {0, 1}∗ such
+that
+
+   • f (x) is computable in time polynomial in hxi and
+   • x ∈ L2 if and only if f (x) ∈ L1 .
+
+Thus, if we have an algorithm (DTM) for recognizing the language L1 and such a mapping f , we implicitly
+have an algorithm for recognizing L2 . In this case, we say there is a Karp reduction from L2 to L1 .
+A second notion of reduction is the polynomial Turing reduction, commonly referred to as Cook reduction,
+introduced by Cook [1971] in his seminal work. This type of reduction is defined in terms of oracles. An
+oracle is a conceptual subroutine that can solve a given problem or class of problems in constant time.
+Roughly speaking, the oracle complexity of a problem is its complexity given the theoretical existence of a
+certain oracle. There is a Cook reduction from a problem specified by language L2 to a problem specified by
+language L1 if there is a polynomial-time algorithm for solving L2 that utilizes an oracle for L1 . Hence, the
+only requirement is that the number of calls to the oracle must be bounded by a polynomial. The difference
+between Karp reduction and Cook reduction is that Karp reduction can be thought of as allowing only a
+single call to the oracle as the last step of the algorithm, whereas Cook reduction allows a polynomial number
+of calls to the oracle. There are a range of other notions of reduction that utilize other different bounds on
+the number of oracle calls [Krentel, 1987b].
+Decision problems specified by languages L1 and L2 are said to be equivalent if there is a reduction in both
+directions—L1 reduces to L2 and L2 reduces to L1 . Equivalence can be defined using either the Karp or
+Cook notions of reduction. It is conjectured (though not known; see Beigel and Fortnow [2003]) that these
+notions of equivalence are distinct and yield different equivalence classes of problems. In fact, assuming that
+NP 6= coNP (which is thought to be highly likely), they must be distinct notions, since a problem specified by
+any language is trivially seen to be Cook-equivalent to the problem specified by its complement. To Cook-
+reduce one problem to the other, simply solve the complement and negate the answer. Hence, Cook reduction
+cannot be used to separate NP from coNP. This ability to separate NP from coNP makes Karp reduction a
+stronger notion and is part of the rationale for its use as the basis for the theory of NP-completeness in Garey
+and Johnson [1979].
+A problem in a complexity class is said to be complete for the class if every other problem in the class can
+
+
+                                                       13
+be reduced to it. Informally, this means that the complete problems are at least as difficult to solve as any
+other problem in the class (in a worst-case sense). Completeness of a given problem in a given complexity
+class can be shown by providing a reduction from a problem already known to be a complete problem for the
+given class. Equivalence, as described above, is an equivalence relation in the mathematical sense and can
+thus be used to define equivalence classes for problems. The complete problems for a class are exactly those
+in the largest such equivalence class that is contained in the class. For the reasons described above, the set
+of complete problems is different under Karp and Cook, assuming NP 6= coNP (see Lutz and Mayordomo
+[1995]).
+
+
+Certificates. Finally, we have the concept of a certificate. A certificate is a string that, when concatenated
+with the original input string, forms a (longer) input string to an associated decision problem, which we
+informally call the verification problem, that yields the same output as the original one (but can presumably
+be solved more efficiently). A certificate can be viewed as a proof of the result of a computation. When
+produced by an algorithm for solving the original problem, the certificate serves to certify the result of that
+computation after the fact. The efficiency with which such proofs can be checked is another property of
+classes of problems (like the running time) that can be used to partition problems into classes according to
+difficulty. We discuss more about the use of certificates and their formal definition in particular contexts
+below.
+
+
+3.2    Complexity Classes
+
+Class P. The most well-known class is P, the class of decision problems that can be solved in polynomial
+time on a DTM [Stockmeyer, 1976a]. Alternatively, the class P can be defined as the smallest equivalence
+class of problems according to the polynomial equivalence relation described earlier. Note that for problems
+in P, there is no distinction between equivalence according to Karp and Cook. The decision versions of
+linear optimization problems (equivalent to the problem of checking whether a system of inequalities has
+a solution), the decision versions of minimum cost network flow problems, and other related problems are
+all in this class. The well-known problem of checking whether a system of linear inequalities has a feasible
+solution is a prototypical problem in P.
+
+
+Class NP. NP is the class of problems that can be solved in polynomial time by a nondeterministic Turing
+machine (NDTM). Informally, an NDTM is a Turing machine with an infinite number of parallel processors.
+With such a machine, if there is a branch in the algorithm representing two possible execution paths, we
+can conceptually follow both branches simultaneously (in parallel), whereas we would need to explore the
+branches sequentially in a DTM. A search algorithm, for example, may be efficiently implemented on an
+NDTM by following all possible search paths simultaneously, even if there are exponentially many of them.
+The running time of an algorithm on an NDTM is the number of steps it takes for some execution path to
+reach an accepting state (a state that proves the correct output is YES). As a concrete example, consider
+the problem of determining whether there exists a binary vector satisfying a system of linear inequalities. A
+search algorithm that enumerates the exponentially many solutions through a simple depth-first recursion
+would have exponential running time if implemented using a DTM, while the running time on an NDTM
+would be the time to construct and check the feasibility of one solution.
+This last observation leads to an alternative definition of NP as the class of decision problems for which there
+exists a certificate for which there is a DTM that solves the verification problem in time polynomial in the
+length of the input when the output is YES. In fact, these two informal definitions can be formalized and
+shown to be equivalent.
+Intuitively, the idea is that the certificate can be taken to be an encoding of an execution path that leads to
+
+
+                                                      14
+a program state that proves the output is YES. Thus, the (deterministic) algorithm for verification is similar
+to the original nondeterministic algorithm except that it is able to avoid the “dead ends” which are explored
+in parallel in a nondeterministic algorithm. Formally, if L ∈ NP, then there exists LC ∈ P such that
+
+                           x ∈ L ⇔ ∃y ∈ {0, 1}∗ such that (x, y) ∈ LC and
+                                       hyi is bounded by some polynomial function of hxi.
+
+In this case, y is the certificate. Because such a certificate has an encoding length polynomial in the encoding
+length of x and can be verified in time polynomial in the encoding length of x, such certificates are sometimes
+said to be short and NP is said to be the class of decision problems having a “short certificate.”
+In general, problems in NP concern existential questions, such as whether there exists an element of a set
+with a given property (alternatively, whether the set of all elements with a given property is nonempty).
+Even when no algorithm for finding such an element is known, we may still be able to efficiently verify
+that an element given to us has the desired property. For example, the primal bound verification1 problem
+for (MILP) (usually referred to in the literature as the decision version of MILP) is a prototypical problem
+in this class and is defined as follows.
+Definition 2. MILP Primal Bound Verification Problem (MPVP)
+
+    • INPUT: α ∈ Q, d ∈ Qn , A ∈ Qm×n , b ∈ Qm , and r ∈ N, where (A, b, r) is an encoding of the set S
+      in (MILP) and (d, S) is the input to (MILP).
+    • OUTPUT: YES, if there exists x ∈ S such that d> x ≥ α, NO otherwise.
+
+The MPVP is in NP since, when the answer is YES, there always exists x ∈ S that is itself such a certificate,
+i.e., has encoding length polynomially bounded by the encoding length of the problem input and can be
+verified in polynomial time to be in S [Papadimitriou, 1981].
+The set of problems complete for NP (as defined earlier) is known simply as NP-complete. The first problem
+shown to be complete for class NP was the satisfiability (SAT) problem [Cook, 1971]. It was proved to
+be complete by providing a Karp reduction of any problem that can be solved by an NDTM to the SAT
+problem. The MPVP is complete for NP because SAT can be Karp-reduced to it. It is well-known that
+the question of whether P = NP is currently unresolved, though it is widely believed that they are distinct
+classes [Aaronson, 2017].
+
+
+Class coNP. The class coNP consists of languages whose complement is in NP. Just as problems in NP
+typically concern existential questions, problems in coNP usually concern the question of whether all elements
+of a set have a given property (alternatively, whether the set of all elements with a given property is empty).
+As such, these problems are not expected to have certificates (for the YES answer) that can be efficiently
+verified in the sense defined earlier. Rather, problems in this class are those for which there exists a string
+that can be used to certify the output (in time polynomial in the encoding length of the input) when the
+answer is NO. For example, we may produce an element of the set that doesn’t have the desired property.
+The MILP Dual Bound Verification Problem is an example of a prototypical problem in coNP.
+Definition 3. MILP Dual Bound Verification Problem (MDVP)
+
+    • INPUT: α ∈ Q, d ∈ Qn , A ∈ Qm×n , b ∈ Qm , and r ∈ N, where (A, b, r) is an encoding of the set S
+      in (MILP) and (d, S) is the input to (MILP).
+    • OUTPUT: YES, if d> x ≤ α for all x ∈ S, NO otherwise.
+   1 The term “verification” is used here in a slightly different way than it is used in the context of certificates, although the
+
+uses are related and the meaning can be generalized to include both uses.
+
+
+                                                               15
+The input to the MDVP is (α, d, A, b, r), as in the case of the MPVP. The MDVP is in coNP because when
+the output is NO, there must be a member of S with an objective value strictly greater than α, which serves
+as the certificate.
+
+
+Class DP . While NP and coNP are both well-known classes, the class DP introduced by Papadimitriou
+and Yannakakis [1982] is not as well-known. It is the class of problems associated with languages that are
+intersections of a language from NP and a language from coNP. A prototypical problem complete for DP is
+the MILP Optimal Value Verification Problem (MOVP), defined as follows.
+Definition 4. MILP Optimal Value Verification Problem (MOVP)
+
+   • INPUT: α ∈ Q, d ∈ Qn , A ∈ Qm×n , b ∈ Qm , and r ∈ N, where (A, b, r) is an encoding of the set S
+     in (MILP) and (d, S) is the input to (MILP).
+   • OUTPUT: YES, if maxx∈S d> x := α, NO otherwise.
+
+It is easy to see that the language associated with MOVP is the intersection of the languages of the MPVP
+and the MDVP, since the output of MOVP is YES if and only if the outputs of both the MPVP and the
+MDVP are YES, i.e., α is both a primal and a dual bound for (MILP).
+In view of our later results, one outcome of this work is the suggestion that the MOVP is a more natural
+decision problem to associate with discrete optimization problems than the more traditional MPVP and
+should be more widely adopted in proving complexity results. Most algorithms for discrete optimization
+are based on iterative construction of separate certificates for the validity of the primal and dual bound,
+which must be equal to certify optimality. Given certificates for the primal and dual bound verification
+problems, a certificate for the optimal value verification problem can thus be constructed directly. The class
+DP thus contains the optimal value verification problem associated with (MILP), whereas it is the associated
+MPVP that is contained in the class NP-complete. We find this is somewhat unsatisfying, since the original
+problem (MILP) is only Cook-reducible to the MPVP.
+
+
+The Polynomial Hierarchy. Further classes in the so-called polynomial-time hierarchy (PH), described
+in the seminal work of Stockmeyer [1976a], can be defined recursively using oracle computation. The notation
+AB is used to denote the class of problems that are in A, assuming the existence of an oracle for problems in
+class B.
+Using this concept, ∆p2 is the class of decision problems that can be solved in polynomial time given an
+NP oracle, i.e., the class PNP . This class is a member of the second level of PH. Further levels are defined
+according to the following recursion.
+
+                                              ∆p0 := Σp0 := Πp0 := P,
+                                                        p
+                                            ∆pk+1 := PΣk ,
+                                                            p
+                                            Σpk+1 := NPΣk , and
+                                                                p
+                                            Πpk+1 := coNPΣk .
+
+PH is the union of all levels of the hierarchy. There is also an equivalent definition that uses the notion of
+certificates. Roughly speaking, each level of the hierarchy consists of problems with certificates of polynomial
+size, but whose verification problem is in the class one level lower in the hierarchy. In other words, the problem
+of verifying a certificate for a problem in Σpi is a problem in the class Σpi−1 [Stockmeyer, 1976b].
+
+Figure 6 illustrates class ∆p2 relative to DP , NP, coNP, and P, assuming P 6= NP. If P = NP, we conclude
+that all classes are equivalent, i.e., ∆p2 = DP = NP = coNP = P. This theoretical possibility is known as the
+
+
+                                                       16
+                 Figure 6: Complexity classes ∆p2 , DP , NP, coNP, and P, assuming P 6= NP
+
+
+collapse of PH to its first level [Papadimitriou, 2003] and is thought to be highly unlikely. A prototypical prob-
+lem complete for ∆p2 is the problem of deciding whether a given MILP has a unique solution[Papadimitriou,
+2003].
+
+
+3.3    Optimization and Separation
+
+The concepts of reduction and polynomial equivalence can be extended to problems other than decision
+problems, but this requires some additional care and machinery. Decision problems can be (and often
+are) reduced to optimization problems, in a fashion similar to that described earlier, in an attempt to
+classify them. When a problem that is complete for a given class in the polynomial hierarchy can be Karp-
+reduced to an optimization problem, we refer to the optimization problem as hard for the class. When a
+decision problem that is complete for NP can be Karp-reduced to an optimization problem, for example, the
+optimization problem is classified as NP-hard. This does not, however, require that the decision version of
+this optimization problem is a member of the class itself. In reality, it may be on some higher level of the
+polynomial hierarchy. Hardness results can therefore be somewhat misleading in some cases.
+In their foundational work, Grötschel et al. [1993] develop a detailed theoretical basis for the claim that
+the separation problem for an implicitly defined polyhedron is polynomially equivalent to the optimization
+problem over that same polyhedron. This is done very carefully, beginning from certain decision problems
+and proceeding to show their equivalence to related optimization problems. The notion of reduction used,
+however, is Cook reduction, which means that the results do not directly tell us whether there are decision
+versions of the problems discussed that are complete for the same class within PH. The results discussed
+below, in contrast, use Karp reduction to show that there are decision versions of the inverse and forward
+optimization problems that are complete for the same complexity class within PH.
+Using an optimization oracle to solve the separation problem (and vice versa) involves converting between
+different representations of a given polyhedron. In particular, we consider (implicit) descriptions in terms of
+the half-spaces associated with facet-defining valid inequalities, so-called H-representations, and in terms of
+generators (vertices and extreme rays), so-called V-representations. There is a formal mathematical duality
+relating these two forms of polyhedral representation, which underlies the notion of polarity mentioned earlier
+and is at the heart of the equivalence between optimization and separation. It is this very same duality that
+is also at the heart of the equivalence between optimization problems and their inverse versions. This can
+be most clearly seen by the fact that the feasible region C ◦ (x0 ) of the inverse problem is the polar of C(x0 ),
+a conic set that contains conv(S), as we have already described.
+The framework laid out by Grötschel et al. [1993] emphasizes that the efficiency with which the various
+
+
+                                                       17
+representations can be manipulated algorithmically depends inherently and crucially on, among other things,
+the encoding length of the elements of these representations. For the purposes of their analysis, Grötschel
+et al. [1993] defined the notions of the vertex complexity and facet complexity of a polyhedron, which we
+repeat here, due to their relevance in the remainder of the paper.
+Definition 5. (Grötschel et al. [1993])
+
+ (i ) A polyhedron P ⊆ Rn has facet complexity of at most ϕ if there exists a rational system of inequalities
+      (known as an H-representation) describing the polyhedron in which the encoding length of each inequality
+      is at most ϕ.
+ (ii ) Similarly, the vertex complexity of P is at most ν if there exist finite sets V, E such that P = conv(V )+
+       cone(E) (known as a V-representation) and such that each of the vectors in V and E has encoding
+       length at most ν.
+
+It is important to point out that these definitions are not given in terms of the encoding length of a full de-
+scription of P because P may be an implicitly defined polyhedron whose description is never fully constructed.
+What is explicitly constructed are the components of the description (extreme points and facet-defining in-
+equalities). The importance of the facet complexity and vertex complexity in the analysis is primarily that
+they provide bounds on the norms of these vectors. The ability to derive such bounds is a crucial element
+in the overall framework they present. The following are relevant results from Grötschel et al. [1993].
+Proposition 1. (Grötschel et al. [1993])
+
+ (i ) (1.3.3) For any r ∈ Q, 2−hri+2 ≤ |r| ≤ 2hri−1 − 1.
+ (ii ) (1.3.3) For any x ∈ Qn , kxkp < 2hxi−n for p ≥ 1.
+(iii ) (6.2.9) If P is a polyhedron with vertex complexity at most ν and (a, b) ∈ Zn+1 is such that
+                                                  a> x ≤ b + 2−ν−1
+     holds for all x ∈ P, then (a, b) is valid for P.
+
+In other words, the facet complexity and the encoding lengths of the vectors involved specify a “granularity”
+that can allow us to, for example, replace a “<” with a “≤” if we can bound the encoding length of the
+numbers involved.
+Utilizing the above definitions, the result showing the equivalence of optimization and separation can be
+formally stated as follows.
+Theorem 1. (Grötschel et al. [1993]) Let P ⊆ Rn be a polyhedron with facet complexity ϕ. Given an oracle
+for any one of
+
+   • the dual bound verification problem over P with linear objective coefficient d ∈ Qn ,
+   • the separation problem for P with respect to x̂ ∈ Qn , or
+   • the primal bound verification problem for P with linear objective coefficient d ∈ Qn ,
+
+there exists an oracle polynomial-time algorithm for solving either of the other two problems. Further, all
+three problems are solvable in time polynomial in n, ϕ, and either hdi (in the case of primal or dual bound
+verification) or hx̂i (in the case of separation).
+
+The problem of verifying a given dual bound was called the violation problem by Grötschel et al. [1993]. The
+above result refers only to the facet complexity ϕ, but we could also replace it with the vertex complexity ν,
+since it is easy to show that ν ≤ 4n2 ϕ. In the remainder of the paper, we refer to the “polyhedral complexity”
+whenever the facet complexity and vertex complexity can be used interchangeably.
+
+
+                                                        18
+4     Complexity of Inverse MILP
+
+In this section, we apply the framework discussed in Section 3 to analyze the complexity of the inverse MILP.
+We follow the traditional approach and describe the complexity of the decision versions. In addition to the
+standard primal bound verification problem, we also consider the dual bound and optimal value verification
+problems. We show that the primal bound, dual bound, and optimal value verification problems for the
+inverse MILP are in the complexity classes coNP-complete, NP-complete, and DP -complete, respectively.
+Hence, the classes associated with primal and dual bounding problems are reversed when going from MILP
+to inverse MILP, while the optimal value verification problems are both contained in the same class.
+
+
+4.1    Polynomially Solvable Cases
+
+The result of Ahuja and Orlin [2001] can be applied directly to observe that there are cases of the inverse
+MILP that are polynomially solvable. In particular, they showed that the inverse problem can be solved in
+polynomial time whenever the forward problem is polynomially solvable.
+Theorem 2. (Ahuja and Orlin [2001]) If an optimization problem is polynomially solvable for each linear
+cost function, then the corresponding inverse problems under the `1 and `∞ norms are polynomially solvable.
+
+Ahuja and Orlin [2001] use Theorem 1 from Grötschel et al. [1993] to conclude that inverse LP, in particular,
+is polynomially solvable. The separation problem in this case is an LP of polynomial input size and is hence
+polynomially solvable. The theorem of Grötschel et al. [1993] shows that both problems are in the class P,
+since Karp and Cook reductions are equivalent for problems in P. Theorem 2 also indicates that if a given
+MILP is polynomially solvable, then the associated inverse problem is also polynomially solvable.
+
+
+4.2    General Case
+
+In the general case, the MILP constituting the forward problem is not known to be polynomially solv-
+able and so we now consider MILPs whose decision versions are complete for NP. Applying the re-
+sults of Grötschel et al. [1993] straightforwardly, as Ahuja and Orlin [2001] did, we can easily show
+that (IMILP-L1) and (IMILP-INF) can be solved in polynomial time, given an oracle for the MPVP, as
+stated in the following theorem.
+Theorem 3. Given an oracle for the MPVP, (IMILP-L1) and (IMILP-INF) are solvable in time polynomial
+in n, the vertex complexity of conv(S + ), and hci.
+
+The above result directly implies that IMILP under `1 and `∞ norms is in fact in the complexity ∆P2 , but
+stronger results are possible, as we show. In the remainder of this section, we assume the norm used is a
+p-norm, as this is needed for some results (in particular, Proposition 1 is crucially used).
+
+
+Definitions. We next define decision versions of the inverse MILP analogous to those we defined in the
+case of MILP. These similarly attempt to verify that a given bound on the objective value is a primal bound,
+a dual bound, or an exact optimal value. The primal bound verification problem for inverse MILP is as
+follows.
+Definition 6. Inverse MILP Primal Bound Verification Problem (IMPVP):
+
+    • INPUT: γ ∈ Q, x0 ∈ Qn , A ∈ Qm×n , c ∈ Qn , b ∈ Qm , and r ∈ N, where (A, b, r) is an encoding of the
+      set S in (MILP) and (c, S, x0 ) are input data for problem (IMILP).
+
+
+                                                     19
+   • OUTPUT: YES, if ∃d ∈ C ◦ (x0 ) such that kc − dk ≤ γ, i.e., K(γ) ∩ C ◦ (x0 ) 6= ∅, NO otherwise.
+
+Similarly, we have the dual bound verification problem for inverse MILP.
+Definition 7. Inverse MILP Dual Bound Verification Problem (IMDVP):
+
+   • INPUT: γ ∈ Q, x0 ∈ Qn , A ∈ Qm×n , c ∈ Qn , b ∈ Qm , and r ∈ N, where (A, b, r) is an encoding of the
+     set S in (MILP) and (c, S, x0 ) are input data for problem (IMILP).
+   • OUTPUT: YES, if kc − dk ≥ γ for all d ∈ C ◦ (x0 ). Equivalently, int (K(γ)) ∩ C ◦ (x0 ) = ∅, NO otherwise.
+
+Finally, we have the optimal value verification problem.
+Definition 8. Inverse MILP Optimal Value Verification Problem (IMOVP):
+
+   • INPUT: γ ∈ Q, x0 ∈ Qn , A ∈ Qm×n , c ∈ Qn , b ∈ Qm , and r ∈ N, where (A, b, r) is an encoding of the
+     set S in (MILP) and (c, S, x0 ) are input data for problem (IMILP).
+   • OUTPUT: YES, if mind∈K(y)∩C ◦ (x0 ) y = γ, NO otherwise.
+
+In the rest of the section, we formally establish the complexity class membership of each of the above
+problems and in so doing, illustrate the relationships of the above problem to each other and to their MILP
+counterparts. We assume from here on that conv(S + ) full-dimensional (and that hence, C ◦ (x0 ) is also
+full-dimensional) to simplify the exposition.
+
+
+Informal Discussion. Before presenting the formal proofs, which are somewhat technical, we informally
+describe the relationship of the inverse optimization problem to the MILP analogues of the above decision
+problems, which are described in Section 3.2. Suppose we are given a value α and we wish to determine
+whether it is a primal bound, a dual bound, or the exact optimal value of (MILP) with objective function
+vector c ∈ Qn . Roughly speaking, we can utilize an algorithm for solving (IMILP) to make the determination,
+as follows. We first construct the target vector
+                                                             c
+                                                xα := α          ,
+                                                           kck22
+
+which has an objective function value (in the forward problem) of c> xα = α by construction. Now suppose
+we solve (IMILP) with xα as the target vector and c as the estimated objective function coefficient. Note
+that xα is not necessarily in S. Solving this inverse problem will yield one of two results.
+
+  1. The optimal value of the inverse problem is 0. This means that xα ∈ argmaxx∈S + c> x, which imme-
+     diately implies that α ≥ maxx∈S c> x and we have that α is a valid dual bound for (MILP).
+  2. The optimal value of the inverse problem is strictly positive. Then there must be a point x ∈ S
+     for which c> x > c> xα = α, which means that α < maxx∈S c> x and α is a (strict) primal bound
+     for (MILP).
+
+There are a number of challenges to be overcome in moving from this informal argument to the formal
+reductions in the completeness proofs. One obstacle is that the above argument does not precisely establish
+the status of α as a bound because we cannot distinguish between when α is a strict dual bound (and hence
+not a primal bound) and when α is the exact optimal value. This can be overcome essentially by appealing
+to Proposition 1 to reformulate certain strict inequalities as standard inequalities (see Lemma 3). A second
+challenge is that we have only described a reduction of a decision version of MILP to an optimization
+
+
+                                                      20
+version of the inverse problem and have failed to describe any sort of certificate. The formal proofs provide
+reductions to decision versions of the inverse problem along with the required short certificates. Despite the
+additional required machinery, however, the principle at the core of these proofs is the simple one we have
+just described.
+
+
+Formal Proofs. We now present the main results of the paper and their formal proofs. Two lemmas
+that characterize precisely when a given value γ is either a dual bound or a strict dual bound, respectively,
+for (IMILP) are presented first. These lemmas are the key element underlying the proofs that follow so
+we first explain the intuition. Recall the instances of (IMILP) illustrated earlier in Figure 2. The output
+to the IMPVP for these four instances would be NO, NO, YES, and NO, respectively. Note that for the
+YES instance in Figure 2c, K(γ) ∩ C ◦ (x0 ) is nonempty, as one would expect, while for the NO instance,
+this intersection is empty. It would appear that we are thus facing an existential question, so that the YES
+output would be the easier of the two to verify by simply producing an element of K(γ) ∩ C ◦ (x0 ).
+As it turns out, the above reasoning, though intuitive, is incorrect. The key observation we exploit is that
+whenever K(γ) ∩ C ◦ (x0 ) is empty, conv(S) ∩ int (K∗ (γ)) is nonempty and vice versa. Furthermore, there is
+a short certificate for membership in conv(S) ∩ int (K∗ (γ)). The characterization in terms of K(γ) ∩ C ◦ (x0 )
+can be seen as being in the dual space, whereas the characterization in terms of conv(S) ∩ int (K∗ (γ)) is
+in the primal space. It is highly unlikely that a short certificate for membership in C ◦ (x0 ) exists and the
+reason can be understood upon closer examination. It is that we lack an explicit description of C ◦ (x0 ) in
+terms of generators (a V-representation). We only have access to a partial description of it in terms of valid
+inequalities (a partial H-representation). Whereas any convex combination of a subset of generators of a
+polyhedral set must be in the set, a point satisfying a subset of the valid inequalities may not be in the set.
+Therefore, a partial H-representation is not sufficient for constructing a certificate. Even if we were able
+to obtain a set of generators algorithmically, we have no short certificate of the fact that they are in fact
+generators. On the other hand, it is easy to check membership for the points in S that generate conv(S).
+This is fundamentally why verifying a primal bound for (MILP) is in NP, whereas verifying a primal bound
+for (IMILP) is in coNP.
+The equivalence of the two characterizations described above is formalized below and this is what eventually
+allows us to prove the existence of a short certificate for γ being a dual bound or strict dual bound for (IMILP),
+respectively.
+Lemma 1. For γ ∈ Q such that 0 ≤ γ < kck, we have
+                         K(γ) ∩ C ◦ (x0 ) = ∅ ⇔ conv(S + ) ∩ int (K∗ (γ)) 6= ∅
+                                                 ⇔ kc − dk > γ ∀d ∈ C ◦ (x0 )
+                                                 ⇔ γ is a strict dual bound for (IMILP)
+                                                 ⇔ γ is not a primal bound for (IMILP).
+
+Proof. We prove that K(γ)∩C ◦ (x0 ) = ∅ if and only if conv(S + )∩int (K∗ (γ)) 6= ∅. The remaining implications
+follow by definition.
+
+(⇒) For the sake of contradiction, let us assume that both K(γ)∩C ◦ (x0 ) = ∅ and conv(S + )∩int (K∗ (γ)) = ∅.
+    Under the assumptions that conv(S + ) is full-dimensional and 0 ≤ γ < kck, conv(S + ) and int (K∗ (γ))
+    are both nonempty convex sets, so there exists a hyperplane separating them. In particular, there
+    exists a ∈ Rn such that
+                                     max         a> x ≤ min
+                                                         ∗
+                                                            a> x =         inf         a> x.              (SEPi)
+                                  x∈conv(S + )          x∈K (γ)        x∈int(K∗ (γ))
+
+      The problem on the right-hand side is unbounded when a 6∈ K(γ), since then there must exist x ∈
+      int (K∗ (γ)) with a> x < a> x0 , which means that x − x0 is a ray with negative objective value (recall
+
+
+                                                           21
+     K∗ (γ) is a cone). Therefore, we must have a ∈ K(γ) and it follows that x0 is an optimal solution for
+     the problem on the right-hand side. Therefore, we have
+
+                                                  max         a> x ≤ a> x0 .
+                                               x∈conv(S + )
+
+
+     Since a ∈ K(γ), then by assumption, a 6∈ C ◦ (x0 ), so there exists an x̂ ∈ S + such that a> (x0 − x̂) < 0.
+     So finally, we have
+                                   a> x0 < a> x̂ ≤       max + a> x ≤ a> x0 ,
+                                                        x∈conv(S )
+
+     which is a contradiction. This completes the proof of the forward direction.
+(⇐) For the reverse direction, we assume there exists x ∈ conv(S + ) ∩ int (K∗ (γ)). Since x ∈ conv(S + ),
+                                                                         Pk         Pk
+    there exists {x1 , x2 , . . . , xk } ⊆ S + and λ ∈ Qk+ such that x = i=1 λi xi , i=1 λi = 1, and k ≤ n + 1.
+    Now, let an arbitrary d ∈ K(γ) be given. Since γ < kck, we have d 6= 0. Then, since x ∈ int (K∗ (γ)),
+    we have that
+                                                              k
+                                                                       !
+                                                             X
+                               >     0               > 0             i
+                                           
+                            d x −x <0⇔d x −                      λi x < 0
+                                                              i=1
+                                                      k              k
+                                                                                      !
+                                                      X              X
+                                                >               0                 i
+                                           ⇔d               λi x −         λi x           <0
+                                                      i=1            i=1
+                                               k
+                                               X
+                                                     λi d> x0 − xi < 0
+                                                                  
+                                           ⇔
+                                               i=1
+                                           ⇒ ∃j ∈ {1, . . . , k} such that d> (x0 − xj ) < 0
+                                             / C ◦ (x0 ).
+                                           ⇒d∈
+
+     Since d was chosen arbitrarily, we have that K(γ) ∩ C ◦ (x0 ) = ∅. This completes the proof of the reverse
+     direction.
+
+
+
+
+When γ = 0, we have that K∗ (γ) is the half-space {x ∈ Rn | c> x ≥ c> x0 }, which further hints at the
+relationship between the inverse dual bounding problem and both the MILP primal bounding problem and
+the separation problem. A slightly modified version of Lemma 1 characterizes when γ is a dual bound, but
+not necessarily strict. Note that unlike the characterization in Lemma 1, this characterization doesn’t hold
+when γ = 0, which is perhaps not surprising, since the specific form of objective function we have chosen
+ensures that zero is always a valid lower bound. As such, this information cannot be helpful in distinguishing
+outcomes for the purpose of the reductions described shortly.
+Lemma 2. For γ ∈ Q such that 0 < γ < kck, we have
+
+                   int (K(γ)) ∩ C ◦ (x0 ) = ∅ ⇔ conv(S + ) ∩ K∗ (γ) \ {x0 } 6= ∅
+                                                                           
+
+                                            ⇔ kc − dk ≥ γ ∀d ∈ C ◦ (x0 )
+                                            ⇔ γ is a dual bound for (IMILP)
+                                            ⇔ γ is not a strict primal bound for (IMILP)
+
+We now present the main theorems.
+
+Theorem 4. The IMPVP is in coNP.
+
+
+                                                        22
+                                                      NO           YES         YES
+
+                                        Figure 7: Reduction Example
+
+
+Proof. We prove the theorem by showing the existence of a short certificate when the output to the problem
+is NO. Therefore, let an instance (γ, x0 , c, A, b, r) of the IMPVP for which the output is NO be given along
+with relevant input data. Since the output is NO, we must have that γ < kck, since d = 0 is a valid
+solution otherwise. By the characterization of Lemma 1, the NO answer is equivalent to the condition
+K(γ) ∩ C ◦ (x0 ) = ∅, as well as to the existence of x ∈ conv(S + ) ∩ int (K∗ (γ)). We derive our certificate from
+the latter, since this is an existence criterion. We have noted earlier that simply providing such x is not
+itself a short certificate, since we cannot verify membership in conv(S + ) in polynomial time. Fortunately,
+Carathéodory’s Theorem provides that when x ∈ conv(S + ), there exists a set of at most n+1 extreme points
+of conv(S + ) whose convex combination yields x. Membership in int (K∗ (γ)) is easily verified directly, so the
+set of points serves as the certificate and is short, since only n + 1 extreme points are needed.
+
+We next show that not only is IMPVP in coNP, but it is also complete for it.
+Theorem 5. The IMPVP is complete for coNP.
+
+Proof. We show that the MDVP can be Karp-reduced to the IMPVP. Let an instance (α, c, A, b, r) of the
+MDVP be given. Then we claim this MDVP can be decided by deciding an instance of the IMPVP with
+                                            c
+inputs (0, xα , c, A, b, r), where xα = α kck 2 . By the characterization of Lemma 1, the IMPVP with this input
+                                              2
+                            ◦ α
+asks whether K(0) ∩ C (x ) is nonempty. The first set contains a single point, d = c. The intersection is
+nonempty if and only if c is in C ◦ (xα ). c is in this cone if and only if
+
+                             c> (x − xα ) ≤ 0   ∀x ∈ S ⇔     c> x − α ≤ 0   ∀x ∈ S,
+                                                                  >
+                                                        ⇔        c x≤α      ∀x ∈ S.
+
+The last line above means the output of the MDVP is YES. This indicates that the output of the original
+instance of the MDVP is YES if and only if the output of the constructed instance of the IMPVP is YES.
+
+Figure 7 illustrates the reduction from the MDVP to the IMPVP for three different α values. In the
+proof, the point αc is constructed to have objective function value α. The inverse problem is then just to
+determine whether the inequality c> x ≤ α is valid for conv(S), so the equivalence to the MDVP follows
+straightforwardly. The output to both the MDVP and the IMPVP is NO for α1 and YES for both α2 and
+α3 . Note that this proof crucially depends on the fact that we do not assume x0 ∈ S for the IMPVP. Now,
+we consider IMDVP, for which the proofs take a similar approach.
+Theorem 6. The IMDVP is in NP.
+
+
+                                                       23
+Proof. The proof is almost identical to the proof that IMPVP is in coNP. We show that there exists a short
+certificate that can validate the output YES. Let an instance (γ, x0 , c, A, b, r) of the IMDVP be given such
+that the output is YES. As in the proof of Theorem 4, it is enough to consider the case where γ < kck
+and we can assume without loss of generality that γ > 0 (otherwise, the output is trivially YES). When
+the output is YES, by the characterization of Lemma 2, int (K(γ)) ∩ C ◦ (x0 ) = ∅ holds and there exists
+x ∈ conv(S + ) ∩ K∗ (γ) with x 6= x0 . As in the proof of Theorem 4, Carathéodory’s Theorem ensures there is
+a set of at most n + 1 members of S + whose convex combination yields x and this set of points is the short
+certificate.
+
+To show that IMDVP is complete for NP, we need one more technical lemma, which exploits Proposition 1
+to enable us to Karp-reduce MPVP to IMDVP. The basic idea is to exploit the property that the norm of
+the difference between two numbers can be bounded by a function of their encoding lengths. This allows us
+to cleanly distinguish the cases in which a given value is a primal bound for (MILP) from that in which the
+given value is a strict dual bound by solving an IMDVP that we can can easily construct.
+                                                                       0
+Lemma 3. Let α ∈ Q and let  := 2− max{hci+ν,hαi}−1 and δ := 2−hx i−ν−1 .
+
+  (i) If α ≤ maxx∈S c> x + , then α ≤ maxx∈S c> x.
+
+ (ii) If α ≤ maxx∈S c> x, then kc − dk > δ > 0 for all d ∈ C ◦ (xα− ), where xα− = (α − ) kck
+                                                                                                c
+                                                                                                  2.
+                                                                                                  2
+
+
+
+Proof. (i) First, we have that the encoding length of maxx∈S c> x is bounded by hci + ν. Then if α >
+      maxx∈S c> x, α > maxx∈S c> x +  by Proposition 1. Therefore, α ≤ maxx∈S c> x.
+ (ii) Let α ≤ maxx∈S c> x and x ∈ argmaxx∈S c> x be given such that x is an extreme point of conv(S) and
+                            c             >           > α−
+      let xα− := (α − ) kck  2 . Since c x ≥ α and c x    = α −  < α, it follows that x 6= xα− . For an
+                               2
+      arbitrary d ∈ C ◦ (xα− ), we have that
+
+                     d> (xα− − x) ≥ 0 ⇔ d> (xα− − x) − c> (xα− − x) + c> (xα− − x) ≥ 0
+                                        ⇔ (d − c)> (xα− − x) ≥ c> x − c> xα−
+                                        ⇔ (d − c)> (xα− − x) ≥ c> x − α +                                (3)
+                                        ⇔ (d − c)> (xα− − x) ≥                                           (4)
+                                                      α−
+                                        ⇔ kc − dkkx    − xk ≥                                             (5)
+                                                        
+                                        ⇔ kc − dk ≥ α−                                                    (6)
+                                                    kx    − xk
+                                        ⇔ kc − dk > δ                                                     (7)
+                                                  c
+     Equation (3) follows by substituting (α−) kck 2 for x
+                                                            α−
+                                                                ; (4) follows from the nonnegativity of c> x−α;
+                                                    2
+     and (5) follows from the Cauchy–Schwarz inequality. Equation (6) follows from (5) because kx −
+                                                                               α−
+     xα− k > 0. Equation (7) follows from the fact that kxα− − xk < 2hx i+ν+1 , again by Proposition 1,
+                                    α−
+     since the encoding length of x     − x is bounded by the vertex complexity ν of conv(S) and hxα− i.
+
+
+Theorem 7. The IMDVP is complete for NP.
+
+Proof. We show that the MPVP can be Karp-reduced to the IMDVP. Therefore, let an instance (α, c, A, b, r)
+of the MPVP be given and let  and δ be given as in Lemma 3. Then we claim that the MPVP can be
+                                                                                        c
+resolved by deciding the IMDVP with inputs (δ, xα− , A, b, r), where xα− = (α − ) kck 2 . The IMDVP asks
+                                                                                          2
+
+
+
+
+                                                      24
+                            (a)                                                        (b)
+
+
+                                  Figure 8: Lemma 3 on two simple examples
+
+
+whether the set int (K(δ)) ∩ C ◦ (xα− ) is empty. Note that c ∈ int (K(δ)). If the output to the IMDVP is
+YES, then int (K(δ)) ∩ C ◦ (xα− ) is empty. This means c 6∈ C ◦ (xα− ), i.e.,
+                                     / d ∈ Rn | d> x − xα− ≤ 0 ∀x ∈ S .
+                                                             
+                                   c∈
+This in turn means that there exists an x ∈ S such that
+                                  c> x − xα− > 0 ⇔ c> x − α +  > 0
+                                               
+
+                                                          ⇔ c> x +  > α
+                                                          ⇒ c> x ≥ α.
+The last implication is by Lemma 3, part (i). Hence, the output to the MPVP is YES.
+
+When the output to the IMDVP is NO, there exists dˆ ∈ int (K(δ)) ∩ C ◦ (xα− ). Then dˆ ∈ C ◦ (xα− ) and
+     ˆ ≤ δ, so by the contraposition of Lemma 3, part (ii), there is no x ∈ S such that c> x ≥ α, i.e.,
+kc − dk
+ >
+c x < α for all x ∈ S. This means the output to the MPVP is NO.
+
+Figure 8a illustrates the case in which c> x < α3 holds for all x ∈ S, so that the output of MPVP is NO. In
+this case, there exists dˆ ∈ int (K(δ)) ∩ C ◦ (xα− ). In fact, c is itself in int (K(δ)) ∩ C ◦ (xα− ), which means
+the optimal value of the associated IMILP is 0. The instance of IMDVP specified in the reduction also has
+output NO, since we are checking the validity of a nonzero dual bound.
+Figure 8b illustrates the case in which the optimal value to the MILP is exactly α2 , so that the output of
+the MPVP is YES. In this case, Lemma 3 tells us that the optimal value for the associated IMILP must
+be greater than δ and that the instance of IMDVP that we solve in the reduction must have output YES
+as well. Note the essential role of δ as a number strictly between zero and the smallest possible positive
+optimal value that the associated instance of IMILP can have. This is necessary precisely because Lemma 2
+does not hold for γ = 0.
+Theorem 8. The IMOVP is complete for DP .
+
+Proof. As noted before, the reduction presented in Theorem 7 can be used to reduce both the MDVP and
+the MPVP to the IMPVP and the IMDVP, respectively. Using this reduction, the language of the IMOVP
+
+
+                                                         25
+can then be expressed as the intersection of the languages of the IMPVP and the IMDVP that are in coNP
+and NP, respectively. This proves that the IMOVP is in class DP . The IMOVP is complete for DP , since the
+MOVP can be reduced to the IMOVP using the same reduction.
+
+Note that the optimal value verification problems associated with both the inverse and forward problems
+are complete for DP , placing this decision version of both the forward and inverse problems in the same
+complexity class.
+
+
+
+5    Conclusion and Future Directions
+
+In this paper, we discussed the relationship of the inverse mixed integer linear optimization problem to both
+the associated forward and separation problems. We showed that the inverse problem can be seen as an
+optimization problem over the cone described by all inequalities valid for S and satisfied at equality by x0
+(the normal cone at x0 ). Alternatively, it can also be seen as an optimization problem over the 1-polar
+under some additional assumptions. Both these characterizations make the connection with the separation
+problem associated with S evident.
+By observing that the separation problem for the feasible region of the inverse problem under the `1 and `∞
+norms is an instance of the forward problem, it can be shown via a straightforward cutting-plane algorithm
+that the inverse problem can be solved by solving polynomially many instances of the forward problem with
+different objective functions. This is done by invoking the result of Grötschel et al. [1993], which shows that
+optimization and separation are polynomially equivalent, i.e., each can be Cook-reduced to the other. This
+in turn places the decision version of inverse MILP in the complexity class ∆p2 .
+The main result of the paper is that a stronger analysis is possible. We first show that verification of a
+primal and dual bound for the inverse problem is in coNP and NP by providing short certificates for the
+NO and YES outputs, respectively. We show that verification of a dual bound for the forward problem can
+be Karp-reduced to verification of a primal bound for the associated inverse problem. Thus, both problems
+are complete for the class coNP and are on the same level of the polynomial-time hierarchy. Similarly,
+verification of a primal bound for the forward problem can be Karp-reduced to verification of a dual bound
+for the associated inverse problem. Thus, both of those problems are complete for the class NP and are
+also on the same level of the polynomial-time hierarchy. Finally, we use these two results to show that the
+verification problem for the optimal value of IMILP is complete for the class DP , which is the same class
+that Papadimitriou and Yannakakis [1982] showed contains the MILP optimal value verification problem.
+Although we have not done so formally, we believe the results in this paper lay the groundwork for stating
+some version of Theorem 1 that incorporates the equivalence of the inverse problem and is stated in terms
+of Karp reduction. The form such a result would take is not entirely obvious. Whereas the essence of the
+separation problem is to determine whether or not a given point is a member of a given convex set, the inverse
+problem implicitly demands that we determine which of three sets contains a given point: the relative interior
+of a given convex set, the boundary of that convex set, or the complement of the set. Whereas it is known
+that the problem of determining whether or not a given point is contained in the convex hull of solutions
+is complete for NP, our results indicate that the related problem of determining if a given point is on the
+boundary of the feasible set of an MILP is a complete problem for DP , while the problems of determining
+whether a given point is contained in the convex hull of solutions or determining whether a given point is
+contained in the complement of the relative interior are in NP and coNP, respectively. Given all of this, it
+seems clear that a unified result integrating all of the various problems we have introduced and stating their
+equivalence in terms of Karp reduction should be possible.
+Finally, while we have implemented the cutting-plane algorithm in this paper, it is clear that more work
+must be done to develop computationally efficient algorithms for solving the inverse versions of difficult
+
+
+                                                      26
+combinatorial optimization problems. Development of customized algorithms for which the number of oracle
+calls required in practice can be reduced is a next natural step. Given our results, the existence of a direct
+algorithm for solving inverse problems can also not be ruled out.
+
+
+
+References
+                   ?
+S. Aaronson. P = NP. Technical report, University of Texas at Austin, 2017.              URL https://www.
+  scottaaronson.com/papers/pnp.pdf.
+
+Ravindra K. Ahuja and James B. Orlin. Inverse optimization. Operations Research, 49(5):771–783, 2001.
+  doi: 10.1287/opre.49.5.771.10607.
+S. Arora and B. Barak. Computational Complexity: A Modern Approach. Cambridge University Press, 2007.
+R. Beigel and L. Fortnow. Are cook and karp ever the same? In Proceedings of the 18th Annual IEEE
+  Conference on Computational Complexity, pages 333–336, 2003.
+E. Andrew Boyd. Fenchel cutting planes for integer programs. Operations Research, 42(1):53–64, 1994. doi:
+  10.1287/opre.42.1.53. URL http://dx.doi.org/10.1287/opre.42.1.53.
+M. C. Cai, X. G. Yang, and J. Z. Zhang. The complexity analysis of the inverse center location prob-
+ lem. Journal of Global Optimization, 15(2):213–218, September 1999. ISSN 1573-2916. doi: 10.1023/A:
+ 1008360312607. URL https://doi.org/10.1023/A:1008360312607.
+Stephen A. Cook. The complexity of theorem-proving procedures. In Proceedings of the Third Annual ACM
+  Symposium on Theory of Computing, STOC ’71, pages 151–158, New York, NY, USA, 1971. ACM. doi:
+  10.1145/800157.805047. URL http://doi.acm.org/10.1145/800157.805047.
+
+Jack Edmonds. Matroids and the greedy algorithm. Mathematical programming, 1(1):127–136, 1971.
+Michael R. Garey and David S. Johnson. Computers and Intractability: A Guide to the Theory of NP-
+ Completeness. W. H. Freeman & Co., New York, NY, USA, 1979. ISBN 0716710447.
+M. Grötschel, L. Lovász, and A. Schrijver. Geometric Algorithms and Combinatorial Optimization. Algo-
+ rithms and Combinatorics. Springer, second corrected edition edition, 1993.
+
+Clemens Heuberger. Inverse combinatorial optimization: a survey on problems, methods, and results. Journal
+  of Combinatorial Optimization, 8(3):329–361, September 2004. ISSN 1573-2886. doi: 10.1023/B:JOCO.
+  0000038914.26975.9b. URL https://doi.org/10.1023/B:JOCO.0000038914.26975.9b.
+Siming Huang. Inverse problems of some NP-complete problems, pages 422–426. Springer, 2005. ISBN
+  978-3-540-32440-9. URL https://doi.org/10.1007/11496199_45.
+Richard M Karp. Reducibility among combinatorial problems. In Complexity of computer computations,
+  pages 85–103. Springer, 1972.
+Mark W. Krentel. The complexity of optimization problems. Journal of Computer and System Sci-
+ ences, 36(3):490 – 509, 1988. ISSN 0022-0000. doi: 10.1016/0022-0000(88)90039-6. URL http:
+ //www.sciencedirect.com/science/article/pii/0022000088900396.
+Mark William Krentel. The Complexity of Optimization Problems. PhD thesis, Cornell University, Ithaca,
+ New York, May 1987a.
+M.W. Krentel. The Complexity of Optimization Problems. PhD thesis, Cornell University, 1987b.
+
+
+
+
+                                                     27
+J.H. Lutz and E. Mayordomo. Cook versus karp-levin: Separating completeness notions if np is not small.
+  Theoretical Computer Science, 164:141–163, 1995.
+C. H. Papadimitriou and M. Yannakakis. The complexity of facets (and some facets of complexity). In
+  Proceedings of the fourteenth annual ACM symposium on Theory of computing, STOC ’82, pages 255–
+  260, New York, NY, USA, 1982. ACM. ISBN 0-89791-070-2. doi: 10.1145/800070.802199. URL http:
+  //doi.acm.org/10.1145/800070.802199.
+C.H. Papadimitriou. On the complexity of integer programming. Journal of the Association for Computing
+  Machinery, 28:765–768, 1981.
+Christos H. Papadimitriou. Computational complexity. In Encyclopedia of Computer Science, pages 260–
+  265. John Wiley and Sons Ltd., Chichester, UK, 2003. ISBN 0-470-86412-5. URL http://dl.acm.org/
+  citation.cfm?id=1074100.1074233.
+R. T. Rockafellar. Convex Analysis. Princeton University Press, 1970.
+Andrew J. Schaefer. Inverse integer programming. Optimization Letters, 3(4):483–489, September 2009. ISSN
+ 1862-4480. doi: 10.1007/s11590-009-0131-z. URL https://doi.org/10.1007/s11590-009-0131-z.
+
+Alexander Schrijver. Theory of integer and linear programming. Wiley, Chichester, 1986.
+L.J. Stockmeyer. The polynomial-time hierarchy. Theoretical Computer Science, 3(1):1 – 22, 1976a. ISSN
+  0304-3975. doi: https://doi.org/10.1016/0304-3975(76)90061-X. URL http://www.sciencedirect.com/
+  science/article/pii/030439757690061X.
+
+L.J. Stockmeyer. The polynomial-time hierarchy. Theoretical Computer Science, 3:1–22, 1976b.
+Alan M Turing. On computable numbers, with an application to the entscheidungsproblem. Proceedings of
+  the London mathematical society, 2(1):230–265, 1937.
+H. Vollmer and K.W. Wagner. Complexity classes of optimization functions. Information and Computation,
+  120(2):198 – 219, 1995. ISSN 0890-5401. doi: 10.1006/inco.1995.1109. URL http://www.sciencedirect.
+  com/science/article/pii/S0890540185711091.
+Lizhi Wang. Cutting plane algorithms for the inverse mixed integer linear programming problem. Operations
+  Research Letters, 37(2):114 – 116, 2009. ISSN 0167-6377. doi: 10.1016/j.orl.2008.12.001. URL http:
+  //www.sciencedirect.com/science/article/pii/S0167637708001326.
+
+
+
+
+                                                   28
+

@@ -1,0 +1,672 @@
+Reader snapshot; fetched 2026-10-14 PT. Source URL appears below. MathML HTML comments removed, rendered text retained.
+
+URL: https://arxiv.org/html/2602.00968v1
+Content-Type: text/html
+Method: native
+
+---
+
+---
+meta-viewport: width=device-width, initial-scale=1, shrink-to-fit=no
+title: Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems
+---
+
+![](/static/base/1.0.1/images/icons/smileybones-small.svg)arXiv is now an independent nonprofit! [Learn more](https://info.arxiv.org/about) ×
+
+[![arXiv logo](/static/base/1.0.1/images/arxiv-logo-primary-light.svg) Back to arXiv](/)
+
+[License: arXiv.org perpetual non-exclusive license](https://info.arxiv.org/help/license/index.html#licenses-available)
+
+arXiv:2602.00968v1 [eess.SY] 01 Feb 2026
+
+# Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems
+
+Shuai Gao   Dong Shen   Abdelhamid Tayebi††thanks: This work was supported in part by the National Natural Science Foundation of China under Grant 62573422 and Grant 62173333; and in part by the Outstanding Innovative Talents Cultivation Funded Programs 2025 of Renmin University of China.††thanks: S. Gao, and D. Shen are with the School of Mathematics, Renmin University of China, Beijing 100872, China (e-mail: gaoshuai@ruc.edu.cn, dshen@ieee.org).††thanks: A. Tayebi is with the Department of Electrical and Computer Engineering, Lakehead University, Thunder Bay, ON P7B 5E1, Canada (e-mail: atayebi@Lakeheadu.ca).
+
+###### Abstract
+
+We address the tracking problem for a class of uncertain non-affine nonlinear systems with high relative degrees, performing non-repetitive tasks. We propose a rigorously proven, robust adaptive learning control scheme that relies on a gradient descent parameter adaptation law to handle the unknown time-varying parameters of the system, along with a state estimator that estimates the unmeasurable state variables. Furthermore, despite the inherently complex nature of the non-affine system, we provide an explicit iterative computation method to facilitate the implementation of the proposed control scheme. The paper includes a thorough analysis of the performance of the proposed control strategy, and simulation results are presented to demonstrate the effectiveness of the approach.
+
+## I Introduction
+
+The field of iterative learning control (ILC) has considerably progressed since the early developments in [[1](#bib.bib1)]. ILC techniques focus on utilizing the results of previous operations to modify the control signal for future tasks. This enables the controller to improve its performance gradually with each iteration, ultimately achieving precise tracking after several cycles. Many controlled systems are designed to repeatedly perform similar tasks within a finite time period, such as robot manipulators [[2](#bib.bib2)], mobile robots [[3](#bib.bib3)], and high-speed trains [[4](#bib.bib4)]. For this type of system, ILC is an effective control strategy that leverages input and output data from previous iterations to improve the control performance in subsequent iterations. The reader is referred to the following non-exhaustive list of references in the ILC field [[5](#bib.bib5), [6](#bib.bib6), [7](#bib.bib7), [8](#bib.bib8), [9](#bib.bib9), [10](#bib.bib10), [11](#bib.bib11)].
+
+Non-affine nonlinear systems are commonly encountered in practical control scenarios, such as underwater vehicles [[12](#bib.bib12)], flight control systems [[13](#bib.bib13)], and chemical reactions including PH neutralization [[14](#bib.bib14)]. However, there is no systematic control design approach for non-affine nonlinear systems. The complexity in dealing with this type of systems arises from the fact that the inputs influence the system dynamics in a nonlinear manner, making their control a challenging task [[14](#bib.bib14)]. Despite the considerable progress in the ILC field, there are only a few papers in the literature dealing with non-affine nonlinear systems [[15](#bib.bib15), [16](#bib.bib16), [17](#bib.bib17), [18](#bib.bib18), [19](#bib.bib19), [20](#bib.bib20)].
+
+In [[15](#bib.bib15)], a P-type ILC scheme was proposed for non-affine nonlinear systems, and it was shown that, even for systems with relative degree of one, the selection of the learning gain ensuring the convergence of tracking error is not a trivial task. Some data-driven ILC (DDILC) approaches, based on dynamic linearization, were also developed for non-affine nonlinear systems [[16](#bib.bib16), [17](#bib.bib17), [18](#bib.bib18)], where the non-affine characteristics are modeled using pseudo-partial derivatives (PPDs). However, dynamic linearization requires the system to satisfy the generalized Lipschitz condition [[16](#bib.bib16), [17](#bib.bib17), [21](#bib.bib21), [22](#bib.bib22)], which is more stringent than the common global Lipschitz condition and is often difficult to satisfy in practice. Furthermore, the convergence process of the DDILC method is based on the contraction mapping principle, which is strongly related to the task being performed. Once the reference trajectory varies, the contraction process must restart. Therefore, the DDILC approach encounters challenges in effectively tracking iteration-varying reference trajectories. Neural networks (NN) approximation capabilities have also been leveraged to design ILC strategies for the tracking problem of non-repetitive reference trajectories for non-affine nonlinear systems [[19](#bib.bib19), [20](#bib.bib20)]. However, the approximation result of the NN only holds on a local compact set. The issue of ensuring that the system state remains within this compact set has not been adequately addressed. This local approximation issue weakens the theoretical completeness of NN-based ILC. On the other hand, network complexity and approximation accuracy are inherently conflicting goals and cannot be optimized simultaneously, which further limits the practicality of NNs.
+
+The core idea behind the aforementioned methods, consisting in transforming non-affine nonlinear systems into equivalent linear systems via dynamic linearization or using neural networks to approximate the learning controller, is to bypass the complexities of non-affine systems. As such, these approaches are considered indirect control strategies. This raises the question of whether it is possible to develop direct ILC methods for certain non-affine nonlinear systems that can effectively track reference trajectories, which change across iterations.
+
+Real-world non-affine systems often possess a well-defined physical basis (e.g., the aircraft system in [[13](#bib.bib13)] and the double inverted pendulum system in [[23](#bib.bib23)]). Their dynamic structure can typically be derived from physical laws, while the main source of uncertainty lies in unknown parameters. Such parameterized non-affine systems are both common in engineering practice and structurally exploitable, which is consistent with our intention of designing a direct ILC approach to deal with this type of systems.
+For the sake of generality, we accommodate systems with high relative degrees and non-repetitive disturbances. By employing appropriate system identification techniques and treating identification errors as unknown disturbances, our framework can potentially be extended to more general, non-parameterized systems. For parameterized systems, adaptive ILC (AILC), which combines ILC with traditional adaptive control, is a natural and promising approach. However, most existing AILC results have been restricted to affine systems [[2](#bib.bib2), [24](#bib.bib24), [25](#bib.bib25), [26](#bib.bib26), [27](#bib.bib27), [28](#bib.bib28), [29](#bib.bib29), [30](#bib.bib30)], leaving the class of parameterized non-affine systems largely unexplored.
+
+In the present work, we propose a direct AILC scheme for a class of uncertain discrete-time parameterized non-affine nonlinear systems, with high relative degrees and non-repetitive disturbances, enabling effective tracking of iteration-varying reference trajectories over finite time-intervals. Compared to the existing works on AILC for affine systems [[2](#bib.bib2), [24](#bib.bib24), [25](#bib.bib25), [26](#bib.bib26), [27](#bib.bib27), [28](#bib.bib28), [29](#bib.bib29), [30](#bib.bib30)], the non-affine characteristic presents unique technical challenges for controller design and analysis. First, the feasibility of the trajectory tracking problem in the affine case is determined by the input gain. In the non-affine case, however, it is equivalent to the solvability of a nonlinear equation with respect to the input variable, for which no conclusions are available. Second, the AILC input for affine systems is derived from the certainty equivalence principle and given as an explicit expression. However, in the non-affine case, the AILC input is given in the form of an implicit function manner. Therefore, an efficient numerical implementation scheme for the control input must be designed. Furthermore, analyzing the impact of numerical approximation errors of the control input on the trajectory tracking error is a unique challenge for non-affine systems. Finally, the consideration of practical factors such as non-repetitive disturbances and high relative degrees, while enhancing the generalizability of the control scheme, further complicates these technical challenges. Therefore, the problem considered in this work cannot be solved within the current AILC framework and requires new technical methods.
+
+We rely on a gradient descent parametric adaptation (GDPA) law along with a state estimator that provides estimates for the unmeasurable state variables, to derive a robust AILC ensuring the convergence of the tracking error to a neighborhood of zero in the presence of external disturbances, and a perfect tracking in the absence of disturbances. The existence and uniqueness of the control input is proven using the global implicit function theorem [[31](#bib.bib31)].
+
+Since the system at hand is non-affine, an explicit solution for the control input may not always exist. To address this issue, we propose a contraction mapping-based iterative numerical computation method that approximates the control input, facilitating the implementation of our proposed control strategy. A detailed analysis of the impact of the approximation errors on the tracking accuracy is provided. Two simulation examples are also provided to illustrate the effectiveness of the proposed approach.
+
+The main contributions of this work are outlined below:
+
+- •
+    We propose an effective control scheme for a class of uncertain non-affine nonlinear systems, with high relative degrees and non-repetitive disturbances. Due to the inherent complexity of this type of systems, studies on their control design remain relatively scarce.
+
+- •
+    By analyzing the structural characteristics of non-affine systems, we propose a direct AILC method that is significantly different from the existing DDILC [[16](#bib.bib16), [17](#bib.bib17), [18](#bib.bib18)] and NN-based ILC [[19](#bib.bib19), [20](#bib.bib20)] methods. It avoids the use of neural networks and relaxes the stringent requirements on the system and reference trajectory (for example, the generalized Lipschitz condition and a repetitive reference trajectory). The proposed design path consisting of unknown parameters estimation, implicit control input design and explicit numerical approximation of the designed control input, provides a new idea for solving trajectory tracking problems of non-affine nonlinear systems.
+
+- •
+    Different from existing works on AILC [[2](#bib.bib2), [24](#bib.bib24), [25](#bib.bib25), [26](#bib.bib26), [27](#bib.bib27), [28](#bib.bib28), [29](#bib.bib29), [30](#bib.bib30)], we develop an AILC method for non-affine systems, conduct the feasibility analysis of the tracking problem, and provide the implicit control input design and its numerical implementation algorithm. The relationship between tracking accuracy and the disturbances, relative degree, and the numerical approximation error of the control input is quantitatively characterized.
+
+The remainder of this paper is organized as follows. Section [II](#S2 "II Problem Formulation ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems") formulates the tracking control problem. The feasibility analysis of the tracking control problem and AILC design are provided in Section [III](#S3 "III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems"). The performance of the proposed AILC scheme is analyzed in Section [IV](#S4 "IV Convergence Analysis ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems"). Section [V](#S5 "V Explicit AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems") provides an explicit and implementable solution for the proposed AILC scheme. Section [VI](#S6 "VI Numerical Simulations ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems") provides some simulation examples. Section [VII](#S7 "VII Conclusions ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems") wraps up this paper.
+
+*Notations*: The set of positive integers is denoted by  ℤ+\mathbb{Z}^{+}. The set of real numbers and the  nn-dimensional real space are denoted by  ℝ\mathbb{R} and  ℝn\mathbb{R}^{n}, respectively. For a vector  𝜶∈ℝn\boldsymbol{\alpha}\in\mathbb{R}^{n},  ‖𝜶‖\\|\boldsymbol{\alpha}\\| denotes the 2-norm of  𝜶\boldsymbol{\alpha}. The ball in  ℝn\mathbb{R}^{n} with center  𝒙𝟎\boldsymbol{x_{0}} and radius  r0r_{0} is denoted by  ℬ⁡(𝒙𝟎,r0):={𝒙∈ℝn,‖𝒙−𝒙𝟎‖≤r0}\mathcal{B}(\boldsymbol{x_{0}},r_{0}):=\\{\boldsymbol{x}\in\mathbb{R}^{n},~\\|\boldsymbol{x}-\boldsymbol{x_{0}}\\|\leq r_{0}\\}.
+
+## II Problem Formulation
+
+Consider the following non-affine nonlinear repetitive system:
+
+|  |  xk​(t+ρ)=F⁡(𝑿k​(t),uk​(t),t)+wk​(t),\displaystyle x_{k}(t+\rho)=F(\boldsymbol{X}_{k}(t),u_{k}(t),t)+w_{k}(t), |  | (1) |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- | --- |
+
+where  𝑿k​(t)=[xk​(t+ρ−1),xk​(t+ρ−2),⋯,xk​(t)]⊤\boldsymbol{X}_{k}(t)=[x_{k}(t+\rho-1),x_{k}(t+\rho-2),\cdots,x_{k}(t)]^{\top}. The variables  xk​(t)∈ℝx_{k}(t)\in\mathbb{R},  uk​(t)∈ℝu_{k}(t)\in\mathbb{R}, and  wk​(t)∈ℝw_{k}(t)\in\mathbb{R} denote the measurable state, system input, and unknown disturbance, respectively. The time variable is denoted by  t∈{0,1,⋯,T−ρ}t\in\\{0,1,\cdots,T-\rho\\} and the iteration variable is denoted by  k∈ℤ+k\in\mathbb{Z}^{+}. The nonlinear function  F⁡(𝑿k​(t),uk​(t),t)F(\boldsymbol{X}_{k}(t),u_{k}(t),t) satisfies the following:
+
+|  |  F⁡(𝑿k​(t),uk​(t),t)\displaystyle F(\boldsymbol{X}_{k}(t),u_{k}(t),t) |  =𝜽​(t)⊤​𝒇​(𝑿k​(t),uk​(t)),\displaystyle=\boldsymbol{\theta}(t)^{\top}\boldsymbol{f}(\boldsymbol{X}_{k}(t),u_{k}(t)), |  |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
+
+where  𝜽⁡(t)∈ℝp\boldsymbol{\theta}(t)\in\mathbb{R}^{p} is an unknown time-varying parameter vector, and  𝒇⁡(𝑿,u):ℝρ+1→ℝp\boldsymbol{f}(\boldsymbol{X},u):\mathbb{R}^{\rho+1}\to\mathbb{R}^{p} is a known function vector with sufficiently smooth components. According to the definition in [[32](#bib.bib32)], the concept of relative degree denotes the delay between the input and the output. For system ([1](#S2.E1 "In II Problem Formulation ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")), the control input at time  tt determines the output  ρ\rho steps later. Therefore, the relative degree of ([1](#S2.E1 "In II Problem Formulation ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")) is  ρ\rho.
+
+For our control design, we need the following assumptions:
+
+###### Assumption 1
+
+There exists a known closed neighborhood  ℬ⁡(𝛉¯,R)\mathcal{B}(\underline{\boldsymbol{\theta}},R) such that  𝛉⁡(t)∈ℬ⁡(𝛉¯,R)\boldsymbol{\theta}(t)\in\mathcal{B}(\underline{\boldsymbol{\theta}},R), and
+for any  pp-dimensional vector  ϕ∈ℬ⁡(𝛉¯,R)\boldsymbol{\phi}\in\mathcal{B}(\underline{\boldsymbol{\theta}},R),  𝐗∈ℝρ\boldsymbol{X}\in\mathbb{R}^{\rho},  u∈ℝu\in\mathbb{R}, the inequality  |ϕ⊤​∂∂u​𝐟​(𝐗,u)|>d0\left|\boldsymbol{\phi}^{\top}\frac{\partial}{\partial u}\boldsymbol{f}(\boldsymbol{X},u)\right|>d_{0} holds, where  d0d_{0} is an unknown positive constant.
+
+###### Assumption 2
+
+The system disturbance  wk​(t)w_{k}(t) is bounded, i.e.,  w≜supk,t|wk​(t)|<∞w\triangleq\sup_{k,t}|w_{k}(t)|<\infty,
+where  ww is an unknown supremum.
+
+###### Assumption 3
+
+The vector-valued function  𝐟⁡(𝐗,u)\boldsymbol{f}(\boldsymbol{X},u) satisfies the global Lipschitz condition. In other words, there exist positive constants  L𝐗L^{\boldsymbol{X}} and  LuL^{u} such that
+
+|  |  |  ‖𝒇⁡(𝑿1,u)−𝒇⁡(𝑿2,u)‖≤L𝑿​‖𝑿1−𝑿2‖,\displaystyle\\|\boldsymbol{f}(\boldsymbol{X}_{1},u)-\boldsymbol{f}(\boldsymbol{X}_{2},u)\\|\leq L^{\boldsymbol{X}}\\|\boldsymbol{X}_{1}-\boldsymbol{X}_{2}\\|,\\ |  |
+| --- | --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
+|  |  |  ‖𝒇⁡(𝑿,u1)−𝒇⁡(𝑿,u2)‖≤Lu​|u1−u2|.\displaystyle\\|\boldsymbol{f}(\boldsymbol{X},u_{1})-\boldsymbol{f}(\boldsymbol{X},u_{2})\\|\leq L^{u}|u_{1}-u_{2}|. |  |
+
+###### Assumption 4
+
+The variables  xk​(0)x_{k}(0),  xk​(1)x_{k}(1),…,  xk​(ρ−1)x_{k}(\rho-1) are bounded and known for all  k∈ℤ+k\in\mathbb{Z}^{+}.
+
+###### Remark 1
+
+Assumption [1](#Thmassumption1 "Assumption 1 ‣ II Problem Formulation ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems") is equivalent to requiring a non-vanishing input gain for affine systems as in [[30](#bib.bib30), [28](#bib.bib28)] and is often assumed for non-affine systems [[33](#bib.bib33), [19](#bib.bib19)]. While this study focuses on single-input, single-output (SISO) systems, the proposed AILC framework is expected to generalize to multiple-input, multiple-output (MIMO) scenarios. The key is to identify reasonable assumptions that guarantee tracking feasibility (similar to Assumption 1 in the SISO case). For example, if the Jacobian matrix of the system function with respect to the input vector is strictly diagonally dominant, then the generalization can be achieved. More general feasibility conditions need further detailed exploration. Since most disturbances in real-world systems are bounded, Assumption [2](#Thmassumption2 "Assumption 2 ‣ II Problem Formulation ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems") is realistic and commonly adopted [[34](#bib.bib34), [35](#bib.bib35), [36](#bib.bib36)]. Moreover, the results of this study can be extended to certain specific cases of unbounded disturbances, such as parameterized disturbances. Assumption [3](#Thmassumption3 "Assumption 3 ‣ II Problem Formulation ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems") imposes some restrictions on the nonlinearity as in [[34](#bib.bib34), [37](#bib.bib37), [38](#bib.bib38)], which is satisfied for a large class of practical non-affine systems, e.g., complex circuits [[39](#bib.bib39)] and single-link manipulators [[40](#bib.bib40)]. Given the system’s relative degree  ρ\rho, the initial  ρ\rho values of each iteration,  xk​(0)x_{k}(0),  xk​(1)x_{k}(1),…,  xk​(ρ−1)x_{k}(\rho-1), cannot be controlled and are determined by resetting the system before the start of iteration  kk. Therefore, we assume them to be known and bounded.
+
+###### Remark 2
+
+The following strict feedback system is commonly found in the existing literature [[41](#bib.bib41), [42](#bib.bib42), [30](#bib.bib30)]:
+
+|  |  {xk(j)​(t+1)=xk(j+1)​(t)+fj​(xk(1)​(t),⋯,xk(j)​(t)),j=1⋯ρ−1,xk(ρ)​(t+1)=𝜽​(t)⊤​fρ​(xk(1)​(t),⋯,xk(ρ)​(t),uk​(t)),\displaystyle\left\\{\begin{array}[]{l}x_{k}^{(j)}(t+1)=x_{k}^{(j+1)}(t)+f_{j}\big(x_{k}^{(1)}(t),\cdots,x_{k}^{(j)}(t)\big),\\\\ \hskip 142.26378ptj=1\cdots\rho-1,\\\\ x_{k}^{(\rho)}(t+1)=\boldsymbol{\theta}(t)^{\top}f_{\rho}(x_{k}^{(1)}(t),\cdots,x_{k}^{(\rho)}(t),u_{k}(t)),\end{array}\right. |  |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
+
+where  fj,j=1,⋯,ρf_{j},\ j=1,\cdots,\rho are known functions satisfying the global Lipschitz condition, and  𝛉⁡(t)\boldsymbol{\theta}(t) is an unknown time-varying parameter vector. Consider  xk(1)​(t)x_{k}^{(1)}(t) as a measurable state and rewrite  xk(i)​(t)x_{k}^{(i)}(t) as a function of  xk(1)​(t),xk(1)​(t+1),⋯,xk(1)​(t+i−1)x_{k}^{(1)}(t),x_{k}^{(1)}(t+1),\cdots,x_{k}^{(1)}(t+i-1),  i=1,⋯,ρi=1,\cdots,\rho. Algebraic recursions verify that system ([2](#S2.EGx4 "Remark 2 ‣ II Problem Formulation ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")) can be transformed into the form of system ([1](#S2.E1 "In II Problem Formulation ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")).
+
+*Objective*: Under Assumptions [1](#Thmassumption1 "Assumption 1 ‣ II Problem Formulation ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")-[4](#Thmassumption4 "Assumption 4 ‣ II Problem Formulation ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems"), design an AILC input sequence  {uk​(t)}k=1∞\\{u_{k}(t)\\}_{k=1}^{\infty} such that the state  {xk​(t)}k=1∞\\{x_{k}(t)\\}_{k=1}^{\infty} tracks the iteration-varying reference trajectory  {rk​(t)}k=1∞\\{r_{k}(t)\\}_{k=1}^{\infty} as accurately as possible for all  t∈{ρ,⋯,T}t\in\\{\rho,\cdots,T\\} when  kk tends to infinity. Denoting the tracking error as  ek​(t)=xk​(t)−rk​(t)e_{k}(t)=x_{k}(t)-r_{k}(t), our AILC should guarantee
+
+|  |  lim supk→∞|ek​(t)|∈ℬ⁡(0,ℛ⁡(w)),t∈{ρ,⋯,T},\displaystyle\limsup_{k\to\infty}|e_{k}(t)|\in\mathcal{B}(0,\mathcal{R}(w)),\ t\in\\{\rho,\cdots,T\\}, |  |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
+
+where  ℛ⁡(w)\mathcal{R}(w) is the radius of the convergence ball depending on the disturbance supremum, and
+
+|  |  limk→∞|ek​(t)|=0,t∈{ρ,⋯,T},\displaystyle\lim_{k\to\infty}|e_{k}(t)|=0,\ t\in\\{\rho,\cdots,T\\}, |  |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
+
+in the absence of disturbances (i.e.,  wk​(t)≡0w_{k}(t)\equiv 0).
+
+To achieve the control objective, we must design a parametric adaptation law to deal with the unknown parameter vector  𝜽⁡(t)\boldsymbol{\theta}(t) in the control scheme and a state estimator that provides estimates of the unmeasurable state variables. Since an explicit solution for the AILC input may not always exist, an efficient numerical method will be proposed to design an explicitly implementable control input.
+
+## III Tracking Feasibility and AILC Design
+
+### III-A Tracking Feasibility Analysis
+
+Let us first focus on the feasibility of the tracking control problem. We will show the existence of an ideal control input  uk∗​(t)u_{k}^{\ast}(t) such that  xk​(t+ρ)=rk​(t+ρ)x_{k}(t+\rho)=r_{k}(t+\rho) for all  t∈{0,⋯,T−ρ}t\in\\{0,\cdots,T-\rho\\} for system ([1](#S2.E1 "In II Problem Formulation ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")) with  wk​(t)≡0w_{k}(t)\equiv 0. To this end, it is sufficient to check the solvability of the following equation with respect to  uu:
+
+|  |  𝜽​(t)⊤​𝒇​(𝑿k​(t),u)−rk​(t+ρ)=0.\displaystyle\boldsymbol{\theta}(t)^{\top}\boldsymbol{f}(\boldsymbol{X}_{k}(t),u)-r_{k}(t+\rho)=0. |  | (5) |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- | --- |
+
+As per Assumption [1](#Thmassumption1 "Assumption 1 ‣ II Problem Formulation ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems"), one has  |𝜽​(t)⊤​∂∂u​𝒇​(𝑿k​(t),u)|>d0>0|\boldsymbol{\theta}(t)^{\top}\frac{\partial}{\partial u}\boldsymbol{f}(\boldsymbol{X}_{k}(t),u)|>d_{0}>0. For the sake of simplicity and without loss of generality, let us consider the case  𝜽​(t)⊤​∂∂u​𝒇​(𝑿k​(t),u)>d0\boldsymbol{\theta}(t)^{\top}\frac{\partial}{\partial u}\boldsymbol{f}(\boldsymbol{X}_{k}(t),u)>d_{0}, and define the mapping  𝒵:ℝ→ℝ\mathcal{Z}:\mathbb{R}\to\mathbb{R},  u↦𝒵⁡(u)=𝜽​(t)⊤​𝒇​(𝑿k​(t),u)−rk​(t+ρ)u\mapsto\mathcal{Z}(u)=\boldsymbol{\theta}(t)^{\top}\boldsymbol{f}(\boldsymbol{X}_{k}(t),u)-r_{k}(t+\rho).
+Let  c=𝒵⁡(0)c=\mathcal{Z}(0). If  c=0c=0, then  𝜽​(t)⊤​𝒇​(𝑿k​(t),0)=rk​(t+ρ)\boldsymbol{\theta}(t)^{\top}\boldsymbol{f}(\boldsymbol{X}_{k}(t),0)=r_{k}(t+\rho), which means  u=0u=0 already satisfies ([5](#S3.E5 "In III-A Tracking Feasibility Analysis ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")). If  c≠0c\neq 0, we define the following mapping:  𝒯:ℬ⁡(0,|c|d0)→ℝ,u↦𝒯⁡(u)=u−1l​𝒵​(u)\mathcal{T}:\ \mathcal{B}\Big(0,\frac{|c|}{d_{0}}\Big)\to\mathbb{R},~u\mapsto\mathcal{T}(u)=u-\frac{1}{l}\mathcal{Z}(u), where  l>0l>0 is a constant such that  𝒯\mathcal{T} is a contraction mapping on  ℬ⁡(0,|c|d0)\mathcal{B}\Big(0,\frac{|c|}{d_{0}}\Big). Then  𝒯\mathcal{T} has a unique fixed point, which is the solution of ([5](#S3.E5 "In III-A Tracking Feasibility Analysis ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")) as stated in the following proposition:
+
+###### Proposition 1
+
+Under Assumption [1](#Thmassumption1 "Assumption 1 ‣ II Problem Formulation ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems"), for any  t∈{0,1,⋯t\in\\{0,1,\cdots,  T−ρ}T-\rho\\} and  k∈ℤ+k\in\mathbb{Z}^{+}, there exists a unique ideal control input  u=uk∗​(t)u=u_{k}^{\ast}(t) such that ([5](#S3.E5 "In III-A Tracking Feasibility Analysis ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")) holds. In addition, there exists a known contraction mapping  𝒯\mathcal{T} such that  uk∗​(t)u_{k}^{\ast}(t) is the fixed point of  𝒯\mathcal{T}, i.e.,  𝒯⁡(uk∗​(t))=uk∗​(t)\mathcal{T}(u_{k}^{\ast}(t))=u_{k}^{\ast}(t).
+
+*Proof:* See Appendix A.
+
+### III-B GDPA Scheme
+
+Proposition [1](#Thmproposition1 "Proposition 1 ‣ III-A Tracking Feasibility Analysis ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems") shows that, if  wk​(t)≡0w_{k}(t)\equiv 0, there exists an ideal control input  uk∗​(t)u_{k}^{\ast}(t) leading to a perfect tracking  xk​(t+ρ)=rk​(t+ρ)x_{k}(t+\rho)=r_{k}(t+\rho). However,  uk∗​(t)u_{k}^{\ast}(t) depends on  𝜽⁡(t)\boldsymbol{\theta}(t), which is unknown, and  𝑿k​(t)\boldsymbol{X}_{k}(t), which contains unmeasurable components  xk​(t+1)x_{k}(t+1),  xk​(t+ρ−2)x_{k}(t+\rho-2),…,  xk​(t+ρ−1)x_{k}(t+\rho-1). Therefore, we must estimate  𝜽⁡(t)\boldsymbol{\theta}(t) and  𝑿k​(t)\boldsymbol{X}_{k}(t). In the sequel, we will denote the estimate of  𝜽⁡(t)\boldsymbol{\theta}(t) at the  kk-th iteration by  𝜽^k​(t)\hat{\boldsymbol{\theta}}_{k}(t). The adaptation law of  𝜽^k​(t)\hat{\boldsymbol{\theta}}_{k}(t) is obtained by minimizing the following cost function:
+
+|  |  J⁡(𝜽^​(t))=(xk​(t+ρ)−𝜽^​(t)⊤​𝒇​(𝑿k​(t),uk​(t)))22​mk​(t)2,w.r.t​𝜽^​(t)\displaystyle J(\hat{\boldsymbol{\theta}}(t))=\frac{(x_{k}(t+\rho)-\hat{\boldsymbol{\theta}}(t)^{\top}\boldsymbol{f}(\boldsymbol{X}_{k}(t),u_{k}(t)))^{2}}{2m_{k}(t)^{2}},\ \textbf{w.r.t}\ \hat{\boldsymbol{\theta}}(t) |  |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
+
+where  mk​(t)=1+‖𝒇⁡(𝑿k​(t),uk​(t))‖2m_{k}(t)=\sqrt{1+\\|\boldsymbol{f}(\boldsymbol{X}_{k}(t),u_{k}(t))\\|^{2}} is a normalized factor. Using the gradient descent method, one can derive the parametric adaptation law in the following form:
+
+|  |  𝜽^k+1​(t)\displaystyle\hat{\boldsymbol{\theta}}_{k+1}(t) |  =𝜽^k​(t)+η​(xk​(t+ρ)−𝜽^k​(t)⊤​𝒇​(𝑿k​(t),uk​(t)))mk​(t)2\displaystyle=\hat{\boldsymbol{\theta}}_{k}(t)+\eta\frac{(x_{k}(t+\rho)-\hat{\boldsymbol{\theta}}_{k}(t)^{\top}\boldsymbol{f}(\boldsymbol{X}_{k}(t),u_{k}(t)))}{m_{k}(t)^{2}} |  |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
+|  |                                                                                                                                                                                                          |  ×𝒇⁡(𝑿k​(t),uk​(t)),\displaystyle\quad\times\boldsymbol{f}(\boldsymbol{X}_{k}(t),u_{k}(t)), |  |
+
+where  η\eta is an adaptation gain.
+
+Due to system disturbances, robustness modifications are necessary. We introduce an iteration-varying dead-zone function  ak​(t)a_{k}(t) and a projection operator  Proj⁡(⋅)\mathrm{Proj}(\cdot) to design the final GDPA law as follows:
+
+|  |  |  ϵk​(t+ρ)=xk​(t+ρ)−𝜽^k​(t)⊤​𝒇​(𝑿k​(t),uk​(t))mk​(t)2,\displaystyle\epsilon_{k}(t+\rho)=\frac{x_{k}(t+\rho)-\hat{\boldsymbol{\theta}}_{k}(t)^{\top}\boldsymbol{f}(\boldsymbol{X}_{k}(t),u_{k}(t))}{m_{k}(t)^{2}}, |  | (6)  |
+| --- | --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- | ---- |
+|  |  |  𝜽¯k+1​(t)=𝜽^k​(t)+η​ak​(t)​ϵk​(t+ρ)​𝒇​(𝑿k​(t),uk​(t)),\displaystyle\bar{\boldsymbol{\theta}}_{k+1}(t)=\hat{\boldsymbol{\theta}}_{k}(t)+\eta a_{k}(t)\epsilon_{k}(t+\rho)\boldsymbol{f}(\boldsymbol{X}_{k}(t),u_{k}(t)), |  | (7)  |
+|  |  |  ak​(t)={0,if​|ϵk​(t+ρ)|≤w^k​(t)mk​(t)2,1−w^k​(t)|ϵk​(t+ρ)|​mk​(t)2,otherwise,\displaystyle a_{k}(t)=\left\\{\begin{array}[]{l}0,\ \text{if}\ |\epsilon_{k}(t+\rho)|\leq\frac{\hat{w}_{k}(t)}{m_{k}(t)^{2}},\\\\ 1-\frac{\hat{w}_{k}(t)}{|\epsilon_{k}(t+\rho)|m_{k}(t)^{2}},\ \text{otherwise},\end{array}\right. |  |      |
+|  |  |  w^k+1​(t)=w^k​(t)+η​ak​(t)​|ϵk​(t+ρ)|,\displaystyle\hat{w}_{k+1}(t)=\hat{w}_{k}(t)+\eta a_{k}(t)|\epsilon_{k}(t+\rho)|, |  | (10) |
+|  |  |  𝜽^k+1​(t)=Projℬ⁡(𝜽¯,R)​(𝜽¯k+1​(t))\displaystyle\hat{\boldsymbol{\theta}}_{k+1}(t)=\mathrm{Proj}_{\mathcal{B}(\underline{\boldsymbol{\theta}},R)}\left(\bar{\boldsymbol{\theta}}_{k+1}(t)\right) |  |      |
+|  |  |  ={𝜽¯k+1​(t),if​𝜽¯k+1​(t)∈ℬ⁡(𝜽¯,R),𝜽¯+R​(𝜽¯k+1​(t)−𝜽¯)‖𝜽¯k+1​(t)−𝜽¯‖,otherwise.\displaystyle\qquad\quad\\>=\left\\{\begin{array}[]{l}\bar{\boldsymbol{\theta}}_{k+1}(t),\ \text{if}\ \bar{\boldsymbol{\theta}}_{k+1}(t)\in\mathcal{B}(\underline{\boldsymbol{\theta}},R),\\\\ \underline{\boldsymbol{\theta}}+\frac{R(\bar{\boldsymbol{\theta}}_{k+1}(t)-\underline{\boldsymbol{\theta}})}{\\|\bar{\boldsymbol{\theta}}_{k+1}(t)-\underline{\boldsymbol{\theta}}\\|},\ \text{otherwise}.\end{array}\right. |  |      |
+
+The initial value  𝜽^0​(t)\hat{\boldsymbol{\theta}}_{0}(t) is chosen arbitrarily. The variable  ϵk​(t+ρ)\epsilon_{k}(t+\rho) represents the normalized modeling error with factor  mk​(t)m_{k}(t). The dead-zone signal  ak​(t)a_{k}(t) compensates for system disturbances. Given the unknown disturbance supremum  ww, we use the estimated supremum  w^k​(t)\hat{w}_{k}(t), initializing  w^0​(t)=0\hat{w}_{0}(t)=0 to ensure  w^k​(t)≥0\hat{w}_{k}(t)\geq 0. The projection operator  Projℬ⁡(𝜽¯,R)​(⋅)\mathrm{Proj}_{\mathcal{B}(\underline{\boldsymbol{\theta}},R)}(\cdot) restricts  𝜽^k​(t)\hat{\boldsymbol{\theta}}_{k}(t) within the closed ball  ℬ⁡(𝜽¯,R)\mathcal{B}(\underline{\boldsymbol{\theta}},R). The estimates  𝜽^k​(t)\hat{\boldsymbol{\theta}}_{k}(t) and  w^k​(t)\hat{w}_{k}(t) are updated iteratively using data from previous trials, ensuring that the GDPA law ([6](#S3.E6 "In III-B GDPA Scheme ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems"))-([III-B](#S3.EGx10 "III-B GDPA Scheme ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")) adheres to causality.
+
+### III-C State Estimation
+
+Applying the GDPA law, at time  tt of the  kk-th iteration, the state variables  xk​(0),⋯,xk​(t)x_{k}(0),\cdots,x_{k}(t), inputs  uk​(0),⋯,uk​(t−1)u_{k}(0),\cdots,u_{k}(t-1), and the parameter estimates  𝜽^k​(0),⋯,𝜽^k​(T−ρ)\hat{\boldsymbol{\theta}}_{k}(0),\cdots,\hat{\boldsymbol{\theta}}_{k}(T-\rho) are available. This information is then used to design the state estimator to estimate the unmeasurable state variables in  𝑿k​(t)\boldsymbol{X}_{k}(t) as follows:
+
+|  |  xke​(t+ρ−1|t)\displaystyle x^{e}_{k}(t+\rho-1|t) |  =𝜽^k​(t−1)⊤​𝒇​(xke​(t+ρ−2|t),⋯CLOSE,\displaystyle=\hat{\boldsymbol{\theta}}_{k}(t-1)^{\top}\boldsymbol{f}\big(x^{e}_{k}(t+\rho-2|t),\cdots, |  | (13) |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- | ---- |
+|  |                                                                                                                                                                                                          |  OPENxke​(t+1|t),xk​(t),xk​(t−1),uk​(t−1))\displaystyle x^{e}_{k}(t+1|t),x_{k}(t),x_{k}(t-1),u_{k}(t-1)\big) |  |      |
+|  |  xke​(t+ρ−2|t)\displaystyle x^{e}_{k}(t+\rho-2|t) |  =𝜽^k​(t−2)⊤​𝒇​(xke​(t+ρ−3|t),⋯CLOSE,\displaystyle=\hat{\boldsymbol{\theta}}_{k}(t-2)^{\top}\boldsymbol{f}\big(x^{e}_{k}(t+\rho-3|t),\cdots, |  | (14) |
+|  |                                                                                                                                                                                                          |  OPENxke​(t+1|t),xk​(t),xk​(t−1),xk​(t−2),uk​(t−2))\displaystyle x^{e}_{k}(t+1|t),x_{k}(t),x_{k}(t-1),x_{k}(t-2),u_{k}(t-2)\big) |  |      |
+|  |                                                                                                                                                                                                          |  ⋮\displaystyle~~\vdots |  |      |
+|  |  xke​(t+1|t)\displaystyle x_{k}^{e}(t+1|t) |  =𝜽^k​(t−ρ+1)⊤​𝒇​(xk​(t),⋯,xk​(t−ρ+1)CLOSE,\displaystyle=\hat{\boldsymbol{\theta}}_{k}(t-\rho+1)^{\top}\boldsymbol{f}\big(x_{k}(t),\cdots,x_{k}(t-\rho+1), |  |      |
+|  |                                                                                                                                                                                                          |  OPENuk​(t−ρ+1)),\displaystyle u_{k}(t-\rho+1)\big), |  | (15) |
+|  |  xke​(t|t)\displaystyle x_{k}^{e}(t|t) |  =xk​(t),\displaystyle=x_{k}(t), |  | (16) |
+
+For  0≤t′≤t≤ρ−10\leq t^{\prime}\leq t\leq\rho-1, we set  xke​(t|t′)=xk​(t)x_{k}^{e}(t|t^{\prime})=x_{k}(t) as  xk​(0)x_{k}(0),  …\ldots,  xk​(ρ−1)x_{k}(\rho-1) are available (recall Assumption [4](#Thmassumption4 "Assumption 4 ‣ II Problem Formulation ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")). The estimated state at time  t+ρt+\rho is obtained by the following model:
+
+|  |  xke​(t+ρ|t)\displaystyle x^{e}_{k}(t+\rho|t) |  =𝜽^k​(t)⊤​𝒇​(𝑿ke​(t),uk​(t)),\displaystyle=\hat{\boldsymbol{\theta}}_{k}(t)^{\top}\boldsymbol{f}(\boldsymbol{X}_{k}^{e}(t),u_{k}(t)), |  | (17) |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- | ---- |
+
+where  𝑿ke​(t)=[xke​(t+ρ−1|t),⋯,xke​(t+1|t),xke​(t|t)]⊤\boldsymbol{X}_{k}^{e}(t)=[x^{e}_{k}(t+\rho-1|t),\cdots,x_{k}^{e}(t+1|t),x_{k}^{e}(t|t)]^{\top}.
+
+### III-D Implicit AILC Design
+
+Now we will use model ([17](#S3.E17 "In III-C State Estimation ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")) with the available data to show the existence of an implicit AILC input  uk​(t)u_{k}(t). Letting  xke​(t+ρ|t)=rk​(t+ρ)x^{e}_{k}(t+\rho|t)=r_{k}(t+\rho) and considering the model ([17](#S3.E17 "In III-C State Estimation ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")), the implicit AILC input  uk​(t)u_{k}(t) is the solution of the following equation:
+
+|  |  𝜽^k​(t)⊤​𝒇​(𝑿ke​(t),uk​(t))=rk​(t+ρ).\displaystyle\hat{\boldsymbol{\theta}}_{k}(t)^{\top}\boldsymbol{f}(\boldsymbol{X}_{k}^{e}(t),u_{k}(t))=r_{k}(t+\rho). |  | (18) |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- | ---- |
+
+The existence of the AILC input  uk​(t)u_{k}(t), as a solution of ([18](#S3.E18 "In III-D Implicit AILC Design ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")), is stated in the following proposition:
+
+###### Proposition 2
+
+Under Assumption [1](#Thmassumption1 "Assumption 1 ‣ II Problem Formulation ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems"), there exists a unique AILC input  uk​(t)u_{k}(t) such that ([18](#S3.E18 "In III-D Implicit AILC Design ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")) holds. In addition, there exists a known contraction mapping  𝒯′:ℬ⁡(0,|c′|d0)→ℝ\mathcal{T}^{\prime}:\mathcal{B}(0,\frac{|c^{\prime}|}{d_{0}})\to\mathbb{R},  𝒯′​(u)=u−1l′​𝒵′​(u)\mathcal{T}^{\prime}(u)=u-\frac{1}{l^{\prime}}\mathcal{Z}^{\prime}(u) such that  u:=uk​(t)u:=u_{k}(t) is the fixed point of  𝒯′\mathcal{T}^{\prime}, where  𝒵′​(u)=𝛉^k​(t)⊤​𝐟​(𝐗ke​(t),u)−rk​(t+ρ)\mathcal{Z}^{\prime}(u)=\hat{\boldsymbol{\theta}}_{k}(t)^{\top}\boldsymbol{f}(\boldsymbol{X}_{k}^{e}(t),u)-r_{k}(t+\rho),  c′=𝒵′​(0)c^{\prime}=\mathcal{Z}^{\prime}(0) and  l′>supu∈ℬ⁡(0,|c′|d0)|𝛉^k​(t)⊤​∂∂u​𝐟​(𝐗ke​(t),u)|l^{\prime}>\sup_{u\in\mathcal{B}(0,\frac{|c^{\prime}|}{d_{0}})}|\hat{\boldsymbol{\theta}}_{k}(t)^{\top}\frac{\partial}{\partial u}\boldsymbol{f}(\boldsymbol{X}_{k}^{e}(t),u)|.
+
+*Proof:* The proof is similar to that of Proposition [1](#Thmproposition1 "Proposition 1 ‣ III-A Tracking Feasibility Analysis ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems") and thus omitted for brevity.
+
+Given the parameter estimation  𝜽^k​(t)\hat{\boldsymbol{\theta}}_{k}(t), the estimated state vector  𝑿ke​(t)\boldsymbol{X}_{k}^{e}(t), and the reference trajectory  rk​(t+ρ)r_{k}(t+\rho), the AILC input  uk​(t)u_{k}(t) is an implicit function given by
+
+|  |  uk​(t)=𝒢⁡(𝑿ke​(t),𝜽^k​(t),rk​(t+ρ)).\displaystyle u_{k}(t)=\mathcal{G}(\boldsymbol{X}_{k}^{e}(t),\hat{\boldsymbol{\theta}}_{k}(t),r_{k}(t+\rho)). |  | (19) |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- | ---- |
+
+The implicit AILC scheme, which includes the GDPA law ([6](#S3.E6 "In III-B GDPA Scheme ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems"))-([III-B](#S3.EGx10 "III-B GDPA Scheme ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")), state estimator ([13](#S3.E13 "In III-C State Estimation ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems"))-([16](#S3.E16 "In III-C State Estimation ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")), and control input ([19](#S3.E19 "In III-D Implicit AILC Design ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")) is illustrated in Fig. [1](#S3.F1 "Fig. 1 ‣ III-D Implicit AILC Design ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems").
+
+###### Remark 3
+
+It is worth pointing out that he GDPA law ([6](#S3.E6 "In III-B GDPA Scheme ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems"))-([III-B](#S3.EGx10 "III-B GDPA Scheme ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")) can be simplified for specific scenarios. If the function  𝐟⁡(𝐗,u)\boldsymbol{f}(\boldsymbol{X},u) is bounded, we can set  mk​(t)≡1m_{k}(t)\equiv 1. In the disturbance-free case, we can set  ak​(t)≡1a_{k}(t)\equiv 1 and omit the estimation  w^k​(t)\hat{w}_{k}(t), to improve the tracking performance (see Corollary [2](#Thmcorollary2 "Corollary 2 ‣ IV Convergence Analysis ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems") in Section [IV](#S4 "IV Convergence Analysis ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems") and Corollary [3](#Thmcorollary3 "Corollary 3 ‣ V Explicit AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems") in Section [V](#S5 "V Explicit AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")). If disturbance  wk​(t)w_{k}(t) has a known upper bound  w+w^{+} ( |wk​(t)|≤w+|w_{k}(t)|\leq w^{+}), we can use  w+w^{+} in ([III-B](#S3.EGx10 "III-B GDPA Scheme ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")) and skip the estimation law ([10](#S3.E10 "In III-B GDPA Scheme ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")), while a large difference between  w+w^{+} and  ww may affect the tracking accuracy.
+
+*Fig. 1: Block diagram of the AILC scheme.*
+
+## IV Convergence Analysis
+
+In this section, we will establish the convergence properties of the proposed AILC scheme ([19](#S3.E19 "In III-D Implicit AILC Design ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")) with the GDPA law ([6](#S3.E6 "In III-B GDPA Scheme ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems"))-([III-B](#S3.EGx10 "III-B GDPA Scheme ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")) and the state estimates ([13](#S3.E13 "In III-C State Estimation ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems"))-([16](#S3.E16 "In III-C State Estimation ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")). Our result is stated in the following theorem:
+
+###### Theorem 1
+
+Consider system ([1](#S2.E1 "In II Problem Formulation ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")) satisfying Assumptions [1](#Thmassumption1 "Assumption 1 ‣ II Problem Formulation ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")-[4](#Thmassumption4 "Assumption 4 ‣ II Problem Formulation ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems"), under the AILC input ([19](#S3.E19 "In III-D Implicit AILC Design ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")) with the GDPA law ([6](#S3.E6 "In III-B GDPA Scheme ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems"))-([III-B](#S3.EGx10 "III-B GDPA Scheme ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")) and the state estimates ([13](#S3.E13 "In III-C State Estimation ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems"))-([16](#S3.E16 "In III-C State Estimation ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")), with  0<η<20<\eta<2, for all  t∈{0,⋯,T−ρ}t\in\\{0,\cdots,T-\rho\\}, there exist constants  Ki,t≥0,i=0,⋯,t−1K^{i,t}\geq 0,\ i=0,\cdots,t-1, such that
+
+|  |  lim supk→∞|ek​(t+ρ)|≤w+2​V0​(t)+∑i=0t−1Ki,t​(w+2​V0​(i)),\limsup_{k\to\infty}|e_{k}(t+\rho)|\leq w+\sqrt{2V_{0}(t)}+\sum_{i=0}^{t-1}K^{i,t}\left(w+\sqrt{2V_{0}(i)}\right), |  |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
+
+where  V0​(t)=12​‖𝛉^0​(t)−𝛉⁡(t)‖2+12​(w^0​(t)−w)2V_{0}(t)=\frac{1}{2}\\|\hat{\boldsymbol{\theta}}_{0}(t)-\boldsymbol{\theta}(t)\\|^{2}+\frac{1}{2}(\hat{w}_{0}(t)-w)^{2}.
+
+*Proof:* See Appendix B.
+
+Theorem [1](#Thmtheorem1 "Theorem 1 ‣ IV Convergence Analysis ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems") shows that the tracking error  ek​(t+ρ)e_{k}(t+\rho) converges to a closed ball around zero. On the one hand, the radius of the closed ball is related to  Ki,tK^{i,t}, which depends on the unknown constant  d0d_{0}, Lipschitz constants  L𝑿L^{\boldsymbol{X}},  LuL^{u}, upper bound of the reference trajectory  supk,trk​(t+ρ)\sup_{k,t}r_{k}(t+\rho), initial estimation  𝜽^0​(t)\hat{\boldsymbol{\theta}}_{0}(t), and radius  RR. These values cannot be improved no matter what controller is designed. Therefore, the upper bound in Theorem [1](#Thmtheorem1 "Theorem 1 ‣ IV Convergence Analysis ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems") is tight. On the other hand, the radius depends on the disturbances from time  00 to  tt. This is due to the relative degree  ρ\rho, which results in unmeasurable state variables  xk​(t+ρ−1)x_{k}(t+\rho-1),…,  xk​(t+1)x_{k}(t+1). Therefore, we use historical information prior to time  tt to estimate the unmeasurable state variables (see ([13](#S3.E13 "In III-C State Estimation ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems"))-([16](#S3.E16 "In III-C State Estimation ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems"))). For the special case of  ρ=1\rho=1,  uk​(t)u_{k}(t) can be obtained from the model  rk​(t+1)=𝜽^k​(t)⊤​𝒇​(xk​(t),uk​(t))r_{k}(t+1)=\hat{\boldsymbol{\theta}}_{k}(t)^{\top}\boldsymbol{f}(x_{k}(t),u_{k}(t)), eliminating the need for state estimations, leading to the following corollary:
+
+###### Corollary 1
+
+For  ρ=1\rho=1, under the conditions of Theorem [1](#Thmtheorem1 "Theorem 1 ‣ IV Convergence Analysis ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems"), for each  t∈{0,⋯,T−1}t\in\\{0,\cdots,T-1\\}, one has
+
+|  |  lim supk→∞|ek​(t+1)|≤w+2​V0​(t).\displaystyle\limsup_{k\to\infty}|e_{k}(t+1)|\leq w+\sqrt{2V_{0}(t)}. |  |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
+
+*Proof:* See Appendix C.
+
+In the disturbance-free case, i.e.,  wk​(t)≡0w_{k}(t)\equiv 0, we set the dead-zone function  ak​(t)a_{k}(t) to one, which simplifies the parametric adaptation law ([7](#S3.E7 "In III-B GDPA Scheme ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")) to:
+
+|  |  𝜽¯k+1​(t)=𝜽^k​(t)+η​ϵk​(t+ρ)​𝒇​(𝑿k​(t),uk​(t)),\displaystyle\bar{\boldsymbol{\theta}}_{k+1}(t)=\hat{\boldsymbol{\theta}}_{k}(t)+\eta\epsilon_{k}(t+\rho)\boldsymbol{f}(\boldsymbol{X}_{k}(t),u_{k}(t)), |  | (20) |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- | ---- |
+
+leading to a perfect tracking as stated in the following corollary:
+
+###### Corollary 2
+
+Consider system ([1](#S2.E1 "In II Problem Formulation ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")) with  wk​(t)≡0w_{k}(t)\equiv 0, satisfying Assumptions [1](#Thmassumption1 "Assumption 1 ‣ II Problem Formulation ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems"), [3](#Thmassumption3 "Assumption 3 ‣ II Problem Formulation ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems"), [4](#Thmassumption4 "Assumption 4 ‣ II Problem Formulation ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems"), under the AILC input ([19](#S3.E19 "In III-D Implicit AILC Design ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")) with the GDPA law ([6](#S3.E6 "In III-B GDPA Scheme ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")), ([20](#S4.E20 "In IV Convergence Analysis ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")), ([III-B](#S3.EGx10 "III-B GDPA Scheme ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")), and
+the state estimates ([13](#S3.E13 "In III-C State Estimation ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems"))-([16](#S3.E16 "In III-C State Estimation ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")), with  0<η<20<\eta<2, then a perfect tracking is achieved, i.e.,
+
+|  |  limk→∞|ek​(t+ρ)|=0,\displaystyle\lim_{k\to\infty}|e_{k}(t+\rho)|=0, |  |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
+
+for all  t∈{0,⋯,T−ρ}t\in\\{0,\cdots,T-\rho\\}.
+
+*Proof:* See Appendix D.
+
+## V Explicit AILC Design
+
+In this section, we provide an explicit and implementable solution for the AILC input ([19](#S3.E19 "In III-D Implicit AILC Design ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")). To this end, we propose an iterative computation method that construct a sequence  {ukp​(t)}p=0∞\\{\mathrm{u}_{k}^{p}(t)\\}_{p=0}^{\infty}, at time  tt during the  kk-th iteration, as follows:
+
+|  |  ukp​(t)={𝒯′​(ukp−1​(t)),p>0,0,p=0,\displaystyle\mathrm{u}_{k}^{p}(t)=\left\\{\begin{array}[]{l}\mathcal{T}^{\prime}(\mathrm{u}_{k}^{p-1}(t)),\ \ p>0,\\\\ 0,\quad\qquad\qquad\ p=0,\end{array}\right. |  |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
+
+where the mapping  𝒯′\mathcal{T}^{\prime} is defined in Proposition [2](#Thmproposition2 "Proposition 2 ‣ III-D Implicit AILC Design ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems"). One can show that the sequence  {ukp​(t)}p=0∞\\{\mathrm{u}_{k}^{p}(t)\\}_{p=0}^{\infty} is convergent due to the fact that  𝒯′\mathcal{T}^{\prime} is a contraction mapping on  ℬ⁡(0,|c′|d0)\mathcal{B}(0,\frac{|c^{\prime}|}{d_{0}}).
+Letting  p→∞p\to\infty on both sides of ([V](#S5.EGx18 "V Explicit AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")), one obtains
+
+|  |  limp→∞ukp​(t)=𝒯′​(limp→∞ukp​(t)),\displaystyle\lim_{p\to\infty}\mathrm{u}_{k}^{p}(t)=\mathcal{T}^{\prime}\big(\lim_{p\to\infty}\mathrm{u}_{k}^{p}(t)\big), |  |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
+
+and by the uniqueness of fixed point, one has
+
+|  |  limp→∞ukp​(t)=uk​(t),\displaystyle\lim_{p\to\infty}\mathrm{u}_{k}^{p}(t)=u_{k}(t), |  |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
+
+where,  uk​(t)u_{k}(t) is the implicit control input given by ([19](#S3.E19 "In III-D Implicit AILC Design ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")). Note that  ukp​(t)\mathrm{u}_{k}^{p}(t) is a numerical approximation of  uk​(t)u_{k}(t) which is accurate at sufficiently large  pp. For practical implementations, one must stop the iterative process  ukp​(t)=𝒯′​(ukp−1​(t))\mathrm{u}_{k}^{p}(t)=\mathcal{T}^{\prime}(\mathrm{u}_{k}^{p-1}(t)) after a finite number of steps, leading to an approximation error between  ukp​(t)\mathrm{u}_{k}^{p}(t) and  uk​(t)u_{k}(t). A practical stopping criterion for this iterative process is provided as follows:
+
+*Iteration Stopping Criterion*: For any given  ε>0\varepsilon>0, the iterative process  ukp​(t)=𝒯′​(ukp−1​(t))\mathrm{u}^{p}_{k}(t)=\mathcal{T}^{\prime}(\mathrm{u}_{k}^{p-1}(t)) stops after  po​(k,t)p_{o}(k,t) iterations, where
+
+|  |  po​(k,t)={⌊log(1−d0l′)⁡ε​d0l′​|uk1​(t)−uk0​(t)|⌋+1,if​uk1​(t)≠uk0​(t),1,if​uk1​(t)=uk0​(t).\displaystyle p_{o}(k,t)=\hskip-2.84526pt\begin{cases}\big\lfloor\log_{(1-\frac{d_{0}}{l^{\prime}})}\frac{\varepsilon d_{0}}{l^{\prime}|\mathrm{u}_{k}^{1}(t)-\mathrm{u}_{k}^{0}(t)|}\big\rfloor+1,\ \text{if}\\>\mathrm{u}_{k}^{1}(t)\neq\mathrm{u}_{k}^{0}(t),\vskip 2.84526pt\\\\ 1,\quad\text{if}\ \mathrm{u}_{k}^{1}(t)=\mathrm{u}_{k}^{0}(t).\end{cases} |  | (23) |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- | ---- |
+
+The operator  ⌊⋅⌋\lfloor\cdot\rfloor denotes the floor function, which rounds a number down to the nearest integer.
+
+Lemma [1](#Thmlemma1 "Lemma 1 ‣ V Explicit AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems") provides the approximation error between the iterative approximation  ukp​(t)\mathrm{u}^{p}_{k}(t) and the AILC input  uk​(t)u_{k}(t) under the above iteration stopping criterion.
+
+###### Lemma 1
+
+For any given  ε>0\varepsilon>0, the iterative process ([V](#S5.EGx18 "V Explicit AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")) guarantees that  |ukpo​(k,t)​(t)−uk​(t)|<ε|\mathrm{u}^{p_{o}(k,t)}_{k}(t)-u_{k}(t)|<\varepsilon, where  po​(k,t)p_{o}(k,t) is given by the stopping criterion ([23](#S5.E23 "In V Explicit AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")).
+
+*Proof:* See Appendix E.
+
+###### Remark 4
+
+Note that  po​(k,t)p_{o}(k,t) is an upper bound of the smallest number of iterations such that  |ukp​(t)−uk​(t)|<ε|\mathrm{u}^{p}_{k}(t)-u_{k}(t)|<\varepsilon. Lower values of  ε\varepsilon result in higher values of  po​(k,t)p_{o}(k,t) since  ⌊log(1−d0l′)⁡ε​d0l′​|uk1​(t)−uk0​(t)|⌋\big\lfloor\log_{(1-\frac{d_{0}}{l^{\prime}})}\frac{\varepsilon d_{0}}{l^{\prime}|\mathrm{u}_{k}^{1}(t)-\mathrm{u}_{k}^{0}(t)|}\big\rfloor is a decreasing function of  ε\varepsilon. If we consider an addition, a multiplication, an assignment and a comparison of numbers to be one basic operation, and assume  uk1​(t)−uk0​(t)\mathrm{u}_{k}^{1}(t)-\mathrm{u}_{k}^{0}(t) is a constant, in the case of  ε=1n\varepsilon=\frac{1}{n}, the number of basic operations required by the AILC scheme with numerical approximation ([6](#S3.E6 "In III-B GDPA Scheme ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems"))-([III-B](#S3.EGx10 "III-B GDPA Scheme ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")), ([13](#S3.E13 "In III-C State Estimation ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems"))-([16](#S3.E16 "In III-C State Estimation ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")), ([19](#S3.E19 "In III-D Implicit AILC Design ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")), ([V](#S5.EGx18 "V Explicit AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")) in one iteration ( kk) is  O⁡((ln⁡n+p​ρ)​T~)O\Big((\ln n+p\rho)\tilde{T}\Big), where  T~=T−ρ+1\tilde{T}=T-\rho+1 is the tracking time length. Therefore, as the threshold  1n\frac{1}{n} decreases and the parameter dimension  pp, relative degree  ρ\rho, tracking time length  T~\tilde{T} increase, the required computational effort increases.
+
+Under the AILC input ([19](#S3.E19 "In III-D Implicit AILC Design ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")) with the GDPA law ([6](#S3.E6 "In III-B GDPA Scheme ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems"))-([III-B](#S3.EGx10 "III-B GDPA Scheme ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")), state estimates ([13](#S3.E13 "In III-C State Estimation ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems"))-([16](#S3.E16 "In III-C State Estimation ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")), and iterative approximation ([V](#S5.EGx18 "V Explicit AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")), one can state the following theorem:
+
+###### Theorem 2
+
+Consider system ([1](#S2.E1 "In II Problem Formulation ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")) satisfying Assumptions [1](#Thmassumption1 "Assumption 1 ‣ II Problem Formulation ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")-[4](#Thmassumption4 "Assumption 4 ‣ II Problem Formulation ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems"), under the AILC input ([19](#S3.E19 "In III-D Implicit AILC Design ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")) with the GDPA law ([6](#S3.E6 "In III-B GDPA Scheme ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems"))-([III-B](#S3.EGx10 "III-B GDPA Scheme ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")), state estimates ([13](#S3.E13 "In III-C State Estimation ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems"))-([16](#S3.E16 "In III-C State Estimation ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")), and iterative approximation ([V](#S5.EGx18 "V Explicit AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")). For any given  ε>0\varepsilon>0, if  p>po​(k,t)p>p_{o}(k,t) and  0<η<20<\eta<2, then there exist constants  K∗i,t,t=0,⋯,T−ρ,i=0,⋯,t−1K_{\ast}^{i,t},\ t=0,\cdots,T-\rho,\ i=0,\cdots,t-1, such that
+
+|  |  |  lim supk→∞|ek​(t+ρ)|≤w+2​V0​(t)\displaystyle\limsup_{k\to\infty}|e_{k}(t+\rho)|\leq w+\sqrt{2V_{0}(t)} |  |
+| --- | --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
+|  |  |  +∑i=0t−1K∗i,t(w+2​V0​(i))+Lu(2​V0​(t)+∥𝜽(t)∥)ε.\displaystyle+\sum_{i=0}^{t-1}K_{\ast}^{i,t}(w+\sqrt{2V_{0}(i)})+L^{u}\left(\sqrt{2V_{0}(t)}+\\|\boldsymbol{\theta}(t)\\|\right)\varepsilon. |  |
+
+*Proof:* See Appendix F.
+
+As stated in Theorem [2](#Thmtheorem2 "Theorem 2 ‣ V Explicit AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems"), the tracking error bound depends on two sources of uncertainty. The first source is the system disturbances before time  tt, represented by  ∑i=0t−1K∗i,t​(w+2​V0​(i))\sum_{i=0}^{t-1}K_{\ast}^{i,t}(w+\sqrt{2V_{0}(i)}). The second source is the approximation error of the AILC input, given by  Lu​(2​V0​(t)+‖𝜽⁡(t)‖)​εL^{u}\left(\sqrt{2V_{0}(t)}+\\|\boldsymbol{\theta}(t)\\|\right)\varepsilon. To improve tracking accuracy, one has to reduce  ε\varepsilon by increasing the number of iterations in the iterative process ([V](#S5.EGx18 "V Explicit AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")). Similar to Corollary [2](#Thmcorollary2 "Corollary 2 ‣ IV Convergence Analysis ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems"), in the disturbance-free case, the tracking performance can be improved by using the AILC scheme ([19](#S3.E19 "In III-D Implicit AILC Design ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")) with the modified GDPA law ([6](#S3.E6 "In III-B GDPA Scheme ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")), ([20](#S4.E20 "In IV Convergence Analysis ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")), ([III-B](#S3.EGx10 "III-B GDPA Scheme ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")), state estimates ([13](#S3.E13 "In III-C State Estimation ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems"))-([16](#S3.E16 "In III-C State Estimation ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")), and iterative approximation ([V](#S5.EGx18 "V Explicit AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")).
+
+###### Corollary 3
+
+Consider system ([1](#S2.E1 "In II Problem Formulation ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")) with  wk​(t)≡0w_{k}(t)\equiv 0, satisfying Assumptions [1](#Thmassumption1 "Assumption 1 ‣ II Problem Formulation ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems"), [3](#Thmassumption3 "Assumption 3 ‣ II Problem Formulation ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems"), [4](#Thmassumption4 "Assumption 4 ‣ II Problem Formulation ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems"), under the AILC input ([19](#S3.E19 "In III-D Implicit AILC Design ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")) with the GDPA law ([6](#S3.E6 "In III-B GDPA Scheme ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")), ([20](#S4.E20 "In IV Convergence Analysis ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")), ([III-B](#S3.EGx10 "III-B GDPA Scheme ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")), state estimates ([13](#S3.E13 "In III-C State Estimation ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems"))-([16](#S3.E16 "In III-C State Estimation ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")), and iterative approximation ([V](#S5.EGx18 "V Explicit AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")), with  p>po​(k,t)p>p_{o}(k,t) and  0<η<20<\eta<2, then
+
+|  |  |  lim supk→∞|ek​(t+ρ)|≤Lu​(2​V0​(t)+‖𝜽⁡(t)‖)​ε,\displaystyle\limsup_{k\to\infty}|e_{k}(t+\rho)|\leq L^{u}\left(\sqrt{2V_{0}(t)}+\\|\boldsymbol{\theta}(t)\\|\right)\varepsilon, |  |
+| --- | --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
+
+for all  t∈{0,1,⋯,T−ρ}t\in\\{0,1,\cdots,T-\rho\\}.
+
+*Proof* : See Appendix G.
+
+###### Remark 5
+
+Three control input symbols are used so far:  uk∗​(t)u_{k}^{\ast}(t),  uk​(t)u_{k}(t), and  ukp​(t)\mathrm{u}_{k}^{p}(t). The variable  uk∗​(t)u_{k}^{\ast}(t) represents the ideal control input introduced to establish the result in Proposition [1](#Thmproposition1 "Proposition 1 ‣ III-A Tracking Feasibility Analysis ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems"), showing the feasibility of the tracking problem. This input is not implementable due to the unknown parameters and unmeasurable state variables. The variable  uk​(t)u_{k}(t) represents the implicit control AILC given in ([19](#S3.E19 "In III-D Implicit AILC Design ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")) as a solution to ([18](#S3.E18 "In III-D Implicit AILC Design ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")) and used in Proposition [2](#Thmproposition2 "Proposition 2 ‣ III-D Implicit AILC Design ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems"). This input depends on the measured and estimated signals, but it is not always implementable since it is given in an implicit manner. The control input  ukp​(t)\mathrm{u}_{k}^{p}(t) is an explicit iterative approximation of  uk​(t)u_{k}(t) that can be used for implementation in the case where an explicit solution to ([18](#S3.E18 "In III-D Implicit AILC Design ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")) cannot be obtained.
+
+###### Remark 6
+
+According to [[15](#bib.bib15)], even for non-affine systems with relative degree of one, a P-type ILC requires careful selection of the learning gain and minimal system disturbances (Assumption A4 in [[15](#bib.bib15)]). In contrast, our proposed AILC scheme deals with non-affine systems with high relative degrees, and the convergence condition is easier to satisfy. For DDILC, the core of its convergence analysis is the contraction mapping principle. This convergence process is related to the task being performed: Any change in the reference trajectory necessitates restarting the contraction process. Therefore, existing DDILC studies typically assume iteration-invariant reference trajectories [[16](#bib.bib16), [17](#bib.bib17), [18](#bib.bib18)]. The convergence analysis of the proposed AILC approach is based on the Lyapunov-like function techniques and key technical lemma (see Appendix), which is independent of the task being performed. Thus, it can effectively track iteration-varying reference trajectories.
+
+## VI Numerical Simulations
+
+In this section, we present two simulation examples to illustrate the effectiveness of the proposed AILC scheme. First, we compare our proposed AILC with the DDILC approach on a non-affine nonlinear system with relative degree of one. Next, we apply the proposed AILC scheme to a double inverted pendulum system with relative degree of two. In these simulations, the AILC input  uk​(t)u_{k}(t) is solved directly from ([18](#S3.E18 "In III-D Implicit AILC Design ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")) using “solve” function in MATLAB.
+
+### VI-A Example 1
+
+The system model is modified from [[21](#bib.bib21)] (Chapter 2, pp. 25) and given as follows:
+
+|  |  xk​(t+1)\displaystyle x_{k}(t+1) |  =(0.5+t50)​xk​(t)​sin⁡(xk​(t))1+xk​(t)2+(0.75+t75)​exk​(t)100\displaystyle=\left(0.5+\frac{t}{50}\right)\frac{x_{k}(t)\sin(x_{k}(t))}{1+x_{k}(t)^{2}}+\left(0.75+\frac{t}{75}\right)\mathrm{e}^{\frac{x_{k}(t)}{100}} |  |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
+|  |                                                                                                                                                                                                          |  +(1.5+0.5×(−1)t)​uk​(t)3\displaystyle\hskip 9.24994pt+\left(1.5+0.5\times(-1)^{t}\right)u_{k}(t)^{3} |  |
+|  |                                                                                                                                                                                                          |  +sin⁡(π4+π100​t)​(arctan⁡(uk​(t))+uk​(t)),\displaystyle\hskip 9.24994pt+\sin\left(\frac{\pi}{4}+\frac{\pi}{100}t\right)(\arctan(u_{k}(t))+u_{k}(t)), |  |
+|  |                                                                                                                                                                                                          |  =𝜽​(t)⊤​𝒇​(xk​(t),uk​(t)),t∈[1,50],\displaystyle=\boldsymbol{\theta}(t)^{\top}\boldsymbol{f}(x_{k}(t),u_{k}(t)),\hskip 18.49988ptt\in[1,50], |  |
+
+where
+
+|  |  |  𝜽⁡(t)\displaystyle\boldsymbol{\theta}(t) |  |
+| --- | --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
+|  |  |  =[0.5+t50,0.75+t75,1.5+0.5×(−1)t,sin⁡(π4+π100​t)]⊤\displaystyle=\left[0.5+\frac{t}{50},0.75+\frac{t}{75},1.5+0.5\times(-1)^{t},\sin\left(\frac{\pi}{4}+\frac{\pi}{100}t\right)\right]^{\top} |  |
+
+and
+
+|  |  |  𝒇⁡(xk​(t),uk​(t))\displaystyle\boldsymbol{f}(x_{k}(t),u_{k}(t)) |  |
+| --- | --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
+|  |  |  =[xk​(t)​sin⁡(xk​(t))1+xk​(t)2,exk​(t)100,uk​(t)3,arctan⁡(uk​(t))+uk​(t)]⊤\displaystyle=\left[\frac{x_{k}(t)\sin(x_{k}(t))}{1+x_{k}(t)^{2}},\mathrm{e}^{\frac{x_{k}(t)}{100}},u_{k}(t)^{3},\arctan(u_{k}(t))+u_{k}(t)\right]^{\top} |  |
+
+are unknown parameter vector and known function vector, respectively. Note that there are various strong nonlinearities in  𝒇⁡(xk​(t),uk​(t))\boldsymbol{f}(x_{k}(t),u_{k}(t)), such as polynomial functions and exponential functions, which do not satisfy the global Lipschitz condition. However, as the simulation results will show, our control scheme still achieves high-precision trajectory tracking.
+
+![Refer to caption](2602.00968v1/ex1compareerror.png)
+
+*Fig. 2:  Maximum and average tracking errors under AILC and DDILC in Example 1.*
+
+![Refer to caption](2602.00968v1/learnability199.png)
+
+*(a) Tracking profiles for the cosine curve in odd iterations.*
+![Refer to caption](2602.00968v1/learnability200.png)
+
+*(b) Tracking profiles for the sine curve in even iterations.*
+
+*Fig. 3: Tracking profiles for the iteration-varying reference trajectory under AILC and DDILC in Example 1.*
+
+First, we compare the proposed AILC with DDILC in the disturbance-free case. The reference trajectory is set as
+
+|  |  rk​(t)={0.8​sin⁡(2​π25​t),k≤10,orkmod2=0,1.2​cos⁡(2​π25​t),k>10,andkmod2=1.\displaystyle r_{k}(t)=\left\\{\begin{array}[]{ll}0.8\sin\left(\frac{2\pi}{25}t\right),&k\leq 10,\ \text{or}\ k\hskip-5.69054pt\mod 2=0,\\\\ 1.2\cos\left(\frac{2\pi}{25}t\right),&k>10,\ \text{and}\ k\hskip-5.69054pt\mod 2=1.\end{array}\right. |  |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
+
+It is evident that  rk​(t)r_{k}(t) is iteration-invariant in the first  1010 iterations, which aims to demonstrate the effectiveness of DDILC and the proposed AILC for invariant reference trajectory. From the  1111th iteration,  rk​(t)r_{k}(t) switches between a cosine curve for odd  kk and a sine curve for even  kk in each iteration. The initial state is set as  xk​(1)=0x_{k}(1)=0. Let  Δ​xk​(t)=xk​(t)−xk−1​(t)\Delta x_{k}(t)=x_{k}(t)-x_{k-1}(t) and  Δ​uk​(t)=uk​(t)−uk−1​(t)\Delta u_{k}(t)=u_{k}(t)-u_{k-1}(t) denote the difference of state or input between adjacent iterations, respectively. The DDILC approach is presented as follows (scheme (2.16)-(2.18) in [[21](#bib.bib21)])
+
+|  |  uk+1​(t)=uk​(t)+ρ′​θ^k+1′​(t)​(rk​(t+1)−xk​(t+1))λ′+|θ^k+1′​(t)|2,\displaystyle u_{k+1}(t)=u_{k}(t)+\frac{\rho^{\prime}\hat{\theta}^{\prime}_{k+1}(t)(r_{k}(t+1)-x_{k}(t+1))}{\lambda^{\prime}+|\hat{\theta}^{\prime}_{k+1}(t)|^{2}}, |  |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
+
+where  θ^k+1′​(t)=θ^0′​(t)\hat{\theta}^{\prime}_{k+1}(t)=\hat{\theta}^{\prime}_{0}(t) if  sgn​(θ^k+1′​(t))≠sgn​(θ^0′​(t))\mbox{sgn}(\hat{\theta}^{\prime}_{k+1}(t))\neq\mbox{sgn}(\hat{\theta}^{\prime}_{0}(t)) or  |θ^k+1′​(t)|≤10−4|\hat{\theta}^{\prime}_{k+1}(t)|\leq 10^{-4} or  |uk​(t)−uk−1​(t)|≤10−4|u_{k}(t)-u_{k-1}(t)|\leq 10^{-4}, otherwise
+
+|  |  θ^k+1′​(t)=θ^k′​(t)+η′​Δ​uk​(t)​(Δ​xk​(t+1)−θ^k′​(t)​Δ​uk​(t))μ′+|Δ​uk​(t)|2.\displaystyle\hat{\theta}^{\prime}_{k+1}(t)=\hat{\theta}^{\prime}_{k}(t)+\frac{\eta^{\prime}\Delta u_{k}(t)(\Delta x_{k}(t+1)-\hat{\theta}^{\prime}_{k}(t)\Delta u_{k}(t))}{\mu^{\prime}+|\Delta u_{k}(t)|^{2}}. |  |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
+
+*TABLE I: Disturbances in Example 1.*
+
+|   | Disturbance case                      | Mathematical Expression                                                                                                                                                                                  |
+| --- | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1 | Uniform distribution                  |  𝒰⁡[−0.01,0.01]\mathcal{U}[-0.01,0.01] |
+| 2 | Gaussian distribution                 |  𝒩⁡(0,0.01)\mathcal{N}(0,0.01) |
+| 3 | Bernoulli-like distribution           |  {P⁡(wk​(t)=0.03)=0.3P⁡(wk​(t)=−0.01)=0.7\left\\{\begin{array}[]{l}P(w_{k}(t)=0.03)=0.3\\\\ P(w_{k}(t)=-0.01)=0.7\end{array}\right. |
+| 4 | Trigonometric disturbance             |  wk​(t)=0.01​sin⁡(k​π​t50)w_{k}(t)=0.01\sin(\frac{k\pi t}{50})  +0.006​cos⁡(k​π​t2)+0.006\cos(\frac{k\pi t}{2}) |
+| 5 | High order internal model disturbance |  wk​(t)={53​wk−1​(t)−23​wk−2​(t),k>2−0.02,k=20.02,k=1w_{k}(t)\hskip-2.84526pt=\hskip-2.84526pt\left\\{\begin{array}[]{l}\frac{5}{3}w_{k-1}(t)\hskip-2.84526pt-\hskip-2.84526pt\frac{2}{3}w_{k-2}(t),k>2\\\\ -0.02,k=2\\\\ 0.02,k=1\end{array}\right. |
+| 6 | State-dependent disturbance           |  wk​(t)=0.01​xk​(t)w_{k}(t)=0.01x_{k}(t)  −0.01​sin⁡(xk​(t)​π)-0.01\sin(x_{k}(t)\pi) |
+
+![Refer to caption](2602.00968v1/ex1erroruniformdis.png)
+
+*(a) Uniform distribution.*
+![Refer to caption](2602.00968v1/ex1errorGusdis.png)
+
+*(b) Gaussian distribution.*
+![Refer to caption](2602.00968v1/ex1errorBernoullidis.png)
+
+*(c) Bernoulli-like distribution.*
+![Refer to caption](2602.00968v1/ex1errorsindis.png)
+
+*(d) Trigonometric disturbance.*
+![Refer to caption](2602.00968v1/ex1errorHOIMdis.png)
+
+*(e) High order internal model disturbance.*
+![Refer to caption](2602.00968v1/ex1errorstatedis.png)
+
+*(f) State-dependent disturbance.*
+
+*Fig. 4: Tracking error under different disturbances in Example 1.*
+
+The parameters in DDILC approach are selected as  η′=0.5\eta^{\prime}=0.5,  ρ′=0.4\rho^{\prime}=0.4,  λ′=1\lambda^{\prime}=1,  μ′=0.5\mu^{\prime}=0.5. The initial values of PPD estimation and input are selected as  θ^0′​(t)=1\hat{\theta}^{\prime}_{0}(t)=1,  u0​(t)=0u_{0}(t)=0. For the modified AILC approach ([6](#S3.E6 "In III-B GDPA Scheme ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")), ([20](#S4.E20 "In IV Convergence Analysis ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")), ([III-B](#S3.EGx10 "III-B GDPA Scheme ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")), ([13](#S3.E13 "In III-C State Estimation ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems"))-([16](#S3.E16 "In III-C State Estimation ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")), and ([19](#S3.E19 "In III-D Implicit AILC Design ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")),
+the center and radius of the closed ball used for the projection  ℬ⁡(𝜽¯,R)\mathcal{B}(\underline{\boldsymbol{\theta}},R) are selected as  𝜽¯=(1,1,1,1)\underline{\boldsymbol{\theta}}=(1,1,1,1) and  R=0.9R=0.9. The estimation gain is set as  η=1.9\eta=1.9, and the initial value of the
+parametric estimation is chosen as  𝜽^0​(t)=(1,1,1,1)\hat{\boldsymbol{\theta}}_{0}(t)=(1,1,1,1). In Fig. [2](#S6.F2 "Fig. 2 ‣ VI-A Example 1 ‣ VI Numerical Simulations ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems"), we plot the maximum and average tracking errors on a logarithmic scale along the iteration axis for the DDILC and AILC. It is seen that, during the first  1010 iterations, both DDILC and AILC can reduce the tracking error for the iteration-invariant reference trajectory; however, starting from the  1111th iteration, the contraction mapping process that DDILC relies on must restart at each iteration due to the change of the reference trajectory. Our proposed AILC approach shows significant advantages in tracking the non-repetitive reference trajectory. Fig. [3](#S6.F3 "Fig. 3 ‣ VI-A Example 1 ‣ VI Numerical Simulations ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems") compares the reference and actual trajectories under the DDILC and AILC (note that the relative degree in this example is 1, thus the tracking profiles start from time  t=2t=2), demonstrating that the proposed AILC approach involves outstanding learning ability and effectively achieves the trajectory tracking goal.
+
+Then, we verify the robustness of the proposed AILC approach ([6](#S3.E6 "In III-B GDPA Scheme ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems"))-([III-B](#S3.EGx10 "III-B GDPA Scheme ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")), ([13](#S3.E13 "In III-C State Estimation ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems"))-([16](#S3.E16 "In III-C State Estimation ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")), and ([19](#S3.E19 "In III-D Implicit AILC Design ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")) to unknown disturbances. The reference trajectory is set as
+
+|  |  rk​(t)={0.8​sin⁡(2​π25​t),if​kmod2=1,0.5+0.5×(−1)⌊t20⌋,if​kmod2=0.\displaystyle r_{k}(t)=\left\\{\begin{array}[]{ll}0.8\sin\left(\frac{2\pi}{25}t\right),&\text{if}~k\hskip-5.69054pt\mod 2=1,\\\\ 0.5+0.5\times(-1)^{\lfloor\frac{t}{20}\rfloor},&\text{if}~k\hskip-5.69054pt\mod 2=0.\end{array}\right. |  |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
+
+It is evident that  rk​(t)r_{k}(t) switches between a sine wave for odd  kk and a square wave curve for even  kk in each iteration. The initial state value  xk​(0)x_{k}(0) is selected randomly within  [0,0.01][0,0.01]. We consider six different types of disturbances as shown in Table [I](#S6.T1 "TABLE I ‣ VI-A Example 1 ‣ VI Numerical Simulations ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems") to characterize various scenarios. The cases 1, 2, and 3 are stochastic disturbances, and cases 4, 5, and 6 are deterministic disturbances. Under the same control parameters, the error convergence profiles corresponding to six different disturbance situations are shown in Fig. [4](#S6.F4 "Fig. 4 ‣ VI-A Example 1 ‣ VI Numerical Simulations ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems"). It is seen that the tracking error converges to the neighborhood of zero. Note that since the characteristic polynomial of the high-order internal mode is stable, the disturbance generated by it converges along the iteration axis, which alleviates the oscillation effect in Fig. [4](#S6.F4 "Fig. 4 ‣ VI-A Example 1 ‣ VI Numerical Simulations ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems") (e). The state-dependent disturbance and stochastic disturbance obeying a Gaussian distribution do not satisfy the boundedness condition (Assumption [2](#Thmassumption2 "Assumption 2 ‣ II Problem Formulation ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")), but as shown in Fig. [4](#S6.F4 "Fig. 4 ‣ VI-A Example 1 ‣ VI Numerical Simulations ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems") (b) and (f), the AILC scheme is still robust.
+
+### VI-B Example 2
+
+We apply the proposed AILC scheme to a double inverted pendulum system described by the following dynamics [[23](#bib.bib23), [43](#bib.bib43)]:
+
+|  |  {x˙1,1=x1,2,x˙1,2=(m1​g​rJ1−k​r24​J1)​sin⁡(x1,1)+k​r​(l−b)2​J1+k​r24​J1​sin⁡(x2,2)+u1maxJ1​tanh⁡(u1),x˙2,1=x2,2,x˙2,2=(m2​g​rJ2−k​r24​J2)​sin⁡(x2,1)+k​r​(l−b)2​J2+k​r24​J2​sin⁡(x1,2)+u2maxJ2​tanh⁡(u2),\displaystyle\left\\{\begin{array}[]{l}\dot{x}_{1,1}=x_{1,2},\\\\ \dot{x}_{1,2}=(\frac{m_{1}gr}{J_{1}}-\frac{kr^{2}}{4J_{1}})\sin(x_{1,1})+\frac{kr(l-b)}{2J_{1}}\\\\ \qquad\quad+\frac{kr^{2}}{4J_{1}}\sin(x_{2,2})+\frac{u_{1_{\max}}}{J_{1}}\tanh(u_{1}),\\\\ \dot{x}_{2,1}=x_{2,2},\\\\ \dot{x}_{2,2}=(\frac{m_{2}gr}{J_{2}}-\frac{kr^{2}}{4J_{2}})\sin(x_{2,1})+\frac{kr(l-b)}{2J_{2}}\\\\ \qquad\quad+\frac{kr^{2}}{4J_{2}}\sin(x_{1,2})+\frac{u_{2_{\max}}}{J_{2}}\tanh(u_{2}),\end{array}\right. |  |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
+
+where  x1,1x_{1,1} and  x2,1x_{2,1} are the angular displacements of the pendulums from vertical. The physical interpretations of  ll,  bb,  gg,  kk,  rr,  JiJ_{i},  mim_{i}, and  uimaxu_{i_{\max}} ( i=1,2i=1,2) are given in [[23](#bib.bib23)].
+Let  θi​1=mi​g​rJi−k​r24​Ji\theta^{i1}=\frac{m_{i}gr}{J_{i}}-\frac{kr^{2}}{4J_{i}},  θi​2=k​r2​Ji​(l−b)\theta^{i2}=\frac{kr}{2J_{i}}(l-b),  θi​3=k​r24​Ji\theta^{i3}=\frac{kr^{2}}{4J_{i}},  θi​4=uimaxJi\theta^{i4}=\frac{u_{i_{\max}}}{J_{i}},  i=1,2i=1,2.
+The true values of the unknown parameters  θi​1\theta^{i1},  θi​2\theta^{i2},  θi​3\theta^{i3}, and  θi​4\theta^{i4} are calculated based on data in [[23](#bib.bib23)] and given as  𝜽(1)=[θ11,θ12,θ13,θ14]=[7.12,30,12.5,40]\boldsymbol{\theta}^{(1)}=[\theta^{11},\theta^{12},\theta^{13},\theta^{14}]=[7.12,30,12.5,40] and  𝜽(2)=[θ21,θ22,θ23,θ24]=[9.62,24,10,32]\boldsymbol{\theta}^{(2)}=[\theta^{21},\theta^{22},\theta^{23},\theta^{24}]=[9.62,24,10,32].
+
+Using the Euler discretization method and adding the iteration index,([VI-B](#S6.EGx31 "VI-B Example 2 ‣ VI Numerical Simulations ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")) can be rewritten as a discrete-time non-affine nonlinear system with two inputs and two outputs as follows:
+
+|  |  {xk(1)​(t+2)=2​xk(1)​(t+1)−xk(1)​(t)+θ11​sin⁡(xk(1)​(t))+θ12+θ13​sin⁡(xk(2)​(t+1)−xk(2)​(t))+θ14​tanh⁡(uk(1)​(t)),xk(2)​(t+2)=2​xk(2)​(t+1)−xk(2)​(t)+θ21​sin⁡(xk(2)​(t))+θ22+θ23​sin⁡(xk(1)​(t+1)−xk(1)​(t))+θ24​tanh⁡(uk(2)​(t)),\displaystyle\left\\{\begin{array}[]{l}x_{k}^{(1)}(t+2)=2x_{k}^{(1)}(t+1)-x_{k}^{(1)}(t)+\theta^{11}\sin(x_{k}^{(1)}(t))\\\\ \hskip 62.59605pt+\theta^{12}+\theta^{13}\sin(x_{k}^{(2)}(t+1)-x_{k}^{(2)}(t))\\\\ \hskip 62.59605pt+\theta^{14}\tanh(u_{k}^{(1)}(t)),\\\\ x_{k}^{(2)}(t+2)=2x_{k}^{(2)}(t+1)-x_{k}^{(2)}(t)+\theta^{21}\sin(x_{k}^{(2)}(t))\\\\ \hskip 62.59605pt+\theta^{22}+\theta^{23}\sin(x_{k}^{(1)}(t+1)-x_{k}^{(1)}(t))\\\\ \hskip 62.59605pt+\theta^{24}\tanh(u_{k}^{(2)}(t)),\end{array}\right. |  |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
+
+where  xk(1)​(t)x_{k}^{(1)}(t) and  xk(2)​(t)x_{k}^{(2)}(t) denote the angular displacements of the pendulums with respect to the vertical position, and  t∈[1,50]t\in[1,50]. Its relative degree is two. The Jacobian matrix of the MIMO system ([VI-B](#S6.EGx32 "VI-B Example 2 ‣ VI Numerical Simulations ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")) with respect to the input is diagonal (and therefore strictly diagonally dominant). It is straightforward to generalize the proposed AILC approach to system ([VI-B](#S6.EGx32 "VI-B Example 2 ‣ VI Numerical Simulations ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")). We use data in the  (k−1)(k-1)th iteration to generate parameter estimates  𝜽^k(i)​(t)\hat{\boldsymbol{\theta}}_{k}^{(i)}(t), then, at time instant  tt of the  kkth iteration, we use signals  𝜽^k(i)​(t)\hat{\boldsymbol{\theta}}_{k}^{(i)}(t),  xk(i)​(t)x_{k}^{(i)}(t),  xk(i)​(t−1)x_{k}^{(i)}(t-1) to estimate the unavailable state  xk(i)​(t+1)x_{k}^{(i)}(t+1). The input  uk​(t)u_{k}(t) is obtained by solving the implicit function determined by  xk(i)​(t)x_{k}^{(i)}(t),  xk(i),e​(t+1|t)x_{k}^{(i),e}(t+1|t),  𝜽^k(i)​(t)\hat{\boldsymbol{\theta}}_{k}^{(i)}(t), and  rk(i)​(t+2)r_{k}^{(i)}(t+2).
+
+The reference trajectory is  rk(1)​(t)=rk(2)​(t)=0.1​sin⁡(2​π​t25)r_{k}^{(1)}(t)=r_{k}^{(2)}(t)=0.1\sin\left(\frac{2\pi t}{25}\right),  t∈[1,50]t\in[1,50].
+The center and radius of the closed balls
+for the projection are set as  𝜽¯(1)=(7.13,29.98,12.52,39.97)\underline{\boldsymbol{\theta}}^{(1)}=(7.13,29.98,12.52,39.97),  R(1)​(t)=0.11R^{(1)}(t)=0.11, and  𝜽¯(2)=(9.63,24.02,9.98,32.02)\underline{\boldsymbol{\theta}}^{(2)}=(9.63,24.02,9.98,32.02),  R(2)​(t)=0.11R^{(2)}(t)=0.11.
+The initial state values  xk(i)​(1)x_{k}^{(i)}(1),  xk(i)​(2)x_{k}^{(i)}(2),  i=1,2,i=1,2, are selected randomly within  [0,0.1][0,0.1]. The initial estimations are set as  𝜽^0(i)​(t)=0\hat{\boldsymbol{\theta}}_{0}^{(i)}(t)=0,  i=1,2i=1,2.
+
+![Refer to caption](2602.00968v1/Highnodiserror.png)
+
+*Fig. 5: Maximum and average tracking errors of each iteration in Example 2 without disturbance.*
+
+![Refer to caption](2602.00968v1/nHighnodistrack1.png)
+
+*(a) Tracking profiles of  xk(1)​(t)x_{k}^{(1)}(t).*
+![Refer to caption](2602.00968v1/nHighnodistrack2.png)
+
+*(b) Tracking profiles of  xk(2)​(t)x_{k}^{(2)}(t).*
+
+*Fig. 6: Tracking profiles in the 20th, 40th, 100th, and 200th iterations in Example 2 without disturbance.*
+
+We first verify the control performance of the modified AILC scheme ([6](#S3.E6 "In III-B GDPA Scheme ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")), ([20](#S4.E20 "In IV Convergence Analysis ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")), ([III-B](#S3.EGx10 "III-B GDPA Scheme ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")), ([13](#S3.E13 "In III-C State Estimation ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems"))-([16](#S3.E16 "In III-C State Estimation ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")), and ([19](#S3.E19 "In III-D Implicit AILC Design ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")) in the absence of system disturbances. The control gains are set to  η(1)=η(2)=0.1\eta^{(1)}=\eta^{(2)}=0.1. Fig. [5](#S6.F5 "Fig. 5 ‣ VI-B Example 2 ‣ VI Numerical Simulations ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems") shows the maximum and average tracking errors as functions of the number of iterations, indicating rapid error reduction. Fig. [6](#S6.F6 "Fig. 6 ‣ VI-B Example 2 ‣ VI Numerical Simulations ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems") plots the reference and actual trajectories at the 20th, 40th, 100th, and 200th iterations, demonstrating that the actual trajectories converge closely to the reference by the 200th iteration (note that the relative degree in this example is 2, thus the tracking profiles start from time  t=3t=3). This verifies the learning ability of the proposed AILC scheme.
+
+Next, we use the AILC scheme ([6](#S3.E6 "In III-B GDPA Scheme ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems"))-([III-B](#S3.EGx10 "III-B GDPA Scheme ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")), ([13](#S3.E13 "In III-C State Estimation ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems"))-([16](#S3.E16 "In III-C State Estimation ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")), and ([19](#S3.E19 "In III-D Implicit AILC Design ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")) to verify control performance in the presence of system disturbances. The system disturbances are modeled as  wk1​(t)=1×10−4​cos⁡(k​t​π)+1×10−4​sin⁡(k​t​π2)w_{k}^{1}(t)=1\times 10^{-4}\cos(kt\pi)+1\times 10^{-4}\sin\left(\frac{kt\pi}{2}\right) and  wk2​(t)=1×10−4​cos⁡(2​k​t​π)+1×10−4​sin⁡(k​t​π)w_{k}^{2}(t)=1\times 10^{-4}\cos(2kt\pi)+1\times 10^{-4}\sin(kt\pi).
+The selection of the control parameters remains unchanged.
+Fig. [7](#S6.F7 "Fig. 7 ‣ VI-B Example 2 ‣ VI Numerical Simulations ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems") shows the convergence of the maximum and average tracking errors over iterations, and Fig. [8](#S7.F8 "Fig. 8 ‣ VII Conclusions ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems") illustrates the reference and actual trajectories at the 100th iteration, revealing that while tracking is generally successful, accuracy is somewhat compromised by the system disturbances.
+
+![Refer to caption](2602.00968v1/Highdiserror.png)
+
+*Fig. 7:  Maximum and average tracking errors of each iteration in Example 2 in the presence of disturbances.*
+
+## VII Conclusions
+
+This paper deals with the trajectory tracking problem for a class of non-affine nonlinear systems. A rigorously designed AILC scheme, which integrates a GDPA law and a state estimator is proposed, departing significantly from the existing ILC methodologies that rely on dynamic linearization techniques or neural networks. It comprehensively addresses various practical considerations, including high relative degrees, system uncertainties and disturbances, iteration-varying reference trajectories. We also proposed a numerical approach that approximates the control input, up to a desired accuracy, in the case where an explicit AILC input for the non-affine system cannot be obtained. A rigorous analysis of the tracking performance, substantiated by numerical simulations, is also provided.
+
+Our future work will focus on relaxing the global Lipschitz condition. In particular, two possible technical routes may be pursued: the direct one is to develop new convergence analysis tools that can handle nonlinear relationships between variables without relying on the key technical lemma, and the indirect one is to transform the local Lipschitz system into a global one in a compact set by ensuring the boundedness of system signals first, for example via input saturation or barrier functions.
+
+![Refer to caption](2602.00968v1/Highdistrack100.png)
+
+*Fig. 8: Tracking profiles of the 100th iteration in Example 2 in the presence of disturbances.*
+
+## Appendix
+
+### VII-A Proof of Proposition [1](#Thmproposition1 "Proposition 1 ‣ III-A Tracking Feasibility Analysis ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")
+
+Without loss of any generality, we consider the case of  𝜽​(t)⊤​∂∂u​𝒇​(𝑿k​(t),u)>d0\boldsymbol{\theta}(t)^{\top}\frac{\partial}{\partial u}\boldsymbol{f}(\boldsymbol{X}_{k}(t),u)>d_{0}. Due to the continuity of  𝜽​(t)⊤​∂∂u​𝒇​(𝑿k​(t),u)\boldsymbol{\theta}(t)^{\top}\frac{\partial}{\partial u}\boldsymbol{f}(\boldsymbol{X}_{k}(t),u), there exists a constant  M>0M>0 such that  supu∈ℬ⁡(0,|c|d0)|𝜽​(t)⊤​∂∂u​𝒇​(𝑿k​(t),u)|<M\sup_{u\in\mathcal{B}(0,\frac{|c|}{d_{0}})}|\boldsymbol{\theta}(t)^{\top}\frac{\partial}{\partial u}\boldsymbol{f}(\boldsymbol{X}_{k}(t),u)|<M. Choosing  l>Ml>M, one obtains
+
+|  |  |1−1l​𝜽​(t)⊤​∂∂u​𝒇​(𝑿k​(t),u)|≤1−d0l,∀u∈ℬ⁡(0,|c|d0).\displaystyle\left|1-\frac{1}{l}\boldsymbol{\theta}(t)^{\top}\frac{\partial}{\partial u}\boldsymbol{f}(\boldsymbol{X}_{k}(t),u)\right|\leq 1-\frac{d_{0}}{l},\ \forall\ u\in\mathcal{B}\left(0,\frac{|c|}{d_{0}}\right). |  |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
+
+Therefore, for any  u∈ℬ⁡(0,|c|d0)u\in\mathcal{B}\Big(0,\frac{|c|}{d_{0}}\Big), by virtue of the differential mean value theorem, one obtains
+
+|  |  |𝒯⁡(u)|\displaystyle|\mathcal{T}(u)| |  =|u−𝒵⁡(0)l−1l​(𝒵⁡(u)−𝒵⁡(0))|\displaystyle=\Big|u-\frac{\mathcal{Z}(0)}{l}-\frac{1}{l}(\mathcal{Z}(u)-\mathcal{Z}(0))\Big| |  |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
+|  |                                                                                                                                                                                                          |  =|u−cl−𝜽​(t)⊤​∂∂u​𝒇​(𝑿k​(t),u)|u=ξ​ul|\displaystyle=\left|u-\frac{c}{l}-\boldsymbol{\theta}(t)^{\top}\frac{\partial}{\partial u}\boldsymbol{f}(\boldsymbol{X}_{k}(t),u)\big|_{u=\xi}\frac{u}{l}\right| |  |
+|  |                                                                                                                                                                                                          |  =|c|l+|(1−1l​𝜽​(t)⊤​∂∂u​𝒇​(𝑿k​(t),u)|u=ξ)​u|\displaystyle=\frac{|c|}{l}+\left|(1-\frac{1}{l}\boldsymbol{\theta}(t)^{\top}\frac{\partial}{\partial u}\boldsymbol{f}(\boldsymbol{X}_{k}(t),u)\big|_{u=\xi})u\right| |  |
+|  |                                                                                                                                                                                                          |  ≤|c|l+(1−d0l)​|c|d0\displaystyle\leq\frac{|c|}{l}+(1-\frac{d_{0}}{l})\frac{|c|}{d_{0}} |  |
+|  |                                                                                                                                                                                                          |  =|c|d0,\displaystyle=\frac{|c|}{d_{0}}, |  |
+
+where  ξ\xi is a mean value satisfying  |ξ|≤|u||\xi|\leq|u|. Therefore, the mapping  𝒯\mathcal{T} maps  ℬ⁡(0,|c|d0)\mathcal{B}\Big(0,\frac{|c|}{d_{0}}\Big) to itself. For any  u1,u2∈ℬ⁡(0,|c|d0)u_{1},\ u_{2}\in\mathcal{B}\Big(0,\frac{|c|}{d_{0}}\Big), the differential mean value theorem yields
+
+|  |  |  |𝒯⁡(u1)−𝒯⁡(u2)|\displaystyle\Big|\mathcal{T}(u_{1})-\mathcal{T}(u_{2})\Big| |  |      |
+| --- | --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- | ---- |
+|  |  |  ≤|1−1l​𝜽​(t)⊤​∂∂u​𝒇​(𝑿k​(t),u)|u=ξ′|​|u1−u2|\displaystyle\leq\Big|1-\frac{1}{l}\boldsymbol{\theta}(t)^{\top}\frac{\partial}{\partial u}\boldsymbol{f}(\boldsymbol{X}_{k}(t),u)\big|_{u=\xi^{\prime}}\Big|~|u_{1}-u_{2}| |  |      |
+|  |  |  ≤(1−d0l)​|u1−u2|,\displaystyle\leq(1-\frac{d_{0}}{l})|u_{1}-u_{2}|, |  | (36) |
+
+where  ξ′\xi^{\prime} is a mean value satisfying  |ξ′|≤max⁡{|u1|,|u2|}|\xi^{\prime}|\leq\max\\{|u_{1}|,|u_{2}|\\}. From ([36](#Sx1.Ex43 "In VII-A Proof of Proposition ‣ Appendix ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")),  𝒯\mathcal{T} is a contraction mapping. According to Banach’s fixed point theorem, there exists a unique  uk∗​(t)∈ℬ⁡(0,|c|d0)u_{k}^{\ast}(t)\in\mathcal{B}\Big(0,\frac{|c|}{d_{0}}\Big) such that  𝒯⁡(uk∗​(t))=uk∗​(t)\mathcal{T}(u_{k}^{\ast}(t))=u_{k}^{\ast}(t), which means  uk∗​(t)u_{k}^{\ast}(t) satisfies ([5](#S3.E5 "In III-A Tracking Feasibility Analysis ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")). The proof is complete.  ■\blacksquare
+
+### VII-B Proof of Theorem [1](#Thmtheorem1 "Theorem 1 ‣ IV Convergence Analysis ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")
+
+In this proof, we use a capital  CC to represent constants independent of  kk.
+
+###### Lemma 2
+
+Under the conditions of Theorem [1](#Thmtheorem1 "Theorem 1 ‣ IV Convergence Analysis ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems"), for each  t∈{0,⋯,T−ρ}t\in\\{0,\cdots,T-\rho\\}, the following statements hold:
+
+(1) The estimates  𝛉^k​(t)\hat{\boldsymbol{\theta}}_{k}(t) and  w^k​(t)\hat{w}_{k}(t) are bounded.
+
+(2) As  kk approaches infinity,  ak​(t)2​ϵk​(t+ρ)2​mk​(t)2a_{k}(t)^{2}\epsilon_{k}(t+\rho)^{2}m_{k}(t)^{2} and  w^k​(t)\hat{w}_{k}(t) converge to zero and a specific positive constant, respectively.
+
+*Proof of Lemma [2](#Thmlemma2 "Lemma 2 ‣ VII-B Proof of Theorem ‣ Appendix ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems"):* Let  𝜽~k​(t)=𝜽^k​(t)−𝜽⁡(t)\tilde{\boldsymbol{\theta}}_{k}(t)=\hat{\boldsymbol{\theta}}_{k}(t)-\boldsymbol{\theta}(t) and  w~k​(t)=w^k​(t)−w\tilde{w}_{k}(t)=\hat{w}_{k}(t)-w. One has
+
+|  |  𝜽~k+1​(t)\displaystyle\tilde{\boldsymbol{\theta}}_{k+1}(t) |  =𝜽~k​(t)+η​ak​(t)​ϵk​(t+ρ)​𝒇​(𝑿k​(t),uk​(t))+𝒈k​(t),\displaystyle=\tilde{\boldsymbol{\theta}}_{k}(t)+\eta a_{k}(t)\epsilon_{k}(t+\rho)\boldsymbol{f}(\boldsymbol{X}_{k}(t),u_{k}(t))+\boldsymbol{g}_{k}(t), |  |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
+
+where
+
+|  |  𝒈k​(t)={𝟎,if​𝜽¯k+1​(t)∈ℬ2​(𝜽¯,R),(R‖𝜽¯k+1​(t)−𝜽¯‖−1)​(𝜽¯k+1​(t)−𝜽¯),otherwise.\displaystyle\boldsymbol{g}_{k}(t)=\left\\{\begin{array}[]{l}\boldsymbol{0},\ \text{if}\ \bar{\boldsymbol{\theta}}_{k+1}(t)\in\mathcal{B}_{2}(\underline{\boldsymbol{\theta}},R),\\\\ \left(\frac{R}{\\|\bar{\boldsymbol{\theta}}_{k+1}(t)-\underline{\boldsymbol{\theta}}\\|}-1\right)(\bar{\boldsymbol{\theta}}_{k+1}(t)-\underline{\boldsymbol{\theta}}),\ \text{otherwise.}\end{array}\right. |  |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
+
+Note that
+
+|  |  w~k+1​(t)=w~k​(t)+η​ak​(t)​|ϵk​(t+ρ)|.\displaystyle\tilde{w}_{k+1}(t)=\tilde{w}_{k}(t)+\eta a_{k}(t)|\epsilon_{k}(t+\rho)|. |  | (37) |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- | ---- |
+
+Define a Lyapunov-like positive-definite function
+
+|  |  Vk​(t)=12​𝜽~k​(t)⊤​𝜽~k​(t)+12​w~k​(t)2.\displaystyle V_{k}(t)=\frac{1}{2}\tilde{\boldsymbol{\theta}}_{k}(t)^{\top}\tilde{\boldsymbol{\theta}}_{k}(t)+\frac{1}{2}\tilde{w}_{k}(t)^{2}. |  |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
+
+The difference between adjacent iterations of the first part in  Vk​(t)V_{k}(t) is given by
+
+|  |  |  12​𝜽~k+1​(t)⊤​𝜽~k+1​(t)−12​𝜽~k​(t)⊤​𝜽~k​(t)\displaystyle\frac{1}{2}\tilde{\boldsymbol{\theta}}_{k+1}(t)^{\top}\tilde{\boldsymbol{\theta}}_{k+1}(t)-\frac{1}{2}\tilde{\boldsymbol{\theta}}_{k}(t)^{\top}\tilde{\boldsymbol{\theta}}_{k}(t) |  |      |
+| --- | --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- | ---- |
+|  |  |  =12​ak​(t)2​η2​ϵk​(t+ρ)2​‖𝒇⁡(𝑿k​(t),uk​(t))‖2\displaystyle=\frac{1}{2}a_{k}(t)^{2}\eta^{2}\epsilon_{k}(t+\rho)^{2}\\|\boldsymbol{f}(\boldsymbol{X}_{k}(t),u_{k}(t))\\|^{2} |  |      |
+|  |  |  +𝜽~k​(t)⊤​𝒇​(𝑿k​(t),uk​(t))​ak​(t)​η​ϵk​(t+ρ)\displaystyle\quad+\tilde{\boldsymbol{\theta}}_{k}(t)^{\top}\boldsymbol{f}(\boldsymbol{X}_{k}(t),u_{k}(t))a_{k}(t)\eta\epsilon_{k}(t+\rho) |  |      |
+|  |  |  +12​‖𝒈k​(t)‖2+𝒈k​(t)⊤​(𝜽¯k+1​(t)−𝜽⁡(t)).\displaystyle\quad+\frac{1}{2}\\|\boldsymbol{g}_{k}(t)\\|^{2}+\boldsymbol{g}_{k}(t)^{\top}(\bar{\boldsymbol{\theta}}_{k+1}(t)-\boldsymbol{\theta}(t)). |  | (38) |
+
+If  𝜽¯k+1​(t)∉ℬ2​(𝜽¯,R)\bar{\boldsymbol{\theta}}_{k+1}(t)\notin\mathcal{B}_{2}(\underline{\boldsymbol{\theta}},R), one obtains
+
+|  |  |  12​‖𝒈k​(t)‖2+𝒈k​(t)⊤​(𝜽¯k+1​(t)−𝜽⁡(t))\displaystyle\frac{1}{2}\\|\boldsymbol{g}_{k}(t)\\|^{2}+\boldsymbol{g}_{k}(t)^{\top}(\bar{\boldsymbol{\theta}}_{k+1}(t)-\boldsymbol{\theta}(t)) |  |      |
+| --- | --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- | ---- |
+|  |  |  =12​(1−R‖𝜽¯k+1​(t)−𝜽¯‖)2​‖𝜽¯k+1​(t)−𝜽¯‖2\displaystyle=\frac{1}{2}\left(1-\frac{R}{\\|\bar{\boldsymbol{\theta}}_{k+1}(t)-\underline{\boldsymbol{\theta}}\\|}\right)^{2}\\|\bar{\boldsymbol{\theta}}_{k+1}(t)-\underline{\boldsymbol{\theta}}\\|^{2} |  |      |
+|  |  |  −(1−R‖𝜽¯k+1​(t)−𝜽¯‖)​(𝜽¯k+1​(t)−𝜽¯)⊤\displaystyle\quad-\left(1-\frac{R}{\\|\bar{\boldsymbol{\theta}}_{k+1}(t)-\underline{\boldsymbol{\theta}}\\|}\right)\left(\bar{\boldsymbol{\theta}}_{k+1}(t)-\underline{\boldsymbol{\theta}}\right)^{\top} |  |      |
+|  |  |  ×(𝜽¯k+1​(t)−𝜽¯+𝜽¯−𝜽⁡(t))\displaystyle\quad\times\left(\bar{\boldsymbol{\theta}}_{k+1}(t)-\underline{\boldsymbol{\theta}}+\underline{\boldsymbol{\theta}}-\boldsymbol{\theta}(t)\right) |  |      |
+|  |  |  ≤12​(‖𝜽¯k+1​(t)−𝜽¯‖−R)2\displaystyle\leq\frac{1}{2}\left(\\|\bar{\boldsymbol{\theta}}_{k+1}(t)-\underline{\boldsymbol{\theta}}\\|-R\right)^{2} |  |      |
+|  |  |  −(‖𝜽¯k+1​(t)−𝜽¯‖−R)​(‖𝜽¯k+1​(t)−𝜽¯‖CLOSE\displaystyle\quad-\Big(\\|\bar{\boldsymbol{\theta}}_{k+1}(t)-\underline{\boldsymbol{\theta}}\\|-R\Big)\Big(\\|\bar{\boldsymbol{\theta}}_{k+1}(t)-\underline{\boldsymbol{\theta}}\\| |  |      |
+|  |  |  OPEN−‖𝜽⁡(t)−𝜽¯‖)\displaystyle\quad-\\|\boldsymbol{\theta}(t)-\underline{\boldsymbol{\theta}}\\|\Big) |  |      |
+|  |  |  ≤(‖𝜽¯k+1​(t)−𝜽¯‖−R)​(‖𝜽⁡(t)−𝜽¯‖−R)\displaystyle\leq\Big(\\|\bar{\boldsymbol{\theta}}_{k+1}(t)-\underline{\boldsymbol{\theta}}\\|-R\Big)\Big(\\|\boldsymbol{\theta}(t)-\underline{\boldsymbol{\theta}}\\|-R\Big) |  |      |
+|  |  |  ≤0.\displaystyle\leq 0. |  | (39) |
+
+If  𝜽¯k+1​(t)∈ℬ2​(𝜽¯,R)\bar{\boldsymbol{\theta}}_{k+1}(t)\in\mathcal{B}_{2}(\underline{\boldsymbol{\theta}},R),  𝒈k​(t)=𝟎\boldsymbol{g}_{k}(t)=\boldsymbol{0} and ([39](#Sx1.Ex52 "In VII-B Proof of Theorem ‣ Appendix ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")) still holds. Therefore, from ([38](#Sx1.Ex49 "In VII-B Proof of Theorem ‣ Appendix ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")) and ([39](#Sx1.Ex52 "In VII-B Proof of Theorem ‣ Appendix ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")), one obtains
+
+|  |  |  12​𝜽~k+1​(t)⊤​𝜽~k+1​(t)−12​𝜽~k​(t)⊤​𝜽~k​(t)\displaystyle\frac{1}{2}\tilde{\boldsymbol{\theta}}_{k+1}(t)^{\top}\tilde{\boldsymbol{\theta}}_{k+1}(t)-\frac{1}{2}\tilde{\boldsymbol{\theta}}_{k}(t)^{\top}\tilde{\boldsymbol{\theta}}_{k}(t) |  |
+| --- | --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
+|  |  |  ≤12​ak​(t)2​η2​ϵk​(t+ρ)2​‖𝒇⁡(𝑿k​(t),uk​(t))‖2\displaystyle\leq\frac{1}{2}a_{k}(t)^{2}\eta^{2}\epsilon_{k}(t+\rho)^{2}\\|\boldsymbol{f}(\boldsymbol{X}_{k}(t),u_{k}(t))\\|^{2} |  |
+|  |  |  +𝜽~k​(t)⊤​𝒇​(𝑿k​(t),uk​(t))​ak​(t)​η​ϵk​(t+ρ).\displaystyle\quad+\tilde{\boldsymbol{\theta}}_{k}(t)^{\top}\boldsymbol{f}(\boldsymbol{X}_{k}(t),u_{k}(t))a_{k}(t)\eta\epsilon_{k}(t+\rho). |  |
+
+From ([1](#S2.E1 "In II Problem Formulation ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")) and ([6](#S3.E6 "In III-B GDPA Scheme ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")), one gets
+
+|  |  𝜽~k​(t)⊤​𝒇​(𝑿k​(t),uk​(t))=−mk​(t)2​ϵk​(t+ρ)+wk​(t).\displaystyle\tilde{\boldsymbol{\theta}}_{k}(t)^{\top}\boldsymbol{f}(\boldsymbol{X}_{k}(t),u_{k}(t))=-m_{k}(t)^{2}\epsilon_{k}(t+\rho)+w_{k}(t). |  |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
+
+Therefore,
+
+|  |  |  12​𝜽~k+1​(t)⊤​𝜽~k+1​(t)−12​𝜽~k​(t)⊤​𝜽~k​(t)\displaystyle\frac{1}{2}\tilde{\boldsymbol{\theta}}_{k+1}(t)^{\top}\tilde{\boldsymbol{\theta}}_{k+1}(t)-\frac{1}{2}\tilde{\boldsymbol{\theta}}_{k}(t)^{\top}\tilde{\boldsymbol{\theta}}_{k}(t) |  |
+| --- | --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
+|  |  |  ≤12​ak​(t)2​η2​ϵk​(t+ρ)2​‖𝒇⁡(𝑿k​(t),uk​(t))‖2−ak​(t)\displaystyle\leq\frac{1}{2}a_{k}(t)^{2}\eta^{2}\epsilon_{k}(t+\rho)^{2}\\|\boldsymbol{f}(\boldsymbol{X}_{k}(t),u_{k}(t))\\|^{2}-a_{k}(t) |  |
+|  |  |  ×η​mk​(t)2​(ϵk​(t+ρ)2−|ϵk​(t+ρ)|​wmk​(t)2)\displaystyle\quad\times\eta m_{k}(t)^{2}\left(\epsilon_{k}(t+\rho)^{2}-\frac{|\epsilon_{k}(t+\rho)|w}{m_{k}(t)^{2}}\right) |  |
+|  |  |  =12​ak​(t)2​η2​ϵk​(t+ρ)2​‖𝒇⁡(𝑿k​(t),uk​(t))‖2−ak​(t)\displaystyle=\frac{1}{2}a_{k}(t)^{2}\eta^{2}\epsilon_{k}(t+\rho)^{2}\\|\boldsymbol{f}(\boldsymbol{X}_{k}(t),u_{k}(t))\\|^{2}-a_{k}(t) |  |
+|  |  |  ×η​mk​(t)2​(ϵk​(t+ρ)2−|ϵk​(t+ρ)|​w^k​(t)mk​(t)2)\displaystyle\quad\times\eta m_{k}(t)^{2}\left(\epsilon_{k}(t+\rho)^{2}-\frac{|\epsilon_{k}(t+\rho)|\hat{w}_{k}(t)}{m_{k}(t)^{2}}\right) |  |
+|  |  |  −ak​(t)​η​|ϵk​(t+ρ)|​w~k​(t).\displaystyle\quad-a_{k}(t)\eta|\epsilon_{k}(t+\rho)|\tilde{w}_{k}(t). |  |
+
+If  |ϵk​(t+ρ)|>w^k​(t)mk​(t)2|\epsilon_{k}(t+\rho)|>\frac{\hat{w}_{k}(t)}{m_{k}(t)^{2}}, one obtains
+
+|  |  |  ak​(t)2​ϵk​(t+ρ)2​mk​(t)2\displaystyle a_{k}(t)^{2}\epsilon_{k}(t+\rho)^{2}m_{k}(t)^{2} |  |      |
+| --- | --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- | ---- |
+|  |  |  =ak​(t)​ϵk​(t+ρ)2​mk​(t)2​(1−w^k​(t)|ϵk​(t+ρ)|​mk​(t)2)\displaystyle=a_{k}(t)\epsilon_{k}(t+\rho)^{2}m_{k}(t)^{2}\left(1-\frac{\hat{w}_{k}(t)}{|\epsilon_{k}(t+\rho)|m_{k}(t)^{2}}\right) |  |      |
+|  |  |  =ak​(t)​mk​(t)2​(ϵk​(t+ρ)2−w^k​(t)​|ϵk​(t+ρ)|mk​(t)2).\displaystyle=a_{k}(t)m_{k}(t)^{2}\left(\epsilon_{k}(t+\rho)^{2}-\frac{\hat{w}_{k}(t)|\epsilon_{k}(t+\rho)|}{m_{k}(t)^{2}}\right). |  | (40) |
+
+If  |ϵk​(t+ρ)|≤w^k​(t)mk​(t)2|\epsilon_{k}(t+\rho)|\leq\frac{\hat{w}_{k}(t)}{m_{k}(t)^{2}},  ak​(t)=0a_{k}(t)=0 and ([40](#Sx1.Ex70 "In VII-B Proof of Theorem ‣ Appendix ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")) still holds. Therefore, one has
+
+|  |  |  12​𝜽~k+1​(t)⊤​𝜽~k+1​(t)−12​𝜽~k​(t)⊤​𝜽~k​(t)\displaystyle\frac{1}{2}\tilde{\boldsymbol{\theta}}_{k+1}(t)^{\top}\tilde{\boldsymbol{\theta}}_{k+1}(t)-\frac{1}{2}\tilde{\boldsymbol{\theta}}_{k}(t)^{\top}\tilde{\boldsymbol{\theta}}_{k}(t) |  |      |
+| --- | --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- | ---- |
+|  |  |  ≤12​ak​(t)2​η2​ϵk​(t+ρ)2​‖𝒇⁡(𝑿k​(t),uk​(t))‖2\displaystyle\leq\frac{1}{2}a_{k}(t)^{2}\eta^{2}\epsilon_{k}(t+\rho)^{2}\\|\boldsymbol{f}(\boldsymbol{X}_{k}(t),u_{k}(t))\\|^{2} |  |      |
+|  |  |  −ak​(t)​η​|ϵk​(t+ρ)|​w~k​(t)\displaystyle\quad-a_{k}(t)\eta|\epsilon_{k}(t+\rho)|\tilde{w}_{k}(t) |  |      |
+|  |  |  −η​ak​(t)2​ϵk​(t+ρ)2​mk​(t)2.\displaystyle\quad-\eta a_{k}(t)^{2}\epsilon_{k}(t+\rho)^{2}m_{k}(t)^{2}. |  | (41) |
+
+For the second part of  Vk​(t)V_{k}(t), from ([37](#Sx1.E37 "In VII-B Proof of Theorem ‣ Appendix ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")), one has
+
+|  |  12​w~k+1​(t)2−12​w~k​(t)2=\displaystyle\frac{1}{2}\tilde{w}_{k+1}(t)^{2}-\frac{1}{2}\tilde{w}_{k}(t)^{2}= |  12​ak​(t)2​η2​ϵk​(t+ρ)2\displaystyle\frac{1}{2}a_{k}(t)^{2}\eta^{2}\epsilon_{k}(t+\rho)^{2} |  |      |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- | ---- |
+|  |                                                                                                                                                                                                          |  +w~k​(t)​η​ak​(t)​|ϵk​(t+ρ)|.\displaystyle+\tilde{w}_{k}(t)\eta a_{k}(t)|\epsilon_{k}(t+\rho)|. |  | (42) |
+
+Furthermore, ([41](#Sx1.Ex72 "In VII-B Proof of Theorem ‣ Appendix ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")) and ([42](#Sx1.Ex75 "In VII-B Proof of Theorem ‣ Appendix ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")) yield
+
+|  |  Δ​Vk+1​(t)\displaystyle\Delta V_{k+1}(t) |  =Vk+1​(t)−Vk​(t)\displaystyle=V_{k+1}(t)-V_{k}(t) |  |      |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- | ---- |
+|  |                                                                                                                                                                                                          |  ≤(12​η2−η)​ak​(t)2​ϵk​(t+ρ)2​mk​(t)2.\displaystyle\leq\left(\frac{1}{2}\eta^{2}-\eta\right)a_{k}(t)^{2}\epsilon_{k}(t+\rho)^{2}m_{k}(t)^{2}. |  | (43) |
+
+If  0<η<20<\eta<2, then  12​η2−η<0\frac{1}{2}\eta^{2}-\eta<0, and  Vk​(t)V_{k}(t) is monotonically decreasing along the iteration axis. Therefore,  𝜽~k​(t)\tilde{\boldsymbol{\theta}}_{k}(t) and  w^k​(t)\hat{w}_{k}(t) are bounded. The first claim of Lemma [2](#Thmlemma2 "Lemma 2 ‣ VII-B Proof of Theorem ‣ Appendix ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems") is proved.
+
+From ([43](#Sx1.Ex76 "In VII-B Proof of Theorem ‣ Appendix ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")), one obtains
+
+|  |  (η−12​η2)​ak​(t)2​ϵk​(t+ρ)2​mk​(t)2≤Vk​(t)−Vk+1​(t).\displaystyle(\eta-\frac{1}{2}\eta^{2})a_{k}(t)^{2}\epsilon_{k}(t+\rho)^{2}m_{k}(t)^{2}\leq V_{k}(t)-V_{k+1}(t). |  |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
+
+Summing both sides from  k=1k=1 to  k′k^{\prime} yields
+
+|  |  ∑k=1k′(η−12​η2)​ak​(t)2​ϵk​(t+ρ)2​mk​(t)2≤V1​(t)−Vk′+1​(t).\displaystyle\sum_{k=1}^{k^{\prime}}(\eta-\frac{1}{2}\eta^{2})a_{k}(t)^{2}\epsilon_{k}(t+\rho)^{2}m_{k}(t)^{2}\leq V_{1}(t)-V_{k^{\prime}+1}(t). |  | (44) |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- | ---- |
+
+Inequality ([44](#Sx1.E44 "In VII-B Proof of Theorem ‣ Appendix ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")) indicates that the series  ∑k=1∞ak​(t)2​ϵk​(t+ρ)2​mk​(t)2\sum_{k=1}^{\infty}a_{k}(t)^{2}\epsilon_{k}(t+\rho)^{2}m_{k}(t)^{2} converges. Thus,
+
+|  |  limk→∞ak​(t)2​ϵk​(t+ρ)2​mk​(t)2=0.\displaystyle\lim_{k\to\infty}a_{k}(t)^{2}\epsilon_{k}(t+\rho)^{2}m_{k}(t)^{2}=0. |  |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
+
+In addition, according to ([10](#S3.E10 "In III-B GDPA Scheme ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")), the sequence  {w^k​(t)}k=1∞\\{\hat{w}_{k}(t)\\}_{k=1}^{\infty} is monotonically increasing and bounded. Therefore  limk→∞w^k​(t)\lim_{k\to\infty}\hat{w}_{k}(t) exists.
+Lemma [2](#Thmlemma2 "Lemma 2 ‣ VII-B Proof of Theorem ‣ Appendix ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems") is proven.  ■\blacksquare
+
+The following definition characterizes the *linear boundedness* for further analysis.
+
+###### Definition 1
+
+For variable sequences  {ak}\\{a_{k}\\},  {bk(1)}\\{b_{k}^{(1)}\\},  {bk(2)}\\{b_{k}^{(2)}\\}, ⋯\cdots, {bk(n)}\\{b_{k}^{(n)}\\}, we say that  {ak}\\{a_{k}\\} is *linearly bounded* by  {bk(1)}\\{b_{k}^{(1)}\\},  {bk(2)}\\{b_{k}^{(2)}\\}, ⋯\cdots, {bk(n)}\\{b_{k}^{(n)}\\}, if there exist positive constants  C(1)C^{(1)},  C(2)C^{(2)}, ⋯\cdots, C(n)C^{(n)} that are independent of  kk, such that
+
+|  |  ‖ak‖≤C(1)​‖bk(1)‖+C(2)​‖bk(2)‖+⋯+C(n)​‖bk(n)‖.\displaystyle\\|a_{k}\\|\leq C^{(1)}\\|b_{k}^{(1)}\\|+C^{(2)}\\|b_{k}^{(2)}\\|+\cdots+C^{(n)}\\|b_{k}^{(n)}\\|. |  |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
+
+###### Lemma 3
+
+Under the conditions of Theorem [1](#Thmtheorem1 "Theorem 1 ‣ IV Convergence Analysis ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems"), for each  t∈{0,⋯,T−ρ}t\in\\{0,\cdots,T-\rho\\}, the following statements hold:
+
+(1) Variable  mk​(0)m_{k}(0) is bounded. For  t≥1t\geq 1,  mk​(t)m_{k}(t) is linearly bounded by  ek​(t+ρ−1),ek​(t+ρ−2),⋯,ek​(ρ)e_{k}(t+\rho-1),e_{k}(t+\rho-2),\cdots,e_{k}(\rho).
+
+(2) There exist constants  K0,t,K1,t,⋯,Kt−1,tK^{0,t},K^{1,t},\cdots,K^{t-1,t} such that
+
+|  |  |ek​(t+ρ)|\displaystyle|e_{k}(t+\rho)| |  <ϖk​(t+ρ,⋯,t)+∑i=0t−1Ki,t​|ϖk​(i+ρ,⋯,i)|,\displaystyle<\varpi_{k}(t+\rho,\cdots,t)+\sum_{i=0}^{t-1}K^{i,t}|\varpi_{k}(i+\rho,\cdots,i)|, |  |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
+
+where  ϖk​(t+ρ,⋯,t)=xk​(t+ρ)−𝛉^k​(t)⊤​𝐟​(𝐗k​(t),uk​(t))\varpi_{k}(t+\rho,\cdots,t)=x_{k}(t+\rho)-\hat{\boldsymbol{\theta}}_{k}(t)^{\top}\boldsymbol{f}(\boldsymbol{X}_{k}(t),u_{k}(t)).
+
+*Proof of Lemma [3](#Thmlemma3 "Lemma 3 ‣ VII-B Proof of Theorem ‣ Appendix ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")*: From the definition of  uk​(t)u_{k}(t) in ([19](#S3.E19 "In III-D Implicit AILC Design ‣ III Tracking Feasibility and AILC Design ‣ Robust Adaptive Learning Control for a Class of Non-affine Nonlinear Systems")), one has
+
+|  |  |uk​(t)|\displaystyle|u_{k}(t)| |  ≤|c′|d0≤C⁡(‖𝜽^k​(t)‖​‖𝒇⁡(𝑿ke​(t),0)‖+|rk​(t+ρ)|)\displaystyle\leq\frac{|c^{\prime}|}{d_{0}}\leq C(\\|\hat{\boldsymbol{\theta}}_{k}(t)\\|\\|\boldsymbol{f}(\boldsymbol{X}^{e}_{k}(t),0)\\|+|r_{k}(t+\rho)|) |  |      |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- | ---- |
+|  |                                                                                                                                                                                                          |  ≤C​‖𝒇⁡(𝑿ke​(t),0)‖+C.\displaystyle\leq C\\|\boldsymbol{f}(\boldsymbol{X}^{e}_{k}(t),0)\\|+C. |  | (45) |
+
+The last inequality holds as per the fact that <!-- MathML: <math alttext="\|\hat{\boldsymbol{\theta}}_{k}(t)\|" class="ltx_Math" display="inline" id="Sx1.SS2.p16.m2" intent=":literal"><semantic

@@ -1,0 +1,3006 @@
+Reading additional input from stdin...
+OpenAI Codex v0.162.1
+--------
+workdir: /Users/jinleic/jinleic-workspace/ai4s/phys-fibonacci-cone-spirals
+model: gpt-6.1-sol
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: max
+reasoning summaries: none
+session id: 01a139a3-7813-7b83-a0ff-47e3e16b5b6d
+--------
+user
+# Independent hostile-referee review
+
+Today is 2026-10-14. Review a scoped mathematical research deliverable, not a claimed solution of the full physical problem.
+
+## Permission boundary
+
+You may read only `/Users/jinleic/jinleic-workspace/ai4s/phys-fibonacci-cone-spirals/` and its descendants. Do not read parent/workspace policy files, credentials, unrelated projects, or user data. Do not delegate. Do not edit or write files. Do not run reproduction commands that write output files. You may run `python3 code/verify.py` if useful, or read code and derive independently. All substantive findings must be returned in your final answer; the caller handles the CLI's final-output file. No network is needed; literature scope/reading levels are declared in STATUS.md, and priority is explicitly not claimed.
+
+## Objective and context
+
+The book asks whether stressed Fibonacci parastichy patterns minimize elastic energy on a cone (C1) and whether changing equal-disk size toward the cone apex alternates chirality (C2). The experimental elastic functional and growth rules are unspecified. This deliverable is explicitly PARTIAL overall, with a COUNTEREXAMPLE only to a particular fixed-golden-angle packing ansatz. It must not be marketed as a refutation of all Fibonacci-contact configurations or a solution to the experiment.
+
+Read README.md, RESULTS.md, STATUS.md, code/verify.py, code/generate_witness.py, code/diagnostics.py, and the small results JSON files. Treat RESULTS.md as the mathematical claim authority. Check every quantifier, finite/infinite transition, geometric metric, disk embedding and boundary issue, ratio/constant, and exact-versus-numerical distinction.
+
+## Claims to attempt to falsify
+
+F. On the intrinsic cone R^2/C6 (developed sector angle pi/3), 183 centers constrained to slant radii 10..20 admit a triangular-lattice quotient with minimum separation exactly 1. The comparison spiral has squared radii 100+150*i/91 and azimuth 2*pi*i*(3-sqrt(5))/2, i=0..182. Its pair (4,12) has squared separation <77/100, certified by rational sqrt lower bounds and cos(x)>=1-x^2/2 with pi<22/7. Disk diameter 1 fits the competitor in frustum 9.5..20.5. This is a strict comparison, not the unrestricted finite optimum.
+
+B1. On a cone of sector angle 2*pi*beta, any equal embedded intrinsic disks centered at every point of the golden Fermat spiral r_n=c*sqrt(n), theta_n=2*pi*n*gamma after any finite prefix deletion have asymptotic density <=pi/(2*sqrt(5)). The proof chooses q_k=F_k, residual epsilon_k=phi^-k, n_k nearest q_k/(2*A*epsilon_k) where A=2*pi*beta, and obtains limiting squared separation c^2*A/sqrt(5).
+
+B2. On the pi/3 quotient cone the maximum asymptotic density is pi/(2*sqrt(3)), by quotient triangular lattice plus planar lifting and Thue's theorem. Thus the fixed ansatz has strict bulk loss; neither general Fibonacci-contact topology nor elasticity is settled.
+
+S. Achiral domain/boundaries/reflection-invariant energy imply mirror-degenerate minima at each diameter. This does not rule out history-dependent alternation.
+
+T. In the explicitly reduced candidate-family model L_k(t)=F_k^2/(4*t)+A^2*t*phi^(-2*k), k>=2, the two shortest Fibonacci families pass successively through (F_k,F_(k+1)); adjacent crossings tau_k strictly increase, and pair transitions sigma_k lie between tau_(k-1) and tau_k. The residual F_k*gamma-F_(k-2)=(-1)^k*phi^-k gives alternating sign of the larger-count family. This is a defined local model, not a theorem for arbitrary sequential growth or all integer offsets.
+
+## Required review output
+
+Give a verdict: correct / correct-with-fixes / incorrect / insufficient-information. List numbered findings, severity, exact affected claim/file/section, a counterexample or derivation where possible, and the smallest correction. In particular distinguish a mathematical error from an unclaimed physical generalization or unclaimed novelty. Audit code witness reconstruction independently of the generator. Check that the finite controls cannot masquerade as universal proofs. Point out any citation assertion not supported by its declared reading level, without pretending you checked inaccessible sources. Also state which central claims survive your review and any remaining proof gap. Do not produce generic advice or ask for more work without naming the exact obligation.
+
+codex
+I’ll audit the claims against the proofs, code, and stored witnesses, then try to falsify the geometric and asymptotic steps independently. I’ll stay within the project directory, use only read-only checks, and return all substantive findings in the final review.
+exec
+/bin/zsh -lc "pwd
+rg --files -g 'README.md' -g 'RESULTS.md' -g 'STATUS.md' -g 'AGENTS.md' -g 'CLAUDE.md' -g '*.json' -g 'verify.py' -g 'generate_witness.py' -g 'diagnostics.py' -g 'md_files/*.md'" in /Users/jinleic/jinleic-workspace/ai4s/phys-fibonacci-cone-spirals
+ succeeded in 0ms:
+/Users/jinleic/jinleic-workspace/ai4s/phys-fibonacci-cone-spirals
+RESULTS.md
+results/certificate.json
+results/diagnostics.json
+results/lattice-witness.json
+README.md
+code/generate_witness.py
+code/verify.py
+code/diagnostics.py
+STATUS.md
+
+exec
+/bin/zsh -lc "sed -n '1,320p' code/diagnostics.py" in /Users/jinleic/jinleic-workspace/ai4s/phys-fibonacci-cone-spirals
+exec
+/bin/zsh -lc "sed -n '1,320p' code/verify.py" in /Users/jinleic/jinleic-workspace/ai4s/phys-fibonacci-cone-spirals
+ succeeded in 0ms:
+#!/usr/bin/env python3
+"""Non-certifying high-precision controls in polar coordinates, fixed protocol."""
+import json
+from pathlib import Path
+import mpmath as mp
+
+ROOT = Path(__file__).resolve().parents[1]
+mp.mp.dps = 80
+BETA = mp.mpf(1) / 6
+A = 2 * mp.pi * BETA
+PHI = (1 + mp.sqrt(5)) / 2
+GAMMA = (3 - mp.sqrt(5)) / 2
+FIB = [0, 1]
+for _ in range(31):
+    FIB.append(FIB[-1] + FIB[-2])
+
+
+def distance2(r2, s2, offset):
+    delta = offset * GAMMA - mp.nint(offset * GAMMA)
+    # Stable form, not the subtractive expression in the exact verifier.
+    return (mp.sqrt(s2) - mp.sqrt(r2)) ** 2 + 4 * mp.sqrt(r2 * s2) * mp.sin(A * delta / 2) ** 2
+
+
+def branch_length(k, t):
+    return mp.mpf(FIB[k]) ** 2 / (4 * t) + A * A * t * PHI ** (-2 * k)
+
+
+def pair_transition(k):
+    # Switch (F_{k-1},F_k) -> (F_k,F_{k+1}); k >= 3.
+    return mp.sqrt((mp.mpf(FIB[k + 1]) ** 2 - FIB[k - 1] ** 2) /
+                   (4 * A * A * (PHI ** (-2 * (k - 1)) - PHI ** (-2 * (k + 1)))))
+
+
+def main():
+    pair = distance2(mp.mpf(9700) / 91, mp.mpf(10900) / 91, 8)
+    convergence = []
+    for k in range(4, 25):
+        q = FIB[k]
+        eps = PHI ** (-k)
+        n = int(mp.nint(q / (2 * A * eps)))
+        value = distance2(mp.mpf(n), mp.mpf(n + q), q)
+        convergence.append({"k": k, "offset": q, "n": n,
+                            "distance_squared_c_equals_1": mp.nstr(value, 30)})
+    phases = []
+    for k in range(2, 15):
+        lower = pair_transition(k) if k > 2 else mp.mpf(0)
+        upper = pair_transition(k + 1)
+        t = mp.sqrt(lower * upper) if lower else upper / 2
+        best = sorted(range(2, 25), key=lambda j: branch_length(j, t))[:2]
+        assert sorted(best) == [k, k + 1]
+        # An independent brute force over integer offsets checks the local model.
+        lengths = []
+        for q in range(1, 1001):
+            delta = q * GAMMA - mp.nint(q * GAMMA)
+            lengths.append((mp.mpf(q) ** 2 / (4 * t) + A * A * t * delta * delta, q))
+        shortest = sorted(q for _, q in sorted(lengths)[:2])
+        assert shortest == [FIB[k], FIB[k + 1]]
+        phases.append({"pair": shortest,
+                       "larger_family_sign": (-1) ** (k + 1),
+                       "t_interval": [mp.nstr(lower, 25), mp.nstr(upper, 25)],
+                       "all_integer_offsets_tested": [1, 1000]})
+    output = {
+        "evidence_label": "Empirical evidence",
+        "mpmath_version": mp.__version__, "decimal_precision": mp.mp.dps,
+        "seed": "none; deterministic enumeration",
+        "cone_beta": "1/6",
+        "golden_finite_pair_distance_squared": mp.nstr(pair, 50),
+        "asymptotic_distance_squared_upper_limit": mp.nstr(A / mp.sqrt(5), 50),
+        "golden_density_upper_bound": mp.nstr(mp.pi / (2 * mp.sqrt(5)), 50),
+        "triangular_density": mp.nstr(mp.pi / (2 * mp.sqrt(3)), 50),
+        "density_ratio_lower_bound": mp.nstr(mp.sqrt(mp.mpf(5) / 3), 50),
+        "convergence": convergence,
+        "reduced_parastichy_phases": phases,
+        "scope": "Not global optimization, interval arithmetic, or a sequential cone-growth experiment.",
+    }
+    (ROOT / "results" / "diagnostics.json").write_text(json.dumps(output, indent=2) + "\n")
+    print(f"EMPIRICAL: golden pair squared distance={mp.nstr(pair, 18)}")
+    print(f"EMPIRICAL: density upper bound={mp.nstr(mp.pi/(2*mp.sqrt(5)), 16)}, lattice={mp.nstr(mp.pi/(2*mp.sqrt(3)), 16)}")
+    print(f"EMPIRICAL: {len(convergence)} asymptotic controls; {len(phases)} consecutive chirality phases, q=1..1000")
+
+
+if __name__ == "__main__":
+    main()
+
+ succeeded in 0ms:
+#!/usr/bin/env python3
+"""Exact integer/rational replay. Does not import the witness generator.
+
+All accept/reject decisions use integers or fractions. Decimal values in the
+output are presentation only. The infinite statements have written proofs in
+RESULTS.md; their finite algebra controls here are not substitutes for proofs.
+"""
+import argparse
+from fractions import Fraction as F
+from itertools import combinations
+import json
+from math import isqrt
+from pathlib import Path
+import platform
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def lift_cartesian(a, b):
+    """Return six lifts in coordinates (X,Y) meaning (X/2,sqrt(3)*Y/2)."""
+    x, y = 2 * a + b, b
+    lifts = []
+    for _ in range(6):
+        lifts.append((x, y))
+        assert (x - 3 * y) % 2 == 0 and (x + y) % 2 == 0
+        x, y = (x - 3 * y) // 2, (x + y) // 2
+    assert (x, y) == lifts[0]
+    return lifts
+
+
+def verify_centers(centers, lower=100, upper=400, diameter=F(1)):
+    lifts = [p for a, b in centers for p in lift_cartesian(a, b)]
+    assert len(set(lifts)) == 6 * len(centers), "duplicate center orbit"
+    for x, y in lifts:
+        assert 4 * lower <= x * x + 3 * y * y <= 4 * upper, "outside annulus"
+    minimum4 = min((x - u) ** 2 + 3 * (y - v) ** 2
+                   for (x, y), (u, v) in combinations(lifts, 2))
+    assert minimum4 >= 4 * diameter * diameter, "overlapping disks"
+    return minimum4, lifts
+
+
+def sqrt_bracket(value, digits=30):
+    value = F(value)
+    scale = 10 ** digits
+    k = isqrt(value.numerator * scale * scale // value.denominator)
+    low, high = F(k, scale), F(k + 1, scale)
+    assert low * low <= value < high * high
+    return low, high
+
+
+def golden_pair_bound():
+    # r_i^2 = 100 + 150*i/91, theta_i = 2*pi*i*(3-sqrt(5))/2.
+    a, b = F(9700, 91), F(10900, 91)  # i=4 and i=12, difference 8.
+    sqrt5_low, _ = sqrt_bracket(5)
+    delta_upper = 9 - 4 * sqrt5_low
+    assert 0 < delta_upper < F(3, 50)
+    angle_upper = F(22, 7) * delta_upper / 3  # pi < 22/7.
+    product_lower, _ = sqrt_bracket(a * b)
+    cosine_lower = 1 - angle_upper * angle_upper / 2  # cos(x) >= 1-x^2/2.
+    assert cosine_lower > 0
+    distance2_upper = a + b - 2 * product_lower * cosine_lower
+    assert distance2_upper < F(77, 100) < 1
+    return distance2_upper
+
+
+# Independent exact arithmetic in Q(sqrt(5)), represented by (a,b).
+def add(x, y):
+    return x[0] + y[0], x[1] + y[1]
+
+
+def mul(x, y):
+    return x[0] * y[0] + 5 * x[1] * y[1], x[0] * y[1] + x[1] * y[0]
+
+
+def power(x, n):
+    result = (F(1), F(0))
+    for _ in range(n):
+        result = mul(result, x)
+    return result
+
+
+def positive(x):
+    a, b = x
+    if a >= 0 and b >= 0:
+        return a > 0 or b > 0
+    if a <= 0 and b <= 0:
+        return False
+    return a * a > 5 * b * b if a > 0 else 5 * b * b > a * a
+
+
+def fibonacci_controls():
+    fib = [0, 1]
+    for _ in range(52):
+        fib.append(fib[-1] + fib[-2])
+    gamma = (F(3, 2), F(-1, 2))
+    invphi = (F(-1, 2), F(1, 2))
+    phi = (F(1, 2), F(1, 2))
+    previous = None
+    for k in range(2, 51):
+        residual = add(mul((F(fib[k]), F(0)), gamma), (-F(fib[k - 2]), F(0)))
+        expected = mul((F((-1) ** k), F(0)), power(invphi, k))
+        assert residual == expected
+        assert positive(mul((F((-1) ** k), F(0)), residual))
+        assert fib[k + 1] ** 2 - fib[k] ** 2 == fib[k - 1] * fib[k + 2]
+        threshold = mul(power(phi, 2 * k + 1), (F(fib[k - 1] * fib[k + 2]), F(0)))
+        if previous is not None:
+            assert positive(add(threshold, (-previous[0], -previous[1])))
+        previous = threshold
+    return 49
+
+
+def must_reject(call):
+    try:
+        call()
+    except AssertionError:
+        return
+    raise AssertionError("negative control was accepted")
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--write", action="store_true", help="save the deterministic receipt")
+    args = parser.parse_args()
+    witness = json.loads((ROOT / "results" / "lattice-witness.json").read_text())
+    assert witness["disk_diameter"] == 1
+    assert witness["center_radius_squared_bounds"] == [100, 400]
+    assert witness["frustum_radius_bounds"] == ["19/2", "41/2"]
+    centers = [tuple(p) for p in witness["centers"]]
+    assert len(centers) == 183
+    minimum4, lifts = verify_centers(centers)
+    assert minimum4 == 4
+    assert {(x, -y) for x, y in lifts} == set(lifts), "reflection symmetry failed"
+    small = [(-3, 0), (-3, 1), (-3, 2), (-2, 0), (-2, 1), (-1, 0)]
+    assert verify_centers(small, 1, 9)[0] == 4
+    must_reject(lambda: verify_centers(centers + [centers[0]]))
+    must_reject(lambda: verify_centers(centers + [(0, 0)]))
+    must_reject(lambda: verify_centers(centers, diameter=F(101, 100)))
+    bound = golden_pair_bound()
+    controls = fibonacci_controls()
+    receipt = {
+        "status": "PASS",
+        "python": platform.python_version(),
+        "arithmetic": "integer and fractions.Fraction; no floating acceptance decisions",
+        "finite_C1": {
+            "N": len(centers), "planar_lifts": len(lifts),
+            "lattice_min_distance_squared": "1",
+            "golden_pair_indices_zero_based": [4, 12],
+            "golden_pair_distance_squared_upper_rational": str(bound),
+            "golden_pair_distance_squared_upper_display": float(bound),
+            "certified_comparison": "golden pair squared distance < 77/100 < 1",
+        },
+        "controls": {
+            "six_orbit_small_instance": "PASS",
+            "reflection_invariance": "PASS",
+            "negative_controls_rejected": 3,
+            "Fibonacci_residual_and_ordered_threshold_identities": controls,
+            "identity_index_range": [2, 50],
+        },
+        "scope": "Finite witness certified; infinite results require RESULTS.md proofs; no elasticity or universal C2 proof.",
+    }
+    if args.write:
+        (ROOT / "results" / "certificate.json").write_text(json.dumps(receipt, indent=2) + "\n")
+    print("PASS: N=183, 1098 planar lifts, exact minimum distance squared=1")
+    print(f"PASS: golden pair (4,12) squared distance < {float(bound):.12f} < 0.77")
+    print("PASS: 6-orbit control; reflection; 3 rejected negative controls; 49 Fibonacci identities")
+
+
+if __name__ == "__main__":
+    main()
+
+exec
+/bin/zsh -lc "sed -n '1,300p' code/generate_witness.py" in /Users/jinleic/jinleic-workspace/ai4s/phys-fibonacci-cone-spirals
+ succeeded in 0ms:
+#!/usr/bin/env python3
+"""Generate the fixed triangular-lattice witness; no search or optimization."""
+import json
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def orbit(a, b):
+    points = []
+    for _ in range(6):
+        points.append((a, b))
+        a, b = -b, a + b
+    return points
+
+
+def main():
+    representatives = sorted({
+        min(orbit(a, b))
+        for a in range(-24, 25)
+        for b in range(-24, 25)
+        if 100 <= a * a + a * b + b * b <= 400
+    })
+    witness = {
+        "model": "intrinsic cone R^2/C6, sector angle pi/3",
+        "basis": ["(1,0)", "(1/2,sqrt(3)/2)"],
+        "center_radius_squared_bounds": [100, 400],
+        "frustum_radius_bounds": ["19/2", "41/2"],
+        "disk_diameter": 1,
+        "centers": representatives,
+    }
+    target = ROOT / "results" / "lattice-witness.json"
+    target.write_text(json.dumps(witness, indent=2) + "\n")
+    print(f"GENERATED: {len(representatives)} orbit representatives")
+
+
+if __name__ == "__main__":
+    main()
+
+exec
+/bin/zsh -lc 'wc -c results/*.json
+cat results/certificate.json
+cat results/diagnostics.json' in /Users/jinleic/jinleic-workspace/ai4s/phys-fibonacci-cone-spirals
+exec
+/bin/zsh -lc "sed -n '1,240p' README.md
+sed -n '1,300p' RESULTS.md
+sed -n '1,260p' STATUS.md" in /Users/jinleic/jinleic-workspace/ai4s/phys-fibonacci-cone-spirals
+ succeeded in 0ms:
+    1050 results/certificate.json
+    7167 results/diagnostics.json
+    6199 results/lattice-witness.json
+   14416 total
+{
+  "status": "PASS",
+  "python": "3.13.9",
+  "arithmetic": "integer and fractions.Fraction; no floating acceptance decisions",
+  "finite_C1": {
+    "N": 183,
+    "planar_lifts": 1098,
+    "lattice_min_distance_squared": "1",
+    "golden_pair_indices_zero_based": [
+      4,
+      12
+    ],
+    "golden_pair_distance_squared_upper_rational": "7659359334118153992579445671284402658213543774123502725039672186492083145434783452721477187/9953125000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+    "golden_pair_distance_squared_upper_display": 0.7695431670071615,
+    "certified_comparison": "golden pair squared distance < 77/100 < 1"
+  },
+  "controls": {
+    "six_orbit_small_instance": "PASS",
+    "reflection_invariance": "PASS",
+    "negative_controls_rejected": 3,
+    "Fibonacci_residual_and_ordered_threshold_identities": 49,
+    "identity_index_range": [
+      2,
+      50
+    ]
+  },
+  "scope": "Finite witness certified; infinite results require RESULTS.md proofs; no elasticity or universal C2 proof."
+}
+{
+  "evidence_label": "Empirical evidence",
+  "mpmath_version": "1.3.0",
+  "decimal_precision": 80,
+  "seed": "none; deterministic enumeration",
+  "cone_beta": "1/6",
+  "golden_finite_pair_distance_squared": "0.76912411704086560643143607393596366976890641062065",
+  "asymptotic_distance_squared_upper_limit": "0.46832098206938175954375830954699298663110061247115",
+  "golden_density_upper_bound": "0.70248147310407263931563746432048947994665091870672",
+  "triangular_density": "0.90689968211710892529703912882107786614203312404637",
+  "density_ratio_lower_bound": "1.2909944487358056283930884665941332036109739017639",
+  "convergence": [
+    {
+      "k": 4,
+      "offset": 3,
+      "n": 10,
+      "distance_squared_c_equals_1": "0.462124980188106404270485118576"
+    },
+    {
+      "k": 5,
+      "offset": 5,
+      "n": 26,
+      "distance_squared_c_equals_1": "0.472666467225284672509217441825"
+    },
+    {
+      "k": 6,
+      "offset": 8,
+      "n": 69,
+      "distance_squared_c_equals_1": "0.467514515767297413271178354239"
+    },
+    {
+      "k": 7,
+      "offset": 13,
+      "n": 180,
+      "distance_squared_c_equals_1": "0.469046944121311956888556366518"
+    },
+    {
+      "k": 8,
+      "offset": 21,
+      "n": 471,
+      "distance_squared_c_equals_1": "0.468182027990699892573315609122"
+    },
+    {
+      "k": 9,
+      "offset": 34,
+      "n": 1234,
+      "distance_squared_c_equals_1": "0.468430956573826267554495518528"
+    },
+    {
+      "k": 10,
+      "offset": 55,
+      "n": 3230,
+      "distance_squared_c_equals_1": "0.468301348855712758135764906909"
+    },
+    {
+      "k": 11,
+      "offset": 89,
+      "n": 8457,
+      "distance_squared_c_equals_1": "0.46833720318011600374537509811"
+    },
+    {
+      "k": 12,
+      "offset": 144,
+      "n": 22139,
+      "distance_squared_c_equals_1": "0.468318114094648203064412575301"
+    },
+    {
+      "k": 13,
+      "offset": 233,
+      "n": 57961,
+      "distance_squared_c_equals_1": "0.468323333870846326915675922645"
+    },
+    {
+      "k": 14,
+      "offset": 377,
+      "n": 151743,
+      "distance_squared_c_equals_1": "0.468320561977937135013723257144"
+    },
+    {
+      "k": 15,
+      "offset": 610,
+      "n": 397270,
+      "distance_squared_c_equals_1": "0.46832132561438283746794325137"
+    },
+    {
+      "k": 16,
+      "offset": 987,
+      "n": 1040066,
+      "distance_squared_c_equals_1": "0.468320921093753290655157971031"
+    },
+    {
+      "k": 17,
+      "offset": 1597,
+      "n": 2722928,
+      "distance_squared_c_equals_1": "0.468321032202096621854042025163"
+    },
+    {
+      "k": 18,
+      "offset": 2584,
+      "n": 7128718,
+      "distance_squared_c_equals_1": "0.468320973170392964249220332453"
+    },
+    {
+      "k": 19,
+      "offset": 4181,
+      "n": 18663226,
+      "distance_squared_c_equals_1": "0.46832098938526282618199868749"
+    },
+    {
+      "k": 20,
+      "offset": 6765,
+      "n": 48860960,
+      "distance_squared_c_equals_1": "0.468320980771022895273081839772"
+    },
+    {
+      "k": 21,
+      "offset": 10946,
+      "n": 127919654,
+      "distance_squared_c_equals_1": "0.468320983136885398616781389565"
+    },
+    {
+      "k": 22,
+      "offset": 17711,
+      "n": 334898001,
+      "distance_squared_c_equals_1": "0.468320981879937114535026571995"
+    },
+    {
+      "k": 23,
+      "offset": 28657,
+      "n": 876774349,
+      "distance_squared_c_equals_1": "0.46832098222512223067164955636"
+    },
+    {
+      "k": 24,
+      "offset": 46368,
+      "n": 2295425047,
+      "distance_squared_c_equals_1": "0.468320982041742062326775587758"
+    }
+  ],
+  "reduced_parastichy_phases": [
+    {
+      "pair": [
+        1,
+        2
+      ],
+      "larger_family_sign": -1,
+      "t_interval": [
+        "0.0",
+        "3.825663782645117156563738"
+      ],
+      "all_integer_offsets_tested": [
+        1,
+        1000
+      ]
+    },
+    {
+      "pair": [
+        2,
+        3
+      ],
+      "larger_family_sign": 1,
+      "t_interval": [
+        "3.825663782645117156563738",
+        "10.02903376914696879813666"
+      ],
+      "all_integer_offsets_tested": [
+        1,
+        1000
+      ]
+    },
+    {
+      "pair": [
+        3,
+        5
+      ],
+      "larger_family_sign": -1,
+      "t_interval": [
+        "10.02903376914696879813666",
+        "26.26143365629882175758157"
+      ],
+      "all_integer_offsets_tested": [
+        1,
+        1000
+      ]
+    },
+    {
+      "pair": [
+        5,
+        8
+      ],
+      "larger_family_sign": 1,
+      "t_interval": [
+        "26.26143365629882175758157",
+        "68.75526698449942400283201"
+      ],
+      "all_integer_offsets_tested": [
+        1,
+        1000
+      ]
+    },
+    {
+      "pair": [
+        8,
+        13
+      ],
+      "larger_family_sign": -1,
+      "t_interval": [
+        "68.75526698449942400283201",
+        "180.0043672852066841792739"
+      ],
+      "all_integer_offsets_tested": [
+        1,
+        1000
+      ]
+    },
+    {
+      "pair": [
+        13,
+        21
+      ],
+      "larger_family_sign": 1,
+      "t_interval": [
+        "180.0043672852066841792739",
+        "471.2578348704523166103631"
+      ],
+      "all_integer_offsets_tested": [
+        1,
+        1000
+      ]
+    },
+    {
+      "pair": [
+        21,
+        34
+      ],
+      "larger_family_sign": -1,
+      "t_interval": [
+        "471.2578348704523166103631",
+        "1233.769137326113022083779"
+      ],
+      "all_integer_offsets_tested": [
+        1,
+        1000
+      ]
+    },
+    {
+      "pair": [
+        34,
+        55
+      ],
+      "larger_family_sign": 1,
+      "t_interval": [
+        "1233.769137326113022083779",
+        "3230.049577107884674129519"
+      ],
+      "all_integer_offsets_tested": [
+        1,
+        1000
+      ]
+    },
+    {
+      "pair": [
+        55,
+        89
+      ],
+      "larger_family_sign": -1,
+      "t_interval": [
+        "3230.049577107884674129519",
+        "8456.379593997540884640502"
+      ],
+      "all_integer_offsets_tested": [
+        1,
+        1000
+      ]
+    },
+    {
+      "pair": [
+        89,
+        144
+      ],
+      "larger_family_sign": 1,
+      "t_interval": [
+        "8456.379593997540884640502",
+        "22139.08920488473797334624"
+      ],
+      "all_integer_offsets_tested": [
+        1,
+        1000
+      ]
+    },
+    {
+      "pair": [
+        144,
+        233
+      ],
+      "larger_family_sign": -1,
+      "t_interval": [
+        "22139.08920488473797334624",
+        "57960.888020656673035039"
+      ],
+      "all_integer_offsets_tested": [
+        1,
+        1000
+      ]
+    },
+    {
+      "pair": [
+        233,
+        377
+      ],
+      "larger_family_sign": 1,
+      "t_interval": [
+        "57960.888020656673035039",
+        "151743.5748570852811317507"
+      ],
+      "all_integer_offsets_tested": [
+        1,
+        1000
+      ]
+    },
+    {
+      "pair": [
+        377,
+        610
+      ],
+      "larger_family_sign": -1,
+      "t_interval": [
+        "151743.5748570852811317507",
+        "397269.8365505991703602121"
+      ],
+      "all_integer_offsets_tested": [
+        1,
+        1000
+      ]
+    }
+  ],
+  "scope": "Not global optimization, interval arithmetic, or a sequential cone-growth experiment."
+}
+
+ succeeded in 0ms:
+# Fibonacci spirals on cones
+
+Snapshot: 2026-10-14 (America/Los_Angeles).
+
+Cao Zexian's problem in *10000 Selected Problems in Sciences: Physics* (Science Press, 2009), pp. 541–543, asks whether the consecutive-Fibonacci counter-rotating spiral patterns observed in stressed Ag-core/silica-shell microstructures minimize elastic energy, and whether changing the size of identical disks packed toward a cone apex alternates the pattern's chirality. The source gives experimental motivation but no constitutive energy, boundary conditions, or mathematical definition of the admissible Fibonacci class. Global equilibrium, densest packing, and growth-selected metastable patterns are different questions.
+
+## Verdict
+
+**PARTIAL overall; COUNTEREXAMPLE for the precise fixed-golden-angle packing claim below.**
+
+**FRONTIER_METHOD: DELIVERY-READY for the scoped certificates; NOVELTY-UNCLEAR as a research contribution.** The original elastic-energy question and unrestricted sequential-growth chirality question remain open here, not fully solved. Known commensurate triangular cone crystals and classical phyllotaxis mathematics are the baseline, not discoveries of this project.
+
+### Precise formulations addressed
+
+1. **C1-Finite:** On the intrinsic cone obtained from a sector of angle `pi/3` by identifying its edges (half-angle `asin(1/6)`), constrain 183 centers to slant radii `10 <= r <= 20`. Maximize their minimum geodesic separation. The equal-area golden-angle placement
+   `r_i^2 = 100 + 150*i/91`, `theta_i = 2*pi*i*(3-sqrt(5))/2`, `i=0,...,182`, is **not** a maximizer. A triangular-lattice quotient has minimum distance exactly 1; the golden placement has a pair with squared distance strictly below `77/100`. Unit-diameter disks in the former fit in the same frustum `9.5 <= r <= 20.5`. This is an apex-independent, finite certified comparison, not a certificate of the unrestricted optimum.
+2. **C1-Bulk:** For `r_n=c*sqrt(n)` and that fixed golden divergence on a cone of sector angle `2*pi*beta`, any packing of equal embedded intrinsic disks centered on every point after any finite initial deletion has asymptotic density at most `pi/(2*sqrt(5))`. At `beta=1/6`, a triangular-lattice quotient attains the global asymptotic packing optimum `pi/(2*sqrt(3))`. The fixed-golden-angle ansatz therefore loses in the bulk too. The theorem does **not** exclude all deformed configurations whose contact graph happens to have Fibonacci counts.
+3. **C2-Reduced:** In a specified local linearized golden-spiral model, the two shortest *Fibonacci-offset* families change consecutively and the handedness of the larger-count family alternates at explicitly derived thresholds. In an achiral energy model, reflection instead makes opposite-handed minima degenerate at every disk size. Neither fact proves size-driven alternation for the book's physical growth process.
+
+## Reproduction
+
+From this folder, run:
+
+```sh
+/Users/jinleic/jinleic-workspace/scratch/ai4s-venv/bin/python code/reproduce.py
+```
+
+This regenerates a 183-center witness, verifies it with an independent integer-coordinate implementation and rational bounds, then runs separately labeled 80-digit empirical controls. The certificate-only replay is:
+
+```sh
+/Users/jinleic/jinleic-workspace/scratch/ai4s-venv/bin/python code/verify.py
+```
+
+Python 3.13.9 was exercised. The certificate is standard-library-only. Diagnostics use the existing shared `mpmath` installation; its version is recorded in `results/diagnostics.json`. No packages are installed. One core is used; no random search, paid compute, or remote mutation occurs.
+
+## File map
+
+- `source/problem.zh.txt`: unedited supplied source excerpt.
+- `STATUS.md`: primary-source status, comparable baseline, and unresolved model assumptions.
+- `RESULTS.md`: complete arguments, claim/evidence/novelty ledger, actual verification, and independent-review dispositions.
+- `code/generate_witness.py`: fixed triangular-lattice orbit construction.
+- `code/verify.py`: independent Cartesian-lift verifier, rational golden-pair bound, negative controls, and exact algebra controls.
+- `code/diagnostics.py`: independent polar-coordinate and local-branch empirical checks.
+- `code/reproduce.py`: one-command reproduction.
+- `results/lattice-witness.json`, `results/certificate.json`, `results/diagnostics.json`: small replayable outputs.
+- `review/`: hostile-referee prompt, response, and invocation evidence.
+
+## Research decision
+
+A global basin-hopping search cannot strengthen the existing strict counterexample to the fixed ansatz; finding the unrestricted finite optimum is unnecessary to disprove it. The highest-value next action is to specify the actual Ag/silica elastic functional and growth constraints, then compare a relaxed Fibonacci-contact state against a seam-bearing crystal at the experimental cone angle. Without those assumptions, answering the broader book question from generic Riesz optimization would substitute a different physical problem.
+# Results and proof obligations
+
+Snapshot: 2026-10-14 (America/Los_Angeles).
+
+**Verdict: PARTIAL overall. C1-Finite and the fixed-golden-angle C1-Bulk claim have verdict COUNTEREXAMPLE.** The precisely stated comparison theorems below are settled; the unrestricted elastic-energy book problem is not. **FRONTIER_METHOD: DELIVERY-READY** for these scoped results; **NOVELTY-UNCLEAR** for publication priority. No Discovery claim is made.
+
+## 1. Claim contract and protocol
+
+- **Claim:** determine whether a conventional equal-area golden-angle spiral is globally optimal for identical intrinsic disks on a cone, rather than merely dynamically accessible. Also determine exactly what a reduced Fibonacci-branch model predicts about chirality.
+- **Strongest comparable baseline:** the planar triangular packing theorem and the known commensurate triangular crystals on cones; Bacher's local-lattice analysis of constant-divergence phyllotaxis. See STATUS.md. The baseline is not an arbitrary random configuration.
+- **Missing ingredient for the book:** a specified elastic energy, experimentally relevant cone geometry, growth/relaxation rules, and a coordinate-free definition of the allowed Fibonacci-contact class. These are not supplied by a generic disk or Riesz model.
+- **Decision value:** a certified loss rules out the fixed-golden-angle ansatz as a universal explanation by densest packing, and distinguishes a kinematic alternation mechanism from physical selection.
+- **Exploration disclosure:** before freezing the witness, triangular quotient disks with outer squared radii `9,16,25,36,49,64,100,144,225,400` were compared numerically with equal-area spirals. Their closest pairs often lay near the apex. The retained annulus `10<=r<=20` deliberately removes that issue. Selection after exploration is harmless for an exact existential counterexample, but is not a preregistered statistical comparison.
+- **Frozen verification:** 183 integer orbit representatives, unit diameter, `beta=1/6`, annular center bounds `[10,20]`; golden indices `(4,12)`; 30-decimal rational square-root brackets; `pi<22/7`; no optimizer. Three negative controls, a six-center small-instance control, and exact Fibonacci algebra for indices 2 through 50. Diagnostics separately use 80 decimal digits, 21 asymptotic points `k=4..24`, 13 branch intervals `k=2..14`, and integer offsets `q=1..1000`. No holdout, generalization, or AI-performance claim.
+
+## 2. Geometry and definitions
+
+Let `C_beta` be the flat metric cone with polar coordinates `(r,theta)`, where `r>=0`, physical azimuth `theta` is modulo `2*pi`, and
+
+`ds^2 = dr^2 + beta^2*r^2*dtheta^2`, `0<beta<=1`.
+
+Its right-circular embedding has half-angle `alpha=asin(beta)`. Developing it gives a sector of angle `A=2*pi*beta`, with radial edges identified. Intrinsic distance is not the three-dimensional chord distance. If the minimal developed angular separation is `u=A*|| (theta_2-theta_1)/(2*pi) || <= pi`, the shortest path has
+
+`D^2 = r^2+s^2-2*r*s*cos(u)`.
+
+Here `||x||` denotes distance to the nearest integer. The path is the straight chord in the appropriate developed sector, except at degenerate apex cases; its angular change is at most `pi`. All pairs used below are nondegenerate and far from the apex. For `beta=1/6`, this is equivalently the quotient metric of the Euclidean plane by rotations through multiples of 60 degrees:
+
+`D([z],[w]) = min_{j=0,...,5} |z-exp(i*j*pi/3)*w|`.
+
+A disk means an **embedded intrinsic metric disk**, not a three-dimensional sphere touching the cone. It has area `pi*d^2/4` when its diameter is `d`. Finite comparisons constrain centers to `10<=r<=20`; disks of diameter at most 1 are contained in the physical frustum `9.5<=r<=20.5`. The metric is the ambient cone metric; the disks themselves do not leave that frustum.
+
+A Fibonacci spiral is not defined by a visual impression here. The **fixed ansatz** uses `gamma=(3-sqrt(5))/2`, angles `theta_i=2*pi*i*gamma`, and an affine function of index for `r_i^2`. Offset `q` joins index `i` to `i+q`; in the infinite ordered index set it gives `q` residue-class chains. Local families are assigned from short offsets. The reduced model in Section 5 explicitly selects two shortest Fibonacci offsets. Arbitrary contact/Delaunay networks with Fibonacci counts form a larger class and are not classified by this work.
+
+## 3. Finite certified counterexample: 183 centers
+
+**Claim F.** The fixed-golden-angle configuration
+
+`r_i^2=100+150*i/91`, `theta_i=2*pi*i*gamma`, `i=0,...,182`
+
+is not a maximizer of minimum pairwise distance for 183 centers on `C_(1/6)` with `10<=r<=20`.
+
+### 3.1 Competitor
+
+Use the triangular lattice
+
+`Lambda={a+b*exp(i*pi/3): a,b in Z}`,
+
+whose squared norm is `Q(a,b)=a^2+a*b+b^2`. Rotation by 60 degrees acts as `(a,b)->(-b,a+b)` and preserves `Lambda`. Take one representative of each nonzero orbit satisfying
+
+`100<=Q(a,b)<=400`.
+
+The supplied witness has 183 representatives. Its sixfold lift contains 1098 distinct planar lattice points. For any two distinct lifted points, the squared distance is a nonzero integer of the form `Q(a,b)`, so it is at least 1. Some pairs have distance exactly 1. The same lower bound holds between distinct quotient centers. Points in the same orbit are not counted twice. The sixfold lifting also shows that each disk of radius `1/2` is embedded: the distance between distinct lifts of a single center is at least its slant radius, here at least 10. The radial triangle inequality places every disk in the specified frustum.
+
+The count is reproducible by enumerating `-24<=a,b<=24`: the identity `Q(a,b)=(a+b/2)^2+3*b^2/4` and its symmetric counterpart imply `|a|,|b|<=sqrt(1600/3)<24` when `Q<=400`. No unenumerated lattice points satisfy the bound. The count is not needed for an optimality assertion about the lattice; it only matches the competitor and the 183-point golden configuration.
+
+The independent verifier does not import the generator. It transforms a witness pair to scaled Cartesian coordinates `(X,Y)=(2a+b,b)`, representing `(X/2,sqrt(3)*Y/2)`, rotates using `(X,Y)->((X-3Y)/2,(X+Y)/2)`, and exhaustively checks the squared-distance numerator `(X-U)^2+3*(Y-V)^2` over every pair of lifts. Its minimum is exactly 4. Reflection `Y->-Y` also preserves the lifted witness.
+
+### 3.2 Golden configuration obstruction
+
+For indices `i=4` and `j=12`,
+
+`r_i^2=a=9700/91`, `r_j^2=b=10900/91`,
+
+and the fractional angular residual is
+
+`8*gamma-3=9-4*sqrt(5)=delta`, with `0<delta<3/50`.
+
+The developed angle is `x=pi*delta/3`, hence
+
+`D^2=a+b-2*sqrt(a*b)*cos(x)`.
+
+Let `L_5<=sqrt(5)` and `L_ab<=sqrt(a*b)` be the rational lower bounds produced by integer square roots at denominator `10^30`. Then
+
+`x < U_x=(22/7)*(9-4*L_5)/3`,
+
+and `cos(x)>=1-x^2/2>=1-U_x^2/2>0`. Therefore
+
+`D^2 <= a+b-2*L_ab*(1-U_x^2/2) < 77/100 < 1`.
+
+The final two comparisons are exact rational arithmetic, not floating-point tolerances. The rational upper bound is stored in `results/certificate.json`; its displayed decimal is approximately `0.7695431670071615`. The independent high-precision polar computation is approximately `0.769124117040865606`, but is not needed for the proof.
+
+Thus the competitor permits unit-diameter disks, whereas the golden placement does not. Both sets have the same number of centers and the same radial bounds. The short offending chord and its midpoint are far inside the physical frustum, so this is not a boundary-clipping artifact. More directly, every point along that chord has radial distance at least `sqrt(a)*cos(x)>10`, since `a>106`, `x<0.063`, and `cos(x)>0.998`; its midpoint belongs to both radius-`1/2` balls.
+
+This proves Claim F. It does not prove the unrestricted finite maximum separation is 1, nor that every point set with Fibonacci parastichy counts fails.
+
+## 4. Bulk comparison, unaffected by any finite apex deletion
+
+**Claim B1.** Fix `0<beta<=1`, `c>0`, and any integer `n_0>=1`. Put a center at
+
+`P_n=(c*sqrt(n), 2*pi*n*gamma)`, for every integer `n>=n_0`.
+
+If equal embedded intrinsic disks of diameter `d>0` around these centers do not overlap, their asymptotic area density is at most
+
+`pi/(2*sqrt(5)) = 0.7024814731...`.
+
+### Proof
+
+Write `phi=(1+sqrt(5))/2` and Fibonacci numbers `F_0=0,F_1=1`. Induction using `phi^2=phi+1` gives
+
+`F_k*gamma-F_(k-2)=(-1)^k*phi^(-k)`, for `k>=2`.
+
+Also `F_k*phi^(-k)->1/sqrt(5)`, by Binet's formula (or by solving the Fibonacci recurrence). Set `q_k=F_k`, `epsilon_k=phi^(-k)`, `A=2*pi*beta`, and let `n_k` be the nearest integer to `q_k/(2*A*epsilon_k)`. Then `n_k->infinity`, `q_k/n_k->0`, and
+
+`n_k / (q_k/(2*A*epsilon_k)) -> 1`.
+
+For large `k` both indices `n_k,n_k+q_k` survive the finite deletion. Their separation satisfies the stable identity
+
+`D_k^2/c^2 = (sqrt(n_k+q_k)-sqrt(n_k))^2 + 4*sqrt(n_k*(n_k+q_k))*sin^2(A*epsilon_k/2)`.
+
+For the first term, rationalize the square roots:
+
+`q_k^2/(sqrt(n_k+q_k)+sqrt(n_k))^2 -> A/(2*sqrt(5))`.
+
+For the second, use `sin(u)/u->1` and `q_k/n_k->0`:
+
+`4*sqrt(n_k*(n_k+q_k))*sin^2(A*epsilon_k/2) -> A/(2*sqrt(5))`.
+
+Consequently `D_k^2/c^2 -> A/sqrt(5)`. Nonoverlap implies `d^2<=D_k^2` for every sufficiently large `k`, so
+
+`d^2 <= 2*pi*beta*c^2/sqrt(5)`.
+
+The number of centers within slant radius `R` is `R^2/c^2+O(1)`, and the cone disk has area `pi*beta*R^2`. Disks crossing the outer radius change the area sum only by `O(R)` (count centers in the radial shell `[R-d/2,R+d/2]`). Thus the limiting covered area fraction is
+
+`density=d^2/(4*beta*c^2) <= pi/(2*sqrt(5))`.
+
+Every step is an exact identity or elementary limit; the finite convergence table is only a control, not a proof of the limit. No assertion that the upper bound is attained is needed or made.
+
+**Claim B2.** On `C_(1/6)`, the global maximal asymptotic density for equal embedded intrinsic disks is `pi/(2*sqrt(3))`.
+
+### Proof
+
+The quotient of `Lambda` by its 60-degree rotation symmetry, with the apex orbit omitted, packs disks of radius `1/2`. Its planar fundamental parallelogram has area `sqrt(3)/2`, so its density is `(pi/4)/(sqrt(3)/2)=pi/(2*sqrt(3))`. Quotienting divides both disk counts and ambient area by six; the density is unchanged. A bounded excluded apex neighborhood changes neither limit.
+
+Conversely, lift any packing on this quotient cone to the plane. Outside a fixed apex neighborhood, embedded disks lift to six disjoint Euclidean disks. Their union is a planar packing. Centered-radius density is the same because area and counts both multiply by six. The planar equal-circle packing theorem gives upper density at most `pi/(2*sqrt(3))`. Discarding the bounded apex region does not alter this bound. This proves B2.
+
+B2 is an elementary application of the classical theorem, not a new packing constant. Combining B1 and B2 gives a strict separation: the triangular packing density divided by the golden-ansatz upper bound is `sqrt(5/3)>1`, approximately `1.2909944487`. This is a relative factor, not a percentage-point difference and not a claim to have computed the golden ansatz's exact density. The comparator is reflection-symmetric; its optimal density does not require a preferred handedness.
+
+## 5. Chirality: what is established and what is not
+
+### 5.1 Reflection degeneracy
+
+**Claim S.** Suppose the admissible domain and boundary data are invariant under `(r,theta)->(r,-theta)`, and the energy depends only on intrinsic distances or other reflection-invariant quantities. For every disk diameter, reflection maps the set of global minimizers to itself. If a minimizer is chiral, a mirror minimizer with opposite chirality has exactly the same energy.
+
+**Proof.** Reflection preserves `ds^2`, hence all distances, admissibility, and the stated energy. Apply it to a minimizer; any lower-energy reflected competitor would reflect back to a lower-energy competitor for the original minimizer. Reflection reverses signed winding. This argument also applies to a packing objective. It does not require a numerical experiment.
+
+Thus scalar disk size alone cannot energetically prefer one absolute handedness in this achiral model. It can still change which *pair* of degenerate states occurs; a history-dependent branch can still alternate. The claim does not refute such alternation. Conversely, rescaling every length and the disks on an unbounded cone preserves the entire packing and its chirality, so size changes without a fixed external length scale do not compel any transition.
+
+### 5.2 An exactly soluble local Fibonacci-family model
+
+**Claim T (reduced, conditional model).** Let `t>0` and `A=2*pi*beta`. For each `k>=2`, define the squared local separation
+
+`L_k(t)=F_k^2/(4*t)+A^2*t*phi^(-2*k)`.
+
+This is the radial/tangential linearization of the golden spiral at radial index `t`, divided by `c^2`. It is taken here as the **definition of the reduced model**, not an equality to the finite cone's distance. Its candidate families are the Fibonacci offsets only. Define the two active parastichy families to be the two distinct `k` with smallest `L_k(t)`, with ties reported rather than arbitrarily assigned. Then the active unordered pair progresses through
+
+`(F_2,F_3), (F_3,F_4), (F_4,F_5), ...`.
+
+The signed winding of the family with `F_k` chains is `(-1)^k`, when direction is measured with increasing radius. Therefore the sign of the larger-count family changes at every consecutive pair transition. This observable matches the book's *relative parastichy* chirality convention, not ontogenetic chirality.
+
+### Proof and exact thresholds
+
+Multiplying by `t>0` converts the comparison to affine functions of `x=t^2`, with intercepts `F_k^2/4` increasing and slopes `A^2*phi^(-2*k)` decreasing. Neighboring functions cross at `t=tau_k`, where
+
+`tau_k^2 = (F_(k+1)^2-F_k^2)/(4*A^2*(phi^(-2*k)-phi^(-2*(k+1))))`
+
+`           = phi^(2*k+1)*F_(k-1)*F_(k+2)/(4*A^2)`.
+
+The second equality uses `F_(k+1)^2-F_k^2=F_(k-1)*F_(k+2)` and `1-phi^(-2)=phi^(-1)`. These thresholds strictly increase for `k>=2`. For `tau_(k-1)<t<tau_k`, consecutive comparisons telescope to show `L_k<L_j` for every `j!=k`. For the initial interval `0<t<tau_2`, `L_2` is smallest.
+
+In an interval where `k>=3` is smallest, every `j<k-1` has `L_j>L_(k-1)` and every `j>k+1` has `L_j>L_(k+1)`, by those same adjacent comparisons. The second-smallest family is therefore either `k-1` or `k+1`. Those two cross once, at
+
+`sigma_k^2 = (F_(k+1)^2-F_(k-1)^2)/(4*A^2*(phi^(-2*(k-1))-phi^(-2*(k+1))))`, `k>=3`.
+
+This squared threshold is a strictly weighted average of `tau_(k-1)^2` and `tau_k^2`, with weights given by the positive consecutive slope differences. Hence `tau_(k-1)<sigma_k<tau_k`, and the `sigma_k` are strictly increasing. Set `sigma_2=0`. The two smallest families are `(k,k+1)` for `sigma_k<t<sigma_(k+1)`, including `k=2`. At `sigma_k` the shortest family is `k`, and the two possible second-shortest families tie; the chirality assignment is therefore not unique exactly at the transition.
+
+The residual identity from Section 4 gives opposite winding signs for adjacent offsets. For pair `(k,k+1)`, the larger count is `F_(k+1)` and its sign is `(-1)^(k+1)`, proving alternation. At fixed physical radius `r`, choosing a scale `c` gives `t=(r/c)^2`; changing `c` monotonically crosses the same thresholds in reverse order. If a disk diameter is assumed proportional to `c`, the conclusion transfers conditionally to that rescaled ansatz. Diameter proportionality is an assumption, not a solved growth law.
+
+A scan that skips an even number of transitions can show no sign change. At a tie no unique larger-family sign is selected. A reflected seed reverses every sign. Non-Fibonacci branches or defects are outside this restricted model. Therefore this result supplies a checkable mechanism and transition criterion, **not** a universal answer to C2.
+
+## 6. Evidence, novelty, and verification ledger
+
+| ID | Evidence label | Exact claim and novelty status | Verification | Review disposition |
+|---|---|---|---|---|
+| F | Certification | Finite 183-point strict counterexample to the fixed golden ansatz. Novelty not established; commensurate lattice construction is known. | `python code/verify.py`; proof in Section 3 | Independent referee assessment recorded below. |
+| B1 | Certification | Upper density bound for a fixed golden Fermat spiral on a cone after arbitrary finite prefix deletion. Elementary continued-fraction/local-linearization corollary; no priority claim. | Section 4 proof; `python code/diagnostics.py` controls the formula, not its universal quantifier | Independent referee assessment recorded below. |
+| B2 | Certification | Global asymptotic density for the 60-degree quotient cone. Classical planar packing theorem plus lifting, not a new optimum. | Section 4 proof; finite lattice checked by `python code/verify.py` | Independent referee assessment recorded below. |
+| S | Certification | Reflection degeneracy for an explicitly achiral model. Standard symmetry argument, no novelty claim. | Section 5.1 proof; witness reflection checked by `python code/verify.py` | Independent referee assessment recorded below. |
+| T | Certification | Consecutive pair transitions and relative-chirality alternation in the specified Fibonacci-family linearized model. Standard phyllotaxis mechanism, not novel physical selection. | Section 5.2 proof; 49 exact algebra controls in `python code/verify.py` | Independent referee assessment recorded below. |
+| E | Empirical evidence | Independent polar pair value, 21 large-index limits, 13 two-family phases with offsets 1..1000. No global optimization or theorem claim from numerics. | `python code/diagnostics.py` | Independent referee assessment recorded below. |
+
+Actual command run from this folder:
+
+```sh
+/Users/jinleic/jinleic-workspace/scratch/ai4s-venv/bin/python code/reproduce.py
+```
+
+Observed output:
+
+```text
+GENERATED: 183 orbit representatives
+PASS: N=183, 1098 planar lifts, exact minimum distance squared=1
+PASS: golden pair (4,12) squared distance < 0.769543167007 < 0.77
+PASS: 6-orbit control; reflection; 3 rejected negative controls; 49 Fibonacci identities
+EMPIRICAL: golden pair squared distance=0.769124117040865606
+EMPIRICAL: density upper bound=0.7024814731040726, lattice=0.9068996821171089
+EMPIRICAL: 21 asymptotic controls; 13 consecutive chirality phases, q=1..1000
+```
+
+The finite verifier uses only Python integer arithmetic and `fractions.Fraction`; floating values are printed after certification and never decide acceptance. Its negative controls reject a repeated orbit, an apex point outside the allowed annulus, and diameter `101/100`. Generator and verifier share the mathematical lattice definition, but use different coordinate representations and share no implementation functions. The mpmath check uses a stable sine-squared polar distance formula rather than the verifier's cosine lower bound. Both codes run under the same Python runtime; they are not formal kernel verification.
+
+## 7. Independent review
+
+The hostile-referee prompt and its response are kept in `review/`. Review completion and point-by-point dispositions are recorded here after the independent run. The proofs and evidence are not considered externally certified merely because a model agrees.
+
+## 8. Exact remaining blocker and next action
+
+Nothing here establishes that the actual Ag/silica experiments reach global elastic minima, or that every Fibonacci-contact packing is inferior. A full answer requires the strain/bending/substrate energy, geometry and stress history, defect costs, boundaries, and allowed rearrangements. A scalar Riesz energy or intrinsic hard-disk model is not automatically that functional. No sequential packing experiment has been substituted for a proof of C2.
+
+The single most valuable next action is to obtain or derive the experimental bilayer elastic functional and a mathematically explicit Fibonacci-contact competitor class, then certify an energy comparison with a seam-bearing crystal at an experimental cone angle. Until that contract is fixed, more unconstrained numerical searches would answer a different question rather than close this blocker.
+# Status and strongest comparable results
+
+Snapshot: 2026-10-14 (America/Los_Angeles). This is a bounded primary-source review, not a proof that no relevant result exists.
+
+## 1. The actual question and current verdict
+
+The book asks two different things:
+
+- **C1:** whether the observed Fibonacci parastichy patterns are least-*elastic*-energy configurations of identical units on a cone; it also discusses an equal-disk-packing version.
+- **C2:** whether varying disk size in packing toward the apex alternates which counter-rotating family has the larger consecutive-Fibonacci count.
+
+**Overall verdict here: PARTIAL.** We found no verified general theorem resolving these statements under the book's unspecified elastic law and growth conditions. This is **not** a certified literature-wide “still unsolved” claim. The book itself calls both questions conjectural; the retrieved modern sources concern different precise models and do not announce a general solution of Cao's conjecture.
+
+The central modern distinction is explicit in Lee and Levitov [3], Section II.1: “the structure does not track the global energy minimum.” The same passage says the Fibonacci structures characterize a progression of deformation, “rather than the result of global energy minimization.” Consequently, citing that theory as a global-minimum proof would reverse its stated qualification.
+
+**What this folder settles:** a conventional fixed-golden-angle, equal-area spiral loses to a triangular-lattice quotient in a certified 183-center annular comparison, and in an asymptotic density comparison after any finite apex deletion. This does not classify the much larger family of deformed Fibonacci-contact patterns. Reflection degeneracy is proved for achiral models; alternating relative chirality is proved only for an explicitly defined local Fibonacci-family model.
+
+**Difficulty assessment:** the finite witness and reduced-model algebra are accessible because the cone has a 60-degree commensurate development, distances reduce to an integer quadratic form, and a single short pair suffices to disprove an ansatz. Those are the actual bounded obligations. The full experimental elastic minimization is not shown to be “not too hard”: it requires a constitutive functional, stress and boundary data, a global competitor class, and a proof excluding all lower-energy competitors. No ease claim follows from having a numerical simulator.
+
+## 2. What is established, by model
+
+| Model and primary baseline | Established result or observation | What does not follow |
+|---|---|---|
+| Stressed Ag/silica microstructures [1,2] | Experiments produce Fibonacci patterns under conical support; the 2007 abstract reports 3x5 through 13x21 with definite chirality and interprets them as least elastic energy. | Experimental self-assembly is not a proof of a global minimum over all admissible shapes, nor a constitutive-energy specification. |
+| Deformable cylindrical lattices [3,4] | Mechanical theories organize local rearrangements with modular symmetry and Fibonacci transitions. The 1998 chapter posted in 2021 explicitly separates these from global minimization. | The arXiv date does not make the chapter a new 2021 cone-global-optimality theorem. |
+| Discrete dynamical plant-pattern model [5] | Rigorous fixed-point stability and bifurcation-diagram analysis explains Fibonacci occurrence in that system. | Stability of a growth-map fixed point does not certify a global disk-packing or elastic minimum. |
+| Cylindrical disk packing and slow variation [6,7] | Cylindrical dense packings and local packing evolution can be organized by parastichy integers; local homogeneity and continuity can generate Fibonacci and related states. | A cylinder has different global closure conditions from a cone; local packing rules need not find global optima. |
+| Disk accretion, including irregular states [8,9] | The same simple framework permits Fibonacci and quasi-symmetric states. The 2024 preprint compares stacking models with a large sunflower dataset and includes Lucas, double-Fibonacci, Fibonacci-plus/minus-one, and near-equal non-Fibonacci counts. | “All plants have consecutive Fibonacci counts” is false as a descriptive premise; model-data agreement does not prove global optimality. |
+| Constant-divergence Fermat spirals [10,11] | Bacher provides a rigorous local-lattice/geodesic description and parastichy transitions. Akiyama proves a Fermat constant-angle set is Delone iff its angle is badly approximable. | Uniform discreteness, good uniformity, and golden-angle Diophantine extremality are not maximum disk density among all point sets. |
+| Repulsive vortices on conical frusta [12] | Molecular dynamics and Monte Carlo find transitions between phyllotactic states, including non-Fibonacci states such as `(3,3,0)`, `(4,2,2)`, `(5,4,1)`, and seam/scar structures. | Agreement of two numerical methods is not a replayable global-minimum certificate. Their Bessel interaction and reservoirs are not the Ag/silica elastic experiment. |
+| Hard-disk growth on cones [13] | Greedy, irreversible growth yields seams and near-tip disorder away from special commensurate cone angles. Perfect triangular crystals at sector angles `60 degrees * P` are a known baseline. | The authors explicitly distinguish growth from the earlier basin-hopping energy studies; the greedy algorithm does not solve equilibrium packing. |
+| Colloidal crystals on cones [14] | 2025 experiments observe geometry-set tilt grain boundaries and, at small cone angles, commensurate bands limited by dislocations. | Real cone crystals need not be globally Fibonacci. These are physical observations, not universal hard-disk bounds. |
+| Riesz energy on rectifiable surfaces [15] | For the stated classes and `s>=d`, minimal configurations asymptotically equidistribute with respect to `d`-dimensional Hausdorff measure; the critical leading term is explicit. | Equidistribution does not identify contact topology. This is ambient Euclidean Riesz distance, not automatically intrinsic geodesic distance, and surface Coulomb `s=1<2` is outside that quoted regime. |
+| Planar equal-circle packing [16] | Triangular packing has density `pi/(2*sqrt(3))`. The `pi/3` cone is a sixfold rotational quotient, so lifting and quotienting transfer this asymptotic optimum. | The finite 183-point optimum need not be 1; our witness only supplies a strict comparator. |
+
+### Strongest same-model baseline we must beat
+
+For intrinsic equal disks on the `pi/3` quotient cone, the known triangular lattice already attains the planar density bound. There is no headroom to improve that asymptotic benchmark. The correct question is whether the proposed golden-spiral class reaches it. RESULTS.md proves a strictly smaller upper bound `pi/(2*sqrt(5))` for that fixed ansatz. This is a certification/corollary, not a claim to beat the classical packing optimum or discover commensurate cone crystals.
+
+For the general elastic question, there is no meaningful numerical “best score” until the energy, boundaries, particle shape and relaxation constraints are fixed. A Coulomb or Riesz search would be a different model, not a substitute baseline.
+
+## 3. Chirality status and the exact remaining gap
+
+C2 requires distinguishing **relative parastichy chirality** (which of the two spiral families has more members) from the **ontogenetic/generative spiral** (the temporal insertion sequence). These signs can differ and can change for different reasons.
+
+- The 2007 experiment [2] demonstrates definite chirality under its fabrication conditions, but its abstract does not establish a theorem of disk-size-driven alternation.
+- Classical and modern stacking/local-lattice models [3,8–11] provide mechanisms for consecutive parastichy transitions. RESULTS.md derives explicit thresholds and alternation in a frozen golden-angle linearization, rather than assuming the qualitative mechanism solves C2.
+- A 2025-online/2026-issue fossil-cone study [17] reports associations between ontogenetic chirality and seed number. The primary abstract describes an observational morphometric study, not a controlled disk-size experiment; it cannot establish the proposed causal alternation law.
+- The 2026 Keller–Segel paper [18] reproduces Fibonacci and alternating patterns through growth and signaling instabilities. Its “alternating patterns” are not, by that phrase alone, proof of the book's chirality alternation.
+- In an achiral domain with a reflection-invariant energy, opposite chiral minimizers have equal energy at every disk size. That symmetry rules out energetic selection of a unique absolute sign without a symmetry-breaking ingredient, but does not rule out path-dependent branch alternation.
+
+The unresolved obligation is therefore concrete: fix an apex-directed accretion/relaxation rule, a boundary or seed that fixes the external length scale and any chirality bias, and a robust contact-network count; then prove or certify the parameter intervals and transition sequence. No universal implication “changing size means changing chirality” has been proved here.
+
+## 4. Primary-source references and reading level
+
+1. **Chaorong Li, Xiaona Zhang, Zexian Cao.** “Triangular and Fibonacci Number Patterns Driven by Stress on Core/Shell Microstructures.” *Science* **309**, 909–911 (2005). DOI [10.1126/science.1113412](https://doi.org/10.1126/science.1113412). Publisher-deposited abstract and bibliographic record read via Crossref; full publisher page returned 403. The abstract reports geometry-dependent patterns and the authors' strain-energy interpretation, not a mathematical proof.
+2. **Chaorong Li, Ailing Ji, Zexian Cao.** “Stressed Fibonacci spiral patterns of definite chirality.” *Applied Physics Letters* **90**, 164102 (2007). DOI [10.1063/1.2728578](https://doi.org/10.1063/1.2728578). Publisher-deposited abstract read. Reports the 3x5 to 13x21 range, conical support, definite chirality, and the least-energy interpretation.
+3. **Hyun-Woo Lee, Leonid S. Levitov.** “Universality in Phyllotaxis: a Mechanical Theory.” Chapter in *Symmetry in Plants*, World Scientific (1998), posted as [arXiv:2101.02652](https://arxiv.org/abs/2101.02652) (2021). [Full text](https://arxiv.org/html/2101.02652). Introduction and Sections II.1–II.2 read, including the explicit non-global-minimum qualification. This is the strongest directly relevant warning against conflating energetic evolution with global minimization.
+4. **L. S. Levitov.** “Energetic Approach to Phyllotaxis.” *Europhysics Letters* **14**, 533–539 (1991). DOI [10.1209/0295-5075/14/6/006](https://doi.org/10.1209/0295-5075/14/6/006). Metadata read; its role is described in the primary retrospective [3]. Distinct from his “Phyllotaxis of flux lattices in layered superconductors,” *Physical Review Letters* **66**, 224 (1991), DOI [10.1103/PhysRevLett.66.224](https://doi.org/10.1103/PhysRevLett.66.224).
+5. **Pau Atela, Christophe Golé, Scott Hotton.** “A Dynamical System for Plant Pattern Formation: A Rigorous Analysis.” *Journal of Nonlinear Science* **12**(6), 641–676 (volume year 2002; DOI publication metadata and institutional repository date January 2003). DOI [10.1007/s00332-002-0513-1](https://doi.org/10.1007/s00332-002-0513-1); [institutional abstract/manuscript entry](https://scholarworks.smith.edu/mth_facpubs/80/). Author abstract read: fixed points, stability, and bifurcations are the announced rigorous objects.
+6. **Adil Mughal, Denis Weaire.** “Theory of cylindrical dense packings of disks.” *Physical Review E* **89**, 042307 (2014). DOI [10.1103/PhysRevE.89.042307](https://doi.org/10.1103/PhysRevE.89.042307). Metadata checked; commensurate-packing discussion and formulas also read in primary source [13], Appendix C. No uninspected theorem from this article is used in our proofs.
+7. **Adil Mughal, Denis Weaire.** “Phyllotaxis, disk packing, and Fibonacci numbers.” *Physical Review E* **95**, 022401 (2017). DOI [10.1103/PhysRevE.95.022401](https://doi.org/10.1103/PhysRevE.95.022401); [arXiv:1608.05824](https://arxiv.org/abs/1608.05824). Author abstract read. The local principles are dense packing, homogeneity and continuity, not a certificate of the cone's global packing optimum.
+8. **Christophe Golé, Jacques Dumais, Stéphane Douady.** “Fibonacci or quasi-symmetric phyllotaxis. Part I: why?” *Acta Societatis Botanicorum Poloniae* (2016), article 3533. DOI [10.5586/asbp.3533](https://doi.org/10.5586/asbp.3533); [institutional author entry](https://scholarworks.smith.edu/mth_facpubs/32/). Primary abstract read; reports both Fibonacci-like and quasi-symmetric solutions of disk accretion. The institutional volume field is not relied upon because it is inconsistent with common bibliographic indexing.
+9. **Jonathan Swinton.** “Disk-stacking models are consistent with Fibonacci and non-Fibonacci structure in sunflowers.” [arXiv:2407.05857v2](https://arxiv.org/html/2407.05857v2) (2024), preprint. Full-text Sections 1–5 read, including actual contact-chain parastichy definitions, finite transitions, non-Fibonacci data and parameter selection after inspection. It is cited as a preprint; no unverified journal status or priority assertion is imported.
+10. **Roland Bacher.** “On geodesics of phyllotaxis.” *Confluentes Mathematici* **6**(1), 3–27 (2014). DOI [10.5802/cml.10](https://doi.org/10.5802/cml.10); [arXiv:1301.7568](https://arxiv.org/abs/1301.7568); [journal PDF](https://www.numdam.org/item/10.5802/cml.10.pdf). Theorem 1.1, linearization, Sections 6–7 and parastichy transitions read. This is direct prior art for the local geometry and cautions against claiming the reduced transition mechanism as new.
+11. **Shigeki Akiyama.** “Spiral Delone sets and three distance theorem.” [arXiv:1904.10815v2](https://arxiv.org/abs/1904.10815) (2019). [Full manuscript](https://arxiv.org/pdf/1904.10815). Theorems 2–3, Diophantine conditions, and stated generalization questions read. The theorem concerns the Delone property, not global maximum density.
+12. **H. S. Ansell, A. A. Tomlinson, N. K. Wilkin.** “Transitions between phyllotactic lattice states in curved geometries.” *Scientific Reports* **10**, 17411 (2020). DOI [10.1038/s41598-020-74158-x](https://doi.org/10.1038/s41598-020-74158-x); [arXiv:2001.10501v2 full text](https://arxiv.org/html/2001.10501v2); [PubMed record](https://pubmed.ncbi.nlm.nih.gov/33060641/). Model and Sections 2–4 read: intrinsic `K_0` interaction, fixed-density reservoirs, numerical ground-state methods, and non-Fibonacci states. The HTML rendering's later date is not the publication date.
+13. **Jessica H. Sun, Abigail Plummer, Grace H. Zhang, David R. Nelson, Vinothan N. Manoharan.** “Geometric frustration of hard-disk packings on cones.” *Physical Review E* **108**, 054608 (2023). DOI [10.1103/PhysRevE.108.054608](https://doi.org/10.1103/PhysRevE.108.054608); [arXiv:2309.14446 full manuscript](https://arxiv.org/pdf/2309.14446). Methods, discussion, conclusion and Appendices A/C read. Section II states the special sector angles `60 degrees * P`; their simulations deliberately avoid them. Conclusion explicitly calls for simulations/experiments including kinetics, thermal fluctuations and entropy. Their [public code](https://github.com/manoharan-lab/cone-disk-packings) and [data DOI](https://doi.org/10.7910/DVN/ZQ4BUR) are linked in the paper but were not cloned or reproduced here.
+14. **Jessica H. Sun, Grace H. Zhang, Abigail Plummer, Caroline Martin, Nabila Tanjeem, David R. Nelson, Vinothan N. Manoharan.** “Colloidal Crystallization on Cones.” *Physical Review Letters* **134**, 018201 (2025). DOI [10.1103/PhysRevLett.134.018201](https://doi.org/10.1103/PhysRevLett.134.018201); [primary abstract via PubMed](https://pubmed.ncbi.nlm.nih.gov/39913697/). Abstract read after publisher/author-page access failed. Grain-boundary and finite-band observations above come from that abstract, not an unverified search summary.
+15. **D. P. Hardin, E. B. Saff.** “Minimal Riesz energy point configurations for rectifiable d-dimensional manifolds.” *Advances in Mathematics* **193**, 174–204 (2005). DOI [10.1016/j.aim.2004.05.006](https://doi.org/10.1016/j.aim.2004.05.006); [arXiv:math-ph/0311024](https://arxiv.org/abs/math-ph/0311024). Author abstract read; only its asymptotic distribution statement is used here. No transfer of its assumptions to intrinsic Coulomb energy is asserted.
+16. **Hai-Chau Chang, Lih-Chung Wang.** “A Simple Proof of Thue's Theorem on Circle Packing.” [arXiv:1009.4322](https://arxiv.org/abs/1009.4322) (2010), proof exposition of the classical planar theorem. Author abstract read. The planar packing theorem is an explicitly imported mathematical baseline in RESULTS.md, not a locally rediscovered result.
+17. **Mariah M. Howell, Ronny Rößler, Carole T. Gee.** “Phyllotaxis, ontogeny and CT imaging: old and new approaches to understanding optimal seed packing in Middle Jurassic Araucaria mirabilis cones.” *Annals of Botany* (online 2025; issue 2026). DOI [10.1093/aob/mcaf325](https://doi.org/10.1093/aob/mcaf325). Publisher-deposited abstract read. It describes 21 analyzed cones; a search summary said 30, so that summary was rejected. No sample-size inference or experimental causal claim is made from it.
+18. **Michael F. Staddon.** “Phyllotaxis in a Keller-Segel model.” *Physical Review E* **113**, 034407 (2026). DOI [10.1103/9yk5-b4q2](https://doi.org/10.1103/9yk5-b4q2). Publisher-deposited abstract read: radial growth, signal-source competition, and linear stability analysis. This extends the status check to 2026 but does not settle elastic C1 or disk-size C2.
+
+### Historical source correction
+
+The Oklahoma item is accessible: [J. Albert's course project list, Version 3, Summer 2008](https://www.math.ou.edu/~jalbert/courses/projects.pdf), item 15. Its exact characterization is “least-energy configurations of discs (I think) on a cone,” and it points to the 2005/2007 experiments. It is an informal course-project suggestion, not a formal published densest-packing conjecture or proof. The book's summary should not be upgraded into a precise theorem statement.
+
+### Search and access limitations
+
+Primary texts were preferred over generated search answers. Search covered the book's titles, cone hard-disk packing, conical crystal ground states, phyllotaxis chirality, Fermat-spiral density, and 2025–2026 developments. Multiple publisher pages returned 403/401; author manuscripts, deposited abstracts, or PubMed were used with the reading level stated above. One search-suggested `preprints.org/manuscript/202608.2110` URL was inaccessible and not independently located by its identifier; it supports no claim. Absence from this bounded review establishes neither nonexistence nor novelty.
+
+## 5. Research direction after these certificates
+
+The attainable result is not “Fibonacci is always optimal,” but a precise separation between geometric constraints, kinetic branch selection, and equilibrium. The full target needs a physically grounded energy and a broader contact-topology class. Fixing those assumptions is the single highest-value prerequisite; more random starts in an arbitrary energy landscape would not repair their absence.
+
+exec
+/bin/zsh -lc "nl -ba code/verify.py | sed -n '1,220p'" in /Users/jinleic/jinleic-workspace/ai4s/phys-fibonacci-cone-spirals
+exec
+/bin/zsh -lc "nl -ba RESULTS.md | sed -n '1,190p'" in /Users/jinleic/jinleic-workspace/ai4s/phys-fibonacci-cone-spirals
+ succeeded in 0ms:
+     1	#!/usr/bin/env python3
+     2	"""Exact integer/rational replay. Does not import the witness generator.
+     3	
+     4	All accept/reject decisions use integers or fractions. Decimal values in the
+     5	output are presentation only. The infinite statements have written proofs in
+     6	RESULTS.md; their finite algebra controls here are not substitutes for proofs.
+     7	"""
+     8	import argparse
+     9	from fractions import Fraction as F
+    10	from itertools import combinations
+    11	import json
+    12	from math import isqrt
+    13	from pathlib import Path
+    14	import platform
+    15	
+    16	ROOT = Path(__file__).resolve().parents[1]
+    17	
+    18	
+    19	def lift_cartesian(a, b):
+    20	    """Return six lifts in coordinates (X,Y) meaning (X/2,sqrt(3)*Y/2)."""
+    21	    x, y = 2 * a + b, b
+    22	    lifts = []
+    23	    for _ in range(6):
+    24	        lifts.append((x, y))
+    25	        assert (x - 3 * y) % 2 == 0 and (x + y) % 2 == 0
+    26	        x, y = (x - 3 * y) // 2, (x + y) // 2
+    27	    assert (x, y) == lifts[0]
+    28	    return lifts
+    29	
+    30	
+    31	def verify_centers(centers, lower=100, upper=400, diameter=F(1)):
+    32	    lifts = [p for a, b in centers for p in lift_cartesian(a, b)]
+    33	    assert len(set(lifts)) == 6 * len(centers), "duplicate center orbit"
+    34	    for x, y in lifts:
+    35	        assert 4 * lower <= x * x + 3 * y * y <= 4 * upper, "outside annulus"
+    36	    minimum4 = min((x - u) ** 2 + 3 * (y - v) ** 2
+    37	                   for (x, y), (u, v) in combinations(lifts, 2))
+    38	    assert minimum4 >= 4 * diameter * diameter, "overlapping disks"
+    39	    return minimum4, lifts
+    40	
+    41	
+    42	def sqrt_bracket(value, digits=30):
+    43	    value = F(value)
+    44	    scale = 10 ** digits
+    45	    k = isqrt(value.numerator * scale * scale // value.denominator)
+    46	    low, high = F(k, scale), F(k + 1, scale)
+    47	    assert low * low <= value < high * high
+    48	    return low, high
+    49	
+    50	
+    51	def golden_pair_bound():
+    52	    # r_i^2 = 100 + 150*i/91, theta_i = 2*pi*i*(3-sqrt(5))/2.
+    53	    a, b = F(9700, 91), F(10900, 91)  # i=4 and i=12, difference 8.
+    54	    sqrt5_low, _ = sqrt_bracket(5)
+    55	    delta_upper = 9 - 4 * sqrt5_low
+    56	    assert 0 < delta_upper < F(3, 50)
+    57	    angle_upper = F(22, 7) * delta_upper / 3  # pi < 22/7.
+    58	    product_lower, _ = sqrt_bracket(a * b)
+    59	    cosine_lower = 1 - angle_upper * angle_upper / 2  # cos(x) >= 1-x^2/2.
+    60	    assert cosine_lower > 0
+    61	    distance2_upper = a + b - 2 * product_lower * cosine_lower
+    62	    assert distance2_upper < F(77, 100) < 1
+    63	    return distance2_upper
+    64	
+    65	
+    66	# Independent exact arithmetic in Q(sqrt(5)), represented by (a,b).
+    67	def add(x, y):
+    68	    return x[0] + y[0], x[1] + y[1]
+    69	
+    70	
+    71	def mul(x, y):
+    72	    return x[0] * y[0] + 5 * x[1] * y[1], x[0] * y[1] + x[1] * y[0]
+    73	
+    74	
+    75	def power(x, n):
+    76	    result = (F(1), F(0))
+    77	    for _ in range(n):
+    78	        result = mul(result, x)
+    79	    return result
+    80	
+    81	
+    82	def positive(x):
+    83	    a, b = x
+    84	    if a >= 0 and b >= 0:
+    85	        return a > 0 or b > 0
+    86	    if a <= 0 and b <= 0:
+    87	        return False
+    88	    return a * a > 5 * b * b if a > 0 else 5 * b * b > a * a
+    89	
+    90	
+    91	def fibonacci_controls():
+    92	    fib = [0, 1]
+    93	    for _ in range(52):
+    94	        fib.append(fib[-1] + fib[-2])
+    95	    gamma = (F(3, 2), F(-1, 2))
+    96	    invphi = (F(-1, 2), F(1, 2))
+    97	    phi = (F(1, 2), F(1, 2))
+    98	    previous = None
+    99	    for k in range(2, 51):
+   100	        residual = add(mul((F(fib[k]), F(0)), gamma), (-F(fib[k - 2]), F(0)))
+   101	        expected = mul((F((-1) ** k), F(0)), power(invphi, k))
+   102	        assert residual == expected
+   103	        assert positive(mul((F((-1) ** k), F(0)), residual))
+   104	        assert fib[k + 1] ** 2 - fib[k] ** 2 == fib[k - 1] * fib[k + 2]
+   105	        threshold = mul(power(phi, 2 * k + 1), (F(fib[k - 1] * fib[k + 2]), F(0)))
+   106	        if previous is not None:
+   107	            assert positive(add(threshold, (-previous[0], -previous[1])))
+   108	        previous = threshold
+   109	    return 49
+   110	
+   111	
+   112	def must_reject(call):
+   113	    try:
+   114	        call()
+   115	    except AssertionError:
+   116	        return
+   117	    raise AssertionError("negative control was accepted")
+   118	
+   119	
+   120	def main():
+   121	    parser = argparse.ArgumentParser()
+   122	    parser.add_argument("--write", action="store_true", help="save the deterministic receipt")
+   123	    args = parser.parse_args()
+   124	    witness = json.loads((ROOT / "results" / "lattice-witness.json").read_text())
+   125	    assert witness["disk_diameter"] == 1
+   126	    assert witness["center_radius_squared_bounds"] == [100, 400]
+   127	    assert witness["frustum_radius_bounds"] == ["19/2", "41/2"]
+   128	    centers = [tuple(p) for p in witness["centers"]]
+   129	    assert len(centers) == 183
+   130	    minimum4, lifts = verify_centers(centers)
+   131	    assert minimum4 == 4
+   132	    assert {(x, -y) for x, y in lifts} == set(lifts), "reflection symmetry failed"
+   133	    small = [(-3, 0), (-3, 1), (-3, 2), (-2, 0), (-2, 1), (-1, 0)]
+   134	    assert verify_centers(small, 1, 9)[0] == 4
+   135	    must_reject(lambda: verify_centers(centers + [centers[0]]))
+   136	    must_reject(lambda: verify_centers(centers + [(0, 0)]))
+   137	    must_reject(lambda: verify_centers(centers, diameter=F(101, 100)))
+   138	    bound = golden_pair_bound()
+   139	    controls = fibonacci_controls()
+   140	    receipt = {
+   141	        "status": "PASS",
+   142	        "python": platform.python_version(),
+   143	        "arithmetic": "integer and fractions.Fraction; no floating acceptance decisions",
+   144	        "finite_C1": {
+   145	            "N": len(centers), "planar_lifts": len(lifts),
+   146	            "lattice_min_distance_squared": "1",
+   147	            "golden_pair_indices_zero_based": [4, 12],
+   148	            "golden_pair_distance_squared_upper_rational": str(bound),
+   149	            "golden_pair_distance_squared_upper_display": float(bound),
+   150	            "certified_comparison": "golden pair squared distance < 77/100 < 1",
+   151	        },
+   152	        "controls": {
+   153	            "six_orbit_small_instance": "PASS",
+   154	            "reflection_invariance": "PASS",
+   155	            "negative_controls_rejected": 3,
+   156	            "Fibonacci_residual_and_ordered_threshold_identities": controls,
+   157	            "identity_index_range": [2, 50],
+   158	        },
+   159	        "scope": "Finite witness certified; infinite results require RESULTS.md proofs; no elasticity or universal C2 proof.",
+   160	    }
+   161	    if args.write:
+   162	        (ROOT / "results" / "certificate.json").write_text(json.dumps(receipt, indent=2) + "\n")
+   163	    print("PASS: N=183, 1098 planar lifts, exact minimum distance squared=1")
+   164	    print(f"PASS: golden pair (4,12) squared distance < {float(bound):.12f} < 0.77")
+   165	    print("PASS: 6-orbit control; reflection; 3 rejected negative controls; 49 Fibonacci identities")
+   166	
+   167	
+   168	if __name__ == "__main__":
+   169	    main()
+
+ succeeded in 0ms:
+     1	# Results and proof obligations
+     2	
+     3	Snapshot: 2026-10-14 (America/Los_Angeles).
+     4	
+     5	**Verdict: PARTIAL overall. C1-Finite and the fixed-golden-angle C1-Bulk claim have verdict COUNTEREXAMPLE.** The precisely stated comparison theorems below are settled; the unrestricted elastic-energy book problem is not. **FRONTIER_METHOD: DELIVERY-READY** for these scoped results; **NOVELTY-UNCLEAR** for publication priority. No Discovery claim is made.
+     6	
+     7	## 1. Claim contract and protocol
+     8	
+     9	- **Claim:** determine whether a conventional equal-area golden-angle spiral is globally optimal for identical intrinsic disks on a cone, rather than merely dynamically accessible. Also determine exactly what a reduced Fibonacci-branch model predicts about chirality.
+    10	- **Strongest comparable baseline:** the planar triangular packing theorem and the known commensurate triangular crystals on cones; Bacher's local-lattice analysis of constant-divergence phyllotaxis. See STATUS.md. The baseline is not an arbitrary random configuration.
+    11	- **Missing ingredient for the book:** a specified elastic energy, experimentally relevant cone geometry, growth/relaxation rules, and a coordinate-free definition of the allowed Fibonacci-contact class. These are not supplied by a generic disk or Riesz model.
+    12	- **Decision value:** a certified loss rules out the fixed-golden-angle ansatz as a universal explanation by densest packing, and distinguishes a kinematic alternation mechanism from physical selection.
+    13	- **Exploration disclosure:** before freezing the witness, triangular quotient disks with outer squared radii `9,16,25,36,49,64,100,144,225,400` were compared numerically with equal-area spirals. Their closest pairs often lay near the apex. The retained annulus `10<=r<=20` deliberately removes that issue. Selection after exploration is harmless for an exact existential counterexample, but is not a preregistered statistical comparison.
+    14	- **Frozen verification:** 183 integer orbit representatives, unit diameter, `beta=1/6`, annular center bounds `[10,20]`; golden indices `(4,12)`; 30-decimal rational square-root brackets; `pi<22/7`; no optimizer. Three negative controls, a six-center small-instance control, and exact Fibonacci algebra for indices 2 through 50. Diagnostics separately use 80 decimal digits, 21 asymptotic points `k=4..24`, 13 branch intervals `k=2..14`, and integer offsets `q=1..1000`. No holdout, generalization, or AI-performance claim.
+    15	
+    16	## 2. Geometry and definitions
+    17	
+    18	Let `C_beta` be the flat metric cone with polar coordinates `(r,theta)`, where `r>=0`, physical azimuth `theta` is modulo `2*pi`, and
+    19	
+    20	`ds^2 = dr^2 + beta^2*r^2*dtheta^2`, `0<beta<=1`.
+    21	
+    22	Its right-circular embedding has half-angle `alpha=asin(beta)`. Developing it gives a sector of angle `A=2*pi*beta`, with radial edges identified. Intrinsic distance is not the three-dimensional chord distance. If the minimal developed angular separation is `u=A*|| (theta_2-theta_1)/(2*pi) || <= pi`, the shortest path has
+    23	
+    24	`D^2 = r^2+s^2-2*r*s*cos(u)`.
+    25	
+    26	Here `||x||` denotes distance to the nearest integer. The path is the straight chord in the appropriate developed sector, except at degenerate apex cases; its angular change is at most `pi`. All pairs used below are nondegenerate and far from the apex. For `beta=1/6`, this is equivalently the quotient metric of the Euclidean plane by rotations through multiples of 60 degrees:
+    27	
+    28	`D([z],[w]) = min_{j=0,...,5} |z-exp(i*j*pi/3)*w|`.
+    29	
+    30	A disk means an **embedded intrinsic metric disk**, not a three-dimensional sphere touching the cone. It has area `pi*d^2/4` when its diameter is `d`. Finite comparisons constrain centers to `10<=r<=20`; disks of diameter at most 1 are contained in the physical frustum `9.5<=r<=20.5`. The metric is the ambient cone metric; the disks themselves do not leave that frustum.
+    31	
+    32	A Fibonacci spiral is not defined by a visual impression here. The **fixed ansatz** uses `gamma=(3-sqrt(5))/2`, angles `theta_i=2*pi*i*gamma`, and an affine function of index for `r_i^2`. Offset `q` joins index `i` to `i+q`; in the infinite ordered index set it gives `q` residue-class chains. Local families are assigned from short offsets. The reduced model in Section 5 explicitly selects two shortest Fibonacci offsets. Arbitrary contact/Delaunay networks with Fibonacci counts form a larger class and are not classified by this work.
+    33	
+    34	## 3. Finite certified counterexample: 183 centers
+    35	
+    36	**Claim F.** The fixed-golden-angle configuration
+    37	
+    38	`r_i^2=100+150*i/91`, `theta_i=2*pi*i*gamma`, `i=0,...,182`
+    39	
+    40	is not a maximizer of minimum pairwise distance for 183 centers on `C_(1/6)` with `10<=r<=20`.
+    41	
+    42	### 3.1 Competitor
+    43	
+    44	Use the triangular lattice
+    45	
+    46	`Lambda={a+b*exp(i*pi/3): a,b in Z}`,
+    47	
+    48	whose squared norm is `Q(a,b)=a^2+a*b+b^2`. Rotation by 60 degrees acts as `(a,b)->(-b,a+b)` and preserves `Lambda`. Take one representative of each nonzero orbit satisfying
+    49	
+    50	`100<=Q(a,b)<=400`.
+    51	
+    52	The supplied witness has 183 representatives. Its sixfold lift contains 1098 distinct planar lattice points. For any two distinct lifted points, the squared distance is a nonzero integer of the form `Q(a,b)`, so it is at least 1. Some pairs have distance exactly 1. The same lower bound holds between distinct quotient centers. Points in the same orbit are not counted twice. The sixfold lifting also shows that each disk of radius `1/2` is embedded: the distance between distinct lifts of a single center is at least its slant radius, here at least 10. The radial triangle inequality places every disk in the specified frustum.
+    53	
+    54	The count is reproducible by enumerating `-24<=a,b<=24`: the identity `Q(a,b)=(a+b/2)^2+3*b^2/4` and its symmetric counterpart imply `|a|,|b|<=sqrt(1600/3)<24` when `Q<=400`. No unenumerated lattice points satisfy the bound. The count is not needed for an optimality assertion about the lattice; it only matches the competitor and the 183-point golden configuration.
+    55	
+    56	The independent verifier does not import the generator. It transforms a witness pair to scaled Cartesian coordinates `(X,Y)=(2a+b,b)`, representing `(X/2,sqrt(3)*Y/2)`, rotates using `(X,Y)->((X-3Y)/2,(X+Y)/2)`, and exhaustively checks the squared-distance numerator `(X-U)^2+3*(Y-V)^2` over every pair of lifts. Its minimum is exactly 4. Reflection `Y->-Y` also preserves the lifted witness.
+    57	
+    58	### 3.2 Golden configuration obstruction
+    59	
+    60	For indices `i=4` and `j=12`,
+    61	
+    62	`r_i^2=a=9700/91`, `r_j^2=b=10900/91`,
+    63	
+    64	and the fractional angular residual is
+    65	
+    66	`8*gamma-3=9-4*sqrt(5)=delta`, with `0<delta<3/50`.
+    67	
+    68	The developed angle is `x=pi*delta/3`, hence
+    69	
+    70	`D^2=a+b-2*sqrt(a*b)*cos(x)`.
+    71	
+    72	Let `L_5<=sqrt(5)` and `L_ab<=sqrt(a*b)` be the rational lower bounds produced by integer square roots at denominator `10^30`. Then
+    73	
+    74	`x < U_x=(22/7)*(9-4*L_5)/3`,
+    75	
+    76	and `cos(x)>=1-x^2/2>=1-U_x^2/2>0`. Therefore
+    77	
+    78	`D^2 <= a+b-2*L_ab*(1-U_x^2/2) < 77/100 < 1`.
+    79	
+    80	The final two comparisons are exact rational arithmetic, not floating-point tolerances. The rational upper bound is stored in `results/certificate.json`; its displayed decimal is approximately `0.7695431670071615`. The independent high-precision polar computation is approximately `0.769124117040865606`, but is not needed for the proof.
+    81	
+    82	Thus the competitor permits unit-diameter disks, whereas the golden placement does not. Both sets have the same number of centers and the same radial bounds. The short offending chord and its midpoint are far inside the physical frustum, so this is not a boundary-clipping artifact. More directly, every point along that chord has radial distance at least `sqrt(a)*cos(x)>10`, since `a>106`, `x<0.063`, and `cos(x)>0.998`; its midpoint belongs to both radius-`1/2` balls.
+    83	
+    84	This proves Claim F. It does not prove the unrestricted finite maximum separation is 1, nor that every point set with Fibonacci parastichy counts fails.
+    85	
+    86	## 4. Bulk comparison, unaffected by any finite apex deletion
+    87	
+    88	**Claim B1.** Fix `0<beta<=1`, `c>0`, and any integer `n_0>=1`. Put a center at
+    89	
+    90	`P_n=(c*sqrt(n), 2*pi*n*gamma)`, for every integer `n>=n_0`.
+    91	
+    92	If equal embedded intrinsic disks of diameter `d>0` around these centers do not overlap, their asymptotic area density is at most
+    93	
+    94	`pi/(2*sqrt(5)) = 0.7024814731...`.
+    95	
+    96	### Proof
+    97	
+    98	Write `phi=(1+sqrt(5))/2` and Fibonacci numbers `F_0=0,F_1=1`. Induction using `phi^2=phi+1` gives
+    99	
+   100	`F_k*gamma-F_(k-2)=(-1)^k*phi^(-k)`, for `k>=2`.
+   101	
+   102	Also `F_k*phi^(-k)->1/sqrt(5)`, by Binet's formula (or by solving the Fibonacci recurrence). Set `q_k=F_k`, `epsilon_k=phi^(-k)`, `A=2*pi*beta`, and let `n_k` be the nearest integer to `q_k/(2*A*epsilon_k)`. Then `n_k->infinity`, `q_k/n_k->0`, and
+   103	
+   104	`n_k / (q_k/(2*A*epsilon_k)) -> 1`.
+   105	
+   106	For large `k` both indices `n_k,n_k+q_k` survive the finite deletion. Their separation satisfies the stable identity
+   107	
+   108	`D_k^2/c^2 = (sqrt(n_k+q_k)-sqrt(n_k))^2 + 4*sqrt(n_k*(n_k+q_k))*sin^2(A*epsilon_k/2)`.
+   109	
+   110	For the first term, rationalize the square roots:
+   111	
+   112	`q_k^2/(sqrt(n_k+q_k)+sqrt(n_k))^2 -> A/(2*sqrt(5))`.
+   113	
+   114	For the second, use `sin(u)/u->1` and `q_k/n_k->0`:
+   115	
+   116	`4*sqrt(n_k*(n_k+q_k))*sin^2(A*epsilon_k/2) -> A/(2*sqrt(5))`.
+   117	
+   118	Consequently `D_k^2/c^2 -> A/sqrt(5)`. Nonoverlap implies `d^2<=D_k^2` for every sufficiently large `k`, so
+   119	
+   120	`d^2 <= 2*pi*beta*c^2/sqrt(5)`.
+   121	
+   122	The number of centers within slant radius `R` is `R^2/c^2+O(1)`, and the cone disk has area `pi*beta*R^2`. Disks crossing the outer radius change the area sum only by `O(R)` (count centers in the radial shell `[R-d/2,R+d/2]`). Thus the limiting covered area fraction is
+   123	
+   124	`density=d^2/(4*beta*c^2) <= pi/(2*sqrt(5))`.
+   125	
+   126	Every step is an exact identity or elementary limit; the finite convergence table is only a control, not a proof of the limit. No assertion that the upper bound is attained is needed or made.
+   127	
+   128	**Claim B2.** On `C_(1/6)`, the global maximal asymptotic density for equal embedded intrinsic disks is `pi/(2*sqrt(3))`.
+   129	
+   130	### Proof
+   131	
+   132	The quotient of `Lambda` by its 60-degree rotation symmetry, with the apex orbit omitted, packs disks of radius `1/2`. Its planar fundamental parallelogram has area `sqrt(3)/2`, so its density is `(pi/4)/(sqrt(3)/2)=pi/(2*sqrt(3))`. Quotienting divides both disk counts and ambient area by six; the density is unchanged. A bounded excluded apex neighborhood changes neither limit.
+   133	
+   134	Conversely, lift any packing on this quotient cone to the plane. Outside a fixed apex neighborhood, embedded disks lift to six disjoint Euclidean disks. Their union is a planar packing. Centered-radius density is the same because area and counts both multiply by six. The planar equal-circle packing theorem gives upper density at most `pi/(2*sqrt(3))`. Discarding the bounded apex region does not alter this bound. This proves B2.
+   135	
+   136	B2 is an elementary application of the classical theorem, not a new packing constant. Combining B1 and B2 gives a strict separation: the triangular packing density divided by the golden-ansatz upper bound is `sqrt(5/3)>1`, approximately `1.2909944487`. This is a relative factor, not a percentage-point difference and not a claim to have computed the golden ansatz's exact density. The comparator is reflection-symmetric; its optimal density does not require a preferred handedness.
+   137	
+   138	## 5. Chirality: what is established and what is not
+   139	
+   140	### 5.1 Reflection degeneracy
+   141	
+   142	**Claim S.** Suppose the admissible domain and boundary data are invariant under `(r,theta)->(r,-theta)`, and the energy depends only on intrinsic distances or other reflection-invariant quantities. For every disk diameter, reflection maps the set of global minimizers to itself. If a minimizer is chiral, a mirror minimizer with opposite chirality has exactly the same energy.
+   143	
+   144	**Proof.** Reflection preserves `ds^2`, hence all distances, admissibility, and the stated energy. Apply it to a minimizer; any lower-energy reflected competitor would reflect back to a lower-energy competitor for the original minimizer. Reflection reverses signed winding. This argument also applies to a packing objective. It does not require a numerical experiment.
+   145	
+   146	Thus scalar disk size alone cannot energetically prefer one absolute handedness in this achiral model. It can still change which *pair* of degenerate states occurs; a history-dependent branch can still alternate. The claim does not refute such alternation. Conversely, rescaling every length and the disks on an unbounded cone preserves the entire packing and its chirality, so size changes without a fixed external length scale do not compel any transition.
+   147	
+   148	### 5.2 An exactly soluble local Fibonacci-family model
+   149	
+   150	**Claim T (reduced, conditional model).** Let `t>0` and `A=2*pi*beta`. For each `k>=2`, define the squared local separation
+   151	
+   152	`L_k(t)=F_k^2/(4*t)+A^2*t*phi^(-2*k)`.
+   153	
+   154	This is the radial/tangential linearization of the golden spiral at radial index `t`, divided by `c^2`. It is taken here as the **definition of the reduced model**, not an equality to the finite cone's distance. Its candidate families are the Fibonacci offsets only. Define the two active parastichy families to be the two distinct `k` with smallest `L_k(t)`, with ties reported rather than arbitrarily assigned. Then the active unordered pair progresses through
+   155	
+   156	`(F_2,F_3), (F_3,F_4), (F_4,F_5), ...`.
+   157	
+   158	The signed winding of the family with `F_k` chains is `(-1)^k`, when direction is measured with increasing radius. Therefore the sign of the larger-count family changes at every consecutive pair transition. This observable matches the book's *relative parastichy* chirality convention, not ontogenetic chirality.
+   159	
+   160	### Proof and exact thresholds
+   161	
+   162	Multiplying by `t>0` converts the comparison to affine functions of `x=t^2`, with intercepts `F_k^2/4` increasing and slopes `A^2*phi^(-2*k)` decreasing. Neighboring functions cross at `t=tau_k`, where
+   163	
+   164	`tau_k^2 = (F_(k+1)^2-F_k^2)/(4*A^2*(phi^(-2*k)-phi^(-2*(k+1))))`
+   165	
+   166	`           = phi^(2*k+1)*F_(k-1)*F_(k+2)/(4*A^2)`.
+   167	
+   168	The second equality uses `F_(k+1)^2-F_k^2=F_(k-1)*F_(k+2)` and `1-phi^(-2)=phi^(-1)`. These thresholds strictly increase for `k>=2`. For `tau_(k-1)<t<tau_k`, consecutive comparisons telescope to show `L_k<L_j` for every `j!=k`. For the initial interval `0<t<tau_2`, `L_2` is smallest.
+   169	
+   170	In an interval where `k>=3` is smallest, every `j<k-1` has `L_j>L_(k-1)` and every `j>k+1` has `L_j>L_(k+1)`, by those same adjacent comparisons. The second-smallest family is therefore either `k-1` or `k+1`. Those two cross once, at
+   171	
+   172	`sigma_k^2 = (F_(k+1)^2-F_(k-1)^2)/(4*A^2*(phi^(-2*(k-1))-phi^(-2*(k+1))))`, `k>=3`.
+   173	
+   174	This squared threshold is a strictly weighted average of `tau_(k-1)^2` and `tau_k^2`, with weights given by the positive consecutive slope differences. Hence `tau_(k-1)<sigma_k<tau_k`, and the `sigma_k` are strictly increasing. Set `sigma_2=0`. The two smallest families are `(k,k+1)` for `sigma_k<t<sigma_(k+1)`, including `k=2`. At `sigma_k` the shortest family is `k`, and the two possible second-shortest families tie; the chirality assignment is therefore not unique exactly at the transition.
+   175	
+   176	The residual identity from Section 4 gives opposite winding signs for adjacent offsets. For pair `(k,k+1)`, the larger count is `F_(k+1)` and its sign is `(-1)^(k+1)`, proving alternation. At fixed physical radius `r`, choosing a scale `c` gives `t=(r/c)^2`; changing `c` monotonically crosses the same thresholds in reverse order. If a disk diameter is assumed proportional to `c`, the conclusion transfers conditionally to that rescaled ansatz. Diameter proportionality is an assumption, not a solved growth law.
+   177	
+   178	A scan that skips an even number of transitions can show no sign change. At a tie no unique larger-family sign is selected. A reflected seed reverses every sign. Non-Fibonacci branches or defects are outside this restricted model. Therefore this result supplies a checkable mechanism and transition criterion, **not** a universal answer to C2.
+   179	
+   180	## 6. Evidence, novelty, and verification ledger
+   181	
+   182	| ID | Evidence label | Exact claim and novelty status | Verification | Review disposition |
+   183	|---|---|---|---|---|
+   184	| F | Certification | Finite 183-point strict counterexample to the fixed golden ansatz. Novelty not established; commensurate lattice construction is known. | `python code/verify.py`; proof in Section 3 | Independent referee assessment recorded below. |
+   185	| B1 | Certification | Upper density bound for a fixed golden Fermat spiral on a cone after arbitrary finite prefix deletion. Elementary continued-fraction/local-linearization corollary; no priority claim. | Section 4 proof; `python code/diagnostics.py` controls the formula, not its universal quantifier | Independent referee assessment recorded below. |
+   186	| B2 | Certification | Global asymptotic density for the 60-degree quotient cone. Classical planar packing theorem plus lifting, not a new optimum. | Section 4 proof; finite lattice checked by `python code/verify.py` | Independent referee assessment recorded below. |
+   187	| S | Certification | Reflection degeneracy for an explicitly achiral model. Standard symmetry argument, no novelty claim. | Section 5.1 proof; witness reflection checked by `python code/verify.py` | Independent referee assessment recorded below. |
+   188	| T | Certification | Consecutive pair transitions and relative-chirality alternation in the specified Fibonacci-family linearized model. Standard phyllotaxis mechanism, not novel physical selection. | Section 5.2 proof; 49 exact algebra controls in `python code/verify.py` | Independent referee assessment recorded below. |
+   189	| E | Empirical evidence | Independent polar pair value, 21 large-index limits, 13 two-family phases with offsets 1..1000. No global optimization or theorem claim from numerics. | `python code/diagnostics.py` | Independent referee assessment recorded below. |
+   190	
+
+exec
+/bin/zsh -lc "nl -ba RESULTS.md | sed -n '191,400p'
+nl -ba STATUS.md | sed -n '1,220p'" in /Users/jinleic/jinleic-workspace/ai4s/phys-fibonacci-cone-spirals
+ succeeded in 0ms:
+   191	Actual command run from this folder:
+   192	
+   193	```sh
+   194	/Users/jinleic/jinleic-workspace/scratch/ai4s-venv/bin/python code/reproduce.py
+   195	```
+   196	
+   197	Observed output:
+   198	
+   199	```text
+   200	GENERATED: 183 orbit representatives
+   201	PASS: N=183, 1098 planar lifts, exact minimum distance squared=1
+   202	PASS: golden pair (4,12) squared distance < 0.769543167007 < 0.77
+   203	PASS: 6-orbit control; reflection; 3 rejected negative controls; 49 Fibonacci identities
+   204	EMPIRICAL: golden pair squared distance=0.769124117040865606
+   205	EMPIRICAL: density upper bound=0.7024814731040726, lattice=0.9068996821171089
+   206	EMPIRICAL: 21 asymptotic controls; 13 consecutive chirality phases, q=1..1000
+   207	```
+   208	
+   209	The finite verifier uses only Python integer arithmetic and `fractions.Fraction`; floating values are printed after certification and never decide acceptance. Its negative controls reject a repeated orbit, an apex point outside the allowed annulus, and diameter `101/100`. Generator and verifier share the mathematical lattice definition, but use different coordinate representations and share no implementation functions. The mpmath check uses a stable sine-squared polar distance formula rather than the verifier's cosine lower bound. Both codes run under the same Python runtime; they are not formal kernel verification.
+   210	
+   211	## 7. Independent review
+   212	
+   213	The hostile-referee prompt and its response are kept in `review/`. Review completion and point-by-point dispositions are recorded here after the independent run. The proofs and evidence are not considered externally certified merely because a model agrees.
+   214	
+   215	## 8. Exact remaining blocker and next action
+   216	
+   217	Nothing here establishes that the actual Ag/silica experiments reach global elastic minima, or that every Fibonacci-contact packing is inferior. A full answer requires the strain/bending/substrate energy, geometry and stress history, defect costs, boundaries, and allowed rearrangements. A scalar Riesz energy or intrinsic hard-disk model is not automatically that functional. No sequential packing experiment has been substituted for a proof of C2.
+   218	
+   219	The single most valuable next action is to obtain or derive the experimental bilayer elastic functional and a mathematically explicit Fibonacci-contact competitor class, then certify an energy comparison with a seam-bearing crystal at an experimental cone angle. Until that contract is fixed, more unconstrained numerical searches would answer a different question rather than close this blocker.
+     1	# Status and strongest comparable results
+     2	
+     3	Snapshot: 2026-10-14 (America/Los_Angeles). This is a bounded primary-source review, not a proof that no relevant result exists.
+     4	
+     5	## 1. The actual question and current verdict
+     6	
+     7	The book asks two different things:
+     8	
+     9	- **C1:** whether the observed Fibonacci parastichy patterns are least-*elastic*-energy configurations of identical units on a cone; it also discusses an equal-disk-packing version.
+    10	- **C2:** whether varying disk size in packing toward the apex alternates which counter-rotating family has the larger consecutive-Fibonacci count.
+    11	
+    12	**Overall verdict here: PARTIAL.** We found no verified general theorem resolving these statements under the book's unspecified elastic law and growth conditions. This is **not** a certified literature-wide “still unsolved” claim. The book itself calls both questions conjectural; the retrieved modern sources concern different precise models and do not announce a general solution of Cao's conjecture.
+    13	
+    14	The central modern distinction is explicit in Lee and Levitov [3], Section II.1: “the structure does not track the global energy minimum.” The same passage says the Fibonacci structures characterize a progression of deformation, “rather than the result of global energy minimization.” Consequently, citing that theory as a global-minimum proof would reverse its stated qualification.
+    15	
+    16	**What this folder settles:** a conventional fixed-golden-angle, equal-area spiral loses to a triangular-lattice quotient in a certified 183-center annular comparison, and in an asymptotic density comparison after any finite apex deletion. This does not classify the much larger family of deformed Fibonacci-contact patterns. Reflection degeneracy is proved for achiral models; alternating relative chirality is proved only for an explicitly defined local Fibonacci-family model.
+    17	
+    18	**Difficulty assessment:** the finite witness and reduced-model algebra are accessible because the cone has a 60-degree commensurate development, distances reduce to an integer quadratic form, and a single short pair suffices to disprove an ansatz. Those are the actual bounded obligations. The full experimental elastic minimization is not shown to be “not too hard”: it requires a constitutive functional, stress and boundary data, a global competitor class, and a proof excluding all lower-energy competitors. No ease claim follows from having a numerical simulator.
+    19	
+    20	## 2. What is established, by model
+    21	
+    22	| Model and primary baseline | Established result or observation | What does not follow |
+    23	|---|---|---|
+    24	| Stressed Ag/silica microstructures [1,2] | Experiments produce Fibonacci patterns under conical support; the 2007 abstract reports 3x5 through 13x21 with definite chirality and interprets them as least elastic energy. | Experimental self-assembly is not a proof of a global minimum over all admissible shapes, nor a constitutive-energy specification. |
+    25	| Deformable cylindrical lattices [3,4] | Mechanical theories organize local rearrangements with modular symmetry and Fibonacci transitions. The 1998 chapter posted in 2021 explicitly separates these from global minimization. | The arXiv date does not make the chapter a new 2021 cone-global-optimality theorem. |
+    26	| Discrete dynamical plant-pattern model [5] | Rigorous fixed-point stability and bifurcation-diagram analysis explains Fibonacci occurrence in that system. | Stability of a growth-map fixed point does not certify a global disk-packing or elastic minimum. |
+    27	| Cylindrical disk packing and slow variation [6,7] | Cylindrical dense packings and local packing evolution can be organized by parastichy integers; local homogeneity and continuity can generate Fibonacci and related states. | A cylinder has different global closure conditions from a cone; local packing rules need not find global optima. |
+    28	| Disk accretion, including irregular states [8,9] | The same simple framework permits Fibonacci and quasi-symmetric states. The 2024 preprint compares stacking models with a large sunflower dataset and includes Lucas, double-Fibonacci, Fibonacci-plus/minus-one, and near-equal non-Fibonacci counts. | “All plants have consecutive Fibonacci counts” is false as a descriptive premise; model-data agreement does not prove global optimality. |
+    29	| Constant-divergence Fermat spirals [10,11] | Bacher provides a rigorous local-lattice/geodesic description and parastichy transitions. Akiyama proves a Fermat constant-angle set is Delone iff its angle is badly approximable. | Uniform discreteness, good uniformity, and golden-angle Diophantine extremality are not maximum disk density among all point sets. |
+    30	| Repulsive vortices on conical frusta [12] | Molecular dynamics and Monte Carlo find transitions between phyllotactic states, including non-Fibonacci states such as `(3,3,0)`, `(4,2,2)`, `(5,4,1)`, and seam/scar structures. | Agreement of two numerical methods is not a replayable global-minimum certificate. Their Bessel interaction and reservoirs are not the Ag/silica elastic experiment. |
+    31	| Hard-disk growth on cones [13] | Greedy, irreversible growth yields seams and near-tip disorder away from special commensurate cone angles. Perfect triangular crystals at sector angles `60 degrees * P` are a known baseline. | The authors explicitly distinguish growth from the earlier basin-hopping energy studies; the greedy algorithm does not solve equilibrium packing. |
+    32	| Colloidal crystals on cones [14] | 2025 experiments observe geometry-set tilt grain boundaries and, at small cone angles, commensurate bands limited by dislocations. | Real cone crystals need not be globally Fibonacci. These are physical observations, not universal hard-disk bounds. |
+    33	| Riesz energy on rectifiable surfaces [15] | For the stated classes and `s>=d`, minimal configurations asymptotically equidistribute with respect to `d`-dimensional Hausdorff measure; the critical leading term is explicit. | Equidistribution does not identify contact topology. This is ambient Euclidean Riesz distance, not automatically intrinsic geodesic distance, and surface Coulomb `s=1<2` is outside that quoted regime. |
+    34	| Planar equal-circle packing [16] | Triangular packing has density `pi/(2*sqrt(3))`. The `pi/3` cone is a sixfold rotational quotient, so lifting and quotienting transfer this asymptotic optimum. | The finite 183-point optimum need not be 1; our witness only supplies a strict comparator. |
+    35	
+    36	### Strongest same-model baseline we must beat
+    37	
+    38	For intrinsic equal disks on the `pi/3` quotient cone, the known triangular lattice already attains the planar density bound. There is no headroom to improve that asymptotic benchmark. The correct question is whether the proposed golden-spiral class reaches it. RESULTS.md proves a strictly smaller upper bound `pi/(2*sqrt(5))` for that fixed ansatz. This is a certification/corollary, not a claim to beat the classical packing optimum or discover commensurate cone crystals.
+    39	
+    40	For the general elastic question, there is no meaningful numerical “best score” until the energy, boundaries, particle shape and relaxation constraints are fixed. A Coulomb or Riesz search would be a different model, not a substitute baseline.
+    41	
+    42	## 3. Chirality status and the exact remaining gap
+    43	
+    44	C2 requires distinguishing **relative parastichy chirality** (which of the two spiral families has more members) from the **ontogenetic/generative spiral** (the temporal insertion sequence). These signs can differ and can change for different reasons.
+    45	
+    46	- The 2007 experiment [2] demonstrates definite chirality under its fabrication conditions, but its abstract does not establish a theorem of disk-size-driven alternation.
+    47	- Classical and modern stacking/local-lattice models [3,8–11] provide mechanisms for consecutive parastichy transitions. RESULTS.md derives explicit thresholds and alternation in a frozen golden-angle linearization, rather than assuming the qualitative mechanism solves C2.
+    48	- A 2025-online/2026-issue fossil-cone study [17] reports associations between ontogenetic chirality and seed number. The primary abstract describes an observational morphometric study, not a controlled disk-size experiment; it cannot establish the proposed causal alternation law.
+    49	- The 2026 Keller–Segel paper [18] reproduces Fibonacci and alternating patterns through growth and signaling instabilities. Its “alternating patterns” are not, by that phrase alone, proof of the book's chirality alternation.
+    50	- In an achiral domain with a reflection-invariant energy, opposite chiral minimizers have equal energy at every disk size. That symmetry rules out energetic selection of a unique absolute sign without a symmetry-breaking ingredient, but does not rule out path-dependent branch alternation.
+    51	
+    52	The unresolved obligation is therefore concrete: fix an apex-directed accretion/relaxation rule, a boundary or seed that fixes the external length scale and any chirality bias, and a robust contact-network count; then prove or certify the parameter intervals and transition sequence. No universal implication “changing size means changing chirality” has been proved here.
+    53	
+    54	## 4. Primary-source references and reading level
+    55	
+    56	1. **Chaorong Li, Xiaona Zhang, Zexian Cao.** “Triangular and Fibonacci Number Patterns Driven by Stress on Core/Shell Microstructures.” *Science* **309**, 909–911 (2005). DOI [10.1126/science.1113412](https://doi.org/10.1126/science.1113412). Publisher-deposited abstract and bibliographic record read via Crossref; full publisher page returned 403. The abstract reports geometry-dependent patterns and the authors' strain-energy interpretation, not a mathematical proof.
+    57	2. **Chaorong Li, Ailing Ji, Zexian Cao.** “Stressed Fibonacci spiral patterns of definite chirality.” *Applied Physics Letters* **90**, 164102 (2007). DOI [10.1063/1.2728578](https://doi.org/10.1063/1.2728578). Publisher-deposited abstract read. Reports the 3x5 to 13x21 range, conical support, definite chirality, and the least-energy interpretation.
+    58	3. **Hyun-Woo Lee, Leonid S. Levitov.** “Universality in Phyllotaxis: a Mechanical Theory.” Chapter in *Symmetry in Plants*, World Scientific (1998), posted as [arXiv:2101.02652](https://arxiv.org/abs/2101.02652) (2021). [Full text](https://arxiv.org/html/2101.02652). Introduction and Sections II.1–II.2 read, including the explicit non-global-minimum qualification. This is the strongest directly relevant warning against conflating energetic evolution with global minimization.
+    59	4. **L. S. Levitov.** “Energetic Approach to Phyllotaxis.” *Europhysics Letters* **14**, 533–539 (1991). DOI [10.1209/0295-5075/14/6/006](https://doi.org/10.1209/0295-5075/14/6/006). Metadata read; its role is described in the primary retrospective [3]. Distinct from his “Phyllotaxis of flux lattices in layered superconductors,” *Physical Review Letters* **66**, 224 (1991), DOI [10.1103/PhysRevLett.66.224](https://doi.org/10.1103/PhysRevLett.66.224).
+    60	5. **Pau Atela, Christophe Golé, Scott Hotton.** “A Dynamical System for Plant Pattern Formation: A Rigorous Analysis.” *Journal of Nonlinear Science* **12**(6), 641–676 (volume year 2002; DOI publication metadata and institutional repository date January 2003). DOI [10.1007/s00332-002-0513-1](https://doi.org/10.1007/s00332-002-0513-1); [institutional abstract/manuscript entry](https://scholarworks.smith.edu/mth_facpubs/80/). Author abstract read: fixed points, stability, and bifurcations are the announced rigorous objects.
+    61	6. **Adil Mughal, Denis Weaire.** “Theory of cylindrical dense packings of disks.” *Physical Review E* **89**, 042307 (2014). DOI [10.1103/PhysRevE.89.042307](https://doi.org/10.1103/PhysRevE.89.042307). Metadata checked; commensurate-packing discussion and formulas also read in primary source [13], Appendix C. No uninspected theorem from this article is used in our proofs.
+    62	7. **Adil Mughal, Denis Weaire.** “Phyllotaxis, disk packing, and Fibonacci numbers.” *Physical Review E* **95**, 022401 (2017). DOI [10.1103/PhysRevE.95.022401](https://doi.org/10.1103/PhysRevE.95.022401); [arXiv:1608.05824](https://arxiv.org/abs/1608.05824). Author abstract read. The local principles are dense packing, homogeneity and continuity, not a certificate of the cone's global packing optimum.
+    63	8. **Christophe Golé, Jacques Dumais, Stéphane Douady.** “Fibonacci or quasi-symmetric phyllotaxis. Part I: why?” *Acta Societatis Botanicorum Poloniae* (2016), article 3533. DOI [10.5586/asbp.3533](https://doi.org/10.5586/asbp.3533); [institutional author entry](https://scholarworks.smith.edu/mth_facpubs/32/). Primary abstract read; reports both Fibonacci-like and quasi-symmetric solutions of disk accretion. The institutional volume field is not relied upon because it is inconsistent with common bibliographic indexing.
+    64	9. **Jonathan Swinton.** “Disk-stacking models are consistent with Fibonacci and non-Fibonacci structure in sunflowers.” [arXiv:2407.05857v2](https://arxiv.org/html/2407.05857v2) (2024), preprint. Full-text Sections 1–5 read, including actual contact-chain parastichy definitions, finite transitions, non-Fibonacci data and parameter selection after inspection. It is cited as a preprint; no unverified journal status or priority assertion is imported.
+    65	10. **Roland Bacher.** “On geodesics of phyllotaxis.” *Confluentes Mathematici* **6**(1), 3–27 (2014). DOI [10.5802/cml.10](https://doi.org/10.5802/cml.10); [arXiv:1301.7568](https://arxiv.org/abs/1301.7568); [journal PDF](https://www.numdam.org/item/10.5802/cml.10.pdf). Theorem 1.1, linearization, Sections 6–7 and parastichy transitions read. This is direct prior art for the local geometry and cautions against claiming the reduced transition mechanism as new.
+    66	11. **Shigeki Akiyama.** “Spiral Delone sets and three distance theorem.” [arXiv:1904.10815v2](https://arxiv.org/abs/1904.10815) (2019). [Full manuscript](https://arxiv.org/pdf/1904.10815). Theorems 2–3, Diophantine conditions, and stated generalization questions read. The theorem concerns the Delone property, not global maximum density.
+    67	12. **H. S. Ansell, A. A. Tomlinson, N. K. Wilkin.** “Transitions between phyllotactic lattice states in curved geometries.” *Scientific Reports* **10**, 17411 (2020). DOI [10.1038/s41598-020-74158-x](https://doi.org/10.1038/s41598-020-74158-x); [arXiv:2001.10501v2 full text](https://arxiv.org/html/2001.10501v2); [PubMed record](https://pubmed.ncbi.nlm.nih.gov/33060641/). Model and Sections 2–4 read: intrinsic `K_0` interaction, fixed-density reservoirs, numerical ground-state methods, and non-Fibonacci states. The HTML rendering's later date is not the publication date.
+    68	13. **Jessica H. Sun, Abigail Plummer, Grace H. Zhang, David R. Nelson, Vinothan N. Manoharan.** “Geometric frustration of hard-disk packings on cones.” *Physical Review E* **108**, 054608 (2023). DOI [10.1103/PhysRevE.108.054608](https://doi.org/10.1103/PhysRevE.108.054608); [arXiv:2309.14446 full manuscript](https://arxiv.org/pdf/2309.14446). Methods, discussion, conclusion and Appendices A/C read. Section II states the special sector angles `60 degrees * P`; their simulations deliberately avoid them. Conclusion explicitly calls for simulations/experiments including kinetics, thermal fluctuations and entropy. Their [public code](https://github.com/manoharan-lab/cone-disk-packings) and [data DOI](https://doi.org/10.7910/DVN/ZQ4BUR) are linked in the paper but were not cloned or reproduced here.
+    69	14. **Jessica H. Sun, Grace H. Zhang, Abigail Plummer, Caroline Martin, Nabila Tanjeem, David R. Nelson, Vinothan N. Manoharan.** “Colloidal Crystallization on Cones.” *Physical Review Letters* **134**, 018201 (2025). DOI [10.1103/PhysRevLett.134.018201](https://doi.org/10.1103/PhysRevLett.134.018201); [primary abstract via PubMed](https://pubmed.ncbi.nlm.nih.gov/39913697/). Abstract read after publisher/author-page access failed. Grain-boundary and finite-band observations above come from that abstract, not an unverified search summary.
+    70	15. **D. P. Hardin, E. B. Saff.** “Minimal Riesz energy point configurations for rectifiable d-dimensional manifolds.” *Advances in Mathematics* **193**, 174–204 (2005). DOI [10.1016/j.aim.2004.05.006](https://doi.org/10.1016/j.aim.2004.05.006); [arXiv:math-ph/0311024](https://arxiv.org/abs/math-ph/0311024). Author abstract read; only its asymptotic distribution statement is used here. No transfer of its assumptions to intrinsic Coulomb energy is asserted.
+    71	16. **Hai-Chau Chang, Lih-Chung Wang.** “A Simple Proof of Thue's Theorem on Circle Packing.” [arXiv:1009.4322](https://arxiv.org/abs/1009.4322) (2010), proof exposition of the classical planar theorem. Author abstract read. The planar packing theorem is an explicitly imported mathematical baseline in RESULTS.md, not a locally rediscovered result.
+    72	17. **Mariah M. Howell, Ronny Rößler, Carole T. Gee.** “Phyllotaxis, ontogeny and CT imaging: old and new approaches to understanding optimal seed packing in Middle Jurassic Araucaria mirabilis cones.” *Annals of Botany* (online 2025; issue 2026). DOI [10.1093/aob/mcaf325](https://doi.org/10.1093/aob/mcaf325). Publisher-deposited abstract read. It describes 21 analyzed cones; a search summary said 30, so that summary was rejected. No sample-size inference or experimental causal claim is made from it.
+    73	18. **Michael F. Staddon.** “Phyllotaxis in a Keller-Segel model.” *Physical Review E* **113**, 034407 (2026). DOI [10.1103/9yk5-b4q2](https://doi.org/10.1103/9yk5-b4q2). Publisher-deposited abstract read: radial growth, signal-source competition, and linear stability analysis. This extends the status check to 2026 but does not settle elastic C1 or disk-size C2.
+    74	
+    75	### Historical source correction
+    76	
+    77	The Oklahoma item is accessible: [J. Albert's course project list, Version 3, Summer 2008](https://www.math.ou.edu/~jalbert/courses/projects.pdf), item 15. Its exact characterization is “least-energy configurations of discs (I think) on a cone,” and it points to the 2005/2007 experiments. It is an informal course-project suggestion, not a formal published densest-packing conjecture or proof. The book's summary should not be upgraded into a precise theorem statement.
+    78	
+    79	### Search and access limitations
+    80	
+    81	Primary texts were preferred over generated search answers. Search covered the book's titles, cone hard-disk packing, conical crystal ground states, phyllotaxis chirality, Fermat-spiral density, and 2025–2026 developments. Multiple publisher pages returned 403/401; author manuscripts, deposited abstracts, or PubMed were used with the reading level stated above. One search-suggested `preprints.org/manuscript/202608.2110` URL was inaccessible and not independently located by its identifier; it supports no claim. Absence from this bounded review establishes neither nonexistence nor novelty.
+    82	
+    83	## 5. Research direction after these certificates
+    84	
+    85	The attainable result is not “Fibonacci is always optimal,” but a precise separation between geometric constraints, kinetic branch selection, and equilibrium. The full target needs a physically grounded energy and a broader contact-topology class. Fixing those assumptions is the single highest-value prerequisite; more random starts in an arbitrary energy landscape would not repair their absence.
+
+exec
+/bin/zsh -lc 'cat results/lattice-witness.json
+rg --files' in /Users/jinleic/jinleic-workspace/ai4s/phys-fibonacci-cone-spirals
+ succeeded in 0ms:
+{
+  "model": "intrinsic cone R^2/C6, sector angle pi/3",
+  "basis": [
+    "(1,0)",
+    "(1/2,sqrt(3)/2)"
+  ],
+  "center_radius_squared_bounds": [
+    100,
+    400
+  ],
+  "frustum_radius_bounds": [
+    "19/2",
+    "41/2"
+  ],
+  "disk_diameter": 1,
+  "centers": [
+    [
+      -23,
+      10
+    ],
+    [
+      -23,
+      11
+    ],
+    [
+      -23,
+      12
+    ],
+    [
+      -23,
+      13
+    ],
+    [
+      -22,
+      5
+    ],
+    [
+      -22,
+      6
+    ],
+    [
+      -22,
+      7
+    ],
+    [
+      -22,
+      8
+    ],
+    [
+      -22,
+      9
+    ],
+    [
+      -22,
+      10
+    ],
+    [
+      -22,
+      11
+    ],
+    [
+      -22,
+      12
+    ],
+    [
+      -22,
+      13
+    ],
+    [
+      -22,
+      14
+    ],
+    [
+      -22,
+      15
+    ],
+    [
+      -22,
+      16
+    ],
+    [
+      -22,
+      17
+    ],
+    [
+      -21,
+      3
+    ],
+    [
+      -21,
+      4
+    ],
+    [
+      -21,
+      5
+    ],
+    [
+      -21,
+      6
+    ],
+    [
+      -21,
+      7
+    ],
+    [
+      -21,
+      8
+    ],
+    [
+      -21,
+      9
+    ],
+    [
+      -21,
+      10
+    ],
+    [
+      -21,
+      11
+    ],
+    [
+      -21,
+      12
+    ],
+    [
+      -21,
+      13
+    ],
+    [
+      -21,
+      14
+    ],
+    [
+      -21,
+      15
+    ],
+    [
+      -21,
+      16
+    ],
+    [
+      -21,
+      17
+    ],
+    [
+      -21,
+      18
+    ],
+    [
+      -20,
+      0
+    ],
+    [
+      -20,
+      1
+    ],
+    [
+      -20,
+      2
+    ],
+    [
+      -20,
+      3
+    ],
+    [
+      -20,
+      4
+    ],
+    [
+      -20,
+      5
+    ],
+    [
+      -20,
+      6
+    ],
+    [
+      -20,
+      7
+    ],
+    [
+      -20,
+      8
+    ],
+    [
+      -20,
+      9
+    ],
+    [
+      -20,
+      10
+    ],
+    [
+      -20,
+      11
+    ],
+    [
+      -20,
+      12
+    ],
+    [
+      -20,
+      13
+    ],
+    [
+      -20,
+      14
+    ],
+    [
+      -20,
+      15
+    ],
+    [
+      -20,
+      16
+    ],
+    [
+      -20,
+      17
+    ],
+    [
+      -20,
+      18
+    ],
+    [
+      -20,
+      19
+    ],
+    [
+      -19,
+      0
+    ],
+    [
+      -19,
+      1
+    ],
+    [
+      -19,
+      2
+    ],
+    [
+      -19,
+      3
+    ],
+    [
+      -19,
+      4
+    ],
+    [
+      -19,
+      5
+    ],
+    [
+      -19,
+      6
+    ],
+    [
+      -19,
+      7
+    ],
+    [
+      -19,
+      8
+    ],
+    [
+      -19,
+      9
+    ],
+    [
+      -19,
+      10
+    ],
+    [
+      -19,
+      11
+    ],
+    [
+      -19,
+      12
+    ],
+    [
+      -19,
+      13
+    ],
+    [
+      -19,
+      14
+    ],
+    [
+      -19,
+      15
+    ],
+    [
+      -19,
+      16
+    ],
+    [
+      -19,
+      17
+    ],
+    [
+      -19,
+      18
+    ],
+    [
+      -18,
+      0
+    ],
+    [
+      -18,
+      1
+    ],
+    [
+      -18,
+      2
+    ],
+    [
+      -18,
+      3
+    ],
+    [
+      -18,
+      4
+    ],
+    [
+      -18,
+      5
+    ],
+    [
+      -18,
+      6
+    ],
+    [
+      -18,
+      7
+    ],
+    [
+      -18,
+      8
+    ],
+    [
+      -18,
+      9
+    ],
+    [
+      -18,
+      10
+    ],
+    [
+      -18,
+      11
+    ],
+    [
+      -18,
+      12
+    ],
+    [
+      -18,
+      13
+    ],
+    [
+      -18,
+      14
+    ],
+    [
+      -18,
+      15
+    ],
+    [
+      -18,
+      16
+    ],
+    [
+      -18,
+      17
+    ],
+    [
+      -17,
+      0
+    ],
+    [
+      -17,
+      1
+    ],
+    [
+      -17,
+      2
+    ],
+    [
+      -17,
+      3
+    ],
+    [
+      -17,
+      4
+    ],
+    [
+      -17,
+      5
+    ],
+    [
+      -17,
+      6
+    ],
+    [
+      -17,
+      7
+    ],
+    [
+      -17,
+      8
+    ],
+    [
+      -17,
+      9
+    ],
+    [
+      -17,
+      10
+    ],
+    [
+      -17,
+      11
+    ],
+    [
+      -17,
+      12
+    ],
+    [
+      -17,
+      13
+    ],
+    [
+      -17,
+      14
+    ],
+    [
+      -17,
+      15
+    ],
+    [
+      -17,
+      16
+    ],
+    [
+      -16,
+      0
+    ],
+    [
+      -16,
+      1
+    ],
+    [
+      -16,
+      2
+    ],
+    [
+      -16,
+      3
+    ],
+    [
+      -16,
+      4
+    ],
+    [
+      -16,
+      5
+    ],
+    [
+      -16,
+      6
+    ],
+    [
+      -16,
+      7
+    ],
+    [
+      -16,
+      8
+    ],
+    [
+      -16,
+      9
+    ],
+    [
+      -16,
+      10
+    ],
+    [
+      -16,
+      11
+    ],
+    [
+      -16,
+      12
+    ],
+    [
+      -16,
+      13
+    ],
+    [
+      -16,
+      14
+    ],
+    [
+      -16,
+      15
+    ],
+    [
+      -15,
+      0
+    ],
+    [
+      -15,
+      1
+    ],
+    [
+      -15,
+      2
+    ],
+    [
+      -15,
+      3
+    ],
+    [
+      -15,
+      4
+    ],
+    [
+      -15,
+      5
+    ],
+    [
+      -15,
+      6
+    ],
+    [
+      -15,
+      7
+    ],
+    [
+      -15,
+      8
+    ],
+    [
+      -15,
+      9
+    ],
+    [
+      -15,
+      10
+    ],
+    [
+      -15,
+      11
+    ],
+    [
+      -15,
+      12
+    ],
+    [
+      -15,
+      13
+    ],
+    [
+      -15,
+      14
+    ],
+    [
+      -14,
+      0
+    ],
+    [
+      -14,
+      1
+    ],
+    [
+      -14,
+      2
+    ],
+    [
+      -14,
+      3
+    ],
+    [
+      -14,
+      4
+    ],
+    [
+      -14,
+      5
+    ],
+    [
+      -14,
+      6
+    ],
+    [
+      -14,
+      7
+    ],
+    [
+      -14,
+      8
+    ],
+    [
+      -14,
+      9
+    ],
+    [
+      -14,
+      10
+    ],
+    [
+      -14,
+      11
+    ],
+    [
+      -14,
+      12
+    ],
+    [
+      -14,
+      13
+    ],
+    [
+      -13,
+      0
+    ],
+    [
+      -13,
+      1
+    ],
+    [
+      -13,
+      2
+    ],
+    [
+      -13,
+      3
+    ],
+    [
+      -13,
+      4
+    ],
+    [
+      -13,
+      5
+    ],
+    [
+      -13,
+      6
+    ],
+    [
+      -13,
+      7
+    ],
+    [
+      -13,
+      8
+    ],
+    [
+      -13,
+      9
+    ],
+    [
+      -13,
+      10
+    ],
+    [
+      -13,
+      11
+    ],
+    [
+      -13,
+      12
+    ],
+    [
+      -12,
+      0
+    ],
+    [
+      -12,
+      1
+    ],
+    [
+      -12,
+      2
+    ],
+    [
+      -12,
+      3
+    ],
+    [
+      -12,
+      4
+    ],
+    [
+      -12,
+      5
+    ],
+    [
+      -12,
+      6
+    ],
+    [
+      -12,
+      7
+    ],
+    [
+      -12,
+      8
+    ],
+    [
+      -12,
+      9
+    ],
+    [
+      -12,
+      10
+    ],
+    [
+      -12,
+      11
+    ],
+    [
+      -11,
+      0
+    ],
+    [
+      -11,
+      1
+    ],
+    [
+      -11,
+      2
+    ],
+    [
+      -11,
+      9
+    ],
+    [
+      -11,
+      10
+    ],
+    [
+      -10,
+      0
+    ]
+  ]
+}
+review/codex-prompt.md
+RESULTS.md
+results/certificate.json
+results/diagnostics.json
+results/lattice-witness.json
+README.md
+code/generate_witness.py
+code/verify.py
+code/diagnostics.py
+code/reproduce.py
+STATUS.md
+source/problem.zh.txt
+
+exec
+/bin/zsh -lc "nl -ba STATUS.md
+nl -ba RESULTS.md | sed -n '190,320p'" in /Users/jinleic/jinleic-workspace/ai4s/phys-fibonacci-cone-spirals
+ succeeded in 0ms:
+     1	# Status and strongest comparable results
+     2	
+     3	Snapshot: 2026-10-14 (America/Los_Angeles). This is a bounded primary-source review, not a proof that no relevant result exists.
+     4	
+     5	## 1. The actual question and current verdict
+     6	
+     7	The book asks two different things:
+     8	
+     9	- **C1:** whether the observed Fibonacci parastichy patterns are least-*elastic*-energy configurations of identical units on a cone; it also discusses an equal-disk-packing version.
+    10	- **C2:** whether varying disk size in packing toward the apex alternates which counter-rotating family has the larger consecutive-Fibonacci count.
+    11	
+    12	**Overall verdict here: PARTIAL.** We found no verified general theorem resolving these statements under the book's unspecified elastic law and growth conditions. This is **not** a certified literature-wide “still unsolved” claim. The book itself calls both questions conjectural; the retrieved modern sources concern different precise models and do not announce a general solution of Cao's conjecture.
+    13	
+    14	The central modern distinction is explicit in Lee and Levitov [3], Section II.1: “the structure does not track the global energy minimum.” The same passage says the Fibonacci structures characterize a progression of deformation, “rather than the result of global energy minimization.” Consequently, citing that theory as a global-minimum proof would reverse its stated qualification.
+    15	
+    16	**What this folder settles:** a conventional fixed-golden-angle, equal-area spiral loses to a triangular-lattice quotient in a certified 183-center annular comparison, and in an asymptotic density comparison after any finite apex deletion. This does not classify the much larger family of deformed Fibonacci-contact patterns. Reflection degeneracy is proved for achiral models; alternating relative chirality is proved only for an explicitly defined local Fibonacci-family model.
+    17	
+    18	**Difficulty assessment:** the finite witness and reduced-model algebra are accessible because the cone has a 60-degree commensurate development, distances reduce to an integer quadratic form, and a single short pair suffices to disprove an ansatz. Those are the actual bounded obligations. The full experimental elastic minimization is not shown to be “not too hard”: it requires a constitutive functional, stress and boundary data, a global competitor class, and a proof excluding all lower-energy competitors. No ease claim follows from having a numerical simulator.
+    19	
+    20	## 2. What is established, by model
+    21	
+    22	| Model and primary baseline | Established result or observation | What does not follow |
+    23	|---|---|---|
+    24	| Stressed Ag/silica microstructures [1,2] | Experiments produce Fibonacci patterns under conical support; the 2007 abstract reports 3x5 through 13x21 with definite chirality and interprets them as least elastic energy. | Experimental self-assembly is not a proof of a global minimum over all admissible shapes, nor a constitutive-energy specification. |
+    25	| Deformable cylindrical lattices [3,4] | Mechanical theories organize local rearrangements with modular symmetry and Fibonacci transitions. The 1998 chapter posted in 2021 explicitly separates these from global minimization. | The arXiv date does not make the chapter a new 2021 cone-global-optimality theorem. |
+    26	| Discrete dynamical plant-pattern model [5] | Rigorous fixed-point stability and bifurcation-diagram analysis explains Fibonacci occurrence in that system. | Stability of a growth-map fixed point does not certify a global disk-packing or elastic minimum. |
+    27	| Cylindrical disk packing and slow variation [6,7] | Cylindrical dense packings and local packing evolution can be organized by parastichy integers; local homogeneity and continuity can generate Fibonacci and related states. | A cylinder has different global closure conditions from a cone; local packing rules need not find global optima. |
+    28	| Disk accretion, including irregular states [8,9] | The same simple framework permits Fibonacci and quasi-symmetric states. The 2024 preprint compares stacking models with a large sunflower dataset and includes Lucas, double-Fibonacci, Fibonacci-plus/minus-one, and near-equal non-Fibonacci counts. | “All plants have consecutive Fibonacci counts” is false as a descriptive premise; model-data agreement does not prove global optimality. |
+    29	| Constant-divergence Fermat spirals [10,11] | Bacher provides a rigorous local-lattice/geodesic description and parastichy transitions. Akiyama proves a Fermat constant-angle set is Delone iff its angle is badly approximable. | Uniform discreteness, good uniformity, and golden-angle Diophantine extremality are not maximum disk density among all point sets. |
+    30	| Repulsive vortices on conical frusta [12] | Molecular dynamics and Monte Carlo find transitions between phyllotactic states, including non-Fibonacci states such as `(3,3,0)`, `(4,2,2)`, `(5,4,1)`, and seam/scar structures. | Agreement of two numerical methods is not a replayable global-minimum certificate. Their Bessel interaction and reservoirs are not the Ag/silica elastic experiment. |
+    31	| Hard-disk growth on cones [13] | Greedy, irreversible growth yields seams and near-tip disorder away from special commensurate cone angles. Perfect triangular crystals at sector angles `60 degrees * P` are a known baseline. | The authors explicitly distinguish growth from the earlier basin-hopping energy studies; the greedy algorithm does not solve equilibrium packing. |
+    32	| Colloidal crystals on cones [14] | 2025 experiments observe geometry-set tilt grain boundaries and, at small cone angles, commensurate bands limited by dislocations. | Real cone crystals need not be globally Fibonacci. These are physical observations, not universal hard-disk bounds. |
+    33	| Riesz energy on rectifiable surfaces [15] | For the stated classes and `s>=d`, minimal configurations asymptotically equidistribute with respect to `d`-dimensional Hausdorff measure; the critical leading term is explicit. | Equidistribution does not identify contact topology. This is ambient Euclidean Riesz distance, not automatically intrinsic geodesic distance, and surface Coulomb `s=1<2` is outside that quoted regime. |
+    34	| Planar equal-circle packing [16] | Triangular packing has density `pi/(2*sqrt(3))`. The `pi/3` cone is a sixfold rotational quotient, so lifting and quotienting transfer this asymptotic optimum. | The finite 183-point optimum need not be 1; our witness only supplies a strict comparator. |
+    35	
+    36	### Strongest same-model baseline we must beat
+    37	
+    38	For intrinsic equal disks on the `pi/3` quotient cone, the known triangular lattice already attains the planar density bound. There is no headroom to improve that asymptotic benchmark. The correct question is whether the proposed golden-spiral class reaches it. RESULTS.md proves a strictly smaller upper bound `pi/(2*sqrt(5))` for that fixed ansatz. This is a certification/corollary, not a claim to beat the classical packing optimum or discover commensurate cone crystals.
+    39	
+    40	For the general elastic question, there is no meaningful numerical “best score” until the energy, boundaries, particle shape and relaxation constraints are fixed. A Coulomb or Riesz search would be a different model, not a substitute baseline.
+    41	
+    42	## 3. Chirality status and the exact remaining gap
+    43	
+    44	C2 requires distinguishing **relative parastichy chirality** (which of the two spiral families has more members) from the **ontogenetic/generative spiral** (the temporal insertion sequence). These signs can differ and can change for different reasons.
+    45	
+    46	- The 2007 experiment [2] demonstrates definite chirality under its fabrication conditions, but its abstract does not establish a theorem of disk-size-driven alternation.
+    47	- Classical and modern stacking/local-lattice models [3,8–11] provide mechanisms for consecutive parastichy transitions. RESULTS.md derives explicit thresholds and alternation in a frozen golden-angle linearization, rather than assuming the qualitative mechanism solves C2.
+    48	- A 2025-online/2026-issue fossil-cone study [17] reports associations between ontogenetic chirality and seed number. The primary abstract describes an observational morphometric study, not a controlled disk-size experiment; it cannot establish the proposed causal alternation law.
+    49	- The 2026 Keller–Segel paper [18] reproduces Fibonacci and alternating patterns through growth and signaling instabilities. Its “alternating patterns” are not, by that phrase alone, proof of the book's chirality alternation.
+    50	- In an achiral domain with a reflection-invariant energy, opposite chiral minimizers have equal energy at every disk size. That symmetry rules out energetic selection of a unique absolute sign without a symmetry-breaking ingredient, but does not rule out path-dependent branch alternation.
+    51	
+    52	The unresolved obligation is therefore concrete: fix an apex-directed accretion/relaxation rule, a boundary or seed that fixes the external length scale and any chirality bias, and a robust contact-network count; then prove or certify the parameter intervals and transition sequence. No universal implication “changing size means changing chirality” has been proved here.
+    53	
+    54	## 4. Primary-source references and reading level
+    55	
+    56	1. **Chaorong Li, Xiaona Zhang, Zexian Cao.** “Triangular and Fibonacci Number Patterns Driven by Stress on Core/Shell Microstructures.” *Science* **309**, 909–911 (2005). DOI [10.1126/science.1113412](https://doi.org/10.1126/science.1113412). Publisher-deposited abstract and bibliographic record read via Crossref; full publisher page returned 403. The abstract reports geometry-dependent patterns and the authors' strain-energy interpretation, not a mathematical proof.
+    57	2. **Chaorong Li, Ailing Ji, Zexian Cao.** “Stressed Fibonacci spiral patterns of definite chirality.” *Applied Physics Letters* **90**, 164102 (2007). DOI [10.1063/1.2728578](https://doi.org/10.1063/1.2728578). Publisher-deposited abstract read. Reports the 3x5 to 13x21 range, conical support, definite chirality, and the least-energy interpretation.
+    58	3. **Hyun-Woo Lee, Leonid S. Levitov.** “Universality in Phyllotaxis: a Mechanical Theory.” Chapter in *Symmetry in Plants*, World Scientific (1998), posted as [arXiv:2101.02652](https://arxiv.org/abs/2101.02652) (2021). [Full text](https://arxiv.org/html/2101.02652). Introduction and Sections II.1–II.2 read, including the explicit non-global-minimum qualification. This is the strongest directly relevant warning against conflating energetic evolution with global minimization.
+    59	4. **L. S. Levitov.** “Energetic Approach to Phyllotaxis.” *Europhysics Letters* **14**, 533–539 (1991). DOI [10.1209/0295-5075/14/6/006](https://doi.org/10.1209/0295-5075/14/6/006). Metadata read; its role is described in the primary retrospective [3]. Distinct from his “Phyllotaxis of flux lattices in layered superconductors,” *Physical Review Letters* **66**, 224 (1991), DOI [10.1103/PhysRevLett.66.224](https://doi.org/10.1103/PhysRevLett.66.224).
+    60	5. **Pau Atela, Christophe Golé, Scott Hotton.** “A Dynamical System for Plant Pattern Formation: A Rigorous Analysis.” *Journal of Nonlinear Science* **12**(6), 641–676 (volume year 2002; DOI publication metadata and institutional repository date January 2003). DOI [10.1007/s00332-002-0513-1](https://doi.org/10.1007/s00332-002-0513-1); [institutional abstract/manuscript entry](https://scholarworks.smith.edu/mth_facpubs/80/). Author abstract read: fixed points, stability, and bifurcations are the announced rigorous objects.
+    61	6. **Adil Mughal, Denis Weaire.** “Theory of cylindrical dense packings of disks.” *Physical Review E* **89**, 042307 (2014). DOI [10.1103/PhysRevE.89.042307](https://doi.org/10.1103/PhysRevE.89.042307). Metadata checked; commensurate-packing discussion and formulas also read in primary source [13], Appendix C. No uninspected theorem from this article is used in our proofs.
+    62	7. **Adil Mughal, Denis Weaire.** “Phyllotaxis, disk packing, and Fibonacci numbers.” *Physical Review E* **95**, 022401 (2017). DOI [10.1103/PhysRevE.95.022401](https://doi.org/10.1103/PhysRevE.95.022401); [arXiv:1608.05824](https://arxiv.org/abs/1608.05824). Author abstract read. The local principles are dense packing, homogeneity and continuity, not a certificate of the cone's global packing optimum.
+    63	8. **Christophe Golé, Jacques Dumais, Stéphane Douady.** “Fibonacci or quasi-symmetric phyllotaxis. Part I: why?” *Acta Societatis Botanicorum Poloniae* (2016), article 3533. DOI [10.5586/asbp.3533](https://doi.org/10.5586/asbp.3533); [institutional author entry](https://scholarworks.smith.edu/mth_facpubs/32/). Primary abstract read; reports both Fibonacci-like and quasi-symmetric solutions of disk accretion. The institutional volume field is not relied upon because it is inconsistent with common bibliographic indexing.
+    64	9. **Jonathan Swinton.** “Disk-stacking models are consistent with Fibonacci and non-Fibonacci structure in sunflowers.” [arXiv:2407.05857v2](https://arxiv.org/html/2407.05857v2) (2024), preprint. Full-text Sections 1–5 read, including actual contact-chain parastichy definitions, finite transitions, non-Fibonacci data and parameter selection after inspection. It is cited as a preprint; no unverified journal status or priority assertion is imported.
+    65	10. **Roland Bacher.** “On geodesics of phyllotaxis.” *Confluentes Mathematici* **6**(1), 3–27 (2014). DOI [10.5802/cml.10](https://doi.org/10.5802/cml.10); [arXiv:1301.7568](https://arxiv.org/abs/1301.7568); [journal PDF](https://www.numdam.org/item/10.5802/cml.10.pdf). Theorem 1.1, linearization, Sections 6–7 and parastichy transitions read. This is direct prior art for the local geometry and cautions against claiming the reduced transition mechanism as new.
+    66	11. **Shigeki Akiyama.** “Spiral Delone sets and three distance theorem.” [arXiv:1904.10815v2](https://arxiv.org/abs/1904.10815) (2019). [Full manuscript](https://arxiv.org/pdf/1904.10815). Theorems 2–3, Diophantine conditions, and stated generalization questions read. The theorem concerns the Delone property, not global maximum density.
+    67	12. **H. S. Ansell, A. A. Tomlinson, N. K. Wilkin.** “Transitions between phyllotactic lattice states in curved geometries.” *Scientific Reports* **10**, 17411 (2020). DOI [10.1038/s41598-020-74158-x](https://doi.org/10.1038/s41598-020-74158-x); [arXiv:2001.10501v2 full text](https://arxiv.org/html/2001.10501v2); [PubMed record](https://pubmed.ncbi.nlm.nih.gov/33060641/). Model and Sections 2–4 read: intrinsic `K_0` interaction, fixed-density reservoirs, numerical ground-state methods, and non-Fibonacci states. The HTML rendering's later date is not the publication date.
+    68	13. **Jessica H. Sun, Abigail Plummer, Grace H. Zhang, David R. Nelson, Vinothan N. Manoharan.** “Geometric frustration of hard-disk packings on cones.” *Physical Review E* **108**, 054608 (2023). DOI [10.1103/PhysRevE.108.054608](https://doi.org/10.1103/PhysRevE.108.054608); [arXiv:2309.14446 full manuscript](https://arxiv.org/pdf/2309.14446). Methods, discussion, conclusion and Appendices A/C read. Section II states the special sector angles `60 degrees * P`; their simulations deliberately avoid them. Conclusion explicitly calls for simulations/experiments including kinetics, thermal fluctuations and entropy. Their [public code](https://github.com/manoharan-lab/cone-disk-packings) and [data DOI](https://doi.org/10.7910/DVN/ZQ4BUR) are linked in the paper but were not cloned or reproduced here.
+    69	14. **Jessica H. Sun, Grace H. Zhang, Abigail Plummer, Caroline Martin, Nabila Tanjeem, David R. Nelson, Vinothan N. Manoharan.** “Colloidal Crystallization on Cones.” *Physical Review Letters* **134**, 018201 (2025). DOI [10.1103/PhysRevLett.134.018201](https://doi.org/10.1103/PhysRevLett.134.018201); [primary abstract via PubMed](https://pubmed.ncbi.nlm.nih.gov/39913697/). Abstract read after publisher/author-page access failed. Grain-boundary and finite-band observations above come from that abstract, not an unverified search summary.
+    70	15. **D. P. Hardin, E. B. Saff.** “Minimal Riesz energy point configurations for rectifiable d-dimensional manifolds.” *Advances in Mathematics* **193**, 174–204 (2005). DOI [10.1016/j.aim.2004.05.006](https://doi.org/10.1016/j.aim.2004.05.006); [arXiv:math-ph/0311024](https://arxiv.org/abs/math-ph/0311024). Author abstract read; only its asymptotic distribution statement is used here. No transfer of its assumptions to intrinsic Coulomb energy is asserted.
+    71	16. **Hai-Chau Chang, Lih-Chung Wang.** “A Simple Proof of Thue's Theorem on Circle Packing.” [arXiv:1009.4322](https://arxiv.org/abs/1009.4322) (2010), proof exposition of the classical planar theorem. Author abstract read. The planar packing theorem is an explicitly imported mathematical baseline in RESULTS.md, not a locally rediscovered result.
+    72	17. **Mariah M. Howell, Ronny Rößler, Carole T. Gee.** “Phyllotaxis, ontogeny and CT imaging: old and new approaches to understanding optimal seed packing in Middle Jurassic Araucaria mirabilis cones.” *Annals of Botany* (online 2025; issue 2026). DOI [10.1093/aob/mcaf325](https://doi.org/10.1093/aob/mcaf325). Publisher-deposited abstract read. It describes 21 analyzed cones; a search summary said 30, so that summary was rejected. No sample-size inference or experimental causal claim is made from it.
+    73	18. **Michael F. Staddon.** “Phyllotaxis in a Keller-Segel model.” *Physical Review E* **113**, 034407 (2026). DOI [10.1103/9yk5-b4q2](https://doi.org/10.1103/9yk5-b4q2). Publisher-deposited abstract read: radial growth, signal-source competition, and linear stability analysis. This extends the status check to 2026 but does not settle elastic C1 or disk-size C2.
+    74	
+    75	### Historical source correction
+    76	
+    77	The Oklahoma item is accessible: [J. Albert's course project list, Version 3, Summer 2008](https://www.math.ou.edu/~jalbert/courses/projects.pdf), item 15. Its exact characterization is “least-energy configurations of discs (I think) on a cone,” and it points to the 2005/2007 experiments. It is an informal course-project suggestion, not a formal published densest-packing conjecture or proof. The book's summary should not be upgraded into a precise theorem statement.
+    78	
+    79	### Search and access limitations
+    80	
+    81	Primary texts were preferred over generated search answers. Search covered the book's titles, cone hard-disk packing, conical crystal ground states, phyllotaxis chirality, Fermat-spiral density, and 2025–2026 developments. Multiple publisher pages returned 403/401; author manuscripts, deposited abstracts, or PubMed were used with the reading level stated above. One search-suggested `preprints.org/manuscript/202608.2110` URL was inaccessible and not independently located by its identifier; it supports no claim. Absence from this bounded review establishes neither nonexistence nor novelty.
+    82	
+    83	## 5. Research direction after these certificates
+    84	
+    85	The attainable result is not “Fibonacci is always optimal,” but a precise separation between geometric constraints, kinetic branch selection, and equilibrium. The full target needs a physically grounded energy and a broader contact-topology class. Fixing those assumptions is the single highest-value prerequisite; more random starts in an arbitrary energy landscape would not repair their absence.
+   190	
+   191	Actual command run from this folder:
+   192	
+   193	```sh
+   194	/Users/jinleic/jinleic-workspace/scratch/ai4s-venv/bin/python code/reproduce.py
+   195	```
+   196	
+   197	Observed output:
+   198	
+   199	```text
+   200	GENERATED: 183 orbit representatives
+   201	PASS: N=183, 1098 planar lifts, exact minimum distance squared=1
+   202	PASS: golden pair (4,12) squared distance < 0.769543167007 < 0.77
+   203	PASS: 6-orbit control; reflection; 3 rejected negative controls; 49 Fibonacci identities
+   204	EMPIRICAL: golden pair squared distance=0.769124117040865606
+   205	EMPIRICAL: density upper bound=0.7024814731040726, lattice=0.9068996821171089
+   206	EMPIRICAL: 21 asymptotic controls; 13 consecutive chirality phases, q=1..1000
+   207	```
+   208	
+   209	The finite verifier uses only Python integer arithmetic and `fractions.Fraction`; floating values are printed after certification and never decide acceptance. Its negative controls reject a repeated orbit, an apex point outside the allowed annulus, and diameter `101/100`. Generator and verifier share the mathematical lattice definition, but use different coordinate representations and share no implementation functions. The mpmath check uses a stable sine-squared polar distance formula rather than the verifier's cosine lower bound. Both codes run under the same Python runtime; they are not formal kernel verification.
+   210	
+   211	## 7. Independent review
+   212	
+   213	The hostile-referee prompt and its response are kept in `review/`. Review completion and point-by-point dispositions are recorded here after the independent run. The proofs and evidence are not considered externally certified merely because a model agrees.
+   214	
+   215	## 8. Exact remaining blocker and next action
+   216	
+   217	Nothing here establishes that the actual Ag/silica experiments reach global elastic minima, or that every Fibonacci-contact packing is inferior. A full answer requires the strain/bending/substrate energy, geometry and stress history, defect costs, boundaries, and allowed rearrangements. A scalar Riesz energy or intrinsic hard-disk model is not automatically that functional. No sequential packing experiment has been substituted for a proof of C2.
+   218	
+   219	The single most valuable next action is to obtain or derive the experimental bilayer elastic functional and a mathematically explicit Fibonacci-contact competitor class, then certify an energy comparison with a seam-bearing crystal at an experimental cone angle. Until that contract is fixed, more unconstrained numerical searches would answer a different question rather than close this blocker.
+
+codex
+The finite comparison and B1’s limiting-pair argument hold up so far; neither relies on the finite numerical controls as a proof. I’m checking disk embedding near the quotient apex and the reduced model’s tie cases, and independently reconstructing the stored witness.
+exec
+/bin/zsh -lc 'nl -ba source/problem.zh.txt
+nl -ba README.md
+nl -ba code/diagnostics.py
+nl -ba code/generate_witness.py
+cat code/reproduce.py' in /Users/jinleic/jinleic-workspace/ai4s/phys-fibonacci-cone-spirals
+ succeeded in 0ms:
+     1	# Source excerpt (pdftotext -layout, unedited)
+     2	# Book: 10000个科学难题·物理学卷 (Science Press, 2009, ISBN 978-7-03-024269-3)
+     3	# Local PDF: /Users/jinleic/Documents/中文pdf/10000个科学难题·物理学卷(10000个科学难题物理编委会).pdf
+     4	# Problem: 菲波纳契双螺旋是锥面上的最小能量构型吗？ — 曹则贤 (中国科学院物理研究所)
+     5	# Book pages 541-543; PDF pages 574-576
+     6	
+     7	                 菲波纳契双螺旋是锥面上的
+     8	                   最小能量构型吗？
+     9	         Are the Fibonacci Parastichous Spirals a Least-Energy
+    10	                   Configuration on Conical Surface?
+    11	
+    12	
+    13	    大自然中的许多结构可以看做是全同单元在一定约束条件下(比如，要求能量
+    14	最低，或使用原料最少，或达成最有效的公平等)排列的结果。给定了约束条件， 即
+    15	排列的规则，最终获得的结构则由体系所占据空间的几何性质所决定。 理想晶体
+    16	就被看做是全同单元 —— 单元间的相互作用势可以有多样的形式——在无限空间
+    17	中的密堆积。金、银、铜、铝等金属晶体为面心立方结构，可模型化为刚球在三维
+    18	空间的密堆积。但是，相互间作用为球对称势的全同单元，其在三维空间的能量最
+    19	低构型是面心立方结构吗？对这个问题的数学证明至今未能给出。与之对应的二维
+    20	平面内全同刚球密堆积为六方密堆积结构，其数学证明由 Axel Thue 早在 1892 年
+    21	就已经给出。
+    22	    二维球面上全同粒子间通过库仑势相互作用的密堆积问题在文献中被称为
+    23	Thomson 问题，是 1904 年 J.J.Thomson 为研究原子核外电子分布最先提出来的 [1]。
+    24	如果把 ∝ 1 / r 的库仑势替换为更具一般性的 ∝ 1/ r s , s ≥ 1.0, 则称为广义 Riesz 问题,
+    25	但许多场合下人们还是将球面上
+    26	的密堆积问题笼统地称为
+    27	Thomson 问题。Thomson 问题受
+    28	到了广泛的关注， 得到了系统的
+    29	理论和数值研究。粗略地说， 粒
+    30	子数不大的 Thomson 问题的解为
+    31	以十二个尽可能分开的五聚体
+    32	(pentamer)为 特 征 的 三 角 铺 排 结
+    33	构，而粒子数较多时，则会出现
+    34	附 加 的 五 聚 体 -七 聚 体 链 (penta-
+    35	mer-heptamer chain)[2,3] 。前者的
+    36	典型例子有富勒碳球，球形花托
+    37	                                   图1   球状花托上小花的三角铺排花样
+    38	上 的 小 花 (floret) 分 布 ( 图 1) 等
+    39	·542·                                    10000 个科学难题·物理学卷
+    40	
+    41	
+    42	等；后者则在放射虫(radiolarian)、胶体颗粒团簇和应力点阵上能观察到 [3]。
+    43	   还有一类更神奇的铺排花样引起了人们的广泛关注，这就是菲波纳契螺旋花
+    44	样，即其排布结构既可以看做是一组逆时针的螺旋，同时又可以看做是一组顺时针
+    45	螺旋，且螺旋的数目必定是菲波纳契数列(Fn=1, 1, 2, 3, 5, 8, 13, 21, 34, 55,…即每一
+    46	项都是其前两项之和)中相邻的两个数，于是这样的螺旋结构也就用两个相邻的菲
+    47	波纳契数来标记。常见的例子有松果、菠萝、雏菊、向日葵等。向日葵种子的菲波
+    48	纳契螺旋结构，根据其花盘的大小，可以是 13×21 直到 89×144。利用应力工程
+    49	技术，笔者同李超荣教授、纪爱玲博士一起用无机物在微米尺度上获得了多组菲波
+    50	纳契螺旋结构(图 2)，从而在实验上给出了菲波纳契螺旋这种在生命现象里经常出
+    51	现，且甚至被认为是同生命现象密切联系的结构不过就是给定几何下(有一定锥度的
+    52	曲面上)的弹性能最小构型的实验证明 [4,5]。因此，在回答 Physorg 网站采访时， 笔
+    53	                                   者将这个猜想清楚地表述出来。
+    54	                                   这个猜想在一部分生物学家、生
+    55	                                   物化学家那里遇到了阻力，而另
+    56	                                   一部分生物学家则感到非常兴
+    57	                                   奋。实际上， S. Wolfram 的书中
+    58	                                   可找到相当多的植物学上的证据
+    59	                                   [6]
+    60	                                         。但是， 如何从数学上对这一
+    61	                                   猜想加以证明呢？令人鼓舞的
+    62	                                   是，这一猜想引起了国际上一些
+    63	                                   数 学 家 的 注 意 ， 美 国 Oklahoma
+    64	                                   大学的一组数学家就把菲波纳契
+    65	                                   螺旋结构可能是锥面上全同圆盘
+    66	                                   的密堆积结构列为他们感兴趣的
+    67	 图2   用无机物通过应力工程实现的微米大小的           二十个数学猜想的第十五项 [7]。
+    68	          菲波纳契螺旋花样 [4]                    此外，注意到菲波纳契螺旋
+    69	                                   结构还是有手性的，即用一组相
+    70	邻的菲波纳契数标记的螺旋结构既可以是逆时针螺旋的数目是较多的，也可以是顺
+    71	时针螺旋的数目是较多的。松果就能表现出这两种手性的结构(图 3)，且发生的概率
+    72	大致是相同的[8]，而在其他一些物种中两者可能概率不同，甚至只出现单一手性的
+    73	菲波纳契螺旋结构。 那么，什么因素牵动(tip)了结构形成的过程使得最终的花样
+    74	获得了某个特定的手性呢？这个问题我们投稿时多次被问到。笔者猜想对锥面上朝
+    75	向锥尖的全同圆盘密堆积过程中，改变圆盘的尺寸应能观察到手性的交替变化。这
+    76	个猜想是否正确，也有待未来的实验或理论上的证实。
+    77	  菲波纳契双螺旋是锥面上的最小能量构型吗？                                                                    ·543·
+    78	
+    79	
+    80	
+    81	
+    82	                    图3     松果鳞片的菲波纳契螺旋结构表现出两种手性 [8]
+    83	
+    84	                                           参 考 文 献
+    85	
+    86	[1] Thomson J J. Phil Mag, 1904, 7: 237.
+    87	[2] Bausch A R, Bowick M J, Cacciuto A, Dinsmore A D, Hsu M F, Nelson D R, Nikolaides M G,
+    88	    Travesset A, Weitz D A. Science, 2003, 299: 1716.
+    89	[3] Li C R, Dong W J, Lei Gao, Cao Z X. Stressed triangular lattices on microsized spherical surfaces
+    90	    and their defect management. Appl Phys Lett, 2008, 93: 034108.
+    91	[4] Li C R, Zhang X N, Cao Z X. Triangular and Fibonacci number patterns driven by stress on
+    92	    core/shell microstructures. Science, 2005, 309: 909-911.
+    93	[5] Li C R, Ji A L, Cao Z X. Stressed Fibonacci spiral patterns of definite chirality. Appl Phys Lett,
+    94	    2007, 90: 164102.
+    95	[6] Wolfram S. A new kind of science. Wolfram Media, 2002.
+    96	[7] www.math.ou.edu/~jalbert/courses/projects.pdf
+    97	[8] Klar A J S. Fibonacci’s flowers. Nature, 2002, 417: 595.
+    98	
+    99	
+   100	                                                                              撰稿人：曹则贤
+   101	                                                                       中国科学院物理研究所
+   102	·544·                                                           10000 个科学难题·物理学卷
+   103	
+   104	
+   105	
+     1	# Fibonacci spirals on cones
+     2	
+     3	Snapshot: 2026-10-14 (America/Los_Angeles).
+     4	
+     5	Cao Zexian's problem in *10000 Selected Problems in Sciences: Physics* (Science Press, 2009), pp. 541–543, asks whether the consecutive-Fibonacci counter-rotating spiral patterns observed in stressed Ag-core/silica-shell microstructures minimize elastic energy, and whether changing the size of identical disks packed toward a cone apex alternates the pattern's chirality. The source gives experimental motivation but no constitutive energy, boundary conditions, or mathematical definition of the admissible Fibonacci class. Global equilibrium, densest packing, and growth-selected metastable patterns are different questions.
+     6	
+     7	## Verdict
+     8	
+     9	**PARTIAL overall; COUNTEREXAMPLE for the precise fixed-golden-angle packing claim below.**
+    10	
+    11	**FRONTIER_METHOD: DELIVERY-READY for the scoped certificates; NOVELTY-UNCLEAR as a research contribution.** The original elastic-energy question and unrestricted sequential-growth chirality question remain open here, not fully solved. Known commensurate triangular cone crystals and classical phyllotaxis mathematics are the baseline, not discoveries of this project.
+    12	
+    13	### Precise formulations addressed
+    14	
+    15	1. **C1-Finite:** On the intrinsic cone obtained from a sector of angle `pi/3` by identifying its edges (half-angle `asin(1/6)`), constrain 183 centers to slant radii `10 <= r <= 20`. Maximize their minimum geodesic separation. The equal-area golden-angle placement
+    16	   `r_i^2 = 100 + 150*i/91`, `theta_i = 2*pi*i*(3-sqrt(5))/2`, `i=0,...,182`, is **not** a maximizer. A triangular-lattice quotient has minimum distance exactly 1; the golden placement has a pair with squared distance strictly below `77/100`. Unit-diameter disks in the former fit in the same frustum `9.5 <= r <= 20.5`. This is an apex-independent, finite certified comparison, not a certificate of the unrestricted optimum.
+    17	2. **C1-Bulk:** For `r_n=c*sqrt(n)` and that fixed golden divergence on a cone of sector angle `2*pi*beta`, any packing of equal embedded intrinsic disks centered on every point after any finite initial deletion has asymptotic density at most `pi/(2*sqrt(5))`. At `beta=1/6`, a triangular-lattice quotient attains the global asymptotic packing optimum `pi/(2*sqrt(3))`. The fixed-golden-angle ansatz therefore loses in the bulk too. The theorem does **not** exclude all deformed configurations whose contact graph happens to have Fibonacci counts.
+    18	3. **C2-Reduced:** In a specified local linearized golden-spiral model, the two shortest *Fibonacci-offset* families change consecutively and the handedness of the larger-count family alternates at explicitly derived thresholds. In an achiral energy model, reflection instead makes opposite-handed minima degenerate at every disk size. Neither fact proves size-driven alternation for the book's physical growth process.
+    19	
+    20	## Reproduction
+    21	
+    22	From this folder, run:
+    23	
+    24	```sh
+    25	/Users/jinleic/jinleic-workspace/scratch/ai4s-venv/bin/python code/reproduce.py
+    26	```
+    27	
+    28	This regenerates a 183-center witness, verifies it with an independent integer-coordinate implementation and rational bounds, then runs separately labeled 80-digit empirical controls. The certificate-only replay is:
+    29	
+    30	```sh
+    31	/Users/jinleic/jinleic-workspace/scratch/ai4s-venv/bin/python code/verify.py
+    32	```
+    33	
+    34	Python 3.13.9 was exercised. The certificate is standard-library-only. Diagnostics use the existing shared `mpmath` installation; its version is recorded in `results/diagnostics.json`. No packages are installed. One core is used; no random search, paid compute, or remote mutation occurs.
+    35	
+    36	## File map
+    37	
+    38	- `source/problem.zh.txt`: unedited supplied source excerpt.
+    39	- `STATUS.md`: primary-source status, comparable baseline, and unresolved model assumptions.
+    40	- `RESULTS.md`: complete arguments, claim/evidence/novelty ledger, actual verification, and independent-review dispositions.
+    41	- `code/generate_witness.py`: fixed triangular-lattice orbit construction.
+    42	- `code/verify.py`: independent Cartesian-lift verifier, rational golden-pair bound, negative controls, and exact algebra controls.
+    43	- `code/diagnostics.py`: independent polar-coordinate and local-branch empirical checks.
+    44	- `code/reproduce.py`: one-command reproduction.
+    45	- `results/lattice-witness.json`, `results/certificate.json`, `results/diagnostics.json`: small replayable outputs.
+    46	- `review/`: hostile-referee prompt, response, and invocation evidence.
+    47	
+    48	## Research decision
+    49	
+    50	A global basin-hopping search cannot strengthen the existing strict counterexample to the fixed ansatz; finding the unrestricted finite optimum is unnecessary to disprove it. The highest-value next action is to specify the actual Ag/silica elastic functional and growth constraints, then compare a relaxed Fibonacci-contact state against a seam-bearing crystal at the experimental cone angle. Without those assumptions, answering the broader book question from generic Riesz optimization would substitute a different physical problem.
+     1	#!/usr/bin/env python3
+     2	"""Non-certifying high-precision controls in polar coordinates, fixed protocol."""
+     3	import json
+     4	from pathlib import Path
+     5	import mpmath as mp
+     6	
+     7	ROOT = Path(__file__).resolve().parents[1]
+     8	mp.mp.dps = 80
+     9	BETA = mp.mpf(1) / 6
+    10	A = 2 * mp.pi * BETA
+    11	PHI = (1 + mp.sqrt(5)) / 2
+    12	GAMMA = (3 - mp.sqrt(5)) / 2
+    13	FIB = [0, 1]
+    14	for _ in range(31):
+    15	    FIB.append(FIB[-1] + FIB[-2])
+    16	
+    17	
+    18	def distance2(r2, s2, offset):
+    19	    delta = offset * GAMMA - mp.nint(offset * GAMMA)
+    20	    # Stable form, not the subtractive expression in the exact verifier.
+    21	    return (mp.sqrt(s2) - mp.sqrt(r2)) ** 2 + 4 * mp.sqrt(r2 * s2) * mp.sin(A * delta / 2) ** 2
+    22	
+    23	
+    24	def branch_length(k, t):
+    25	    return mp.mpf(FIB[k]) ** 2 / (4 * t) + A * A * t * PHI ** (-2 * k)
+    26	
+    27	
+    28	def pair_transition(k):
+    29	    # Switch (F_{k-1},F_k) -> (F_k,F_{k+1}); k >= 3.
+    30	    return mp.sqrt((mp.mpf(FIB[k + 1]) ** 2 - FIB[k - 1] ** 2) /
+    31	                   (4 * A * A * (PHI ** (-2 * (k - 1)) - PHI ** (-2 * (k + 1)))))
+    32	
+    33	
+    34	def main():
+    35	    pair = distance2(mp.mpf(9700) / 91, mp.mpf(10900) / 91, 8)
+    36	    convergence = []
+    37	    for k in range(4, 25):
+    38	        q = FIB[k]
+    39	        eps = PHI ** (-k)
+    40	        n = int(mp.nint(q / (2 * A * eps)))
+    41	        value = distance2(mp.mpf(n), mp.mpf(n + q), q)
+    42	        convergence.append({"k": k, "offset": q, "n": n,
+    43	                            "distance_squared_c_equals_1": mp.nstr(value, 30)})
+    44	    phases = []
+    45	    for k in range(2, 15):
+    46	        lower = pair_transition(k) if k > 2 else mp.mpf(0)
+    47	        upper = pair_transition(k + 1)
+    48	        t = mp.sqrt(lower * upper) if lower else upper / 2
+    49	        best = sorted(range(2, 25), key=lambda j: branch_length(j, t))[:2]
+    50	        assert sorted(best) == [k, k + 1]
+    51	        # An independent brute force over integer offsets checks the local model.
+    52	        lengths = []
+    53	        for q in range(1, 1001):
+    54	            delta = q * GAMMA - mp.nint(q * GAMMA)
+    55	            lengths.append((mp.mpf(q) ** 2 / (4 * t) + A * A * t * delta * delta, q))
+    56	        shortest = sorted(q for _, q in sorted(lengths)[:2])
+    57	        assert shortest == [FIB[k], FIB[k + 1]]
+    58	        phases.append({"pair": shortest,
+    59	                       "larger_family_sign": (-1) ** (k + 1),
+    60	                       "t_interval": [mp.nstr(lower, 25), mp.nstr(upper, 25)],
+    61	                       "all_integer_offsets_tested": [1, 1000]})
+    62	    output = {
+    63	        "evidence_label": "Empirical evidence",
+    64	        "mpmath_version": mp.__version__, "decimal_precision": mp.mp.dps,
+    65	        "seed": "none; deterministic enumeration",
+    66	        "cone_beta": "1/6",
+    67	        "golden_finite_pair_distance_squared": mp.nstr(pair, 50),
+    68	        "asymptotic_distance_squared_upper_limit": mp.nstr(A / mp.sqrt(5), 50),
+    69	        "golden_density_upper_bound": mp.nstr(mp.pi / (2 * mp.sqrt(5)), 50),
+    70	        "triangular_density": mp.nstr(mp.pi / (2 * mp.sqrt(3)), 50),
+    71	        "density_ratio_lower_bound": mp.nstr(mp.sqrt(mp.mpf(5) / 3), 50),
+    72	        "convergence": convergence,
+    73	        "reduced_parastichy_phases": phases,
+    74	        "scope": "Not global optimization, interval arithmetic, or a sequential cone-growth experiment.",
+    75	    }
+    76	    (ROOT / "results" / "diagnostics.json").write_text(json.dumps(output, indent=2) + "\n")
+    77	    print(f"EMPIRICAL: golden pair squared distance={mp.nstr(pair, 18)}")
+    78	    print(f"EMPIRICAL: density upper bound={mp.nstr(mp.pi/(2*mp.sqrt(5)), 16)}, lattice={mp.nstr(mp.pi/(2*mp.sqrt(3)), 16)}")
+    79	    print(f"EMPIRICAL: {len(convergence)} asymptotic controls; {len(phases)} consecutive chirality phases, q=1..1000")
+    80	
+    81	
+    82	if __name__ == "__main__":
+    83	    main()
+     1	#!/usr/bin/env python3
+     2	"""Generate the fixed triangular-lattice witness; no search or optimization."""
+     3	import json
+     4	from pathlib import Path
+     5	
+     6	ROOT = Path(__file__).resolve().parents[1]
+     7	
+     8	
+     9	def orbit(a, b):
+    10	    points = []
+    11	    for _ in range(6):
+    12	        points.append((a, b))
+    13	        a, b = -b, a + b
+    14	    return points
+    15	
+    16	
+    17	def main():
+    18	    representatives = sorted({
+    19	        min(orbit(a, b))
+    20	        for a in range(-24, 25)
+    21	        for b in range(-24, 25)
+    22	        if 100 <= a * a + a * b + b * b <= 400
+    23	    })
+    24	    witness = {
+    25	        "model": "intrinsic cone R^2/C6, sector angle pi/3",
+    26	        "basis": ["(1,0)", "(1/2,sqrt(3)/2)"],
+    27	        "center_radius_squared_bounds": [100, 400],
+    28	        "frustum_radius_bounds": ["19/2", "41/2"],
+    29	        "disk_diameter": 1,
+    30	        "centers": representatives,
+    31	    }
+    32	    target = ROOT / "results" / "lattice-witness.json"
+    33	    target.write_text(json.dumps(witness, indent=2) + "\n")
+    34	    print(f"GENERATED: {len(representatives)} orbit representatives")
+    35	
+    36	
+    37	if __name__ == "__main__":
+    38	    main()
+#!/usr/bin/env python3
+"""Recreate the fixed witness, exact certificate, and non-certifying controls."""
+from pathlib import Path
+import subprocess
+import sys
+
+CODE = Path(__file__).resolve().parent
+for filename, options in (("generate_witness.py", []), ("verify.py", ["--write"]), ("diagnostics.py", [])):
+    subprocess.run([sys.executable, str(CODE / filename), *options], check=True)
+
+exec
+/bin/zsh -lc 'python3 code/verify.py' in /Users/jinleic/jinleic-workspace/ai4s/phys-fibonacci-cone-spirals
+ succeeded in 440ms:
+python3: warning: confstr() failed with code 5: couldn't get path of DARWIN_USER_TEMP_DIR; using /tmp instead
+python3: error: couldn't create cache file '/tmp/xcrun_db-uzENOsaZ' (errno=Operation not permitted)
+python3: warning: confstr() failed with code 5: couldn't get path of DARWIN_USER_TEMP_DIR; using /tmp instead
+python3: error: couldn't create cache file '/tmp/xcrun_db-xO3mTwsK' (errno=Operation not permitted)
+PASS: N=183, 1098 planar lifts, exact minimum distance squared=1
+PASS: golden pair (4,12) squared distance < 0.769543167007 < 0.77
+PASS: 6-orbit control; reflection; 3 rejected negative controls; 49 Fibonacci identities
+
+exec
+/bin/zsh -lc "python3 -B -c '
+import json
+from fractions import Fraction
+from math import isqrt
+from itertools import combinations
+from pathlib import Path
+
+w = json.loads(Path('\\''results/lattice-witness.json'\\'').read_text())
+centers = [tuple(p) for p in w['\\''centers'\\'']]
+
+def direct_lifts(a,b):
+    x,y = 2*a+b,b
+    return [(x,y),((x-3*y)//2,(x+y)//2),((-x-3*y)//2,(x-y)//2),
+            (-x,-y),((-x+3*y)//2,(-x-y)//2),((x+3*y)//2,(-x+y)//2)]
+
+lifts = {p for a,b in centers for p in direct_lifts(a,b)}
+full = {(2*a+b,b) for a in range(-30,31) for b in range(-30,31)
+        if 100 <= a*a+a*b+b*b <= 400}
+assert lifts == full
+assert len(lifts) == 6*len(centers) == 1098
+minimum4 = 10**9
+attaining = None
+for p,q in combinations(centers,2):
+    x,y = direct_lifts(*p)[0]
+    val = min((x-u)**2+3*(y-v)**2 for u,v in direct_lifts(*q))
+    if val < minimum4:
+        minimum4,attaining = val,(p,q)
+assert minimum4 == 4
+assert (-10,0) in centers and (-11,0) in centers
+print('\\''Independent witness: complete annular lattice set, 183 orbits, 1098 lifts.'\\'')
+print('\\''Inter-orbit minimum squared distance ='\\'', Fraction(minimum4,4))
+print('\\''Simple attaining representatives: (-10,0), (-11,0).'\\'')
+print('\\''Minimum self-image squared distance ='\\'', min(a*a+a*b+b*b for a,b in centers))
+
+a,b = Fraction(9700,91),Fraction(10900,91)
+def lower_sqrt(v,s):
+    m = isqrt(v.numerator*s*s//v.denominator)
+    low = Fraction(m,s)
+    assert low*low <= v < Fraction(m+1,s)**2
+    return low
+
+def upper(s):
+    low5 = lower_sqrt(Fraction(5),s)
+    lowab = lower_sqrt(a*b,s)
+    angle = Fraction(22,21)*(9-4*low5)
+    assert 0 < angle < Fraction(63,1000)
+    return a+b-2*lowab*(1-angle*angle/2),low5,lowab
+exact,_,_ = upper(10**30)
+receipt = json.loads(Path('\\''results/certificate.json'\\'').read_text())
+assert exact == Fraction(receipt['\\''finite_C1'\\'']['\\''golden_pair_distance_squared_upper_rational'\\''])
+assert exact < Fraction(77,100)
+simple,l5,lab = upper(10**6)
+assert simple < Fraction(77,100)
+print('\\''Stored rational certificate matches independent reconstruction exactly.'\\'')
+print('\\''Shorter rational square-root bounds:'\\'', str(l5), str(lab))
+print('\\''Resulting upper bound:'\\'', str(simple), '\\''display:'\\'', float(simple))
+
+# Scaled Cartesian coordinates: z=(2,0), R*z=(1,1), R"'^-1*z=(1,-1).
+# Midpoints m+=(3/2,1/2), m-=(3/2,-1/2) have distance 1/2 from z.
+xp,yp = Fraction(3,2),Fraction(1,2)
+xm,ym = Fraction(3,2),Fraction(-1,2)
+assert ((xp-2)**2+3*yp**2)/4 == Fraction(1,4)
+assert ((xm-2)**2+3*ym**2)/4 == Fraction(1,4)
+assert ((xm-3*ym)/2,(xm+ym)/2) == (xp,yp)
+print('"'\\''Infinite-lattice unit orbit: distinct closed-disk boundary points are identified.'\\'')
+'" in /Users/jinleic/jinleic-workspace/ai4s/phys-fibonacci-cone-spirals
+ succeeded in 0ms:
+python3: warning: confstr() failed with code 5: couldn't get path of DARWIN_USER_TEMP_DIR; using /tmp instead
+python3: error: couldn't create cache file '/tmp/xcrun_db-8xx8m1u1' (errno=Operation not permitted)
+python3: warning: confstr() failed with code 5: couldn't get path of DARWIN_USER_TEMP_DIR; using /tmp instead
+python3: error: couldn't create cache file '/tmp/xcrun_db-94NeS6jW' (errno=Operation not permitted)
+Independent witness: complete annular lattice set, 183 orbits, 1098 lifts.
+Inter-orbit minimum squared distance = 1
+Simple attaining representatives: (-10,0), (-11,0).
+Minimum self-image squared distance = 100
+Stored rational certificate matches independent reconstruction exactly.
+Shorter rational square-root bounds: 2236067/1000000 112994609/1000000
+Resulting upper bound: 1406919998307688877/1828125000000000000 display: 0.7695972640315563
+Infinite-lattice unit orbit: distinct closed-disk boundary points are identified.
+
+exec
+/bin/zsh -lc "python3 -B -c '
+import json
+from decimal import Decimal as D, getcontext, ROUND_HALF_EVEN
+from pathlib import Path
+getcontext().prec = 85
+def atan(x):
+    term=x
+    total=term
+    k=1
+    while abs(term)>D('\\''1e-82'\\''):
+        term *= -x*x
+        total += term/D(2*k+1)
+        k+=1
+    return total
+pi=16*atan(D(1)/5)-4*atan(D(1)/239)
+A=pi/3
+sqrt5=D(5).sqrt()
+phi=(1+sqrt5)/2
+gamma=(3-sqrt5)/2
+fib=[0,1]
+for _ in range(65): fib.append(fib[-1]+fib[-2])
+
+def sin(x):
+    term=total=x
+    k=1
+    while abs(term)>D('\\''1e-82'\\''):
+        term *= -x*x/D(2*k*(2*k+1))
+        total += term
+        k+=1
+    return total
+
+def distance2(a,b,q):
+    delta=q*gamma-(q*gamma).to_integral_value(rounding=ROUND_HALF_EVEN)
+    return (b.sqrt()-a.sqrt())**2 + 4*(a*b).sqrt()*sin(A*delta/2)**2
+
+def tau2(k):
+    return (D(fib[k+1])**2-D(fib[k])**2)/(4*A*A*(phi**(-2*k)-phi**(-2*(k+1))))
+def sigma2(k):
+    if k==2: return D(0)
+    return (D(fib[k+1])**2-D(fib[k-1])**2)/(4*A*A*(phi**(-2*(k-1))-phi**(-2*(k+1))))
+def branch(k,t):
+    return D(fib[k])**2/(4*t)+A*A*t*phi**(-2*k)
+
+data=json.loads(Path('\\''results/diagnostics.json'\\'').read_text())
+value=distance2(D(9700)/91,D(10900)/91,8)
+assert abs(value-D(data['\\''golden_finite_pair_distance_squared'\\''])) < D('\\''1e-49'\\'')
+for row in data['\\''convergence'\\'']:
+    k,q,n=row['\\''k'\\''],row['\\''offset'\\''],row['\\''n'\\'']
+    assert q==fib[k]
+    expected=(D(q)/(2*A*phi**(-k))).to_integral_value(rounding=ROUND_HALF_EVEN)
+    assert n==expected
+    value=distance2(D(n),D(n+q),q)
+    assert abs(value-D(row['\\''distance_squared_c_equals_1'\\''])) < D('\\''1e-29'\\'')
+
+for key,value in [
+ ('\\''asymptotic_distance_squared_upper_limit'\\'', A/sqrt5),
+ ('\\''golden_density_upper_bound'\\'', pi/(2*sqrt5)),
+ ('\\''triangular_density'\\'', pi/(2*D(3).sqrt())),
+ ('\\''density_ratio_lower_bound'\\'',(D(5)/3).sqrt())]:
+    assert abs(value-D(data[key]))<D('\\''1e-49'\\'')
+
+for k,row in zip(range(2,15),data['\\''reduced_parastichy_phases'\\'']):
+    lo,hi=sigma2(k).sqrt(),sigma2(k+1).sqrt()
+    assert abs(lo-D(row['\\''t_interval'\\''][0])) < max(D(1),lo)*D('\\''1e-24'\\'')
+    assert abs(hi-D(row['\\''t_interval'\\''][1])) < hi*D('\\''1e-24'\\'')
+    t=(lo*hi).sqrt() if lo else hi/2
+    best=sorted(range(2,50),key=lambda j:branch(j,t))[:2]
+    assert sorted(best)==[k,k+1]
+    integers=[]
+    for q in range(1,1001):
+        delta=q*gamma-(q*gamma).to_integral_value(rounding=ROUND_HALF_EVEN)
+        integers.append((D(q)**2/(4*t)+A*A*t*delta**2,q))
+    assert sorted(q for _,q in sorted(integers)[:2])==row['\\''pair'\\'']
+    assert row['\\''larger_family_sign'\\'']==(-1)**(k+1)
+for k in range(3,51):
+    assert tau2(k-1)<sigma2(k)<tau2(k)
+    assert sigma2(k)<sigma2(k+1)
+print('\\''Independent Decimal computation agrees with stored constants, 21 convergence rows, and 13 sampled phases.'\\'')
+print('\\''This checks one t per phase and q<=1000, not whole intervals or all q.'\\'')
+print('\\''Golden pair squared distance:'\\'', distance2(D(9700)/91,D(10900)/91,8))
+print('\\''Threshold controls verified through k=50; universal ordering was checked separately by proof.'\\'')
+'" in /Users/jinleic/jinleic-workspace/ai4s/phys-fibonacci-cone-spirals
+ succeeded in 0ms:
+python3: warning: confstr() failed with code 5: couldn't get path of DARWIN_USER_TEMP_DIR; using /tmp instead
+python3: error: couldn't create cache file '/tmp/xcrun_db-4RGETc6Y' (errno=Operation not permitted)
+python3: warning: confstr() failed with code 5: couldn't get path of DARWIN_USER_TEMP_DIR; using /tmp instead
+python3: error: couldn't create cache file '/tmp/xcrun_db-xjEIiHXL' (errno=Operation not permitted)
+Independent Decimal computation agrees with stored constants, 21 convergence rows, and 13 sampled phases.
+This checks one t per phase and q<=1000, not whole intervals or all q.
+Golden pair squared distance: 0.7691241170408656064314360739359636697689064106206512377728016142664081105019916442123
+Threshold controls verified through k=50; universal ordering was checked separately by proof.
+
+codex
+The witness reconstruction confirms 183 distinct orbits and minimum squared separation exactly 1. The stored rational bound also matches, and the stored diagnostic values agree with an independent calculation. I found one near-apex boundary correction in B2’s attainment construction; omitting one additional orbit fixes it without changing density. The diagnostic scan also tests one value of \(t\) per phase, which its JSON does not explicitly record.
+codex
+**Verdict: correct-with-fixes.** F, B1, S, and T survive the review. B2’s optimum survives, but its stated attaining construction needs a small boundary correction. I found no major error or unsupported extension to the physical problem.
+
+1. **Minor mathematical correction — B2, [RESULTS.md §4](/Users/jinleic/jinleic-workspace/ai4s/phys-fibonacci-cone-spirals/RESULTS.md:132).** Omitting only the apex orbit does not make every **closed** radius-\(1/2\) disk embedded. For the unit-radius center \(z=1\), the distinct boundary points
+   \[
+   m_\pm=(1+e^{\pm i\pi/3})/2
+   \]
+   both lie \(1/2\) from \(z\), but \(e^{i\pi/3}m_-=m_+\). Their quotient images coincide, so the closed disk identifies two of its own boundary points.
+
+   **Smallest correction:** omit the unit-radius orbit as well: retain lattice centers with \(r>1\). This bounded omission preserves density \(\pi/(2\sqrt3)\). The subsequent sentence about excluding an apex neighborhood already anticipates this repair. F’s centers at \(r\ge10\) are unaffected.
+
+2. **Low severity, definition clarification — B2, [RESULTS.md §4](/Users/jinleic/jinleic-workspace/ai4s/phys-fibonacci-cone-spirals/RESULTS.md:128).** Specify whether “asymptotic density” means an existing limit or upper density defined using \(\limsup\). Arbitrary packings need not have a density limit: thinning the quotient lattice in alternating, rapidly expanding occupied and empty annuli supplies an example.
+
+   **Smallest correction:** formulate B2 using upper asymptotic covered-area density. The lifting argument proves that bound, and the corrected lattice construction attains it with an actual limit.
+
+3. **Low severity, empirical reporting — [code/diagnostics.py](/Users/jinleic/jinleic-workspace/ai4s/phys-fibonacci-cone-spirals/code/diagnostics.py:45) and [results/diagnostics.json](/Users/jinleic/jinleic-workspace/ai4s/phys-fibonacci-cone-spirals/results/diagnostics.json).** Each phase tests **one** value of \(t\), not its entire reported `t_interval`. The Fibonacci scan covers \(k=2,\ldots,24\); the independent integer-offset scan covers \(q=1,\ldots,1000\). These checks cannot establish interval-wide or all-offset conclusions.
+
+   **Smallest correction:** record `sample_t` and explicitly identify `t_interval` as the analytically derived interval for the Fibonacci-only model. The existing empirical labels and written proof separation prevent this from invalidating T; no additional numerical scan is needed.
+
+4. **Pass — F and witness reconstruction, [RESULTS.md §3](/Users/jinleic/jinleic-workspace/ai4s/phys-fibonacci-cone-spirals/RESULTS.md:34).** Independently of the generator, I reconstructed the complete annular lattice set: **183 distinct orbits and 1098 lifts**. The minimum separation between distinct quotient centers is exactly 1; representatives \((-10,0)\) and \((-11,0)\) attain it. Minimum self-image separation is 10, so radius-\(1/2\) disks embed safely. Radial Lipschitz continuity places them inside \(9.5\le r\le20.5\).
+
+   The stored rational golden-pair certificate matches independent reconstruction exactly and gives
+   \[
+   D_{4,12}^{\,2}<0.7695431670071615<77/100<1.
+   \]
+   The square-root bound directions, positive cosine lower bound, angular residual, and frustum-contained overlap argument are correct. This proves the strict comparison; it supplies no upper bound on the unrestricted finite optimum.
+
+5. **Pass — B1 and the corrected B2, [RESULTS.md §4](/Users/jinleic/jinleic-workspace/ai4s/phys-fibonacci-cone-spirals/RESULTS.md:88).** For fixed \(A>0\), rounding \(q_k/(2A\epsilon_k)\) changes it by a vanishing relative amount. Since \(q_k\epsilon_k\to1/\sqrt5\), the radial and angular contributions each tend to \(A/(2\sqrt5)\). Consequently,
+   \[
+   d^2\le c^2A/\sqrt5,\qquad
+   \rho=\frac{d^2}{4\beta c^2}\le\frac{\pi}{2\sqrt5}.
+   \]
+   Both selected indices eventually survive every finite prefix deletion. The \(O(R)\) boundary-shell estimate justifies the covered-area density limit.
+
+   B2’s planar lifting upper bound is sound. After finding 1’s repair, its attainment is sound too. The ratio \(\sqrt{5/3}\) compares triangular density with the **golden density upper bound**, not a computed exact golden density.
+
+6. **Pass — S and T, [RESULTS.md §5](/Users/jinleic/jinleic-workspace/ai4s/phys-fibonacci-cone-spirals/RESULTS.md:140).** S follows from reflection preserving admissibility and energy; it asserts neither existence of minima nor absence of history-dependent alternation.
+
+   T’s thresholds strictly increase and diverge. Writing \(b_k=A^2\phi^{-2k}\), the pair threshold satisfies
+   \[
+   \sigma_k^2=
+   \frac{(b_{k-1}-b_k)\tau_{k-1}^2+(b_k-b_{k+1})\tau_k^2}
+        {b_{k-1}-b_{k+1}},
+   \]
+   which proves its strict placement between adjacent crossings. The adjacent comparisons establish the claimed consecutive pairs throughout the infinite candidate family. Transition ties are correctly acknowledged. Alternating residual signs prove the stated outward-oriented relative chirality. Neither all integer offsets nor a physical diameter-to-growth law is established or claimed.
+
+7. **Informational — citation and scope audit, [STATUS.md](/Users/jinleic/jinleic-workspace/ai4s/phys-fibonacci-cone-spirals/STATUS.md:54).** I identified no assertion exceeding the declared reading levels: metadata-only references explicitly use secondary attribution, abstract-level results are reported as such, and detailed claims identify inspected sections. Thue’s theorem is an imported classical baseline. I did **not** access the cited external sources, so this assesses the declared provenance rather than independently authenticating their contents. No novelty or literature-wide unresolvedness claim is justified—or asserted.
+
+`python3 code/verify.py` passed. Independent in-memory calculations also reproduced the rational receipt and all stored diagnostic constants, convergence rows, and sampled phases. No files were changed.
+
+After the boundary correction and density clarification, no substantive proof gap remains in F, B1, B2, S, or T. The expressly unproved obligations remain the experimental elastic functional and admissible configuration class for C1, and an explicit accretion/relaxation rule, seed/boundaries, and contact-count observable for physical C2.
+tokens used
+72,117

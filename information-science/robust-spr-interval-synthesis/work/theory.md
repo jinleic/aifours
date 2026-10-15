@@ -1,0 +1,651 @@
+# General-order lemmas used in this folder
+
+Status of every statement is marked: **[proved here]** (complete proof below, checked by
+hand; independent review recorded in `../evidence/`), **[known]** (with source), or
+**[conditional]**. Nothing here proves or refutes the open problem for any n >= 7.
+
+## Notation
+
+A monic degree-n interval box is
+K = { s^n + a_1 s^{n-1} + ... + a_n : l_i <= a_i <= u_i }.
+Put t = w^2. For a real polynomial p(s) = sum_k c_k s^k define
+
+    E_p(t) = sum_l (-1)^l c_{2l} t^l,   O_p(t) = sum_l (-1)^l c_{2l+1} t^l,
+
+so p(jw) = E_p(w^2) + j w O_p(w^2). For deg p <= n, deg E_p <= D_E = floor(n/2) and
+deg O_p <= D_O = floor((n-1)/2); note D_E + D_O = n - 1. For real b, a define the pairing
+
+    P_{a,b}(t) = E_b(t) E_a(t) + t O_b(t) O_a(t),
+
+so that Re(b(jw) conj a(jw)) = P_{a,b}(w^2) and Im(b(jw) conj a(jw)) = w (O_b E_a - E_b O_a)(w^2).
+A real b with deg b = n is a common SPR numerator for K if every a in K is Hurwitz and
+Re(b(jw)/a(jw)) > 0 for all real w and all a in K (the book's Definition 1, numerator in P^n).
+
+## Lemma A (four-corner reduction) [known]
+
+For every t >= 0 the set {(E_a(t), O_a(t)) : a in K} is exactly the rectangle
+[E_-(t), E_+(t)] x [O_-(t), O_+(t)], where E_-(t) takes, for each l, the smallest admissible
+value of (-1)^l c_{2l} (and E_+ the largest; O_-, O_+ likewise). Hence for a fixed b the
+minimum of P_{a,b}(t) over K is attained at one of the four corners (E_i, O_j), and b is a
+common SPR numerator iff K is robustly Hurwitz and P_{c,b}(t) > 0 on [0, inf) for the four
+corner (Kharitonov) polynomials c. Sources: Dasgupta and Bhagwat (1987), as cited in Wang and
+Yu (arXiv:math/0202242, Lemma 4); arXiv:2609.26541 Lemma 2.2. The same argument applies verbatim
+to boxes whose leading-coefficient interval excludes 0 (non-monic boxes).
+
+## Lemma B (alternation certificate) [proved here]
+
+Let K be any monic degree-n box (stable or not). Suppose there are a nonzero real
+polynomial b with deg b <= n, nodes 0 <= t_1 < t_2 < ... < t_{n+1}, members a_1, ..., a_{n+1}
+of K (repetitions allowed) and a sign c in {+1, -1} such that for every i
+
+    (E_{a_i}(t_i), t_i O_{a_i}(t_i)) = lambda_i * c * (-1)^{n+1-i} * (O_b(t_i), -E_b(t_i)),
+    lambda_i > 0, and (O_b(t_i), E_b(t_i)) != (0, 0).                                  (B1)
+
+Then no real polynomial beta with deg beta <= n satisfies Re(beta(j w_i) conj a_i(j w_i)) > 0
+for all i (w_i = sqrt(t_i)). In particular K has no common SPR numerator.
+
+In words, at each positive node t_i > 0 some member of the box is exactly orthogonal to the test
+polynomial b, alternately lagging and leading it by 90 degrees (sign Im(b conj a_i) = c (-1)^{n+1-i}).
+(At a node t_1 = 0, (B1) forces E_b(0) = 0, i.e. b(0) = 0, and the phase reading does not apply.)
+
+Proof. Let eta_i = 1 / prod_{j != i} (t_i - t_j); then sign(eta_i) = (-1)^{n+1-i}. Put
+mu_i = |eta_i| / lambda_i > 0. By (B1),
+
+    mu_i E_{a_i}(t_i) = c eta_i O_b(t_i),   mu_i t_i O_{a_i}(t_i) = -c eta_i E_b(t_i).
+
+For any real beta with deg beta <= n,
+
+    sum_i mu_i P_{a_i,beta}(t_i) = sum_i mu_i [E_beta(t_i) E_{a_i}(t_i) + t_i O_beta(t_i) O_{a_i}(t_i)]
+                                 = c sum_i eta_i H(t_i),   H := E_beta O_b - O_beta E_b.
+
+sum_i eta_i H(t_i) is the n-th divided difference of H on the n+1 nodes, which vanishes because
+deg H <= max(deg E_beta + deg O_b, deg O_beta + deg E_b) <= D_E + D_O = n - 1 < n. Since every
+mu_i > 0, the numbers P_{a_i,beta}(t_i) cannot all be positive. If K is robustly Hurwitz,
+Re(beta/a_i)(j w_i) = P_{a_i,beta}(t_i) / |a_i(j w_i)|^2, so beta is not a common SPR numerator. QED
+
+Remarks. (1) Lemma B is a finite, exactly checkable certificate (rational t_i, rational b and
+box): (B1) is a proportionality test, so a counterexample can be certified in exact arithmetic.
+(2) It is the elementary converse of the weighted identities of the quintic manuscript
+(Yu-Xu-Dou-Ji-Wang 2026, Props. 3.3, 4.6 and eq. (4.8)), where the same alternating
+orthogonality is derived for n = 5 as a necessary property of a critical (first-failing) family.
+(3) Counting reason: if beta satisfied all n+1 strict pairings, then mu_i P_{a_i,beta}(t_i) =
+c eta_i H(t_i) > 0 would force sign H(t_i) = c (-1)^{n+1-i}, i.e. n sign changes of
+H = E_beta O_b - O_beta E_b between consecutive nodes, impossible for deg H <= n-1. Lemma B is a
+sufficient obstruction; its necessity for an arbitrary synthesis failure is NOT proved here for
+general n (see Lemma H).
+
+## Lemma C (closed-limit criterion) [proved here]
+
+Let K_k be monic degree-n boxes whose endpoints converge to those of a box K_0. If K_0 has no
+nonzero real beta with deg beta <= n such that P_{c,beta}(t) >= 0 for all t >= 0 and all four
+corners c of K_0, then K_k has no common SPR numerator for all sufficiently large k.
+
+Proof. Otherwise pass to a subsequence with common SPR numerators beta_k, normalized to unit
+coefficient norm, and a further subsequence beta_k -> beta_0 (unit norm, deg <= n). The corner
+polynomials of K_k converge coefficientwise to those of K_0, so P_{c,beta_0}(t; K_0) =
+lim P_{c,beta_k}(t; K_k) >= 0 for every t >= 0 and every corner, a contradiction. QED
+
+Consequence. If every stable box of degree n were synthesizable, every box in the CLOSURE of the
+robustly Hurwitz boxes would be closed-feasible. A closed-infeasible box in that closure therefore
+gives stable counterexamples nearby (a closed-infeasible box outside the closure gives nothing).
+A grid LP is a relaxation, so CERTIFIED grid-infeasibility (an exact Farkas/Gordan certificate,
+not a floating-point solver status) would imply closed-infeasibility. Lemma M below strengthens
+the universal boundary criterion to an equivalence for n>=3; feasibility of one marginal box
+alone still says nothing about the universal conjecture.
+
+## Proposition D (fully-closed marginal boxes) [proved here, elementary]
+
+Robust stability of a monic box is equivalent (Kharitonov's theorem plus Hermite-Biehler for the four
+corner polynomials; cf. 2609.26541 Lemma 3.1 for n = 6 and the quintic manuscript Prop. 2.4 for
+n = 5) to: every corner has E_c(0) > 0, O_c(0) > 0, full degrees D_E, D_O with the sign pattern
+of a Hurwitz polynomial, all roots of E_c and O_c real, positive and simple, and the root bands of
+(E_-, E_+) and (O_-, O_+) pairwise disjoint and alternating E, O, E, O, ... starting with an E-band.
+(Band alternation alone is NOT sufficient: for (s - 1)^6 the roots of E and O alternate but the
+polynomial is anti-Hurwitz; the sign conditions at t = 0 are essential.)
+
+Restrict now to the explicitly parameterized nondegenerate class 0 < x_0 < x_1 < ... < x_{n-1}
+in which all n-2 gaps are closed and no band is collapsed: the n-1 bands tile [x_0, x_{n-1}] with
+E-band k = [x_{2k-2}, x_{2k-1}] and O-band k = [x_{2k-1}, x_{2k}]. Because E_- <= E_+ on [0, inf)
+and E changes sign alternately from + to - and - to +, E_- vanishes at the left end of odd-numbered
+E-bands and at the right end of even-numbered ones, E_+ at the other ends; the same rule holds for
+O_-, O_+. With the leading-coefficient signs of a Hurwitz polynomial (positive constant terms),
+such a configuration is a box iff E_+ - E_- and O_+ - O_- have nonnegative t-coefficients (the
+coefficient widths) and the fixed monic leading term agrees. At each interior x_i (i = 1..n-2)
+exactly one corner c_i satisfies E_{c_i}(x_i) = O_{c_i}(x_i) = 0, so every closed solution beta
+has the double contact
+
+    P_{c_i,beta}(x_i) = 0,   P'_{c_i,beta}(x_i) = E_beta(x_i) E'_{c_i}(x_i) + x_i O_beta(x_i) O'_{c_i}(x_i) = 0,
+
+i.e. n-2 linear conditions on the n+1 coefficients of beta. Theorem K below proves that they
+have rank n-2, leaving exactly a 3-dimensional space; the earlier high-precision re-tests
+(`closed_recheck.py`) only observed this numerically. Boundary limits with collapsed bands,
+degree loss or coincident contacts remain outside this class. For n = 6, with
+x = (a, A, B, b, c, C), these are the contacts xi_00 = c, xi_01 = b, xi_10 = A, xi_11 = B of
+2609.26541 Prop. 4.1, and the odd endpoints are positive multiples (l_1 U and u_1 V) of that paper's
+gap-closing factors U = (t - A)(t - c), V = (t - B)(t - b) (the paper uses hU, kV in (3.7) and
+U, mV in (4.15)).
+
+## Proposition E (non-monic boxes reduce to two homothetic monic boxes) [proved here]
+
+Let K' have leading-coefficient interval [alpha, beta_n] with 0 < alpha <= beta_n and lower
+coefficient box B_0 (the coefficients of s^{n-1}, ..., s^0). Define the two normalized faces
+F_alpha = {s^n + sum d_i s^{n-i} : d in B_0/alpha} and F_beta = {s^n + sum d_i s^{n-i} : d in
+B_0/beta_n} (division of the coefficient vectors; the leading coefficient stays 1). Every member of
+K' is a convex combination of the two members with the same lower coefficients and leading
+coefficient alpha or beta_n; Re(beta(jw) conj a(jw)) is affine along that segment, so for a fixed
+numerator the worst case is on the two faces, and dividing by the positive leading coefficient does
+not change signs. Hence a common SPR numerator for K' exists iff F_alpha and F_beta have a common SPR
+numerator AND K' is robustly Hurwitz. (Conversely, a common numerator for both faces gives positive
+pairings on every intervening segment, so no member acquires an imaginary-axis zero; with positive
+leading coefficient and Hurwitz endpoints, root continuity keeps every member Hurwitz.) Frequency
+scaling multiplies the coefficient of s^i by lambda^{i-n}, not uniformly, so F_beta is not a rescaled
+copy of F_alpha. Hence the n = 5, 6 monic theorems, applied to each face separately, do not supply a
+common numerator; the non-monic variant is a separate question (see README).
+
+## Lemma F (interior reduction) [proved here]
+
+Let K, K_0 be monic degree-n boxes (n >= 2) with l_i^0 < l_i <= u_i < u_i^0 for i = 1..n (interior
+taken in the n free coefficient coordinates; the leading coefficient is fixed to 1). Suppose a
+nonzero real beta with deg beta <= n satisfies P_{c,beta}(t) >= 0 for all t >= 0 and all four corners
+c of K_0, and beta(jw) != 0 for every real w (including w = 0). Then P_{a,beta}(t) > 0 for all a in K
+and t >= 0; if K is robustly Hurwitz it has a common SPR numerator of exact degree n.
+
+Proof. For a in K and t >= 0, E_a(t) - E_-^0(t) is a sum of nonnegative multiples of powers of t
+(the fixed monic term cancels) whose constant term a_n - l_n^0 is positive, so
+E_-^0(t) < E_a(t) < E_+^0(t); likewise O_-^0(t) < O_a(t) < O_+^0(t) (constant term
+a_{n-1} - l_{n-1}^0 > 0). For t > 0 the linear form L(e, o) = E_beta(t) e + t O_beta(t) o is
+nonnegative at the corners of R_0(t) = [E_-^0, E_+^0] x [O_-^0, O_+^0], hence on R_0(t); its gradient
+is nonzero because beta(j sqrt t) != 0; a linear form with nonzero gradient that is nonnegative on a
+set is positive at the set's interior points (otherwise a small step against the gradient makes it
+negative), so P_{a,beta}(t) = L(E_a(t), O_a(t)) > 0. At t = 0 the same argument applies to the
+one-dimensional form e -> beta(0) e (nonzero since beta(0) != 0), nonnegative at the endpoints
+E_-^0(0), E_+^0(0) and evaluated at the interior point E_a(0) = a_n; no sign assumption on E_c(0) is
+needed. Degree raising if deg beta < n: choose T with P_{a,s^n}(t) >= t^n / 2 for all t >= T and all
+a in K (uniform, since P_{a,s^n}(t) = t^n + lower terms with coefficients bounded on the compact K);
+let delta = min over K x [0, T] of P_{a,beta} > 0 and M = max over K x [0, T] of |P_{a,s^n}|; then
+0 < eps < delta / (1 + M) makes P_{a, beta + eps s^n} > 0 on [0, T] and on [T, inf) (both terms
+positive there), and beta + eps s^n has exact degree n. QED
+
+## Corollary G (boundary sandwich) [proved here]
+
+For a stable box K' = prod_i [c_i - r_i, c_i + r_i] (free coefficients, all r_i > 0) let
+lambda* = sup{lambda : c + lambda (K' - c) is robustly Hurwitz} and K_0 = c + lambda* (K' - c).
+Justification: K' is a compact subset of the open set of monic Hurwitz coefficient vectors, so a
+small expansion beyond lambda = 1 stays stable and lambda* > 1; Hurwitz stability needs a positive
+constant coefficient, so lambda* <= c_n / r_n < inf; the boxes are nested in lambda, so every
+0 <= lambda < lambda* gives a stable box, and by openness K_0 itself is not robustly Hurwitz.
+(a) If every degree-n stable box is synthesizable, every such K_0 has a nonzero closed numerator
+(Lemma C applied to lambda -> lambda*).
+(b) If every such K_0 has a closed numerator without zeros on the imaginary axis, every degree-n stable
+box K is synthesizable: by compactness enlarge K on every coefficient side to a stable K' with
+positive widths, l_i' < l_i <= u_i < u_i'; then l_i^0 = c_i - lambda* r_i < l_i' and
+u_i' < c_i + lambda* r_i = u_i^0, so K lies strictly inside K_0 and Lemma F applies.
+These two implications initially gave only a sandwich. Lemma M below removes the zero-free
+assumption in (b) for n>=3, making the existence of a nonzero closed numerator for every such
+radial boundary box equivalent to the degree-n conjecture. This remains a reformulation, not
+a construction of those numerators.
+
+## Lemma H (conditional precursor; superseded by Theorem J for n >= 3)
+
+Setting (degree-independent part of the quintic manuscript, Prop. 3.3): if a stable box with
+positive widths is not synthesizable, shrinking it toward one corner polynomial gives a first
+critical sub-box K* (still stable) and a unit vector b (deg b <= n, b_n >= 0) with P_{a,b} >= 0 on
+[0, inf) for all a in K*, together with nodes t_1 < ... < t_m, members a_i of K*, weights
+mu_i > 0, mu_inf >= 0 with sum_i mu_i F(a_i, t_i) + mu_inf v_inf = 0, P_{a_i,b}(t_i) = 0,
+mu_inf b_n = 0 and m + [mu_inf > 0] <= n+1 (Caratheodory in the supporting hyperplane).
+
+Claim. If moreover mu_inf = 0, deg E_b = D_E, deg O_b = D_O and gcd(E_b, O_b) = 1, then m = n+1 and,
+with the nonzero constant kappa found below and sigma = sgn(kappa), the data satisfy (B1) of Lemma B
+with sign c = sigma and lambda_i = |kappa| |eta_i| / mu_i.
+
+Proof (the argument of the quintic manuscript, Lemma 4.5 and Prop. 4.6, with general degrees).
+Put z_i = mu_i E_{a_i}(t_i), y_i = mu_i t_i O_{a_i}(t_i) and R_v(t) = sum_i v_i prod_{j != i}(t - t_j).
+The certificate says that the moments sum_i z_i t_i^k vanish for k = 0..D_E and sum_i y_i t_i^k for
+k = 0..D_O, so deg R_z <= m - D_E - 2 and deg R_y <= m - D_O - 2 (if t^k R_v = R_{(t_i^k v_i)} for
+k up to the number of vanishing moments, which follows by induction from t R_v = R_{(t_i v_i)} +
+(sum v_i) prod_j (t - t_j)). The contacts give E_b(t_i) z_i + O_b(t_i) y_i = 0, i.e.
+(E_b R_z + O_b R_y)(t_i) = 0 at all m nodes, while deg(E_b R_z + O_b R_y) <= m - 2; hence
+E_b R_z + O_b R_y = 0. Coprimality gives R_y = E_b Q, R_z = -O_b Q, and deg Q <= m - 2 - D_E - D_O
+= m - n - 1 <= 0. If Q = 0 then R_z = R_y = 0, hence (R_v(t_i) = v_i / eta_i) all z_i = y_i = 0, so
+a_i(j w_i) = 0 for a node t_i > 0 or E_{a_i}(0) = a_n = 0 at t_i = 0, contradicting stability of a_i.
+So Q = -kappa is a nonzero real constant, and 0 = deg Q <= m - n - 1 forces m = n+1. Evaluating at the
+nodes: z_i = kappa eta_i O_b(t_i), y_i = -kappa eta_i E_b(t_i), i.e. (E_{a_i}(t_i), t_i O_{a_i}(t_i)) =
+(|kappa| |eta_i| / mu_i) sigma (-1)^{n+1-i} (O_b(t_i), -E_b(t_i)), which is (B1) (coprimality also
+gives (O_b, E_b)(t_i) != 0). QED (under the stated hypotheses)
+
+The continuation below proves the critical-family construction and coprimality for every n >= 3,
+including initially degenerate coefficient boxes. It also replaces the full-degree assumption by
+a precise classification: the numerator has degree n or n-1, and the certificate has either n+1
+finite nodes or n finite nodes plus infinity. A node at zero is retained explicitly. Excluding
+these projective alternation configurations uniformly is still open; no endpoint case is silently
+discarded.
+
+## Continuation, 2026-10-14: all-order structural results
+
+These are written proofs, not Lean proofs. The primary comparison is the quintic manuscript,
+Sections 3–5, especially Propositions 3.3, 4.4, 4.6 and 4.7. The statements there are quintic;
+the arguments below use positive-real function geometry instead of its quadratic root formulas.
+Independent review and exact finite checks are retained separately in `../evidence/continuation/`.
+Priority is not asserted.
+
+### Lemma I (weak numerator rigidity, every n >= 3) [proved here]
+
+Let K be a compact robustly Hurwitz degree-n coefficient box with positive leading coefficients.
+The leading coefficient may be fixed (in particular monic) or uncertain. Assume the intervals for
+the constant and linear coefficients both have positive length. Let b != 0, deg b <= n, and
+P_{a,b}(t) >= 0 for every a in K and t >= 0. Then:
+
+1. deg b is n or n-1, its leading coefficient is positive, and
+   b(s) = s^epsilon h(s), where epsilon is 0 or 1 and h is Hurwitz with positive leading coefficient.
+   In particular b has no nonzero imaginary-axis zero.
+2. Every coefficient of b between s^1 and its leading term is strictly positive; its constant
+   coefficient is positive if epsilon = 0 and zero if epsilon = 1.
+   E_b and O_b are nonzero and coprime over R[t]. Their degrees are exactly
+   floor(deg b/2) and floor((deg b-1)/2).
+3. At every positive contact P_{a,b}(r) = 0, all four numbers
+   E_b(r), O_b(r), E_a(r), O_a(r) are nonzero. The contact therefore selects a unique corner
+   of the value rectangle; its two component values equal those of a at r.
+
+Proof. Fix a in K and set F(s) = b(s)/a(s). This proper rational function is analytic on the closed
+right half-plane, including its finite boundary. Its limiting value at infinity is nonnegative:
+it is zero if deg b < n; otherwise it is the leading-coefficient ratio, whose sign is
+nonnegative by the assumed inequalities at large imaginary frequencies. Map the right half-plane
+to the disk. Re F is continuous on the closed disk (the point corresponding to infinity is
+removable) and nonnegative on its boundary. The harmonic minimum principle gives Re F >= 0
+inside. In fact Re F > 0 there: otherwise the strong minimum principle and analyticity make F
+a purely imaginary constant, and real coefficients make that constant zero, contrary to b != 0.
+
+Consequently b has no root in the open right half-plane, and F(x) > 0 for real x > 0 makes its
+leading coefficient positive. If d = n - deg b >= 2, write F(s) = c s^(-d)(1+O(1/s)), c > 0.
+Choose a fixed theta in (-pi/2,pi/2) with cos(d theta) < 0 and let s = R exp(i theta).
+For large R this gives Re F(s) < 0, a contradiction. Thus d is 0 or 1.
+
+Suppose F has a boundary zero at s0 = i w, of multiplicity k. Its local expansion is
+F(s0+z) = c z^k + O(z^(k+1)), c != 0. Interior positivity implies
+Re(c exp(i k theta)) >= 0 for every -pi/2 < theta < pi/2. A nonzero cosine cannot be
+nonnegative on an angular interval longer than pi, so k = 1. In that case the limiting
+inequalities at the two ends of the interval give Im c = 0 and then c > 0. Thus every
+imaginary-axis zero is simple and F'(s0) = b'(s0)/a(s0) is positive real.
+
+If w != 0 and b(i w) = 0, the last conclusion for every a in K forces all the values a(i w)
+to lie on the single positive ray through b'(i w). Independently varying the constant and
+linear coefficients gives a rectangle with two nonzero side lengths in the complex plane,
+which cannot lie on a ray. Hence only a possible simple zero at s = 0 remains. All other
+zeros of b are in the open left half-plane, proving (1). Real Hurwitz polynomials with positive
+leading coefficient are positive constants times products of factors s+alpha and
+s^2+2 alpha s+alpha^2+beta^2, alpha > 0; all their coefficients are positive.
+This proves the coefficient and degree claims.
+
+If E_b and O_b had a common complex root z, choosing s with s^2 = -z would give
+b(s) = b(-s) = 0. For s != 0 this contradicts (1), since at least one of s,-s is in the
+closed right half-plane and neither nonzero imaginary root is permitted. If s = 0, divisibility
+of both components by t would make b divisible by s^2, also impossible. This proves coprimality.
+
+For (3), first note that a Hurwitz polynomial has only simple positive roots in either component.
+Here only simplicity is needed, and it follows without a root-count theorem: if the roots of a
+are -alpha_j+i beta_j, alpha_j > 0, then
+
+    d arg a(i w)/d w = Re(a'(i w)/a(i w))
+                      = sum_j alpha_j / (alpha_j^2+(w-beta_j)^2) > 0.
+
+To check simplicity explicitly, put X(w)=E_a(w^2), Y(w)=w O_a(w^2), so
+arg'(a(iw))=(X Y'-X' Y)/(X^2+Y^2). At w=sqrt(r)>0, a multiple root of E_a gives
+X=X'=0; a multiple root of O_a gives Y=0 and Y'=O_a(r)+2r O_a'(r)=0.
+Either contradicts the strictly positive phase derivative, since a(iw) != 0.
+Also E_a and O_a cannot vanish together. Now if E_b(r) = 0 at a positive contact,
+(1) gives O_b(r) != 0 and the contact gives O_a(r) = 0. Vary the constant coefficient
+between its two endpoints, keeping all others fixed: every such denominator still has a contact
+at r. Each pairing has a minimum there, so subtracting the two derivative equations gives
+E_b'(r) = 0. The original derivative equation becomes r O_b(r) O_a'(r) = 0, contradicting
+simplicity. If O_b(r) = 0, vary the linear coefficient instead; the same argument gives
+O_b'(r) = 0 and then E_b(r) E_a'(r) = 0, again a contradiction. The contact equation then
+also makes both denominator components nonzero. Finally the linear functional
+(e,o) -> E_b(r)e+r O_b(r)o has both coefficients nonzero, so its minimizing rectangle
+corner (Lemma A) is unique. Nonnegativity and a zero value force that corner. QED
+
+The two width assumptions are essential: for the stable cubic box
+a=s^3+2s^2+2s+a_0, 1<=a_0<=3, b=s^3+2s has P=t(2-t)^2>=0 but nonzero imaginary zeros;
+for a=s^3+2s^2+a_1 s+1, 1<=a_1<=2, b=2s^2+1 has P=(1-2t)^2>=0.
+Thus I cannot be applied directly to coefficient-fixed faces, including the reversed box
+of a monic family whose constant coefficient becomes fixed.
+
+### Theorem J (unconditional critical certificate, every n >= 3) [proved here]
+
+If a robustly Hurwitz monic degree-n box has no common exact-degree-n SPR numerator, there is a
+robustly Hurwitz box K* with every lower-coefficient interval of positive length, a nonzero b,
+and distinct nodes 0 <= t_1 < ... < t_m, a_i in K*, mu_i > 0, mu_inf >= 0, such that:
+
+* P_{a,b} >= 0 on [0,infinity) for every a in K*, and b satisfies all of Lemma I;
+* sum_i mu_i F(a_i,t_i) + mu_inf e_n = 0, where b dot F(a,t) = P_{a,b}(t) in
+  ascending s-coefficient coordinates, and e_n selects the s^n coefficient;
+* all finite terms are contacts and mu_inf [s^n]b = 0;
+* for a nonzero real kappa, with eta_i = 1/prod_{j != i}(t_i-t_j),
+
+      mu_i E_{a_i}(t_i)   =  kappa eta_i O_b(t_i),
+      mu_i t_i O_{a_i}(t_i) = -kappa eta_i E_b(t_i).                         (J1)
+
+Exactly one support alternative holds:
+
+    (A) mu_inf = 0, m = n+1, deg b in {n-1,n};
+    (B) mu_inf > 0, m = n, deg b = n-1,
+        kappa = mu_inf / [s^(n-1)]b > 0.                                  (J2)
+
+At a zero node, necessarily b(0) = 0 and kappa (-1)^(m-1) > 0. Thus alternative (B)
+can include zero only when n is odd. At positive nodes all components in (J1) are nonzero,
+and the denominator may be replaced by the unique minimizing Kharitonov corner.
+
+The theorem holds also for the separately labelled nonmonic variant with the leading-coefficient
+interval contained in (0,infinity): aggregate all endpoint weights at infinity into mu_inf e_n.
+It does NOT assert that any of these alternatives is realizable in a stable box, or exclude one.
+
+Moreover K* is the first failing member K_theta* of the contraction family used in the proof:
+every K_theta with theta<theta* is synthesizable. If the input already has positive lower widths,
+the enlargement may be skipped. Otherwise K* lies in the enlarged box, not necessarily in the
+original input box; the exclusion obligation must therefore be uniform over stable boxes.
+
+Proof of the critical construction. A compact stable box can first be enlarged on every lower
+coefficient side to a stable box with positive widths; a failure persists upon enlargement.
+For the nonmonic variant one may also enlarge the leading interval slightly inside (0,infinity).
+Contract this enlarged box toward one of its corner polynomials a^-, obtaining nested stable
+boxes K_theta, 0 <= theta <= 1, with a singleton at zero and positive widths for theta > 0.
+Write
+
+    G(a,x) = (1-x)^n F(a,x/(1-x)),   0 <= x < 1.
+
+Every coordinate of F has degree at most n in t, so G extends polynomially to x = 1, with
+G(a,1) = e_n in the monic case and [s^n]a e_n otherwise. Let C_theta be the convex hull
+of the four compact corner curves G(a,x), 0 <= x <= 1. It is compact: Caratheodory represents
+each point using at most n+2 curve points, a continuous image of a compact parameter space.
+If 0 is outside C_theta, its nearest point z satisfies z dot y >= ||z||^2 > 0 for all y
+in C_theta. The polynomial with vector z has positive s^n coefficient and positive pairings
+at every finite frequency; it is a common exact-degree-n numerator.
+
+Conversely any common exact-degree-n numerator has positive leading coefficient (by its large
+frequency pairing) and strictly positive inner product on every compactified curve, hence
+separates 0 from C_theta. In particular 0 is outside C_0, using b = a^-; it belongs to C_1
+by the failure assumption. The graph of C_theta is compact by the same n+2 point representation,
+so {theta : 0 in C_theta} is closed. Its minimum theta* is strictly positive.
+Normalize separating vectors for theta approaching theta* from below and pass to a unit limit b.
+Continuity gives b dot G >= 0 everywhere on the limiting curves, hence all the weak pairings
+and [s^n]b >= 0. The vector remains nonzero.
+
+Represent 0 as a convex combination of points of C_theta*'s generating curves with the fewest
+positive weights. These points are affinely independent (an affine dependence removes one
+weight while preserving the represented point). Every point has zero inner product with b.
+They therefore lie in the n-dimensional hyperplane b-perp, and number at most n+1.
+Convert finite x to t, absorbing (1+t)^(-n) into its positive weight. Combine all infinity
+terms into mu_inf e_n; in the nonmonic case their leading coefficients are positive.
+Merge repeated finite t by taking the weighted average of their denominators, which remains
+in K*; F is affine in those coefficients. This leaves distinct finite nodes and
+m + 1_{mu_inf>0} <= n+1. There is at least one finite node, because a positive multiple of
+e_n cannot sum to zero. This proves the asserted construction and contacts, without assumptions
+about numerator degree, coprimality, or endpoints. Lemma I now supplies the numerator structure.
+
+Proof of rigidity and support size. Put p = D_E, q = D_O, z_i = mu_i E_{a_i}(t_i),
+y_i = mu_i t_i O_{a_i}(t_i), U = R_z and V = R_y, using the interpolation polynomial in H.
+For clarity, let L(t)=prod_j(t-t_j) and M_k=sum_i v_i t_i^k. At large t,
+
+    R_v(t)/L(t) = sum_i v_i/(t-t_i) = sum_{k>=0} M_k t^(-k-1).
+
+Hence M_0=...=M_(K-1)=0 implies deg R_v<=m-K-1 and
+[t^(m-K-1)]R_v=M_K whenever m-K-1>=0. This gives both the degree bounds and the
+leading-coefficient identity used below; it also follows by repeated use of H's polynomial identity.
+When mu_inf = 0 the moment identities give
+
+    deg U <= m-p-2,    deg V <= m-q-2.                                    (J3)
+
+When mu_inf > 0 only the top coefficient moment changes:
+
+    n=2r:   sum z_i t_i^r = (-1)^(r+1) mu_inf,
+            deg U <= m-r-1, deg V <= m-r-1;
+    n=2r+1: sum y_i t_i^r = (-1)^(r+1) mu_inf,
+            deg U <= m-r-2, deg V <= m-r-1.                               (J4)
+
+All lower moments of the corresponding group vanish, as do all moments through the allowed
+degree in the other group. The bounds follow from the elementary moment identity proved in H.
+Contacts imply that E_b U + O_b V vanishes at all m nodes. Its degree is at most m-2:
+use (J3) if mu_inf=0; if mu_inf>0, the infinity contact forces deg b=n-1, and (J4) gives
+the same bound. Thus E_b U + O_b V is identically zero. Coprimality from I gives
+U = -O_b Q, V = E_b Q. The polynomial Q cannot be zero: otherwise interpolation evaluation
+makes z_i=y_i=0, contradicting stability at a positive node or the positive constant
+coefficient of a_i at zero.
+
+If mu_inf=0 and deg b=n, either bound in (J3) gives deg Q <= m-n-1.
+If deg b=n-1, the U bound gives the same inequality for even n, and the V bound for odd n.
+Since m <= n+1, Q is a nonzero constant and m=n+1. If mu_inf>0, (J4) and deg b=n-1 give
+deg Q <= m-n; since m <= n, Q is again constant and m=n. Write Q=-kappa.
+Evaluation at each node proves (J1). In case (B), compare the first nonvanishing moment with
+the leading coefficient of U=kappa O_b for even n, or V=-kappa E_b for odd n.
+Both comparisons give mu_inf=kappa [s^(n-1)]b, proving (J2).
+At t_1=0 the second identity gives b(0)=0, and the first has left side mu_1 a_1(0)>0.
+Since O_b(0)=[s]b>0, it implies kappa eta_1>0, the stated parity rule. QED
+
+Finite-certificate meaning. In (A), (J1) is precisely Lemma B, with no full-degree or coprimality
+qualification left. In (B), the n finite pairings alone do not give Lemma B: the positive infinity
+term is essential. The weighted identity is nevertheless an exact obstruction to an exact-degree-n
+SPR numerator beta, because all its finite pairings would be positive and [s^n]beta > 0.
+Thus no infinity constraint, zero-frequency contact, or degree-deficient numerator has been dropped.
+In particular, at any fixed n>=3 the monic conjecture is equivalent to nonexistence of either
+(A)-data or (B)-data in a robustly Hurwitz box with positive lower widths. One direction is the
+construction above; the other is the exact positive-dependence obstruction. The same equivalence
+holds for positive-leading nonmonic boxes. This closes the reduction, not the exclusion problem.
+
+### Theorem K (full rank of nondegenerate gap contacts, all orders) [proved here]
+
+In Proposition D the n-2 contact equations always have rank n-2, so their real solution space
+has exactly dimension three. For the partial-gap form assume the full endpoint geometry of D:
+each E endpoint has exactly D_E simple positive roots, each O endpoint exactly D_O, with all
+roots at their respective noncollapsed band endpoints; the bands alternate E,O,... starting
+strictly above zero, and all four components are positive at zero. Allow some open gaps and
+m closed gaps, with distinct positive contacts. Then the m contact equations are independent
+and the solution space has dimension n+1-m. These hypotheses do not cover every boundary box
+in Corollary G, notably a zero constant endpoint or coincident/collapsed roots. The assertion
+concerns only the equations, not positivity of the four pairings.
+
+Proof. Number the gaps j=1,...,n-2 from left to right. At a closed gap x_j let c_j denote
+the corner with both component roots there. Since each component starts positive at zero,
+its derivative at its kth simple root has sign (-1)^k. At odd-numbered gap j=2k-1, the
+touching roots are the kth E root and kth O root. At even gap j=2k, they are the kth O root
+and (k+1)th E root. Therefore
+
+    r_j := x_j O'_{c_j}(x_j)/E'_{c_j}(x_j) != 0,
+    sign r_j = (-1)^(j+1).                                                (K1)
+
+After division by the nonzero E'_{c_j}(x_j), the contact equation is
+
+    E_beta(x_j) + r_j O_beta(x_j) = 0.                                   (K2)
+
+For all gaps closed, put m=n-2. Choose any integers P,Q >= 0 with P+Q=m,
+P <= D_E+1 and Q <= D_O+1. Select from the coefficient matrix of (K2) the first P
+even-component monomial columns and the first Q odd-component monomial columns.
+The resulting square matrix has row
+
+    (1,x_j,...,x_j^(P-1), r_j,r_j x_j,...,r_j x_j^(Q-1)).
+
+Expand its determinant along the last Q columns. For each Q-element row set J,
+the two minors are Vandermonde determinants on increasing positive nodes, with the second
+multiplied by prod_{j in J}r_j. Their Vandermonde factors are strictly positive (empty ones
+equal one). The Laplace sign is (-1)^(sum_{j in J}j + sum_{k=P+1}^m k).
+By (K1), the sign of the product of r_j is (-1)^(sum_{j in J}j+Q).
+Hence EVERY nonzero term has the same sign
+
+    (-1)^(Q + sum_{k=P+1}^m k),
+
+and the determinant cannot vanish. The full matrix therefore has row rank n-2.
+For only some gaps closed, insert arbitrary distinct missing nodes in the appropriate
+positions and arbitrary nonzero r_j with signs (K1). This abstract augmented matrix has
+full row rank by the same proof. Any subset of its rows is independent, giving the partial-gap
+claim. Converting component coefficients back to s-coefficients is an invertible signed
+permutation, so it does not change rank. QED
+
+### Lemma L (unwrapped phase excludes false alternations, all orders) [proved here]
+
+Use the data of J. At a positive contact let q_i be the numerator's actual quadrant index:
+choose the continuous phase phi_b(w) with limit epsilon*pi/2 as w decreases to zero, and set
+q_i = floor(2 phi_b(sqrt(t_i))/pi). Thus epsilon <= q_i <= deg b-1. For the denominator,
+choose phi_a(0)=0 and define its actual quadrant index k_i analogously; 0 <= k_i <= n-1.
+These are integer indices, NOT indices modulo four. Then
+
+    k_i = q_i - sigma_i,   sigma_i = sign(kappa) (-1)^(m-i).                (L1)
+
+Proof. The phase of a Hurwitz polynomial is strictly increasing along the positive imaginary
+axis, by the logarithmic-derivative formula in I. The same is true for b=s^epsilon h, apart
+from the constant phase epsilon*pi/2 of its s factor. Their limiting phases are n*pi/2 and
+(deg b)*pi/2. At the contact no component vanishes, so neither phase lies on a quadrant
+boundary. Lemma I's positive-real argument and nonvanishing for w>0 imply
+
+    -pi/2 <= phi_b(w)-phi_a(w) <= pi/2.
+
+Indeed the ratio's continuous phase starts at 0 or pi/2 and, being nonzero with nonnegative
+real part on the positive imaginary axis, cannot leave this closed interval. Equation (J1)
+gives sign Im(b(iw) conjugate(a(iw)))=sigma_i at the contact; hence the phase difference is
+exactly sigma_i*pi/2, not that number plus an arbitrary multiple of 2*pi. Taking quadrant
+indices proves (L1). QED
+The index i counts finite nodes, including a possible zero node t_1; infinity is NOT counted
+in m. At zero the limiting phase difference is +pi/2 if b(0)=0, agreeing with J's parity rule.
+For degree n-1 the limiting difference at infinity is -pi/2; in case (B) the last finite
+orientation is +1, so the alternating orientation continues to that infinity endpoint.
+
+Every member has one component root in each ordered denominator band, so its jth quadrant
+boundary is crossed in band j. Thus in gap region 2k the only possible quadrant index is k,
+and in root-band region 2k+1 the indices are k and k+1. A contact sequence must admit
+nondecreasing region indices in 0,...,2(n-1). The earlier census checked only their residues
+modulo four. Strict improvement has an explicit n=7 witness: with m=8, sign(kappa)=-1 and
+q=(0,1,1,2,2,3,3,4), the old sign/multiplicity filters pass, but L demands
+k=(-1,2,0,3,1,4,2,5), whose first entry is impossible. This is a degree-independent
+filter, not a sufficient condition for realizability.
+
+This does not exclude all critical cases. For example, at n=7 the case with infinity,
+deg b=6, b(0)=0 and a zero finite node still passes the lifted ordering and multiplicity
+conditions with the six positive-node indices
+
+    q = (1,2,2,3,3,4),   k = (2,1,3,2,4,3),
+    denominator regions = (3,3,5,5,7,7).
+
+Here kappa>0, m=7, and the zero node is t_1. Corners (+-),(++),(-+),(--) carry respectively
+1,2,2,1 positive contacts. None exceeds two, consistent with degree at most six and a zero at zero.
+This is only a combinatorial survivor, not a realizable family or a counterexample.
+
+### Exact degree-seven control: Hurwitz numerator vectors need not be closed numerators
+
+Take the fully-closed root nodes
+
+    (x_0,...,x_6) = (1,11,12,134,137,1505,1508)
+
+and endpoint components
+
+    E_- = -2240 (t-1)(t-134)(t-137),
+    E_+ =  -400 (t-11)(t-12)(t-1505),
+    O_- =      -(t-11)(t-137)(t-1505),
+    O_+ =      -(t-12)(t-134)(t-1508).
+
+Their exact coefficient widths are
+
+    E_+-E_- = 1840 t^3 + 1920 t^2 + 27830160 t + 38342080,
+    O_+-O_- = t^2 + 2471 t + 156829.
+
+They therefore define a monic degree-seven box with all seven free intervals of positive
+length. Its four corners are marginal, not Hurwitz: each has the displayed imaginary-root
+factors, and removing them leaves a Hurwitz polynomial (Routh certificates in the evidence JSON).
+Shrinking the box toward its midpoint moves every component root into the interior of its
+original band, so the shrunken bands are strictly alternating and the shrunken box is Hurwitz.
+Thus this box is genuinely in the closure of stable boxes, not an arbitrary root configuration.
+
+Write (--) for (E_-,O_-), and likewise for the other corners. Define b_bad by the five contact
+equations, [s^0]b_bad=1000000 and [s^6]b_bad=[s^7]b_bad=1. The five remaining coefficients
+are uniquely determined over Q: after dividing each row by its positive x_j, the unknown
+columns are the first two E monomials and first three O monomials with weights r_j/x_j.
+The sign-definite determinant proof of K applies. The exact verifier certifies that b_bad
+is Hurwitz, has all eight coefficients strictly positive, and satisfies all five double contacts, but
+
+    P_{(--),b_bad}(2)
+      = -139916915046677619005320581891582600 / 6256410274897111573321 < 0.
+
+Precisely the following implication is refuted: *every degree-seven Hurwitz, positive-coefficient
+vector in this box's contact kernel has four nonnegative pairings*. Even the local contact checks
+do not repair it: in increasing contact order, P'' for the touching corners is strictly positive,
+the numerator quadrant indices are (1,2,3,4,5), and the cofactor indices are (0,1,2,3,4).
+The orientation Im(b_bad conjugate(c_j/(s^2+x_j))) is positive at every contact. Each touching
+corner is the minimizing rectangle corner, so all four pairings are nonnegative in a neighborhood
+of each contact. The failure at t=2 lies in the first E-band, before the first contact.
+The cofactor phase indices use the limit from s+delta, delta down to zero; remaining imaginary
+factors contribute a pi jump and are counted twice by the two component root counts.
+
+Any closed numerator for this marginal box also works weakly on its stable, positive-width
+half-width contraction; Lemma I there supplies the necessary Hurwitz/origin structure.
+The control separates these necessary conditions and local contacts from global positivity;
+it does not refute existence of a suitable vector. Indeed b_good, defined by the same contact
+equations and [s^0]b_good=[s^6]b_good=[s^7]b_good=1, is Hurwitz and all four pairings are nonnegative.
+In corner order (--),(-+),(+-),(++), removing the prescribed squared contacts leaves residuals
+of degrees (5,5,3,5), with positive constant terms and no roots on [0,infinity), certified by
+exact rational Sturm counts. Lemma F makes b_good strict for every midpoint contraction
+0<=lambda<1; the half-width contraction is also checked exactly. This is NOT a counterexample
+to the book conjecture. Rational coefficients, contact diagnostics, Routh outcomes and Sturm
+certificates are in `../evidence/continuation/verification.json`; reproduce with
+`python continuation_verify.py --output ../evidence/continuation/verification.json`.
+
+### Lemma M (closed-to-strict transfer without a zero-free premise, n >= 3) [proved here]
+
+Let K subset K0 be monic degree-n coefficient boxes, with K compact and robustly Hurwitz,
+and strict interiority in all n lower coordinates: l_i^0 < l_i <= u_i < u_i^0.
+If K0 has ANY nonzero real polynomial beta of degree at most n with P_{a,beta}(t)>=0
+for all a in K0 and t>=0, then K has a common SPR numerator of exact degree n.
+In particular no separate assumption beta(0)!=0 is needed.
+
+Nonmonic extension: assume K is compact and robustly Hurwitz, min_{a in K}[s^n]a>0,
+K subset K0, and the lower coefficient intervals of K are strictly interior to those of K0.
+The same conclusion holds. No stability assumption on K0 is made in either version.
+The proof uses I(1); the monic corollary below also uses the already proved C and G.
+
+Proof. By compactness and openness of Hurwitz stability, enlarge K slightly in its lower
+coefficients to a stable box L with positive constant and linear widths, still inside K0.
+The same beta is weak for L, so Lemma I gives deg beta in {n-1,n}, nonnegative s^n
+coefficient, and no nonzero imaginary-axis zero. Its only possible imaginary-axis zero
+is a simple zero at the origin. For every a in K and t>0 the value (E_a(t),O_a(t)) lies
+strictly inside K0's rectangle. Since beta(i sqrt(t))!=0, the nonzero linear functional
+(e,o)->E_beta(t)e+t O_beta(t)o, nonnegative on the whole rectangle, is strictly positive
+at this interior point. Thus P_{a,beta}(t)>0 for every t>0, uniformly on each compact
+positive-frequency interval.
+
+Set v(s)=1+s^n. At t=0, P_{a,v}(0)=a(0)>0 uniformly over the compact stable family K.
+At infinity P_{a,v}(t)=t^n+lower terms in the monic case; in the nonmonic case its leading
+coefficient is [s^n]a, bounded uniformly away from zero. Consequently there exist 0<r<R
+such that P_{a,v}(t)>0 for all a in K on [0,r] and [R,infinity). Uniformity follows from
+compact coefficient bounds at both ends. On K times [r,R], let
+
+    delta = min P_{a,beta}(t)>0,   C = max |P_{a,v}(t)|<infinity.
+
+Choose 0<epsilon<delta/(1+C). On that compact middle interval,
+P_{a,beta+epsilon v}>=delta-epsilon C>0. On the two tails,
+P_{a,beta}>=0 and epsilon P_{a,v}>0, so the sum is positive. Its s^n coefficient is
+[s^n]beta+epsilon>0, so beta+epsilon(1+s^n) has exact degree n. Every real frequency,
+including zero and arbitrarily large ones, has been covered. QED
+
+Corollary (closes the gap in G, monic only). Fix n>=3. Define Conj_n to say that every compact
+robustly Hurwitz monic degree-n box has one exact-degree-n numerator with all pairings positive
+on [0,infinity). Define B_n to consist of the first radial stability-boundary boxes of G:
+start with any monic center c and positive radii r_k for k=0,...,n-1 such that
+c(s)+sum_{k=0}^{n-1}[-r_k,r_k]s^k is robustly Hurwitz, and expand those lower radii by
+the first-failure factor lambda* from G. The leading coefficient stays fixed at 1.
+Then Conj_n holds if and only if every K0 in B_n has a nonzero closed numerator of degree
+at most n. Necessity is C. For sufficiency, enlarge any stable K on all lower-coordinate
+sides to K' as in G; K is strictly inside the resulting K0 in B_n, so M applies.
+This does not prove existence of those boundary numerators. B_n is not restricted to the
+fully-closed nondegenerate class of D/K: all radial boundary strata remain in the quantifier.
+No corresponding nonmonic radial-boundary equivalence is asserted here.
+
+### What these lemmas do not close
+
+I–J remove the conditional critical-family/coprimality/degree-loss gap in H, but leave an
+all-order exclusion problem with two fully specified support alternatives, including zero
+and infinity. We have not excluded the endpoint cases from the parity and Hurwitz restrictions.
+K removes the unproved rank assertion in D, including its partial-gap analogue, but the
+three-dimensional contact kernel still has to contain a vector whose
+four pairing polynomials are nonnegative on the entire half-line. L strengthens the uniform
+exclusion step by forbidding spurious phase wraps, but its displayed endpoint survivor shows
+why that step still does not close. The exact degree-seven control also refutes the proposed
+shortcut from a Hurwitz contact-kernel vector to a closed numerator. M removes G's separate
+zero-free premise and makes the universal radial boundary criterion an equivalence, but does not
+construct any missing numerator. No uniform closed numerator or complete alternation exclusion
+has been obtained. The book's original question remains unresolved for n>=7 and for the separately
+labelled nonmonic variant.

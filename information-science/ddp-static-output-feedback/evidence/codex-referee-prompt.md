@@ -1,0 +1,18 @@
+# Hostile mathematical referee assignment
+
+Read-only review. You may read only /Users/jinleic/jinleic-workspace/ai4s/ddp-static-output-feedback/work/characterization.md and this prompt. Do not edit files, execute tests, browse unrelated paths, read credentials, or delegate. No live web access is required. Do not spend time on general advice: try to disprove the central statements with small counterexamples, then check their proofs and quantifiers. Today is 2026-10-14; do not contradict the supplied recent source facts from training memory.
+
+Task context: the 2011 book asks whether arbitrary real LTI systems xdot=Ax+Bu+Ew, y=C1x+D1w, z=C2x+D2u+D22w admit static u=Ky making the w-to-z transfer identically zero, with or without A+BKC1 Hurwitz. We use rational matrices for exact algorithmic claims. Read the manuscript and return a rigorous hostile review.
+
+Main claims to audit:
+1. J=0 and F M^j G=0 for 0<=j<n are necessary and sufficient, where M=A+BKC1, G=E+BKD1, F=C2+D2KC1, J=D22+D2KD1. Markov degree <=n+1.
+2. Internal stability is equivalent to existence of symmetric P>0 with M^T P+PM=-I, including all hidden modes.
+3. Lifted X_j recursion plus symmetric P and lower-triangular positive-diagonal Cholesky L gives polynomial size, degree <=2 existential-real encoding. Check variable/equation counts, coefficient-size claim and conservative CAD complexity, including distinction between arithmetic and bit complexity.
+4. For fixed V=im T=ker N, existence of one common K satisfying all disturbance containment, invariance, output annihilation and direct feedthrough constraints is H K R=-Q, with H=[NB;D2], R=[C1T D1], Q=[NAT NE;C2T D22]. Solvability iff ker R subset ker Q and im Q subset im H; no omitted shared-gain condition.
+5. A fixed V has an output-feedback friend iff it is controlled invariant and conditioned invariant; this alone is not a DDP criterion with D terms. Check exact hypotheses.
+6. Counterexample n3 B=e3 C1=[1,1,0], Ae1=e3,Ae2=-e3,Ae3=0: span(e1),span(e2) separately invariant under K=-1,+1, but no greatest output-feedback invariant subspace inside span(e1,e2).
+7. The simple embedding E=C2=D1=D2=D22=0 reduces unrestricted SOF stabilization to stable DDP and transfers strong NP-hardness, but not to DDP without stability.
+
+Verified source premises, not claims for you to re-prove: Ahmadi, Chaudhry, Narang, Tang arXiv:2609.20636v2 (2026-09-20), Theorem 1, states unrestricted continuous-time SOF stabilization strongly NP-hard, even single measured output, rational/integer input. We fetched its full HTML and arXiv metadata. Blondel-Tsitsiklis 1997 only proves hardness with gain bounds and explicitly leaves unrestricted case open. Chen et al.'s 1999 author-institution conference abstract already says the general non-invertible DDP case has polynomial equations after reduction. General real-algebraic decision methods are prior art, not our discovery.
+
+Desired output: verdict (correct / correct-with-fixes / invalid); numbered findings with severity, exact claim affected, counterexample or derivation, minimum correction; explicitly list any statements you could not independently justify. Distinguish a mathematical error from novelty/utility limitations. In particular, do NOT call an exact generic QE reduction a new solution to the book's structural synthesis challenge. We intend status PARTIALLY-SOLVED for that challenge, with the rational-input decision formalization settled by known machinery and the unrestricted stable case now having a source-relative hardness barrier.

@@ -1,0 +1,53 @@
+**Advisory verdict: READY-WITH-FIXES — 2026-10-14.** The strong sliding-block counterexample is correct. The triangular-design counterexample is also correct. I found no error invalidating any stated theorem. The review items below are minor; the author remains responsible for resolving them.
+
+Two corrections or clarifications are needed:
+
+| Location | Severity | Finding and suggested correction |
+|---|---|---|
+| Theorem 5, [scope paragraph, line 177](/Users/jinleic/jinleic-workspace/ai4s/m-estimator-sample-augmentation/proof.md:177) | Low: factual wording error | “The fourth components of **all** low rows change with m” is false. Only groups 3, 4, and 6 have changing fourth components; groups 1, 2, and 5 have fourth component zero. Replace “all low rows” with “low rows in groups 3, 4, and 6.” |
+| Theorems 4A–4B, [replication assertion, line 105](/Users/jinleic/jinleic-workspace/ai4s/m-estimator-sample-augmentation/proof.md:105) | Low: missing justification or qualification | Clarify whether “replication preserves their consistency” includes **strong S consistency**. That assertion is true, but needs a short argument: for 4A, Hoeffding bounds the pooled derivatives’ wrong-sign probabilities by \(O(e^{-aH_n^2})\), which is summable; for 4B, the pooled minimizing interval is contained in the original shrinking interval. Alternatively, restrict this sentence to weak preservation. |
+
+For [Theorem 3](/Users/jinleic/jinleic-workspace/ai4s/m-estimator-sample-augmentation/proof.md:41), the packing and probability argument are sound:
+
+- Distinct intersecting translates require a nonzero difference \(4^a-4^b\). The **ordered** pairs already include both signs, so the degree bound \(j(j-1)\) needs no additional factor of two.
+- A deterministic greedy independent set has size at least \(3\cdot4^j/[j(j-1)+1]\). Its translated error-index sets are disjoint, giving independent extreme-average events of probability \(2^{-j}\).
+- Consequently, the probability of missing either extreme in \(I_j\) is at most
+  \[
+  2\exp\!\left[-\frac{3\cdot2^j}{j(j-1)+1}\right],
+  \]
+  a summable sequence. Independence between stages is unnecessary.
+- Combining eventual occurrence of both extremes with \(A_j\to0\) and \(|B_n|\le1\) gives exactly the claimed almost-sure limsup \(1/2\) and liminf \(-1/2\).
+
+The fixed-\(n\) variance \(1/(2j)\), original strong consistency, and uniqueness for \(n\ge4\) also check out.
+
+For [Theorem 5](/Users/jinleic/jinleic-workspace/ai4s/m-estimator-sample-augmentation/proof.md:109), every substantive step checks out:
+
+- **Signs and coefficients:** with prediction \(-dL\), the residual is \(e+dL\). For \(|dL|<1\),
+  \[
+  \rho(e+dL)-\rho(e)=10edL+\mathbf1_{\{e=1\}}dL_+.
+  \]
+  Summation gives exactly the coefficients \(20c\,\overline e\) and \(2c\,\overline{\mathbf1_{\{e=1\}}}\), converging to \(0\) and \(c\). Replication doubles the limiting hinge coefficient.
+- **Geometry:** below \(M=\max(|u_1|,|u_2|+v)\), the total slope in \(t\) is at most \(-1\); above \(M\), it is \(+1\). Minimizing subsequently in \(v\) gives uniquely
+  \[
+  t=|u_1|,\qquad v=|u_1|-|u_2|,
+  \]
+  with minimum \((|u_1|+|u_2|)/2\). The homogeneity and unit-sphere argument establishes coercivity of \(G\).
+- **Limiting minimizers:** the original coordinate gap is at least \((10-c/2)|u-e|\). For opposite replicated errors, the expression on \([-1,1]\) is correctly \(20+(-u)_++c|u|\), uniquely minimized at zero. Thus both displayed limiting minimizers are correct.
+- **Finite existence:** the two high rows identify the first two coordinates; low groups 5 and 6 then identify the third and fourth. Every finite-stage design has rank four. Since \(\rho(r)\ge10|r|\), its finite objective is coercive and attains its minimum.
+- **All-minimizer convergence:** compact-uniform convergence and the sphere/convexity argument genuinely confine the entire minimizing set near the unique limiting minimizer. Finite-sample uniqueness is unnecessary and is not asserted.
+- The fourth-coordinate limiting probabilities are \(1/4,1/2,1/4\) at \(-1,0,1\), and the probability limit \(1/2\) follows because the threshold \(1/2\) is never a limiting boundary value.
+
+The remaining audits found no substantive objections:
+
+- [Theorems 1–2](/Users/jinleic/jinleic-workspace/ai4s/m-estimator-sample-augmentation/proof.md:23): scalar bracketing and the least-squares averaging identity are valid, including their stated coupling qualifications.
+- [Theorem 4A](/Users/jinleic/jinleic-workspace/ai4s/m-estimator-sample-augmentation/proof.md:80): both derivative signs, expectations, martingale convergence, and eventual unique recovery are correct.
+- [Theorem 4B](/Users/jinleic/jinleic-workspace/ai4s/m-estimator-sample-augmentation/proof.md:91): the minimizing interval and independent harmonic-probability Borel–Cantelli argument are correct.
+- [Theorem 6](/Users/jinleic/jinleic-workspace/ai4s/m-estimator-sample-augmentation/proof.md:181): the interval bounds and specified measurable selection give the claimed failure at \(\beta_0=0\).
+
+The status qualifications are appropriately stated. **The nested weak conjecture remains unresolved here.** Theorem 3 concerns strong consistency under S; Theorem 5 changes the original design across stages; Theorem 6 concerns the explicitly artificial selection rule. The [book excerpt](/Users/jinleic/jinleic-workspace/ai4s/m-estimator-sample-augmentation/sources/book-excerpt.txt:29) leaves its error-law conditions unspecified, so compatibility with its intended regularity class cannot be certified from this excerpt.
+
+I found no completed route to a genuine nested counterexample or a preservation proof. The concatenation obstruction is concrete: the limiting old-stage geometry satisfies
+\[
+G(0,0,0,v)=4v_++\tfrac12(-v)_+.
+\]
+Retaining stages therefore retains penalties in both directions of the fourth coordinate. A nesting construction would need to overcome those penalties while preserving consistency at every intermediate prefix. A preservation proof would need additional control of the criteria derived from nestedness and original consistency. Neither argument is supplied.

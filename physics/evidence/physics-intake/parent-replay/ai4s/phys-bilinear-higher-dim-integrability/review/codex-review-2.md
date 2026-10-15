@@ -1,0 +1,6 @@
+1. **Minor — literature qualification remains inconsistent.** [RESULTS.md:312](/Users/jinleic/jinleic-workspace/ai4s/phys-bilinear-higher-dim-integrability/RESULTS.md:312) says Peng et al. “proved Lax integrability”; [STATUS.md:111](/Users/jinleic/jinleic-workspace/ai4s/phys-bilinear-higher-dim-integrability/STATUS.md:111) unconditionally attributes their results to the cubic model. The recorded evidence is abstract-only, with model identification inferred. **Fix:** say the abstract reports Wronskian solutions and proposes a Lax representation; retain the conditional identification consistently.
+
+Item 1: **fix needed** — disposition 3 remains incompletely applied; the other seven are addressed.  
+Item 2: **ok** — division by ε has an analytic extension; scaled determinants remain nonzero near zero, and the nonzero first-equation residual proves rational nonidentity in z.  
+Item 3: **ok** — Pfaffian expansion signs and “0 last” convention agree; empirical qualification is correct. Reruns `(4,4000,Dy)`, `(5,5001,Dx)`, `(7,7001,Dy)` all returned `(True, 0)`.  
+Item 4: **fix needed** — the revised literature wording above overclaims verification; no additional mathematical error found.

@@ -1,0 +1,50 @@
+**Verdict: correct-with-fixes.** F, B1, S, and T survive the review. B2’s optimum survives, but its stated attaining construction needs a small boundary correction. I found no major error or unsupported extension to the physical problem.
+
+1. **Minor mathematical correction — B2, [RESULTS.md §4](/Users/jinleic/jinleic-workspace/ai4s/phys-fibonacci-cone-spirals/RESULTS.md:132).** Omitting only the apex orbit does not make every **closed** radius-\(1/2\) disk embedded. For the unit-radius center \(z=1\), the distinct boundary points
+   \[
+   m_\pm=(1+e^{\pm i\pi/3})/2
+   \]
+   both lie \(1/2\) from \(z\), but \(e^{i\pi/3}m_-=m_+\). Their quotient images coincide, so the closed disk identifies two of its own boundary points.
+
+   **Smallest correction:** omit the unit-radius orbit as well: retain lattice centers with \(r>1\). This bounded omission preserves density \(\pi/(2\sqrt3)\). The subsequent sentence about excluding an apex neighborhood already anticipates this repair. F’s centers at \(r\ge10\) are unaffected.
+
+2. **Low severity, definition clarification — B2, [RESULTS.md §4](/Users/jinleic/jinleic-workspace/ai4s/phys-fibonacci-cone-spirals/RESULTS.md:128).** Specify whether “asymptotic density” means an existing limit or upper density defined using \(\limsup\). Arbitrary packings need not have a density limit: thinning the quotient lattice in alternating, rapidly expanding occupied and empty annuli supplies an example.
+
+   **Smallest correction:** formulate B2 using upper asymptotic covered-area density. The lifting argument proves that bound, and the corrected lattice construction attains it with an actual limit.
+
+3. **Low severity, empirical reporting — [code/diagnostics.py](/Users/jinleic/jinleic-workspace/ai4s/phys-fibonacci-cone-spirals/code/diagnostics.py:45) and [results/diagnostics.json](/Users/jinleic/jinleic-workspace/ai4s/phys-fibonacci-cone-spirals/results/diagnostics.json).** Each phase tests **one** value of \(t\), not its entire reported `t_interval`. The Fibonacci scan covers \(k=2,\ldots,24\); the independent integer-offset scan covers \(q=1,\ldots,1000\). These checks cannot establish interval-wide or all-offset conclusions.
+
+   **Smallest correction:** record `sample_t` and explicitly identify `t_interval` as the analytically derived interval for the Fibonacci-only model. The existing empirical labels and written proof separation prevent this from invalidating T; no additional numerical scan is needed.
+
+4. **Pass — F and witness reconstruction, [RESULTS.md §3](/Users/jinleic/jinleic-workspace/ai4s/phys-fibonacci-cone-spirals/RESULTS.md:34).** Independently of the generator, I reconstructed the complete annular lattice set: **183 distinct orbits and 1098 lifts**. The minimum separation between distinct quotient centers is exactly 1; representatives \((-10,0)\) and \((-11,0)\) attain it. Minimum self-image separation is 10, so radius-\(1/2\) disks embed safely. Radial Lipschitz continuity places them inside \(9.5\le r\le20.5\).
+
+   The stored rational golden-pair certificate matches independent reconstruction exactly and gives
+   \[
+   D_{4,12}^{\,2}<0.7695431670071615<77/100<1.
+   \]
+   The square-root bound directions, positive cosine lower bound, angular residual, and frustum-contained overlap argument are correct. This proves the strict comparison; it supplies no upper bound on the unrestricted finite optimum.
+
+5. **Pass — B1 and the corrected B2, [RESULTS.md §4](/Users/jinleic/jinleic-workspace/ai4s/phys-fibonacci-cone-spirals/RESULTS.md:88).** For fixed \(A>0\), rounding \(q_k/(2A\epsilon_k)\) changes it by a vanishing relative amount. Since \(q_k\epsilon_k\to1/\sqrt5\), the radial and angular contributions each tend to \(A/(2\sqrt5)\). Consequently,
+   \[
+   d^2\le c^2A/\sqrt5,\qquad
+   \rho=\frac{d^2}{4\beta c^2}\le\frac{\pi}{2\sqrt5}.
+   \]
+   Both selected indices eventually survive every finite prefix deletion. The \(O(R)\) boundary-shell estimate justifies the covered-area density limit.
+
+   B2’s planar lifting upper bound is sound. After finding 1’s repair, its attainment is sound too. The ratio \(\sqrt{5/3}\) compares triangular density with the **golden density upper bound**, not a computed exact golden density.
+
+6. **Pass — S and T, [RESULTS.md §5](/Users/jinleic/jinleic-workspace/ai4s/phys-fibonacci-cone-spirals/RESULTS.md:140).** S follows from reflection preserving admissibility and energy; it asserts neither existence of minima nor absence of history-dependent alternation.
+
+   T’s thresholds strictly increase and diverge. Writing \(b_k=A^2\phi^{-2k}\), the pair threshold satisfies
+   \[
+   \sigma_k^2=
+   \frac{(b_{k-1}-b_k)\tau_{k-1}^2+(b_k-b_{k+1})\tau_k^2}
+        {b_{k-1}-b_{k+1}},
+   \]
+   which proves its strict placement between adjacent crossings. The adjacent comparisons establish the claimed consecutive pairs throughout the infinite candidate family. Transition ties are correctly acknowledged. Alternating residual signs prove the stated outward-oriented relative chirality. Neither all integer offsets nor a physical diameter-to-growth law is established or claimed.
+
+7. **Informational — citation and scope audit, [STATUS.md](/Users/jinleic/jinleic-workspace/ai4s/phys-fibonacci-cone-spirals/STATUS.md:54).** I identified no assertion exceeding the declared reading levels: metadata-only references explicitly use secondary attribution, abstract-level results are reported as such, and detailed claims identify inspected sections. Thue’s theorem is an imported classical baseline. I did **not** access the cited external sources, so this assesses the declared provenance rather than independently authenticating their contents. No novelty or literature-wide unresolvedness claim is justified—or asserted.
+
+`python3 code/verify.py` passed. Independent in-memory calculations also reproduced the rational receipt and all stored diagnostic constants, convergence rows, and sampled phases. No files were changed.
+
+After the boundary correction and density clarification, no substantive proof gap remains in F, B1, B2, S, or T. The expressly unproved obligations remain the experimental elastic functional and admissible configuration class for C1, and an explicit accretion/relaxation rule, seed/boundaries, and contact-count observable for physical C2.

@@ -1,0 +1,25 @@
+**correct-with-fixes.**
+
+One operational fix: [native cancellation](/Users/jinleic/jinleic-workspace/ai4s/kirkman-large-sets-57-87/evidence/completion-review-snapshot/work/c19_staged_completion.py:249) sends SIGTERM promptly, but escalation waits for the original `cap + 5` timeout, followed by another 30 seconds. A child ignoring SIGTERM after an early peer stop can therefore remain active nearly the whole solve period. An in-memory test of the actual control flow gave cancellation at second 5, SIGKILL at second 7,235, then successful reaping. Start the termination grace period when cancellation occurs and reap before clearing the process handle. No real process was launched for this test.
+
+No mathematical encoding error or invalid finite witness was found. Checked positives:
+
+1. **The auxiliary certificate is valid.** [c19-partial17.txt](/Users/jinleic/jinleic-workspace/ai4s/kirkman-large-sets-57-87/evidence/completion-review-snapshot/evidence/c19-partial17.txt) contains exactly 17 constituents, each with 28 classes of 19 triples. Every class partitions all 57 points; every constituent covers all 1,596 pairs exactly once. The constituents share no blocks: **9,044 distinct triples out of 29,260**. Its `PACKING 57 17` label correctly distinguishes it from the required 55-system target.
+
+2. **The checker and frozen expansion agree.** Under normal, assertion-enabled Python invocation, `check_partial_packing.py` passed the supplied certificate. Its count, partition, pair-counter and global block-counter checks have no identified false-positive path. Eight in-memory malformed/corrupt inputs were rejected, including pair corruption preserving a class partition and sharing an entire constituent. The text matches the frozen JSON expansion exactly, including class and block ordering. Both block sets and chosen resolutions were invariant under all 19 translations for every constituent.
+
+3. **Inventory and native dimensions are exact.** The packing occupies **476** of **1,540** triple-orbits, leaving **1,064**. There are **40,432** placements and **4,256** structural columns, all degree 38, plus the singleton anchor column. Executing the actual Sinz constructor entirely in memory produced **197,904 variables and 472,417 clauses** before candidate blocking.
+
+4. **The symmetry normalization is lossless.** Base interchange puts the least remaining orbit’s block in base 0; translating base 0 makes it canonical. Translation preserves STS and resolution properties and its orbit selection. Disjoint free-base orbit sets and invariant fixed constituents prevent collisions. Native and Boolean CP impose literal 1; modular CP imposes exactly `color[0]=shift[0]=0`. No additional `{0,1}` third-point ordering is imposed.
+
+5. **The modular encoding is equivalent.** All three incidences share their orbit’s color and shift. Offsets matched concrete pairs for all **20,216** remaining-orbit translations. All **27** AP orbits retaining repeated pair-orbit incidences were handled without deduplication. Each of 84 pair-orbits has 38 labels bounded by `0..37`; AllDifferent therefore covers every `(base, concrete pair)` once. Native-placement reconstruction round-tripped all 40,432 placements, and modular forbidden-tuple reconstruction matched the decision ordering.
+
+6. **Resolution and success validation are sound.** Each resolution class has exactly one point-0 anchor. A non-anchor block intersects three distinct anchors, leaving exactly 25 allowed classes: **28 + 504·25 = 12,628 variables**. All 17 supplied known resolutions satisfy the actual resolution-constructor constraints after anchor relabelling. Candidate pair and orbit checks precede resolution. Success expands **17+19+19** systems and requires the strict, group-independent `check_lkts.py` to pass before writing the shared stop file.
+
+All **35 input-manifest hashes matched**. Read-only `c19_verify.verify` replay passed with 17 checked fixed candidates, maximum disjoint packing 17, and completion status **UNKNOWN**.
+
+Limitations: new replay checks packing, encoding, blocked witnesses and reconstructed instance hash, but **does not check its recorded `source_hashes` or load the saved source copies**. Its PASS authenticates reconstructed model bytes, not original source identity. Actual solver execution and serialization of new saved attempts were not tested.
+
+The recorded diagnostic remains **UNKNOWN after 60.0016 seconds and 12,346,650 branches**. Its driver asserted because it expected a positive result; this is not solver-INFEASIBLE. The known resolution is present and satisfies the audited constraints. UNKNOWN-resolution exclusions are correctly marked heuristic, with witnesses retained and exhaustion distinguished.
+
+Only supplied inputs were used; no solvers, long jobs, delegation, web access or file modifications occurred. This review establishes the 17-packing and encoding equivalence, without establishing a target LKTS, exhaustive C19 search or global nonexistence result.

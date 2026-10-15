@@ -1,0 +1,495 @@
+You are a hostile independent mathematical referee, not a collaborator seeking acceptance. Do not use tools, do not delegate, do not edit anything. Review the complete proof below, including exact book excerpts. The main question demands strong stability (finite time-average expected total backlog) with an arbitrary interference graph, every strictly admissible load, and local queue/channel distributed random access. The proposed theorem makes substantial additional assumptions: synchronous block fading, perfect instantaneous carrier sensing, and deterministic time-inhomogeneous clocks R_t=exp((t+1)^2) in paid shrinking windows delta_t=1/(t+2). We explicitly classify the book as PARTIAL. Do NOT excuse a flaw merely because this is a partial result. Check all mathematical bridges, especially the all-zero reset coupling event, entropy/TV loss, uniform-in-time constant K, conditioning under Markov channels, Poisson-equation solution, quadratic drift constants, and conversion to a uniform exponential moment. Check the six-state continuous-channel counterexample and deterministic bounded-arrival cycle formula. Check whether any hidden central oracle/global queue max is used, and whether the scope caveat is strong enough. Distinguish a valid but deliberately impractical scoped theorem from a full book solution. Return ONLY one JSON object with keys: verdict (ACCEPT_SCOPED, NEEDS_FIX, or REJECT), exact_accepted_claim (string), findings (array of objects with id,severity,location,issue,required_fix), scope_assessment (string), novelty_assessment (string), and first_independent_check (string). Do not claim to have executed computations. Any absent source is unverified.
+
+BOUND INPUT SHA256:
+{
+  "proof.md": "ba43e93061079ed598e3279a9f10c6146f341a565c326cd0fb309c48f0521572",
+  "sources/problem.zh-en.txt": "625849e9cd97a465f2f6dff455ed8e7237894cf873a361a53e699a8cad0326f3"
+}
+
+===== proof.md =====
+# A complete strong-stability theorem with an explicit expensive control clock
+
+Date: 2026-10-14 (America/Los_Angeles). Book-level verdict: **PARTIAL**.
+Evidence class: classical mathematical derivation / Certification candidate;
+not Lean-kernel verified, not a novelty claim. This document does not claim to
+close the book's simple, distributed, memoryless-policy requirement.
+
+## 1. Exact target and the deliberately visible gap
+
+The scanned book, printed pp. 731–734 (PDF 752–755), is authoritative.
+Printed p. 732 defines strong stability as
+
+\[
+ \limsup_{T\to\infty}\frac1T\sum_i\sum_{t=0}^{T-1}
+       \mathbb E[Q_i(t)]<\infty. \tag{B2}
+\]
+
+It also says the scheduler must be “简单的、分布式的、无记忆的策略”.
+Printed p. 733 identifies the then-unresolved problem as
+“在时变链路速率情况下的基于队列的随机接入算法及其稳定性还未被人们解决。”
+
+The theorem below proves the stronger conclusion
+\(\sup_t\mathbb E\sum_iQ_i(t)<\infty\), for every strictly admissible
+load and every finite conflict graph, **under synchronous block-fading and an
+unbounded predetermined control-clock architecture**. It uses only a link's
+own current queue, its current channel, local carrier sensing, and the shared
+slot counter. It does not use a central MaxWeight oracle, global queue maximum,
+arrival rate, channel transition law, graph size, or a known arrival/channel
+bound. It is not time-homogeneous: the common clock accelerates forever.
+Consequently this is a scoped full theorem but only a partial answer to the
+printed scheduling problem. It is also not a theorem about channels changing
+continuously during the control phase, as in Yun–Shin–Yi.
+
+## 2. Model, quantifiers, and controller
+
+Let \(G=(V,E)\) be any finite undirected graph, \(n=|V|\ge1\), and
+\(\mathcal I(G)\subset\{0,1\}^n\) its independent-set schedules, including
+zero. No restriction is imposed on degree, graph class, or computational
+complexity of maximum independent set.
+
+Time consists of unit slots \(t=0,1,\ldots\). At the start of slot \(t\),
+\(C(t)\) is a finite-state irreducible Markov chain with transition matrix
+\(P\), stationary distribution \(\pi\), and components in \([0,c_*]\),
+where \(c_*<\infty\). Periodicity is allowed. It is exogenous and independent
+of arrivals and control randomness; its value is constant throughout the slot.
+Each transmitter observes only its own component immediately and without error.
+Different links' channel components need not be independent.
+
+Arrival vectors \(A(t)\) are iid over slots, independent of channels and
+control randomness, with \(0\le A_i(t)\le a_*<\infty\) and mean
+\(\lambda_i\). Components of an arrival vector can be dependent. Arrivals are
+added at slot end, and the initial queue vector is any deterministic finite
+vector. Queue lengths and service are divisible work, not necessarily integer
+packets. Dummy control signals may be sent even by an empty queue.
+
+Define the ideal no-control-overhead service region by
+
+\[
+ \mathcal C=\left\{\sum_c\pi(c)\sum_{\sigma\in\mathcal I(G)}
+       \alpha_c(\sigma)(c_i\sigma_i)_{i=1}^n:
+       \alpha_c\text{ a probability distribution}\right\}.
+\]
+
+**Strict admissibility** means that there exist \(\epsilon>0\) and such
+\(\alpha_c\) with \(r_i\ge\lambda_i+\epsilon\) for every \(i\).
+This is the usual coordinatewise interior condition, not a graph-dependent
+fraction of capacity. The comparison distributions are used only in the proof.
+
+### Controller: synchronized shrinking-window heat-bath access
+
+In slot \(t\), set
+
+\[
+ \delta_t=\frac1{t+2},\qquad R_t=\exp((t+1)^2),\qquad
+ w_i=Q_i(t)C_i(t),\qquad p_i=\frac{e^{w_i}}{1+e^{w_i}}. \tag{1}
+\]
+
+All links reset their reservation bits to zero. During the control interval
+\([t,t+\delta_t)\), link \(i\) has an independent Poisson clock of rate
+\(R_t\). At each ring it senses all its conflict neighbors. If any neighbor
+has reservation bit 1, it sets its bit to 0; otherwise it sets its bit to 1
+with probability \(p_i\), and to 0 with probability \(1-p_i\), independently.
+The weights are frozen at their slot-start values.
+
+At the common control-window end all links freeze their bits, obtaining
+\(\sigma(t)\in\mathcal I(G)\), and transmit at rate \(C_i(t)\sigma_i(t)\)
+for the remaining \(1-\delta_t\) units. Potential service is
+
+\[
+ S_i(t)=(1-\delta_t)C_i(t)\sigma_i(t),\qquad
+ Q_i(t+1)=[Q_i(t)-S_i(t)]^++A_i(t). \tag{2}
+\]
+
+**Physical assumptions and costs.** Reservation-bit changes and carrier sensing
+are instantaneous and perfect on exactly the conflict edges; continuous
+independent clocks have no simultaneous rings almost surely. There are no
+hidden terminals, propagation delays, collisions, capture errors, packet-size
+minimums, or retransmissions. Control time costs the full \(\delta_t\) fraction
+of the slot; it is not declared free. Shared slot boundaries, a common epoch,
+and the slot counter are required. Each update is local and uses constant
+arithmetic plus carrier sensing, but the *expected number* of control rings is
+
+\[
+ nR_t\delta_t=\frac{n\exp((t+1)^2)}{t+2}. \tag{3}
+\]
+
+This quantity is finite for each slot, so the process is nonexplosive on every
+finite time interval, but grows superexponentially in the slot index. For
+example at \(t=10\) it is \(n e^{121}/12\). Arbitrarily fine timing,
+unbounded clock rates and real-number probability operations are essential.
+No claim of efficient implementation, finite precision robustness, or bounded
+hardware rate is made. The controller needs neither \(n,a_*,c_*\) nor a
+mixing-time estimate; these enter the mathematical bound, not the code executed
+by a link.
+
+## 3. The theorem
+
+**Theorem 1.** For every graph, channel chain, arrival law, finite deterministic
+initial queue vector and strictly admissible \(\lambda\) satisfying Section 2,
+the controller (1)–(2) obeys
+
+\[
+ \sup_{t\ge0}\mathbb E\exp(\theta\|Q(t)\|_2)<\infty
+ \quad\text{for some }\theta>0. \tag{4}
+\]
+
+In particular \(\sup_t\mathbb E\sum_iQ_i(t)<\infty\), and the exact book
+strong-stability condition (B2) follows. This is an existence theorem under the
+stated ideal architecture, not an asymptotic simulation inference.
+
+### Lemma 1: stationary distribution of the frozen control process
+
+For fixed \(q,c\), its stationary law is
+
+\[
+ \nu_{q,c}(\sigma)=\frac{\exp(\sum_iq_ic_i\sigma_i)}
+    {Z(q,c)},\quad
+ Z(q,c)=\sum_{\rho\in\mathcal I(G)}\exp(\sum_iq_ic_i\rho_i). \tag{5}
+\]
+
+**Proof.** If adding vertex \(i\) is feasible, the forward and reverse rates
+are \(R p_i\) and \(R(1-p_i)\); their ratio is \(e^{q_ic_i}\). This is
+exactly the probability ratio in (5), so detailed balance holds on every
+one-bit edge. Removal paths connect every state to zero and addition paths
+connect zero to every independent set. All relevant rates are positive and
+finite. The finite chain is irreducible and (5) is its unique stationary law.
+Self-rings do not affect this argument. ∎
+
+### Lemma 2: explicit mixing, without a time-scale separation assumption
+
+For arbitrary fixed weights \(w_i\ge0\), all initial states, and duration
+\(u\),
+
+\[
+ \|\mathcal L(\sigma(u))-\nu_w\|_{\rm TV}
+ \le(1-p(w))^{\lfloor Ru\rfloor}
+ \le\exp[-p(w)\lfloor Ru\rfloor],\qquad
+ p(w)=e^{-n}\prod_i\frac1{1+e^{w_i}}. \tag{6}
+\]
+
+**Proof.** Couple all initial states with the same vertex clocks and independent
+uniform marks at their rings. A ring uses its mark to set the vertex to zero
+whenever the mark exceeds \(p_i\), regardless of the neighbors; otherwise it
+sets 1 only if feasible. In an interval of length \(1/R\), the event that
+every vertex rings exactly once has probability \(e^{-n}\). Independently,
+all these marks force zero with probability \(\prod_i(1-p_i)\). On their
+intersection, every coupled state is zero at the interval end, regardless of
+the order of rings, since each vertex is updated exactly once. Coupling then
+persists forever. The events in disjoint intervals are independent. Couple
+one starting state to a chain with initial law \(\nu_w\), and apply the
+coupling inequality. Any leftover partial interval cannot separate coupled
+chains. This proves (6), with no spectral-gap or adiabatic lemma omitted. ∎
+
+### Lemma 3: a uniform additive MaxWeight loss, including overhead
+
+There is a finite deterministic \(K\), depending on the model and initial
+queues but not on \(t\), such that conditionally on the full past and the
+slot-start \(q,c\),
+
+\[
+ q\cdot\mathbb E[S(t)\mid\mathcal F_t]
+ \ge\max_{\sigma\in\mathcal I(G)}\sum_iq_ic_i\sigma_i-K. \tag{7}
+\]
+
+Here \(\mathcal F_t\) includes \(Q(t),C(t)\), not this slot's control
+randomness or arrivals.
+
+**Proof.** Put \(q_* =\max_iQ_i(0)\) and
+\(H_t=nc_*(q_*+a_*t)\). Pathwise \(Q_i(t)\le q_*+a_*t\), so the schedule
+weight \(W(\sigma)=\sum_iq_ic_i\sigma_i\) lies in \([0,H_t]\), and
+\(\sum_iw_i\le H_t\). Since \(1+e^{w_i}\le2e^{w_i}\), (6) gives the
+uniform conditional total-variation bound
+
+\[
+ \eta_t=\exp\left[-(2e)^{-n}e^{-H_t}
+         \left\lfloor\frac{e^{(t+1)^2}}{t+2}\right\rfloor\right]. \tag{8}
+\]
+
+For every probability law (5), its Shannon entropy satisfies
+\(\mathsf H(\nu)=\log Z-\mathbb E_\nu W\le\log|\mathcal I(G)|\),
+whereas \(\log Z\ge W_{\max}\). Consequently
+\(\mathbb E_\nu W\ge W_{\max}-\log|\mathcal I(G)|\). The total-variation
+error for a function with range \([0,H_t]\) is at most \(H_t\eta_t\).
+Multiplying by the data duration gives
+
+\[
+ q\cdot\mathbb E S(t)
+ \ge W_{\max}-n\log2-H_t(\eta_t+\delta_t). \tag{9}
+\]
+
+Now \(\sup_tH_t\delta_t<\infty\). Also, since \(H_t\) is affine in
+\(t\), the logarithm of the positive exponent inside (8) is bounded below by
+
+\[
+ (t+1)^2-H_t-n\log(2e)-\log(2(t+2))\longrightarrow+\infty. \tag{10}
+\]
+
+For this inequality use \(\lfloor x\rfloor\ge x/2\) for \(x\ge1\);
+\(e^{(t+1)^2}/(t+2)\ge1\) for every integer \(t\ge0\). The right side is
+a quadratic minus an affine and logarithmic expression. In particular it is
+at least \(t^2/2\) for all sufficiently large \(t\), whence
+\(H_t\eta_t\le H_t\exp(-e^{t^2/2})\to0\). Thus the explicit constant
+
+\[
+ K=n\log2+\sup_{t\in\mathbb Z_+}H_t(\eta_t+\delta_t)<\infty \tag{11}
+\]
+
+makes (7) valid, including the finitely many early slots. No runtime procedure
+needs to evaluate this supremum. ∎
+
+### Lemma 4: uniform multi-slot quadratic drift for Markov channels
+
+Let \(L(q)=\tfrac12\|q\|_2^2\), \(D=a_*+c_*\), and
+\(B=n(a_*^2+c_*^2)/2\). There exist an integer \(T\ge1\) and finite
+\(K_T\) such that at every starting time \(t\),
+
+\[
+ \mathbb E[L(Q(t+T))-L(Q(t))\mid\mathcal F_t]
+ \le K_T-\frac{T\epsilon}{2}\sum_iQ_i(t). \tag{12}
+\]
+
+**Proof.** Take comparison distributions witnessing strict admissibility and
+write \(s_i(c)=\sum_\sigma\alpha_c(\sigma)c_i\sigma_i\), so
+\(r_i=\sum_c\pi(c)s_i(c)\ge\lambda_i+\epsilon\). A finite irreducible
+Markov chain admits a real solution of
+
+\[
+ h_i-Ph_i=s_i-r_i\mathbf1. \tag{13}
+\]
+
+For completeness, the nullspace of \(I-P\) consists of constants: a real
+harmonic vector attains its maximum, and the averaging equality propagates
+that maximum along every positive-probability transition, hence everywhere by
+irreducibility. Thus \(\operatorname{rank}(I-P)=m-1\) for \(m\) channel
+states. Its left nullspace is spanned by \(\pi\). The right side of (13)
+has zero \(\pi\)-mean and hence lies in the range. This proves solvability
+even for periodic chains. Let \(H=\max_i\|h_i\|_\infty<\infty\).
+Telescoping (13) yields, conditional on any initial channel state,
+
+\[
+ \mathbb E\sum_{k=0}^{T-1}s_i(C(t+k))
+ =Tr_i+h_i(C(t))-\mathbb Eh_i(C(t+T))\ge Tr_i-2H. \tag{14}
+\]
+
+The scalar queue identity gives
+\(Q_i(t+1)^2\le Q_i(t)^2+A_i(t)^2+S_i(t)^2
++2Q_i(t)(A_i(t)-S_i(t))\). Combining conditional independence of arrivals
+with (7), and using \(W_{\max}\ge q\cdot s(c)\), gives
+
+\[
+ \mathbb E[\Delta L(t)\mid\mathcal F_t]
+ \le B+K+\sum_iQ_i(t)(\lambda_i-s_i(C(t))). \tag{15}
+\]
+
+Pathwise \(|Q_i(t+k)-Q_i(t)|\le Dk\) and
+\(|\lambda_i-s_i(c)|\le D\). Sum (15), take the conditional expectation
+at \(t\), replace \(Q_i(t+k)\) with \(Q_i(t)\), and bound the resulting
+error by \(nD^2T(T-1)/2\). The exogenous channel property allows (14) even
+when conditioning on the queue history. Choose
+\(T\ge\max(1,\lceil4H/\epsilon\rceil)\), and set
+
+\[
+ K_T=T(B+K)+\frac{nD^2T(T-1)}2.
+\]
+
+Then \(T\epsilon-2H\ge T\epsilon/2\), giving (12). ∎
+
+### Lemma 5: the drift implies a uniformly bounded exponential queue moment
+
+This step is included because rate stability, positive recurrence, or a bound
+on \(\mathbb E\log\log Q\) does not by itself prove (B2).
+
+Set \(\beta=T\epsilon/2>0\), \(d=\sqrt nDT\), and
+\(r_0=\max(1,2K_T/\beta)\). Strict admissibility ensures \(c_*>0\), so
+\(d>0\). Let \(X=\|Q(t)\|_2\), \(X'=\|Q(t+T)\|_2\). The elementary
+identity
+\(2X(X'-X)\le (X')^2-X^2\), together with (12), implies for \(X>0\)
+
+\[
+ \mathbb E[X'-X\mid\mathcal F_t]
+ \le\frac{K_T}{X}-\beta\frac{\|Q(t)\|_1}{X}
+ \le\frac{K_T}{X}-\beta. \tag{16}
+\]
+
+Thus for \(X\ge r_0\), the conditional drift is at most \(-\beta/2\).
+Also \(|X'-X|\le d\) pathwise. Choose
+
+\[
+ 0<\theta\le\min\left\{\frac1d,\frac{\beta}{2e d^2},
+                         \frac1\beta\right\},\qquad
+ \rho=1-\frac{\theta\beta}4\in(0,1). \tag{17}
+\]
+
+For \(|y|\le d\), Taylor's theorem gives
+\(e^{\theta y}\le1+\theta y+\theta^2d^2e^{\theta d}/2\).
+Hence outside \(X<r_0\),
+\(\mathbb E[e^{\theta(X'-X)}\mid\mathcal F_t]\le\rho\).
+Inside that set, \(e^{\theta X'}\le b:=e^{\theta(r_0+d)}\).
+Therefore, uniformly in time and the channel,
+
+\[
+ \mathbb E[e^{\theta X'}\mid\mathcal F_t]
+ \le \rho e^{\theta X}+b. \tag{18}
+\]
+
+Iteration on the deterministic grid \(0,T,2T,\ldots\) yields
+
+\[
+ \sup_{m\ge0}\mathbb E e^{\theta\|Q(mT)\|_2}
+ \le e^{\theta\|Q(0)\|_2}+\frac b{1-\rho}=:M<\infty.
+\]
+
+Between grid points \(\|Q(mT+k)\|_2\le\|Q(mT)\|_2+d\), so
+\(\sup_t\mathbb E e^{\theta\|Q(t)\|_2}\le e^{\theta d}M\).
+Jensen's inequality and \(\|q\|_1\le\sqrt n\|q\|_2\) give the explicit
+finite upper bound
+
+\[
+ \sup_t\mathbb E\sum_iQ_i(t)
+ \le\sqrt n\left(d+\frac{\log M}{\theta}\right). \tag{19}
+\]
+
+This proves Theorem 1, without asserting a stationary distribution for a
+time-inhomogeneous process. ∎
+
+## 4. Why this result is meaningful, and why it is not the book solution
+
+The result closes, in this explicit expensive architecture, every bridge from
+local random bits to finite expected backlog: implementable local rates,
+finite-time mixing from every initial reservation state, the channel-dependent
+Gibbs weight, paid control overhead, arbitrary Markov correlation, and a
+uniform exponential-moment Foster argument. It separates a genuine issue
+(the attainable control speed and information architecture) from an avoidable
+proof gap. It does not assume instantaneous Gibbs sampling or hide a maximum
+independent-set oracle. All graphs and all strict interior loads are included.
+
+However, the predetermined common counter is external nonlocal timing
+information; the rate schedule is time-inhomogeneous; control work per slot is
+(3); the fading is frozen within a slot. These are substantial additional
+assumptions. “Simple local update” is not “simple low-cost scheduler”. The
+book's memoryless language does not explicitly authorize this architecture.
+No full book resolution, efficiency theorem, or novelty claim is warranted.
+
+For an autonomous local-queue/local-channel A-CSMA controller in continuously
+changing finite-state Markov channels, what is still missing here is a service
+estimate strong enough for a *uniform* moment drift, not just pathwise
+throughput. One sufficient missing estimate would be, for some fixed finite
+\(T\), constants \(K_T<\infty,\beta>0\), and every admissible joint state,
+
+\[
+ \mathbb E[L(Q(t+T))-L(Q(t))\mid\mathcal F_t]
+ \le K_T-\beta\|Q(t)\|_1. \tag{20}
+\]
+
+To derive it by this proof one needs an actual control/channel tracking bound
+with additive weighted-service error, uniform in the initial schedule and
+queues. The frozen product law (5) is not the invariant law of a joint process
+whose channel keeps changing. Log-log queue weights also do not automatically
+supply the linear-queue negative drift in (20). The existing rate-stability
+statement is not an estimate of (20). Different Lyapunov functions or
+state-dependent sampling could work, but require their own moment argument.
+This is the precise mathematical/information-architecture blocker; neither
+more small-graph simulation nor a missing citation alone closes it.
+
+## 5. Two exact negative controls and an assumption-gap example
+
+### 5.1 Continuous channel variation invalidates instantaneous product form
+
+Take a single conflict edge, channel states \((1,0)\) and \((0,1)\), switching
+symmetrically at rate 1. Use rate-1 heat-bath clocks and activity 9 at the good
+link, 1 at the bad link. The joint chain has six states. If \(a,b,d\) denote
+the probability of an empty, good-active, or bad-active schedule in one given
+channel state, symmetry and stationarity give
+
+\[
+ -\tfrac75a+\tfrac1{10}b+\tfrac12d=0,\quad
+ \tfrac9{10}a-\tfrac{11}{10}b+d=0,\quad
+ \tfrac12a+b-\tfrac32d=0,\quad a+b+d=\tfrac12.
+\]
+
+The unique solution is \((a,b,d)=(13,37,29)/158\). Actual total useful service
+is therefore \(37/79\), not the instantaneous-Gibbs prediction \(9/11\).
+The exact rational checker reconstructs the generator and stationarity,
+rejects the product candidate, and repeats with faster clocks. This is not an
+impossibility theorem for adaptive CSMA; it is a falsification of a specific
+invalid stationary-law shortcut.
+
+### 5.2 A fixed positive control fraction loses capacity
+
+For one always-good unit-capacity link and \(\delta=1/4\), service is at most
+\(3/4\) per slot under any policy using that architecture. Constant arrivals
+\(7/8\) are strictly below the ideal capacity 1 but force at least \(t/8\)
+backlog growth. This explains why the shrinking window is load-bearing. It is
+an architecture-limited impossibility, not a universal distributed-policy
+impossibility.
+
+### 5.3 Printed long-run means alone are insufficient—even with bounded arrivals
+
+This is **only an assumption gap**, not a solution of the intended question.
+For one link of constant service 1, run deterministic cycles \(k=1,2,\ldots\):
+arrivals 2 for \(k\) slots, then 0 for \(3k\) slots. The long-run arrival
+mean exists and is \(1/2\): complete cycles have exactly that mean, and the
+current cycle has length \(O(k)\) versus elapsed time \(\Theta(k^2)\).
+All arrival moments are bounded, so this is not a heavy-tail trick.
+
+Even the work-conserving central scheduler is not strongly stable. Its queue
+is zero at each cycle start. Over cycle \(k\), the sum of pre-slot backlogs is
+\(k^2+2k\). Through cycle \(K\), time is \(2K(K+1)\) and the exact
+average backlog is
+
+\[
+ \frac{\sum_{k=1}^K(k^2+2k)}{2K(K+1)}=\frac{2K+7}{12}\to\infty.
+\]
+
+The maximum queue in cycle \(k\) is \(k+1\), so \(Q(t)/t\to0\).
+Thus bounded increments plus rate stability still do not imply the book's
+condition. The failure is temporal regularity, not decentralized information.
+Theorem 1 explicitly assumes iid arrivals and does not purport to repair this
+unrestricted-arrival formulation.
+
+## 6. Check boundary
+
+`work/check.py --output PATH` checks exact finite-state algebra, the reset-map
+coupling event on every labeled graph with at most four vertices, the
+continuous-channel counterexample, the deterministic-burst formula, and a
+seeded event-driven execution of the actual controller in a two-state Markov
+block-fading path graph. Positive and deliberately broken negative controls
+are mandatory assertions. Finite tests support the construction and catch
+encoding errors; they do not certify universal quantifiers or replace the
+proof above. See README and evidence files for exercised results and hostile
+referee dispositions.
+
+
+===== sources/problem.zh-en.txt =====
+Source: 《10000个科学难题·信息科学卷》, chapter 无线网络调度策略的稳定性及分布式实现 / Stable Scheduling for Wireless Networks and Its Distributed Implementation; 关新平、杨博 (上海交通大学自动化系). Printed pages 731–734 = PDF pages 752–755. Transcribed by directly viewing all four staged page images on 2026-10-14. The separately preserved text.txt is garbled extraction and is NOT formula authority. This file transcribes the target-bearing passages, not the entire chapter.
+
+Printed p.731:
+“所谓排队的镇定问题，是指在系统有随机外部服务请求到达时如何设计调度策略，在最大化系统服务能力的同时保证系统内所有队列长度均值的有界。”
+Translation: The queue stabilization problem asks how to design a scheduling policy, in the presence of random exogenous service requests, that maximizes the system's service capability while keeping the mean lengths of all queues bounded.
+
+The arrival-rate formula is lim_{t→∞} (1/t) sum_{τ=0}^{t−1} E{A_i(τ)} = X_i.
+
+Printed p.732, equation (1):
+Q_i(t+1) = max{Q_i(t) − μ_i I_(σ_i=1), 0} + A_i(t).
+The immediately following text calls μ_i(t) the current service rate of link i, depending on the time-varying channel, and sets it to zero if the link is not scheduled. The displayed equation omits the time argument on μ_i; the proof uses the unambiguous potential-service notation c_i(t)σ_i(t) instead of relying on that notational redundancy.
+
+Printed p.732:
+“定义[2] 一类排队系统{Q_i(t)}如满足下式，被称作具有强稳定性（strong stability）。”
+Equation (2), read from the image:
+limsup_{t→∞} (1/t) sum_i sum_{τ=0}^{t−1} E{Q_i(τ)} < ∞.
+Translation: A queueing system {Q_i(t)} is strongly stable if the limsup of the time average of the sum of expected queue lengths is finite.
+
+“针对无线网络这类排队系统设计调度算法，同时保证系统稳定与资源有效利用，其难点在于：①实际网络系统中，[X_i]与[C_i]无法精确已知，因此，保证排队系统强稳定的充分和必要条件[2]无法直接验证；②满足镇定队列、资源有效利用的调度算法必须是简单的、分布式的、无记忆的策略。”
+Translation: The difficulty in designing scheduling algorithms that provide stability and efficient resource use is that (1) arrival and service rate vectors are not known exactly, so strong-stability conditions cannot be directly checked; (2) a policy that stabilizes queues and efficiently uses resources must be simple, distributed and memoryless.
+
+Equation (3): maximize over σ the sum_i Q_i(t) μ_i(t), subject to σ_i∈{0,1} for every i, and σ_i σ_j=0 whenever i interferes with j. The prose identifies the combinatorial independent-set optimization and its centralized/exponential-complexity difficulty.
+
+Printed p.733:
+“有别于确定性调度算法，随机接入方式是另一类可以分布式逼近问题（3）的解的一类算法。最近，人们发现节点接入概率可以基于局部队列信息自适应调整，同时达到镇定队列、降低冲突的目的[5]。这类算法，网络节点接入概率取决于局部队列长度，而节点接入概率影响链路服务速率，从而影响队列动态演变，这种相互作用致使其成为一个关联系统，其网络镇定问题归结为寻找合适的Lyapunov函数刻画该关联系统的稳定性。目前，结果大多集中在假设式（1）中的μ（链路物理带宽，受信道状态影响）为常值。在时变链路速率情况下的基于队列的随机接入算法及其稳定性还未被人们解决。”
+Translation: Unlike deterministic scheduling, random access can approximate (3) in a distributed manner. Access probabilities can adapt to local queue information to stabilize queues and reduce collisions. The feedback between access probabilities, service rates, and queues yields an interconnected system, whose stabilization requires an appropriate Lyapunov function. Most existing results assume that μ in (1), the physical link bandwidth affected by channel state, is constant. Queue-based random access algorithms and their stability under time-varying link rates have not yet been resolved.
+
+The subsequent future directions, distinct from the main target, ask for (1) fast or finite-time convergence; (2) distributed scheduling with delayed/inaccurate channel information, contrasting it with currently known instantaneous CSI; (3) retransmissions, real-time behavior and reliability.
+
+Source-model limits: these four pages specify expected long-run arrival/service means and the strong-stability formula, but no iid assumption, no finite arrival bound, no finite-state Markov law, no sensing latency, no control clock bound, and no within-slot fading law. Those assumptions must therefore be declared additions, not attributed to the book. The faithful local-channel idealization is motivated by the book's explicit contrast with delayed/imperfect CSI, not a claim that actual radios provide exact CSI.
+
+

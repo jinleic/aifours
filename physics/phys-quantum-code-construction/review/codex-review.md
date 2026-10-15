@@ -1,0 +1,21 @@
+**Verdict: READY** as a restricted-certificate and negative-selection report. The original “still-open but not-too-hard” requirement remains unmet.
+
+Findings: none. I found no mathematical counterexample, omitted circulant/word case, or unsupported claim of a global solution or novelty.
+
+I independently checked these central claims:
+
+1. **LP certificates and primary bounds.** The pinned rational-SDP paper’s Table 1 gives the stated 2–3 and 4–7 intervals. The normalization \(a=A/K^2,\ b=B/K\) and shadow transform are correct. Exact arithmetic reproduced the listed \(b,s\) vectors. The K=4 Farkas combination has eight identically zero coefficients and contradiction constant one. Its constraints cover degenerate general codes; subspace inheritance excludes every \(K\ge4\). Evidence: [RESULTS.md:57](/Users/jinleic/jinleic-workspace/ai4s/phys-quantum-code-construction/RESULTS.md:57).
+
+2. **Stabilizer-parent obstruction.** The three Pauli cases are exhaustive after choosing Hermitian representatives. Nontrivial logical Paulis have equal ± eigenspace dimensions, and \(r>D/2\) forces intersection with both. Degeneracy and scalar phases cause no exception. The half-dimension boundary is correctly excluded. Five independent common scalar Paulis give a dimension-four parent; six cannot contain rank three. Evidence: [RESULTS.md:116](/Users/jinleic/jinleic-workspace/ai4s/phys-quantum-code-construction/RESULTS.md:116).
+
+3. **Known CWS exclusion.** The pinned CWS paper explicitly contains Theorem 7 and Corollary 3. The package’s extension argument preserves zero-syndrome phase constraints. The atlas control implements those constraints correctly and is appropriately redundant. Evidence: [RESULTS.md:137](/Users/jinleic/jinleic-workspace/ai4s/phys-quantum-code-construction/RESULTS.md:137).
+
+4. **Eleven-qubit family coverage.** All 32 masks, arbitrary translated word sets, and degeneracy constraints are covered. Independently reconstructed compatibility graphs have no four-clique; twenty have maximum clique size three and twelve have no vertices. The orbit–stabilizer/Cauchy argument correctly extends this to all vertex-transitive graph frames. Evidence: [RESULTS.md:150](/Users/jinleic/jinleic-workspace/ai4s/phys-quantum-code-construction/RESULTS.md:150).
+
+5. **Positive controls.** Qubit ordering, normalization, omitted Y phases, integer bounds, and witness weights are consistent. Both exact distances follow. Evidence: [verify.py:162](/Users/jinleic/jinleic-workspace/ai4s/phys-quantum-code-construction/code/verify.py:162), [verify_circulant.py:47](/Users/jinleic/jinleic-workspace/ai4s/phys-quantum-code-construction/code/verify_circulant.py:47).
+
+Actual computations: five source hashes; rational LP identities; 16,384 Steane symplectic cases and 211 integer compressions; all 32 syndrome reconstructions with 4,983 errors each; edge/common-neighbor clique certificates; eleven-qubit integer Gram matrix, 33 weight-one compressions, and the weight-four witness. The atlas and full eleven-qubit compression loop were source-audited. No entry-point scripts ran or files were written.
+
+Strongest defensible final wording:
+
+> The pinned 2026 sources leave both unrestricted targets unresolved. This package verifies known seven-qubit obstructions and an exact maximum dimension of four for eleven-qubit CWS codes admitting a vertex-transitive graph frame. It establishes neither a new parameter bound nor a global solution, and it fails to establish the requested “not-too-hard” selection criterion. Literature completeness and the external Zenodo formalization remain unaudited.

@@ -1,0 +1,13 @@
+**READY-WITH-FIXES.** Theorem 8 is sound. Two minor README precision fixes remain, highest severity first:
+
+1. [README.md:29](/Users/jinleic/jinleic-workspace/ai4s/m-estimator-sample-augmentation/README.md:29) unconditionally calls the repeated regression experiment non-iid. A constant scalar design, such as \(x_i=1\), gives iid response/design pairs. Change this to “need not be iid” or “is generally non-iid.”
+
+2. [README.md:79](/Users/jinleic/jinleic-workspace/ai4s/m-estimator-sample-augmentation/README.md:79) should specify that the sliding scan covered **every n from 4 through 1,048,575**. The saved evidence does not include n=1,2,3.
+
+No mathematical objection remains to [Theorem 8](/Users/jinleic/jinleic-workspace/ai4s/m-estimator-sample-augmentation/proof.md:221). Compactness and nestedness correctly produce a fixed finite-L1 direction; spanning makes its mass positive. The finite-prefix sign event has positive probability, and the deterministic bound \(-A+B<0\) excludes every minimizer from one fixed closed ball, uniformly for all sufficiently large n. No density, moment, uniqueness, or equivariance assumption is needed.
+
+The remaining numerical claims match the JSON evidence: **0/200**, **98/200**, same-draw **98/200**, final-stage residual **8.5265e-14**, and exact-check counts **83,521 / 68 / 1,088**, including all 16 configurations and j=1,…,6 packings. The exact-check script hash also matches.
+
+The README preserves the unresolved nested weak conjecture and clearly distinguishes the triangular and strong sliding results. Literature claims remain appropriately qualified against the saved sources.
+
+No files were modified.

@@ -1,0 +1,64 @@
+**Verdict: correct-with-fixes.** The stated \(N=v\) coefficient family is mathematically correct. One verification claim needs a wording correction.
+
+1. **Low severity — the reported phase-negative control is overstated.**  
+   In [code/deficit_five.py:266](/Users/jinleic/jinleic-workspace/ai4s/phys-parentage-deficit-five/code/deficit_five.py:266), `overlap != -overlap` establishes only that the overlap is nonzero. It does not execute a comparison with a deliberately reversed phase, as reported in [RESULTS.md, §9](/Users/jinleic/jinleic-workspace/ai4s/phys-parentage-deficit-five/RESULTS.md:226) and [verification.json:19](/Users/jinleic/jinleic-workspace/ai4s/phys-parentage-deficit-five/results/verification.json:19).
+
+   For example, at \(f=3,v=3,k=0\), both the correct value \(-\sqrt{65/198}\) and its incorrect positive counterpart satisfy that assertion. The preceding comparison against the engine’s sign remains meaningful.
+
+   **Smallest fix:** describe the third control as “nonzero overlap establishes distinguishability of an odd-phase reversal.” Alternatively, explicitly reverse the phase and verify that the signed comparison rejects it. No coefficient formula needs changing.
+
+The central claims survive the following checks:
+
+- **Highest weights and complete parent basis — [RESULTS.md, §§3,7](/Users/jinleic/jinleic-workspace/ai4s/phys-parentage-deficit-five/RESULTS.md:188).**  
+  Each displayed covariant is annihilated by \(J_+\). In particular, the four cancellations for \(C_5\) are exactly those stated. Since every partition involved has largest part at most five, \(2f\ge6\) introduces no orbital truncation. The adjacent weight multiplicities are
+  \[
+  p_v(5)-p_v(4)=
+  \begin{cases}
+  1,&v=3,4,\\
+  2,&v\ge5.
+  \end{cases}
+  \]
+  The supplied covariants are independent and therefore complete. At \(v=2\), deficit five would give odd total spin, excluded for two identical integer-spin bosons; degrees zero and one also supply no parent.
+
+- **Every daughter, triangle condition, and seniority sector — [RESULTS.md, §7](/Users/jinleic/jinleic-workspace/ai4s/phys-parentage-deficit-five/RESULTS.md:190).**  
+  Coupling bounds restrict daughters to \(0\le k\le5\); deficit one is absent. The remaining triangle inequalities hold throughout the listed domains. For a degree-\(n\) block,
+  \[
+  fn-k>f(n-2)\qquad(k\le5<2f),
+  \]
+  so scalar pair annihilation vanishes. Thus every listed daughter has seniority \(n=v-1\), and no lower-seniority contribution is missing. The daughter multiplicity sums are \(3,5,6,7\), giving precisely \(3,5,12,14\) entries after multiplying by parent multiplicity.
+
+- **Factorial normalization and particle-first sign — [RESULTS.md, §6](/Users/jinleic/jinleic-workspace/ai4s/phys-parentage-deficit-five/RESULTS.md:174).**  
+  Dividing the Gram matrices by \(n!\) gives
+  \[
+  \langle P_i|a^\dagger_{f-j}|D_a\rangle
+  =\frac{\sqrt v\,Y_{ia}}{\sqrt{w_jh_{p,i}h_{d,a}}}.
+  \]
+  For \(j=5-k\), the particle-first stretched CG coefficient has sign \((-1)^j\) and square
+  \[
+  \frac{(2L'_k)!\,(2L+1)!}
+       {(2L'_k-j)!\,(2L+j+1)!}
+  =\prod_{s=0}^{j-1}\frac{2L'_k-s}{2L+2+s}.
+  \]
+  This establishes the stated formula, including its sign and cancellation of \(\sqrt v\).
+
+  Direct algebra at the smallest case gives, in daughter order \(k=0,2,4\),
+  \[
+  \left(-\sqrt{\frac{65}{198}},\quad
+  +\sqrt{\frac{2}{33}},\quad
+  +\sqrt{\frac{11}{18}}\right),
+  \]
+  whose squares sum to one.
+
+- **Gram and insertion coefficients — [RESULTS.md, §§4–5](/Users/jinleic/jinleic-workspace/ai4s/phys-parentage-deficit-five/RESULTS.md:61), [code/deficit_five.py:38](/Users/jinleic/jinleic-workspace/ai4s/phys-parentage-deficit-five/code/deficit_five.py:38).**  
+  The monomial weights correctly include occupation factorials. Expanding \(H_2T_3\) gives the column \((0,0,1,-1,-3,5,-2)^T\). Multiplication of each daughter by \(z_{5-k}\) reproduces every displayed insertion entry, including both columns of \(X_4\) and \(X_5=G_5(v)\). The code’s coefficient and insertion matrices agree with these expansions.
+
+- **Positive bases, absent poles, and low-\(v\) exceptions — [RESULTS.md, §§4–6](/Users/jinleic/jinleic-workspace/ai4s/phys-parentage-deficit-five/RESULTS.md:124), [code/deficit_five.py:76](/Users/jinleic/jinleic-workspace/ai4s/phys-parentage-deficit-five/code/deficit_five.py:76).**  
+  All retained monomial weights are positive. Independence makes each available Gram matrix positive definite, hence its first pivot and Schur complement positive. The CG products are also strictly positive. No additional exceptional \(f\) or admissible \(v\) is needed. The code removes unavailable columns and unsupported monomial rows before evaluating their weights, correctly avoiding the apparent low-degree poles.
+
+- **A legitimate fixed closed form, with universal reasoning — [RESULTS.md, §§6–7](/Users/jinleic/jinleic-workspace/ai4s/phys-parentage-deficit-five/RESULTS.md:152).**  
+  Explicit rational matrices of size at most two, seven fixed monomial rows, and products of length at most five satisfy the closed-form claim. Gram–Schmidt here is explicit arithmetic on supplied entries. Covariant completeness and the creation-overlap derivation establish the infinite family; the rational completeness identity supplies additional consistency evidence. Finite sampling alone is not being used to establish universality.
+
+- **Scope and prior-art wording — [STATUS.md, §§1–2](/Users/jinleic/jinleic-workspace/ai4s/phys-parentage-deficit-five/STATUS.md:9).**  
+  The documents distinguish the reduced family from upward seniority, arbitrary deficit, and the full book problem. They acknowledge the identified baselines and explicitly avoid inferring novelty from unsuccessful searches. That wording is appropriately bounded.
+
+There is **no remaining mathematical proof gap in the central \(N=v\) statement** identified by this review. I read only the allowed files, made no edits, ran no reproduction or tests, and did not inspect the sibling engine or authenticate external sources. The recorded computation results remain author-supplied evidence.

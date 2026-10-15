@@ -1,0 +1,129 @@
+**Verdict: correct-with-fixes.** I found no mathematical error in the seven central claims under their stated hypotheses. The fixes concern complexity wording and the evidence section. **PARTIALLY-SOLVED** is appropriate for the structural synthesis challenge: rational-input decidability follows from known machinery, while the stable variant inherits a source-relative hardness barrier.
+
+1. **Severity: none — finite Markov characterization ([§3](/Users/jinleic/jinleic-workspace/ai4s/ddp-static-output-feedback/work/characterization.md:29)).**
+
+   The equivalence is correct. Taking \(s\to+\infty\) forces \(J=0\); expansion at infinity forces all Markov parameters to vanish. Cayley–Hamilton makes the first \(n\) parameters sufficient, including for defective, uncontrollable, or unobservable realizations.
+
+   The degree bound is also correct:
+   \[
+   \deg(FM^jG)\le j+2\le n+1,\qquad \deg J\le1.
+   \]
+   There are at most \((n+1)rq\) scalar equations.
+
+   The last parameter cannot generally be omitted. For
+   \[
+   M=\begin{pmatrix}0&1\\0&0\end{pmatrix},\quad G=e_2,\quad F=e_1^\top,\quad J=0,
+   \]
+   \(FG=0\), but \(FMG=1\), giving \(T(s)=s^{-2}\).
+
+   **Minimum correction:** none. The zero-initial-state qualification is essential and already present.
+
+2. **Severity: none — internal stability ([§4](/Users/jinleic/jinleic-workspace/ai4s/ddp-static-output-feedback/work/characterization.md:39)).**
+
+   The Lyapunov equivalence is correct. The integral construction gives \(P>0\) and the prescribed right-hand side \(-I\). Conversely, every complex eigenvector satisfies
+   \[
+   2\operatorname{Re}\lambda\,v^*Pv=-v^*v,
+   \]
+   forcing every eigenvalue into the open left half-plane. Diagonalizability is unnecessary.
+
+   Hidden modes are correctly included. For the scalar plant \(A=1\), \(B=E=C_2=0\), with all feedthrough matrices zero, the transfer vanishes for every \(K\), but \(M=1\). Its Lyapunov equation requires \(P=-1/2\), excluding positive definiteness.
+
+   **Minimum correction:** none.
+
+3. **Severity: minor precision issue — lifted encoding and CAD complexity ([§4](/Users/jinleic/jinleic-workspace/ai4s/ddp-static-output-feedback/work/characterization.md:43)).**
+
+   The encoding, counts, and degree claims check out:
+
+   | Variant | Variables | Equality constraints, counting full matrix entries | Strict inequalities |
+   |---|---:|---:|---:|
+   | Without stability | \(mp+n^2q\) | \(n^2q+(n+1)rq\) | \(0\) |
+   | Stable | \(mp+n^2q+n(n+1)\) | \(n^2q+(n+1)rq+2n^2\) | \(n\) |
+
+   Thus the stated \(s_0,s_1\) are valid. Removing duplicate symmetric equations would reduce the stability contribution to \(n(n+1)\) equalities.
+
+   Keeping \(P\) as a separate variable is crucial: \(KP\) and \(LL^\top\) are quadratic. Substituting \(LL^\top\) directly into the Lyapunov equation would create cubic terms.
+
+   Polynomial encoding size is justified for **explicit dense rational input**. Each quadratic polynomial has polynomially many monomials; forming coefficients and clearing denominators preserves polynomial bit length. No polynomial bound on controller values or their algebraic descriptions follows.
+
+   The complexity wording needs tightening. An arithmetic-operation bound and a bit-complexity bound are different statements. “A polynomial coefficient-bit factor for fixed dimensions” does not specify uniform coefficient dependence when dimensions vary. The coarse
+   \[
+   2^{\,2^{\operatorname{poly}(\ell)}}
+   \]
+   bit upper bound is safe, where \(\ell\) is total dense input bit length, but is a consequence of appropriate CAD bit bounds and the polynomial reduction—not literally an equivalent reformulation of the arithmetic bound.
+
+   **Minimum correction:** separate arithmetic and bit bounds, define \(\ell\), and replace “equivalently” with “consequently.” No change to the encoding or \(\exists\mathbb R\) membership is needed.
+
+4. **Severity: none — joint fixed-\(V\) test ([§5](/Users/jinleic/jinleic-workspace/ai4s/ddp-static-output-feedback/work/characterization.md:73)).**
+
+   The block equation expands exactly to
+   \[
+   NMT=0,\quad NG=0,\quad FT=0,\quad J=0.
+   \]
+   Hence it enforces all four conditions with one common gain.
+
+   Both kernel/image inclusions are sufficient jointly. Define
+   \[
+   U(Ra)=-Qa.
+   \]
+   The kernel inclusion makes this well-defined; the image inclusion permits a linear lift through \(H\). Extending that lift from \(\operatorname{im}R\) to \(\mathbb R^p\) constructs \(K\). There is no further shared-gain condition.
+
+   A useful hostile check is
+   \[
+   H=[1],\quad R=[1\;\;1],\quad Q=[0\;\;1].
+   \]
+   The separate column constraints demand \(K=0\) and \(K=-1\), individually feasible but incompatible. The joint kernel test detects this using \((1,-1)^\top\). These blocks are realizable with \(V=\mathbb R\), \(C_1=D_1=D_2=1\), \(C_2=0\), and \(D_{22}=1\).
+
+   The preceding subspace characterization also holds: the closed-loop reachable subspace generated by \(G\) provides the required \(V\). Empty matrices at \(d=0,n\) cause no exception.
+
+   **Minimum correction:** none. Stability still requires a Hurwitz gain within the affine solution set, as stated.
+
+5. **Severity: none — controlled/conditioned invariance lemma ([§6](/Users/jinleic/jinleic-workspace/ai4s/ddp-static-output-feedback/work/characterization.md:98)).**
+
+   The equivalence is correct for an **unconstrained static gain whose only obligation is \(MV\subseteq V\)**. It is the fixed-\(V\) factorization theorem with
+   \[
+   H=NB,\quad R=C_1T,\quad Q=NAT.
+   \]
+   Its image condition is controlled invariance; its kernel condition is conditioned invariance. No injectivity of \(B\) or surjectivity of \(C_1\) is required.
+
+   Using this alone as a DDP criterion would fail immediately: \(V=0\) satisfies both invariance conditions for every plant. For example, take scalar \(A=-1\), \(B=E=C_2=D_1=D_2=0\), \(C_1=1\), \(D_{22}=1\). Internal stability holds and invariance friends exist, yet \(T(s)=1\) for every gain.
+
+   **Minimum correction:** none; the manuscript already states the necessary scope restriction.
+
+6. **Severity: none — absence of a greatest subspace ([§7](/Users/jinleic/jinleic-workspace/ai4s/ddp-static-output-feedback/work/characterization.md:109)).**
+
+   Direct calculation gives
+   \[
+   M_Ke_1=(1+K)e_3,\qquad M_Ke_2=(-1+K)e_3.
+   \]
+   Thus the two lines have friends \(-1\) and \(+1\), while their sum requires incompatible gains.
+
+   Any greatest member **contained in \(S\)** must contain both lines and therefore equal \(S\). Since \(S\) has no friend, no greatest member exists. The restriction to \(S\), and the permission for gains to vary with subspace, are essential and correctly retained.
+
+   This can also be placed directly inside the DDP admissibility conditions by taking \(E=0\), \(C_2=e_3^\top\), and all feedthrough matrices zero.
+
+   **Minimum correction:** none.
+
+7. **Severity: none, conditional on the supplied source theorem — hardness embedding ([§8](/Users/jinleic/jinleic-workspace/ai4s/ddp-static-output-feedback/work/characterization.md:115)).**
+
+   The reduction is correct: \(G=F=J=0\) for every gain, so stable DDP is feasible exactly when the original SOF instance is stabilizable. The construction is polynomial, preserves coefficient magnitude bounds, and preserves the single-measured-output restriction.
+
+   Therefore the supplied September 2026 theorem transfers strong NP-hardness. The 1997 bounded-gain result is not needed for this inference.
+
+   Without stability, every embedded instance is feasible. This reduction consequently establishes no hardness for that variant.
+
+   **Minimum correction:** none; retain the explicit dependence on the recent source theorem.
+
+8. **Severity: minor factual/presentation error — certification statement ([§9](/Users/jinleic/jinleic-workspace/ai4s/ddp-static-output-feedback/work/characterization.md:121)).**
+
+   “Theorems 1–7 above” is incorrect numbering: the manuscript labels only Theorems 1–4. It also risks conflating the self-contained reduction with the externally supplied hardness theorem.
+
+   **Minimum correction:** identify “Theorems 1–4, the invariance lemma, and the lattice counterexample,” then separately state that the hardness reduction is self-contained while the inherited lower bound depends on the cited theorem.
+
+I could not independently justify the following within the permitted material:
+
+- The full proof of the 2026 hardness theorem; I accepted the verified source premise.
+- The precise scope of the 2000 *Automatica* follow-up and broader historical claims beyond the supplied literature premises.
+- The reported separate hostile reviews, finite algebra checks, small-plant checks, or bounded Z3 runs.
+- A precise uniform CAD coefficient-bit prefactor for a specified implementation; the polynomial encoding and conservative coarse bound remain sound.
+
+These limitations concern external evidence and complexity precision. They do not furnish a counterexample to the mathematical characterizations, nor support treating generic QE as a new solution to the book’s structural synthesis challenge.

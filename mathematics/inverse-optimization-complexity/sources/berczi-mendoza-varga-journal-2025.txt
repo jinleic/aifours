@@ -1,0 +1,1315 @@
+Optimization Letters (2025) 19:1665–1690
+https://doi.org/10.1007/s11590-024-02183-0
+
+    ORIGINAL PAPER
+
+
+
+Newton‑type algorithms for inverse optimization:
+weighted bottleneck Hamming distance and 𝓁∞‑norm
+objectives
+
+Kristóf Bérczi1 · Lydia Mirabel Mendoza‑Cadena1                      · Kitti Varga1
+
+Received: 13 April 2024 / Accepted: 23 December 2024 / Published online: 21 January 2025
+© The Author(s) 2025
+
+
+
+Abstract
+In inverse optimization problems, we are given a feasible solution to an underly-
+ing optimization problem, and the goal is to modify the problem parameters so that
+the given input solution becomes optimal. In the minimum-cost setting, the underly-
+ing optimization problem is endowed with a linear cost function, and the goal is to
+modify the costs by a small deviation vector so that the input solution becomes opti-
+mal. The difference between the new and the original cost functions can be meas-
+ured in several ways. In this paper, we focus on two objectives: the weighted bot-
+tleneck Hamming distance and the weighted 𝓁∞-norm. We consider a general model
+in which the coordinates of the deviation vector are required to fall within given
+lower and upper bounds. For the weighted bottleneck Hamming distance objective,
+we present a simple, purely combinatorial algorithm that determines an optimal
+deviation vector in strongly polynomial time. For the weighted 𝓁∞-norm objective,
+we give a min-max characterization for the optimal solution, and provide a pseudo-
+polynomial algorithm for finding an optimal deviation vector that runs in strongly
+polynomial time in the case of unit weights. For both objectives, we assume that an
+algorithm with the same time complexity for solving the underlying combinatorial
+optimization problem is available.
+
+Keywords Combinatorial optimization · Algorithm · Bottleneck Hamming
+distance · Infinity norm · Inverse optimization
+
+
+
+
+* Lydia Mirabel Mendoza‑Cadena
+  lyd21@student.elte.hu
+      Kristóf Bérczi
+      kristof.berczi@ttk.elte.hu
+      Kitti Varga
+      vkitti@math.bme.hu
+1
+      MTA‑ELTE Matroid Optimization Research Group, and HUN‑REN–ELTE Egerváry Research
+      Group, and Department of Operations Research, Eötvös Loránd University, Budapest, Hungary
+
+
+                                                                                      Vol.:(0123456789)
+1666                                                                       K. Bérczi et al.
+
+
+1 Introduction
+
+In a classical optimization problem, we are given a set of feasible solutions
+together with a linear cost function, and the goal is to find a feasible solution that
+minimizes or maximizes the cost. In contrast, in an inverse optimization problem
+we are also given a fixed feasible solution, and the goal is to modify the costs ‘as
+little as possible’ so that the input solution becomes optimal. There are various
+ways to measure the deviation of the new cost function from the original one,
+and, as one would expect, the choice of the objective greatly affects the com-
+plexity of the problem. The probably most standard objective functions are the
+𝓁1- and 𝓁∞-norms and the different Hamming distances. Minimizing the 𝓁1-norm
+of the deviation vector means that the overall change in the costs is small, while
+minimizing the 𝓁∞-norm results in a new cost function that is close to the origi-
+nal one coordinate-wise. Minimizing the Hamming distance means that the extent
+of modification is irrelevant coordinate-wise, but the aim is to make a modifica-
+tion in a few coordinates only: when considering the sum-type and the bottleneck
+Hamming distances, the goal is to minimize the sum and the maximum of the
+weights of those coordinates where a modification is made, respectively. In order
+to avoid confusion, we refer to the solutions of the inverse optimization problem
+and those of the underlying combinatorial optimization problem as feasible devi-
+ation vectors and solutions, respectively.
+    Inverse problems have long been the focus of research due to their wide appli-
+cability in both theory and practice, and were first studied by geophysical sci-
+entists [32]. One of the early applications of inverse optimization in geophysics
+was to predict the movements of earthquakes [29, 37]. The roots of the interest in
+inverse optimization within the mathematical programming community go back
+to the work of Burton and Toint [8] who studied the inverse shortest paths prob-
+lem, that is, the problem of recovering the edge costs given some information
+about the shortest paths in the graph. Since their pioneering work, countless of
+applications and extensions emerged; we refer the interested reader to [10, 12, 21]
+for surveys. Besides theoretical results, inverse optimization problems also found
+numerous applications. For example, Chan et al. [9] considered the pathway con-
+cordance problem to develop a data-driven concordance metric for measuring
+how much patients’ care follows the recommendations set up by medical experts,
+with the aim of optimizing survival, cost, and waiting times. In another work,
+Chen, Chen, and Langevin [11] studied a capacitated vehicle routing problem that
+appeared as part of a collaboration with an e-commerce company.
+    To motivate the objective functions considered, let us mention that 𝓁1-, 𝓁∞
+-norm and Hamming distance objectives play a crucial role, e.g., in designing
+communication networks. In such a network, every edge is assigned a bandwidth,
+indicating the maximum amount of data that can be transferred along that edge.
+The communication between nodes is performed through the edges of a fixed
+spanning tree, whose bandwidth is the minimum bandwidth of its edges. A basic
+problem is to make the currently used spanning tree have maximum bandwidth by
+modifying the bandwidth of some edges. Here, one can add natural restrictions on
+Newton‑type algorithms for inverse optimization: weighted…                            1667
+
+
+the modifications. For example, maybe we can only increase the bandwidths of
+the edges, or we might have only limited amount of resources to do so. Minimiz-
+ing the total amount of bandwidth change can be modelled as minimizing the 𝓁1
+-norm. If our goal is to keep the new bandwidths as close to the original ones as
+possible, then the problem can be formulated using the 𝓁∞-norm. If the time of
+executing the modifications is considered and it is independent of the extent of
+the modification in bandwidth, then different variants of the Hamming distance
+are helpful: if the modifications are carried out consecutively then the sum-type
+Hamming distance, while if the modifications are made simultaneously then the
+bottleneck Hamming distance describes the objective. Similar applications are
+described by Faragó, Szentesi, and Szviatovszki [15].
+    The present work is part of a series of papers aiming to provide min-max char-
+acterizations and simple algorithms for inverse optimization problems under vari-
+ous objectives. In [6], we established a general framework based on a Newton-type
+approach for finding an optimal deviation vector, deriving an algorithm specifically
+for the weighted span objective to identify a ‘balanced’ or ‘fair’ deviation vec-
+tor. Here, we develop similar algorithms for two additional objective classes: the
+weighted bottleneck Hamming distance and weighted 𝓁∞-norm. We adopt the nota-
+tion, definitions, and terminology from this prior work.
+    Our algorithms are termed “Newton-type” in line with the convention set by
+Zhang and Liu [41]; see also Heuberger [21]. Recall that Newton’s method seeks to
+find a root x∗ of a function f. In our setting, we are given an input solution F ∗, and
+we want to change the cost function so that F ∗ becomes optimal. Thus we analyze
+the current optimal solution F, analogous to the current point x in Newton’s method.
+If the cost of F matches that of F ∗, we stop; similarly, Newton’s method terminates
+if x is a root of f. If not, we adjust the costs to eliminate F, that is, to make F ∗ and F
+have equal costs; in Newton’s method, the update involves moving from x to the root
+of the first-order approximation of f. Further explanation of the naming convention
+can be found in Remark 14.
+
+1.1 Previous work
+
+The inverse maximum-weight perfect matching problem was studied under the
+weighted bottleneck Hamming distance with bounds given on the modification by
+Liu and Yao [26] who provided a Newton-type algorithm. Later Tayyebi [33] sug-
+gested a faster algorithm that relies on binary search. Liu and Zhang [27] presented
+a binary search algorithm and a Newton-type algorithm for the inverse maximum-
+weight matching problem under the 𝓁∞-norm. Ahuja and Orlin [3] solved the inverse
+minimum-cut problem under the 𝓁∞-norm with non-negativity constrains using
+binary search. Duin and Volgenant [14] proposed a greedy algorithm for the inverse
+minimum spanning tree problem under the weighted bottleneck Hamming distance.
+The inverse linear assignment problem under the weighted bottleneck Hamming
+distance was studied by Duin and Volgenant [14] who proposed a greedy algorithm.
+The bounded case was solved by Tayyebi [33] using a binary search method. Wang,
+Yang, and Wu [36] also studied the inverse assignment problem but under the 𝓁∞
+1668                                                                      K. Bérczi et al.
+
+
+-norm with bounds given on the modification, and provided a binary search algo-
+rithm for solving it. Aman, Hassanpour and Tayyebi [4] provided an algorithm for
+the inverse maximum-cost base problem in matroids under the weighted bottleneck
+Hamming distance with bounds given on the modification. It is worth emphasizing
+that the algorithms of the current paper are applicable for all the above mentioned
+problems.
+   The inverse maximum-cost base problem, where the goal is to modify the costs
+so that each input element is contained in a maximum-cost basis, was considered
+by Li, Zhang, and Lai [25] under the 𝓁∞-norm objective when the costs can only be
+decreased, and by Zhang, Li, Lai, and Du [42] under any non-decreasing norm when
+the costs can only be increased. Using linear programming (LP) techniques, Ahuja
+and Orlin [2] proved that if an optimization problem can be modeled as an LP, then
+the same holds for the underlying inverse linear programming problem under 𝓁1- or
+𝓁∞-norm objectives. Furthermore, if the optimization problem is polynomially solv-
+able for linear cost functions, then the inverse counterparts with 𝓁1- and 𝓁∞-norms
+are also polynomially solvable. When the LP fulfils certain requirements, the inverse
+linear programming problem under the 𝓁∞-norm was solved by Zhang and Liu [40]
+using an LP-based algorithm, and by Zhang and Liu [41] using a Newton-type algo-
+rithm. Under the weighted bottleneck Hamming distance with bounds given on the
+modification, Tayyebi and Aman [34] proposed a binary search algorithm. Xiao-
+guang [38] studied the inverse optimization of submodular functions on digraphs
+under the 𝓁∞-norm with bounds given on the modification, and the author presented
+an LP-based algorithm for this problem. The inverse discrete p-median problem with
+bounds given on the modification, was considered by Burkard, Pleschiutschnig and
+Zhang [7] and they proposed a greedy algorithm for it. When p = 1 and the underly-
+ing graph is a tree, this problem was solved by Guan and Zhang under the weighted
+bottleneck Hamming distance using a binary search algorithm [20] and under the
+weighted 𝓁∞-norm using a greedy algorithm [19, 20]. Qian, Guan, Jia, Zhang, and
+Pardalos [30] proposed a binary search algorithm for the inverse vertex quickest
+1-center problem on a tree under the weighted 𝓁∞-norm with bounds given on the
+modification. Jiang, Liu, and Peng [22] provided a combinatorial algorithm for the
+inverse minimum-value flow problem when there are no parallel arcs in the network
+with bounds given on the modification under the weighted bottleneck Hamming dis-
+tance. The inverse generalized minimum-cost flow problem under the weighted bot-
+tleneck Hamming distance with bounds given on the modification was solved using
+an LP-based algorithm by Karimi, Aman, and Dolati [23] assuming we have access
+to dual solutions. The inverse generalized minimum-cost flow problem with bounds
+given on the modification was also studied by Tayyebi and Deaconu [35] who pro-
+posed combinatorial algorithms for both the weighted bottleneck Hamming distance
+and the weighted 𝓁∞-norm when there are no parallel arcs in the network. Ahma-
+dian, Bhaskar, Sanità, and Swamy [1] studied integral inverse optimization problems
+from an approximation point of view. They obtained tight or nearly-tight approxima-
+tion guarantees for various inverse optimization problems, and some of their results
+apply for 𝓁∞-norm as well. The paper [5] introduced inverse optimization problems
+with multiple cost functions, and studied the inverse minimum-cost s-t path, r-arbo-
+rescence, and bipartite perfect matching problems under the 𝓁1-norm.
+Newton‑type algorithms for inverse optimization: weighted…                       1669
+
+
+   Significant amount of work has been made on inverse optimization prob-
+lems when the underlying optimization problem uses a non-linear cost func-
+tion. Mohaghegh and Baroughi Bonab [28] studied the inverse min-max spanning
+r-arborescence problem under the weighted Hamming distance. Guan, He, Pardalos,
+and Zhang [18] considered the inverse max+sum spanning tree problem under the
+weighted Hamming distance. Dong, Li, and Yang [13] addressed the partial inverse
+min-max spanning tree problem under the weighted Hamming distance. Yang and
+Zhang [39] solved the inverse min-max spanning tree and the inverse maximum-
+capacity path problem under the 𝓁∞-norm. Lasserre [24] considered the inverse pol-
+ynomial optimization problem under the 𝓁∞-norm.
+   Most papers on inverse optimization consider algorithmic aspects, and so they
+do not provide a min-max characterization for the optimum value in question. A
+min-max characterization can be used to easily validate the optimality of a feasible
+solution. Frank and Hajdu [16] gave a min-max formula for the minimum modifica-
+tion of the cost function in the inverse arborescence problem, together with a sim-
+pler combinatorial algorithm than previous ones. Recently, Frank and Murota [17]
+developed a general min-max formula for the minimum of an integer-valued sepa-
+rable discrete convex function, where the minimum is taken over the set of integral
+elements of a box total dual integral polyhedron. Their approach covers and even
+extends a wide class of inverse combinatorial optimization problems. Nevertheless,
+our problems do not fit in the box-TDI framework as neither the bottleneck Ham-
+ming distance nor the 𝓁∞-norm is separable convex.
+
+1.2 Problem definitions
+
+To make the paper self-contained, we repeat the basic notation and definitions as
+summarized in [6].
+   We denote the sets of real and positive real numbers by ℝ and ℝ+, respec-
+tively. For a positive integer k, we use [k] ∶= {1, … , k}. Let S be a ground set of
+size n. Given subsets X, Y ⊆ S , the symmetric difference of X and Y is denoted by
+X △ Y ∶= (X⧵Y) ∪ (Y⧵X). By convention, we define min � = +∞ and max � = −∞
+.
+   Let S be a finite ground set, F ⊆ 2S be a collection of feasible solutions for an
+underlying optimization problem, F ∗ ∈ F be an input solution, c ∈ ℝS be costs,
+w ∈ ℝS+ be positive weights, and 𝓁 ∶ S → ℝ ∪ {−∞} and u ∶ S → ℝ ∪ {+∞} be
+lower and upper bounds, respectively, such that 𝓁 ≤ u. For the costs c ∈ ℝS , the cost
+                                        ∑
+of a set F ∈ F is defined as c(F) ∶= s∈F c(s) where c(s) represents the s-th compo-
+nent of c. For the weights w ∈ ℝS+, the total sum of its values over X is denoted by
+          ∑
+w(X) ∶= s∈X w(s), where the sum over the empty set is always considered to be 0
+and where w(s) represents the s-th component of w. Furthermore, we define
+          ∑
+1
+w
+  (X) ∶= s∈X w(s)1
+                   , and set ‖w‖-1 ∶= w1 (S). When the weights are rational numbers,
+the values can be re-scaled as to satisfy 1/w(s) being an integer for each s ∈ S .
+Throughout the paper, we assume that w is given in such a form without explicitly
+mentioning it, implying that w1 (X) is a non-negative integer for every X ⊆ S.
+1670                                                                         K. Bérczi et al.
+
+
+   We assume that an oracle O is also available that determines an optimal solution
+of the underlying optimization problem (S, F, c� ) for any costs c� ∈ ℝS.
+   In the constrained minimum-cost inverse optimization  ( problem under the weighted
+                                                                                )
+bottleneck Hamming distance objective, denoted by S, F, F ∗ , c, 𝓁, u, H∞,w (⋅) , we
+seek a deviation vector p ∈ ℝS such that
+
+(a) F ∗ is a minimum-cost member of F with respect to c − p,
+(b) p is within the bounds 𝓁 ≤ p ≤ u, and
+(c) H∞,w (p) ∶= max {w(s) ∣ s ∈ S, p(s) ≠ 0} is minimized.
+
+In the constrained minimum-cost inverse optimization problem under weighted 𝓁∞
+-norm objective, denoted by (S, F, F ∗ , c, 𝓁, u, ‖ ⋅ ‖∞,w ), condition (c) modifies to
+                  �                      �
+     ‖p‖∞,w ∶= max w(s) ⋅ �p(s)� �� s ∈ S is minimized.
+(c’)	
+
+ Due to the lower and upper bounds 𝓁 and u, it might happen that there exists no
+deviation vector p satisfying the requirements. A deviation vector is called feasible
+if it satisfies conditions (a) and (b), and optimal( if in addition it attains the mini-
+                                                                                   )
+mum in (c) or (c’). We denote the problems by S, F, F ∗ , c, −∞, +∞, H∞,w (⋅) and
+(S, F, F ∗ , c, −∞, +∞, ‖ ⋅ ‖∞,w ) when no bounds are given on the coordinates of p at
+all, and call these problems unconstrained.
+
+1.3 Our results
+
+ Our main results are simple, purely combinatorial algorithms that efficiently solve
+the above, general problems. The emphasis is not primarily on runtime but on intro-
+ducing a flexible and versatile framework that is capable of handling general inverse
+optimization problems where feasible solutions in F might have different sizes, and
+lower and upper bounds might be given on the coordinates of the deviation vector p.
+Note that since S is finite and F ⊆ 2S , our framework covers purely combinatorial
+problems.
+   The proposed algorithms differ from conventional inverse optimization
+approaches, such as binary search and LP-based methods. Instead, we suggest an
+algorithm that iteratively updates the costs, resembling the approach of Zhang and
+Liu [41] for the 𝓁∞-norm objective. They showed that if an inverse optimization
+problem can be reformulated as a certain maximization problem using dominant
+sets, then Radzik’s method [31] yields a strongly polynomial algorithm to find an
+optimal solution. In contrast, our algorithms are applicable to a broader range of
+inverse optimization problems, as they do not require a reformulation. Rather, we
+only rely on the fact that the underlying optimization problem is solvable. The refor-
+mulation proposed by Zhang and Liu [41] is generally 𝖭𝖯-hard, except in special
+cases such as the minimum spanning tree, minimum-cost flow (e.g., shortest path,
+assignment), maximum perfect matching, maximum intersection of two matroids
+Newton‑type algorithms for inverse optimization: weighted…                           1671
+
+
+(e.g., maximum weighted directed tree, minimum spanning tree with partition con-
+straints), the reverse bottleneck expansion problem, and fractional binary optimi-
+zation. Furthermore, we consider the constrained setting in which the coordinates
+of the deviation vector are ought to fall within given lower and upper bounds, and
+hence the costs have to be updated carefully. For these reasons, Radzik’s method
+cannot be applied to get a strongly polynomial algorithm.
+   For the weighted bottleneck Hamming distance objective, we present two algo-
+rithms: one that aligns with our series of Newton-type algorithms, and the second
+one that is faster. The first algorithm is a Newton-type algorithm that makes O(n)
+calls to the oracle O. In particular, the algorithm runs in strongly polynomial time,
+assuming that a strongly polynomial algorithm for the underlying optimization prob-
+lem is available. The second algorithm uses binary search and makes O(log n) calls
+to the oracle O. For the weighted 𝓁∞-norm objective, we give an algorithm for find-
+ing an optimal deviation vector that makes O(n ⋅ ‖w‖-1 ) calls to the oracle O. In par-
+ticular, the algorithm runs in strongly polynomial time for unit weights if the oracle
+O for the underlying optimization problem can be realized by a strongly polynomial
+algorithm. Furthermore, we provide a min-max characterization for the minimum
+size of an optimal deviation vector in the unconstrained setting, i.e. when 𝓁 ≡ −∞
+and u ≡ +∞.
+   A high-level description of our Newton-type algorithm is given by the following
+scheme.
+
+Step 1.	Choose p0 minimizing the objective such that 𝓁 ≤ p0 ≤ u, set c0 ∶= c − p0
+         and i ∶= 0.
+
+
+Step 2.	Let Fi be an optimal solution of the underlying optimization problem with
+         respect to ci.
+
+Step 3.	If ci (F ∗ ) = ci (Fi ), then pi is an optimal deviation vector and stop. Other-
+         wise, find pi+1 satisfying 𝓁 ≤ pi+1 ≤ u and (c − pi+1 )(F ∗ ) = (c − pi+1 )(Fi ),
+         and minimizing the objective. If no such pi+1 exists, then the problem is
+         infeasible and stop. Otherwise set ci+1 ∶= c − pi+1 and i ← i + 1, and go
+         back to Step 2.
+
+   The rest of the paper is organized as follows. Section 2 presents two strongly
+polynomial algorithms for the weighted bottleneck Hamming distance objective:
+one that fits in our framework, and another one that relies on binary search. The
+weighted 𝓁∞-norm objective is discussed in Sect. 3, where we first give an algorithm
+for the constrained setting, and then we provide a min-max characterization for the
+weighted 𝓁∞-norm of an optimal deviation vector in the unconstrained setting.
+1672                                                                           K. Bérczi et al.
+
+
+2 Weighted bottleneck Hamming distance objective
+
+As a warm-up, we first consider the problem of minimizing the weighted bottleneck
+Hamming distance. In Sect. 2.1, we show that there exists an optimal deviation vec-
+tor having a restricted structure. We characterize the feasibility of the problem in
+Sect. 2.2. A Newton-type algorithm is presented in Sect. 2.3, while a binary search
+algorithm is given in Sect. 2.4.
+
+2.1 Optimal deviation vectors
+
+Consider the constrained minimum-cost inverse optimization
+                                                    (           problem under
+                                                                            )    the
+weighted bottleneck Hamming distance objective S, F, F ∗ , c, 𝓁, u, H∞,w (⋅) , where
+w ∈ ℝS+ are positive weights. For ease of discussion, we define
+
+         ⎧                             ⎛                                               ⎞⎫
+         ⎪                             ⎜                                               ⎟⎪
+         ⎪                             ⎜                                               ⎟⎪
+         ⎪     �   �       �    �                         �                 �           ⎪
+                                       ⎜
+m ∶= max ⎨max∗ 𝓁(s) , max∗ −u(s) , max c(F ) − c(F) −
+                                          ∗
+                                                                 u(s) +            𝓁(s)⎟⎬.
+         ⎪                         F∈F ⎜                                               ⎟
+                                                                                       ⎟⎪
+           s∈F       s∈S⧵F
+         ⎪                             ⎜              s ∈ F∗ ⧵ F        s ∈ F ⧵ F∗
+         ⎪                             ⎜                                               ⎟⎪
+         ⎩                             ⎝               u(s) < 0          𝓁(s) > 0      ⎠⎪
+                                                                                        ⎭
+
+
+The intuition for the definition of m is the following. Assume that F ∈ F has smaller
+cost than F ∗ and that s is an element in F ∗ △ F whose cost can be changed arbitrar-
+ily, that is, 𝓁(s) = −∞ and u(s) = +∞. Then, the value of m is large enough to make
+the cost of F ∗ less than the one of F by setting p(s) to m if s ∈ F ∗ ⧵ F and to −m if
+s ∈ F ⧵ F ∗.
+    Recall that O denotes an algorithm that determines an optimal solution of the
+underlying optimization problem (S, F, c� ) for any costs c� ∈ ℝS . Observe that if
+O runs in strongly polynomial time, then the value of m can be determined in
+strongly polynomial time. To see this, define the new costs ̃        c ∈ ℝS by setting
+c(s) ∶= c(s) − u(s) if u(s) < 0 and s ∈ F ∗ , and by ̃
+̃                                                       c(s) ∶= c(s) − 𝓁(s) if 𝓁(s) > 0
+and s ∈ S ⧵ F ∗ , and by ̃c(s) ∶= c(s) otherwise. Let C̃ denote the cost of an optimal
+solution of (S, F, ̃ c) that can be determined using O . Then ̃             ̃ gives the
+                                                                  c(F ∗ ) − C
+third item in the definition of m, while the other two items are easy to determine.
+    For any 𝛿 ≥ 0, let p[𝛿|𝓁,u|w] ∶ S → ℝ be defined as
+
+                             ⎧ u(s) if s ∈ F ∗ , u(s) ≠ +∞ and w(s) ≤ 𝛿,
+                             ⎪ m if s ∈ F ∗ , u(s) = +∞ and w(s) ≤ 𝛿,
+                             ⎪
+           p[𝛿�𝓁,u�w] (s) ∶= ⎨ 𝓁(s) if s ∈ S ⧵ F ∗ , 𝓁(s) ≠ −∞ and w(s) ≤ 𝛿,
+                             ⎪ −m if s ∈ S ⧵ F ∗ , 𝓁(s) = −∞ and w(s) ≤ 𝛿,
+                             ⎪0     otherwise.
+                             ⎩
+Newton‑type algorithms for inverse optimization: weighted…                                                                               1673
+
+
+The following lemma shows that there exists an optimal deviation vector of special
+form.
+              (                          )
+Lemma 1 Let S, F, F ∗ , c, 𝓁, u, H∞,w (⋅) be a feasible minimum-cost inverse optimi-
+zation problem and let pOPT be an optimal deviation vector. Then, p[𝛿|𝓁,u|w] is also an
+optimal deviation vector, where 𝛿 ∶= H∞,w (pOPT ).
+
+Proof The lower and upper bounds 𝓁 ≤ p[𝛿|𝓁,u|w] ≤ u hold by definition, and hence
+(b) is satisfied.
+   Now we show that (a) holds. Let F ∈ F be an arbitrary solution. Then
+
+          (c − p[𝛿|𝓁,u|w] )(F ∗ ) − (c − p[𝛿|𝓁,u|w] )(F)
+                (                                ) (                        )
+                              ∑                            ∑
+             = c(F ∗ ) −           p[𝛿|𝓁,u|w] (s) − c(F) −   p[𝛿|𝓁,u|w] (s)
+                           s∈F ∗                                     s∈F
+                                    ∑                             ∑
+                   ∗
+             = c(F ) − c(F) −                 p[𝛿|𝓁,u|w] (s) +             p[𝛿|𝓁,u|w] (s)
+                                   s∈F ∗ ⧵F                      s∈F⧵F ∗
+                                        ∑                            ∑                        ∑                    ∑
+             = c(F ∗ ) − c(F) −                      u(s) −                      m+                    𝓁(s) +                (−m).
+                                    s ∈ F∗ ⧵ F                   s ∈ F∗ ⧵ F             s ∈ F ⧵ F∗              s ∈ F ⧵ F∗
+                                   u(s) ≠ +∞                     u(s) = +∞              𝓁(s) ≠ −∞               𝓁(s) = −∞
+                                     w(s) ≤ 𝛿                     w(s) ≤ 𝛿                  w(s) ≤ 𝛿             w(s) ≤ 𝛿
+
+    {                                 } {                                }
+If   s ∈ F ∗ ⧵F || u(s) = +∞, w(s) ≤ 𝛿 ∪ s ∈ F⧵F ∗ || 𝓁(s) = −∞, w(s) ≤ 𝛿 = �,
+then
+             (c − p[𝛿|𝓁,u|w] )(F ∗ ) − (c − p[𝛿|𝓁,u|w] )(F)
+                                            ∑                      ∑
+                = c(F ∗ ) − c(F) −                    u(s) +               𝓁(s)
+                                        s∈F ⧵F∗
+                                                               s∈F⧵F     ∗
+
+                                        u(s) ≠ +∞              𝓁(s) ≠ −∞
+                                         w(s) ≤ 𝛿               w(s) ≤ 𝛿
+                                            ∑                         ∑
+                       ∗
+                ≤ c(F ) − c(F) −                      pOPT (s) +              pOPT (s)
+                                        s∈F ⧵F∗
+                                                                  s∈F⧵F     ∗
+
+                                        u(s) ≠ +∞                 𝓁(s) ≠ −∞
+                                         w(s) ≤ 𝛿                  w(s) ≤ 𝛿
+                  = (c − pOPT )(F ∗ ) − (c − pOPT )(F)
+                  ≤ 0.
+                       {                                                         }     {                                             }
+Otherwise,         s ∈ F ∗ ⧵F || u(s) = +∞, w(s) ≤ 𝛿 ∪ s ∈ F⧵F ∗ || 𝓁(s) = −∞, w(s) ≤ 𝛿 ≠ �.
+Note that, by the feasibility of pOPT and by the definition of 𝛿 , we have 𝓁(s) ≤ 0 ≤ u(s)
+whenever w(s) > 𝛿 . Thus, we obtain
+1674                                                                                                           K. Bérczi et al.
+
+
+       (c − p[𝛿|𝓁,u|w] )(F ∗ ) − (c − p[𝛿|𝓁,u|w] )(F)
+                                      ∑                      ∑                    ∑                  ∑
+          = c(F ∗ ) − c(F) −                     u(s) −                m+                𝓁(s) +                (−m)
+                                 s ∈ F∗ ⧵ F               s ∈ F∗ ⧵ F        s ∈ F ⧵ F∗            s ∈ F ⧵ F∗
+                                 u(s) ≠ +∞                u(s) = +∞         𝓁(s) ≠ −∞             𝓁(s) = −∞
+                                  w(s) ≤ 𝛿                 w(s) ≤ 𝛿          w(s) ≤ 𝛿              w(s) ≤ 𝛿
+
+          ≤ c(F ∗ ) − c(F) −
+                                    ∑                        ∑
+                                               u(s) +                  𝓁(s) − 1 ⋅ m
+                                 s ∈ F∗ ⧵ F               s ∈ F ⧵ F∗
+                                 u(s) ≠ +∞                𝓁(s) ≠ −∞
+                                  w(s) ≤ 𝛿                 w(s) ≤ 𝛿
+
+          ≤ c(F ) − c(F) −
+                                    ∑                        ∑
+                 ∗
+                                               u(s) +                  𝓁(s) − m
+                                 s ∈ F∗ ⧵ F               s ∈ F ⧵ F∗
+                                  u(s) < 0                 𝓁(s) > 0
+                                  w(s) ≤ 𝛿                 w(s) ≤ 𝛿
+                                    ∑                        ∑
+          = c(F ∗ ) − c(F) −                   u(s) +                  𝓁(s) − m
+                                       ∗ ⧵F               s ∈ F ⧵ F∗
+                                 s∈F
+                                  u(s) < 0                 𝓁(s) > 0
+
+          ≤ 0,
+
+where the last inequality holds by the definition of m. Therefore, (a) is indeed
+satisfied.
+   Finally, to see (c), observe that H∞,w (p[𝛿|𝓁,u|w] ) ≤ 𝛿 = H∞,w (pOPT ), and hence
+p[𝛿|𝓁,u|w] is also optimal. 	                                                     ◻
+
+   By Lemma 1, it suffices to look for an optimal deviation vector among vectors
+of special form. It turns out that the value of 𝛿 can be chosen from the values of
+the weights w.
+               (                         )
+Lemma 2 Let S, F, F ∗ , c, 𝓁, u, H∞,w (⋅) be a feasible minimum-cost inverse optimi-
+zation problem and let 𝛿 ≥ 0 be such that p[𝛿|𝓁,u|w] is a feasible deviation vector.
+Then, the following hold.
+
+
+   (i) There exists s ∈ S with w(s) ≤ 𝛿 for which p[w(s)|𝓁,u|w] is also a feasible devia-
+       tion vector, or p[0|𝓁,u|w] is also a feasible deviation vector.
+  (ii) For any 𝛿 ′ ≥ 𝛿 , the deviation vector p[𝛿� |𝓁,u|w] is also feasible.
+
+Proof To see (i), consider the set {w(s� ) ∣ s� ∈ S, w(s� ) ≤ 𝛿}. If this set is empty, then
+by definition p[𝛿|𝓁,u|w] = p[0|𝓁,u|w]. If this set is non-empty, then let s ∈ S be such an
+element for which w(s) = max{w(s� ) ∣ s� ∈ S, w(s� ) ≤ 𝛿} holds. Then, by definition
+we have p[𝛿|𝓁,u|w] = p[w(s)|𝓁,u|w].
+Newton‑type algorithms for inverse optimization: weighted…                                                                 1675
+
+
+   For (ii), let F ∈ F be arbitrary. Note that, by the feasibility of p[𝛿|𝓁,u|w], we have
+𝓁(s) ≤ 0 ≤ u(s) whenever w(s) > 𝛿 . Then
+
+          (c − p[𝛿′ |𝓁,u|w] )(F ∗ ) − (c − p[𝛿′ |𝓁,u|w] )(F)
+                                          ∑                       ∑                 ∑                     ∑
+             = c(F ∗ ) − c(F) −                      u(s) −                 m+                𝓁(s) +                (−m)
+                                     s ∈ F∗ ⧵ F                s ∈ F∗ ⧵ F        s ∈ F ⧵ F∗            s ∈ F ⧵ F∗
+                                     u(s) ≠ +∞                 u(s) = +∞         𝓁(s) ≠ −∞             𝓁(s) = −∞
+                                      w(s) ≤ 𝛿 ′               w(s) ≤ 𝛿 ′        w(s) ≤ 𝛿 ′            w(s) ≤ 𝛿 ′
+
+             ≤ c(F ∗ ) − c(F) −
+                                         ∑                        ∑                 ∑                     ∑
+                                                    u(s) −                  m+                𝓁(s) +                (−m)
+                                     s ∈ F∗ ⧵ F                s ∈ F∗ ⧵ F        s ∈ F ⧵ F∗            s ∈ F ⧵ F∗
+                                     u(s) ≠ +∞                 u(s) = +∞         𝓁(s) ≠ −∞             𝓁(s) = −∞
+                                      w(s) ≤ 𝛿                  w(s) ≤ 𝛿          w(s) ≤ 𝛿              w(s) ≤ 𝛿
+
+             = (c − p[𝛿|𝓁,u|w] )(F ∗ ) − (c − p[𝛿|𝓁,u|w] )(F)
+
+             ≤ 0,
+
+
+concluding the proof of the lemma. 	                                                                                        ◻
+
+
+2.2 Characterizing feasibility
+
+We give a necessary and sufficient( condition for the feasibility
+                                                               )  of the minimum-
+cost inverse optimization problem S, F, F ∗ , c, 𝓁, u, H∞,w (⋅) .
+                                                        (                          )
+Lemma 3 The minimum-cost inverse optimization problem S, F, F ∗ , c, 𝓁, u, H∞,w (⋅)
+is feasible if and only if p[wmax |𝓁,u|w] is a feasible deviation vector, where
+            {            }
+wmax ∶= max w(s) || s ∈ S .
+
+Proof Clearly, if p[wmax |𝓁,u|w] is feasible, then so is the problem.
+   To see the other direction, assume that the problem is feasible. Let p be an opti-
+mal deviation vector and set 𝛿 ∶= H∞,w (p). Then, by Lemma 1, the deviation vector
+p[𝛿|𝓁,u|w] is also optimal. By Lemma 2, this implies the feasibility of p[wmax |𝓁,u|w]. 	 ◻
+
+
+
+
+2.3 Newton‑type algorithm
+
+We turn to the description of the algorithm and its analysis. The high-level idea
+is as described in the introduction. In each iteration, we determine an optimal
+solution F ∈ F using the oracle O as a black box. If the cost of F equals that of
+F ∗, then we stop. Otherwise, we modify the costs in such a way that F is “elimi-
+nated”, that is, F and F ∗ share the same cost with respect to the modified costs
+– hence the name Newton-type. The algorithm is presented as Algorithm 1.
+1676                                                                                          K. Bérczi et al.
+
+
+Algorithm 1  Algorithm for the constrained minimum-cost inverse optimization
+problem under the weighted bottleneck Hamming distance objective
+
+
+
+
+   It remains to prove the correctness and the running time of the algorithm.
+
+Theorem 4 Algorithm 1 determines an optimal
+                                         ( deviation vector, if exists,)    for the
+minimum-cost inverse optimization problem S, F, F ∗ , c, 𝓁, u, H∞,w (⋅) using O(n)
+calls to the oracle O.
+
+Proof We discuss the time complexity and the correctness of the algorithm
+separately.
+   Time complexity. We show that the algorithm terminates after at most n iterations
+of the while loop. To see this, observe that if F ∗ is not a minimum ci-cost member of
+F for some i, then either Si+1 ⊊ Si by the definition of 𝛿i+1, or the algorithm declares
+the problem to be infeasible. As the size of the set Si can decrease at most |S| = n
+times, the statement follows.
+
+
+
+
+Fig. 1  An illustration of Algorithm 1, where F = {F ∗ , A, B}, the top three rows show the values of 𝓁 , u,
+and w, respectively, and the costs c are presented at the bottom (Input). At each step, the set found by the
+oracle O is shown by a thick line
+Newton‑type algorithms for inverse optimization: weighted…                                  1677
+
+
+   Correctness. By the above, the algorithm terminates after a finite number of itera-
+tions. Observe that if the algorithm returns Infeasible, then it correctly recog-
+nizes the problem to be infeasible by Lemma 3.
+   Assume now that the algorithm terminates with returning a deviation vector
+p[𝛿i |𝓁,u|w] whose feasibility follows from the fact that the while loop ended. If F ∗ is a
+minimum c0-cost member of F , then we are clearly done. Otherwise, there exists an
+index q such that F ∗ is a minimum cq+1-cost member of F . Suppose to the contrary
+that p[𝛿q+1 |𝓁,u|w] is not optimal. Since the problem is feasible, by Lemma 1, there
+exists 𝛿 < 𝛿q+1 such that the deviation vector p[𝛿|𝓁,u|w] is optimal. Note that p[𝛿q |𝓁,u|w]
+is not a feasible deviation vector since (c − p[𝛿q |𝓁,u|w] )(F ∗ ) > (c − p[𝛿q |𝓁,u|w] )(Fq ). By
+Lemma 2, we get 𝛿q < 𝛿 < 𝛿q+1. However, by Lemma 2, we know that 𝛿 = w(s) for
+some s ∈ S , contradicting the definition of 𝛿q+1. 	                                           ◻
+
+   Note that Algorithm 1 runs in strongly polynomial time when we assume that
+O can be realized by a strongly polynomial-time algorithm. An illustration of the
+algorithm is given on Fig. 1.
+
+2.4 Binary search algorithm
+
+With the help of Lemma 2, one can refine the search for 𝛿 by using a binary
+search technique for the sorted set {w(s)}s∈S ; this approach decreases the number
+of oracle calls from O(n) to O(log n). The algorithm is stated as Algorithm 2.
+Algorithm 2  Binary search algorithm for the constrained minimum-cost inverse
+optimization problem under the weighted bottleneck Hamming distance objective
+1678                                                                        K. Bérczi et al.
+
+
+  Let us show the correctness and the running time of the algorithm.
+
+Theorem 5 Algorithm 2 determines an optimal
+                                         (    deviation vector, if) exists, for the
+minimum-cost inverse optimization problem S, F, F ∗ , c, 𝓁, u, H∞,w (⋅) using O(log n)
+calls to the oracle O.
+
+Proof We discuss the time complexity and the correctness of the algorithm
+separately.
+   Time complexity. The algorithm performs a binary search on the different values
+of w, which terminates after at most log n + 1 iterations.
+   Correctness. By the above, the algorithm terminates after a finite number of itera-
+tions. Observe that if the algorithm returns Infeasible, then it correctly recog-
+nizes the problem to be infeasible by Lemma 3. Otherwise, feasibility follows by the
+choice of w0 and Lemma 3, while optimality follows by Lemma 2. 	                   ◻
+
+
+
+
+3 Weighted 𝓵∞‑norm objective
+
+Next we consider the weighted 𝓁∞-norm objective. Similarly to the case of the
+weighted bottleneck Hamming distance, we first prove that there exists an optimal
+deviation vector of a special form in Sect. 3.1. We characterize the feasibility of
+the problem in Sect. 3.2. Then we present an algorithm for the constrained set-
+ting in Sect. 3.3. Finally, we give a min-max characterization of the weighted 𝓁∞
+-norm of an optimal deviation vector in the unconstrained setting in Sect. 3.4.
+
+3.1 Optimal deviation vectors
+
+Consider the constrained minimum-cost inverse optimization problem under the
+weighted 𝓁∞-norm objective (S, F, F ∗ , c, 𝓁, u, ‖ ⋅ ‖∞,w ), where w ∈ ℝS+ are positive
+weights. For any 𝛿 ≥ 0, let p[𝛿|𝓁,u|w] ∶ S → ℝ be defined as
+
+                          ⎧ 𝓁(s)    if s ∈ F ∗ and 𝛿∕w(s) < 𝓁(s),
+                          ⎪
+                          ⎪ 𝛿∕w(s) if s ∈ F and 𝓁(s) ≤ 𝛿∕w(s) ≤ u(s),
+                                             ∗
+
+                          ⎪ u(s)    if s ∈ F ∗ and u(s) < 𝛿∕w(s),
+        p[𝛿�𝓁,u�w] (s) ∶= ⎨
+                            𝓁(s)    if s ∈ S ⧵ F ∗ and − 𝛿∕w(s) < 𝓁(s),
+                          ⎪
+                          ⎪ −𝛿∕w(s) if s ∈ S ⧵ F and 𝓁(s) ≤ −𝛿∕w(s) ≤ u(s),
+                                                 ∗
+
+                          ⎪ u(s)    if s ∈ S ⧵ F ∗ and u(s) < −𝛿∕w(s).
+                          ⎩
+
+We simply write p[𝛿||w] when 𝓁 ≡ −∞ and u ≡ +∞. The following technical lemma
+shows that there exists an optimal deviation vector of special form.
+Newton‑type algorithms for inverse optimization: weighted…                                                       1679
+
+              �                          �
+Lemma 6 Let S, F, F ∗ , c, 𝓁, u, ‖ ⋅ ‖∞,w be a feasible minimum-cost inverse optimi-
+zation problem and let pOPT be an optimal deviation vector. Then p[𝛿|𝓁,u|w] is also an
+                                            {                      }
+optimal deviation vector, where 𝛿 ∶= max w(s) ⋅ |pOPT (s)| || s ∈ S .
+
+Proof The lower and upper bounds 𝓁 ≤ p[𝛿|𝓁,u|w] ≤ u hold by definition, hence (b) is
+satisfied.
+   Now we show that (a) holds. The assumption 𝓁 ≤ pOPT ≤ u and the definition of
+𝛿 imply that −𝛿∕w(s) ≤ pOPT (s) ≤ u(s) and 𝓁(s) ≤ pOPT (s) ≤ 𝛿∕w(s) hold for every
+s ∈ S . Let F ∈ F be an arbitrary solution. Then
+  (c − p[𝛿|𝓁,u|w] )(F ∗ ) − (c − p[𝛿|𝓁,u|w] )(F)
+        (                                ) (                        )
+                      ∑                            ∑
+               ∗
+     = c(F ) −             p[𝛿|𝓁,u|w] (s) − c(F) −   p[𝛿|𝓁,u|w] (s)
+                    s∈F ∗                                      s∈F
+                             ∑                             ∑
+             ∗
+      = c(F ) − c(F) −                 p[𝛿|𝓁,u|w] (s) +             p[𝛿|𝓁,u|w] (s)
+                            s∈F ∗ ⧵F                      s∈F⧵F ∗
+                                       ∑           𝛿                   ∑                           ∑
+      = c(F ∗ ) − c(F) −                               −                             u(s) +                    𝓁(s)
+                                                  w(s)
+                               s ∈ F∗ ⧵ F                      s ∈ F∗ ⧵ F                       s ∈ F ⧵ F∗
+                              𝛿∕w(s) ≥ 𝓁(s)                   u(s) < 𝛿∕w(s)                   −𝛿∕w(s) < 𝓁(s)
+                              𝛿∕w(s) ≤ u(s)
+                                 (        )
+                   ∑                  𝛿
+         +                         −
+                                     w(s)
+               s∈F⧵F        ∗
+
+           −𝛿∕w(s) ≥ 𝓁(s)
+           −𝛿∕w(s) ≤ u(s)
+                         ∑            ∑
+      ≤ c(F ∗ ) − c(F) −   pOPT (s) +   pOPT (s)
+                            s∈F ∗ ⧵F              s∈F⧵F ∗
+                      ∗
+      = (c − pOPT )(F ) − (c − pOPT )(F)
+      ≤ 0,
+
+where the last inequality holds by the feasibility of pOPT.
+   Finally, to see that (c) holds for p[𝛿|𝓁,u|w], recall that by the defini-
+tion of 𝛿 , we have 𝓁(s) ≤ 𝛿∕w(s) and −𝛿∕w(s) ≤ u(s) for each s ∈ S , thus
+‖p[𝛿�𝓁,u�w] ‖∞,w ≤ 𝛿 = ‖pOPT ‖∞,w. This concludes the proof of the lemma. 	 ◻
+
+   By Lemma 6, it suffices to look for an optimal deviation vector among vectors of
+special form. Furthermore, we get the following useful property of deviation vectors
+of such form.
+              �                          �
+Lemma 7 Let S, F, F ∗ , c, 𝓁, u, ‖ ⋅ ‖∞,w be a feasible minimum-cost inverse optimi-
+zation problem and let 𝛿 ≥ 0 be such that p[𝛿|𝓁,u|w] is a feasible deviation vector.
+Then for any 𝛿 ′ ≥ 𝛿, the deviation vector p[𝛿� |𝓁,u|w] is also feasible.
+
+Proof Let F ∈ F be an arbitrary solution. Then
+1680                                                                                             K. Bérczi et al.
+
+
+  (c − p[𝛿� |𝓁,u|w] )(F ∗ ) − (c − p[𝛿� |𝓁,u|w] )(F)
+                                      ∑                            ∑           𝛿�            ∑
+     = c(F ∗ ) − c(F) −                            𝓁(s) −                           −                   u(s)
+                                                                              w(s)
+                                  s ∈ F∗ ⧵ F                   s ∈ F∗ ⧵ F                s ∈ F∗ ⧵ F
+                              𝛿 � ∕w(s) < 𝓁(s)             𝛿 � ∕w(s) ≥ 𝓁(s)            u(s) < 𝛿 � ∕w(s)
+                                                           𝛿 � ∕w(s) ≤ u(s)
+                                                                   (        )
+                      ∑                               ∑                  𝛿�               ∑
+        +                           𝓁(s) +                           −         +                      𝓁(s)
+                                                                       w(s)
+                s ∈ F ⧵ F∗                        s ∈ F ⧵ F∗                         s ∈ F ⧵ F∗
+             −𝛿 � ∕w(s) < 𝓁(s)               −𝛿 � ∕w(s) ≥ 𝓁(s)                    u(s) < −𝛿 � ∕w(s)
+                                             −𝛿 � ∕w(s) ≤ u(s)
+                                     ∑                            ∑           𝛿             ∑
+     ≤ c(F ∗ ) − c(F) −                           𝓁(s) −                          −                   u(s)
+                                                                             w(s)
+                                 s ∈ F∗ ⧵ F                  s ∈ F∗ ⧵ F                s ∈ F∗ ⧵ F
+                              𝛿∕w(s) < 𝓁(s)               𝛿∕w(s) ≥ 𝓁(s)               u(s) < 𝛿∕w(s)
+                                                          𝛿 � ∕w(s) ≤ u(s)
+                                                                 (         )
+                     ∑                               ∑                 𝛿               ∑
+        +                           𝓁(s) +                         −         +                     𝓁(s)
+                                                                     w(s)
+                s ∈ F ⧵ F∗                      s ∈ F ⧵ F∗                         s ∈ F ⧵ F∗
+             −𝛿∕w(s) < 𝓁(s)                 −𝛿∕w(s) ≥ 𝓁(s)                      u(s) < −𝛿∕w(s)
+                                             −𝛿∕w(s) ≤ u(s)
+       = (c − p[𝛿|𝓁,u|w] )(F ∗ ) − (c − p[𝛿|𝓁,u|w] )(F)
+       ≤ 0,
+
+concluding the proof of the lemma. 	                                                                          ◻
+
+
+
+
+3.2 Characterizing feasibility
+
+We give a necessary and sufficient
+                             �     condition for the feasibility
+                                                          �      of the minimum-cost
+inverse optimization problem S, F, F ∗ , c, 𝓁, u, ‖ ⋅ ‖∞,w .
+              �                          �
+Lemma 8 Let S, F, F ∗ , c, 𝓁, u, ‖ ⋅ ‖∞,w be a minimum-cost inverse optimization
+problem. For any F ∈ F , definewhich contradicts the definition of
+                                 {                      }
+                        A1 ∶= s ∈ F ∗ ⧵ F || u(s) = +∞ ,
+                                 {                       }
+                        A2 ∶= s ∈ F ⧵ F ∗ || 𝓁(s) = −∞ ,
+
+and
+
+                               ⎧ �        1
+                               ⎪       1    � 1 if A1 ∪ A2 ≠ �,
+                       W(F) ∶= ⎨          +
+                                      w(s) s∈A w(s)
+                               ⎪ s∈A1         2
+                               ⎩0                   otherwise.
+Let
+Newton‑type algorithms for inverse optimization: weighted…                                                              1681
+
+              �                                      �
+     m1 ∶= max w(s) ⋅ �u(s)� �� s ∈ F ∗ , u(s) ≠ +∞ ,
+              �                                        �
+     m2 ∶= max w(s) ⋅ �𝓁(s)� �� s ∈ S ⧵ F ∗ , 𝓁(s) ≠ −∞ ,
+               ⎛       ⎛                                                ⎞⎞
+               ⎜       ⎜                                                ⎟⎟
+               ⎜       ⎜ ∗                 �                 �          ⎟⎟
+     m3 ∶= max ⎜W(F) ⋅ ⎜c(F ) − c(F) −            u(s) +            𝓁(s)⎟⎟.
+           F∈F
+               ⎜       ⎜               s ∈ F∗ ⧵ F        s ∈ F ⧵ F∗     ⎟⎟
+               ⎜       ⎜                                                ⎟⎟
+               ⎝       ⎝               u(s) ≠ +∞         𝓁(s) ≠ −∞      ⎠⎠
+
+Then, the problem is feasible if and only if p[m|𝓁,u|w] is a feasible deviation vector for
+                                           m ∶= max{0, m1 , m2 , m3 }.
+
+Proof Clearly, if p[m|𝓁,u|w] is feasible, then so is the problem.
+   To see the other direction, suppose to the contrary that p[m|𝓁,u|w] is not feasible,
+but there exists a feasible deviation vector p. Then there exists F ∈ F such that
+
+    0 < (c − p[m|𝓁,u|w] )(F ∗ ) − (c − p[m|𝓁,u|w] )(F)
+                                                                                                            (           )
+                                ∑                        ∑      m           ∑                     ∑               m
+      = c(F ∗ ) − c(F) −                 u(s) −                     +                 𝓁(s) +                 −
+                                                               w(s)                                              w(s)
+                           s ∈ F∗ ⧵ F             s ∈ F∗ ⧵ F             s ∈ F ⧵ F∗            s ∈ F ⧵ F∗
+                           u(s) ≠ +∞              u(s) = +∞             𝓁(s) ≠ −∞              𝓁(s) = −∞
+
+                                                             ⎛                                 ⎞
+                                                             ⎜                                 ⎟
+                                                             ⎜                                 ⎟
+                             ∑                 ∑             ⎜     ∑      1         ∑      1   ⎟
+      = c(F ∗ ) − c(F) −            u(s) +           𝓁(s) − m⎜
+                                                                         w(s)
+                                                                              +
+                                                                                          w(s) ⎟.
+                               ∗ ⧵F                ∗         ⎜       ∗                  ∗      ⎟
+                         s∈F               s∈F⧵F             ⎜ s∈F ⧵F           s∈F⧵F          ⎟
+                         u(s) ≠ +∞         𝓁(s) ≠ −∞         ⎜ u(s) = +∞
+                                                             ⎝                  𝓁(s) = −∞      ⎟
+                                                                                               ⎠
+
+If {s ∈ F ∗ ⧵F ∣ u(s) = +∞} ∪ {s ∈ F⧵F ∗ ∣ 𝓁(s) = −∞} = �, then we obtain
+                                     ∑                    ∑
+            0 < c(F ∗ ) − c(F) −              u(s) +             𝓁(s) − m ⋅ 0
+                                 s ∈ F∗ ⧵ F           s ∈ F ⧵ F∗
+                                 u(s) ≠ +∞           𝓁(s) ≠ −∞
+                                  ∑             ∑
+              ≤ c(F ∗ ) − c(F) −       p(s) +        p(s)
+                                             s∈F ∗ ⧵F          s∈F⧵F ∗
+                  (                 ) (           )
+                 = c(F ∗ ) − p(F ∗ ) − c(F) − p(F)
+                 ≤ 0,
+where the last inequality holds since p is feasible, leading to a contradiction.
+  If {s ∈ F ∗ ⧵F ∣ u(s) = +∞} ∪ {s ∈ F⧵F ∗ ∣ 𝓁(s) = −∞} ≠ �, then we obtain
+                                   ∑                    ∑                 m
+         0 < c(F ∗ ) − c(F) −               u(s) +              𝓁(s) −        ,
+                                                                        W(F)
+                              s∈F ⧵F∗
+                                                   s∈F⧵F      ∗
+
+                              u(s) ≠ +∞            𝓁(s) ≠ −∞
+which contradicts the definition of m. 	                                                                                   ◻
+1682                                                                       K. Bérczi et al.
+
+
+3.3 Algorithm
+
+We turn to the description of the algorithm and its analysis, which is similar to that
+of Algorithm 1. The algorithm is presented as Algorithm 3.
+Algorithm 3  Algorithm for the constrained minimum-cost inverse optimization
+problem under the weighted 𝓁∞-norm objective
+
+
+
+
+   For proving the correctness and the running time of the algorithm, we need the
+following lemmas.
+
+Lemma 9 If F ∗ is not a minimum ci-cost member of F for some i, then either 𝛿i+1 > 0
+and Si+1 ⊆ Si , or Algorithm 3 declares the problem to be infeasible.
+
+Proof The statement follows from the definition of 𝛿i+1 and from Lemma 9. 	 ◻
+
+Lemma 10 If F ∗ is not a minimum ci-cost member of F for some i, then
+ci+1 (F ∗ ) = ci+1 (Fi ), or Si+1 ⊊ Si , or Algorithm 3 declares the problem to be
+infeasible.
+
+Proof Let i be an index such that F ∗ is not a minimum ci-cost member of F , and
+assume that Algorithm 3 does not declare the problem to be infeasible in the ith
+step. Then Si+1 ⊆ Si holds by Lemma 9. If Si+1 ⊊ Si , then we are done, hence con-
+sider the case Si+1 = Si . Then
+                                      c (F ∗ ) − ci (Fi )
+                             𝛿i+1 = 1 ( i                   ),
+                                       (F ∗△F)∩S
+                                    w             i       i
+
+hence we get
+Newton‑type algorithms for inverse optimization: weighted…                                      1683
+
+
+                                                                       ∑            𝛿i+1
+              ci+1 (F ∗ ) − ci+1 (Fi ) = ci (F ∗ ) − ci (Fi ) −                          = 0,
+                                                                                    w(s)
+                                                                  s∈(F ∗ △Fi )∩Si
+
+concluding the proof of the lemma. 	                                                                ◻
+
+Lemma 11 If F ∗ is not a minimum ci-cost member of F for some i, then
+   1(                 )    (                )    (                    )    (                     )
+   w
+      (Fi ⧵ F ∗ ) ∩ Si − w1 (Fi ∩ F ∗ ) ∩ Si > w1 (Fi+1 ⧵ F ∗ ) ∩ Si+1 − w1 (Fi+1 ∩ F ∗ ) ∩ Si+1
+
+or Si+1 ⊊ Si , or Algorithm 3 declares the problem to be infeasible.
+
+Proof Let i be an index such that F ∗ is not a minimum ci-cost member of F , and
+assume that Algorithm 3 does not declare the problem to be infeasible in the i-th
+step and that Si+1 = Si . Then ci+1 (F ∗ ) = ci+1 (Fi ) holds by Lemma 10. Thus we get
+         0 < ci+1 (F ∗ ) − ci+1 (Fi+1 )
+           = ci+1 (Fi ) − ci+1 (Fi+1 )
+             (                                                       )
+                                ∑          𝛿i+1         ∑       𝛿i+1
+           = ci (Fi ) −                          +
+                           s∈(Fi ∩F ∗ )∩Si
+                                           w(s) s∈(F ⧵F∗ )∩S w(s)
+              (                                                             )
+                                                        i     i
+
+                                      ∑          𝛿i+1        ∑         𝛿i+1
+            − ci (Fi+1 ) −                             +
+                               s∈(Fi+1 ∩F ∗ )∩Si
+                                                 w(s) s∈(F ⧵F∗ )∩S w(s)
+                                               [ (                                )]
+                                                            i+1      i
+
+                                                 1                 ) 1(
+           = ci (Fi ) − ci (Fi+1 ) + 𝛿i+1 ⋅ w (Fi ⧵ F ) ∩ Si − w (Fi ∩ F ∗ ) ∩ Si
+                                                          ∗
+
+                        [ (                          )    (                   )]
+             − 𝛿i+1 ⋅ w1 (Fi+1 ⧵ F ∗ ) ∩ Si+1 − w1 (Fi+1 ∩ F ∗ ) ∩ Si+1 .
+
+Since 𝛿i+1 > 0 by Lemma 9 and ci (Fi ) − ci (Fi+1 ) ≤ 0 by the optimality of Fi with
+respect to ci , the statement follows. 	                                         ◻
+
+   With the help of Lemmas 9–11, we are ready to prove the main result of this
+section.
+
+Theorem 12 Algorithm 3 determines an optimal deviation vector, if exists, for
+the minimum-cost inverse optimization problem (S, F, F ∗ , c, 𝓁, u, ‖ ⋅ ‖∞,w ) using
+O(n ⋅ ‖w‖-1 ) calls to the O.
+
+Proof We discuss the time complexity and the correctness of the algorithm
+separately.
+   Time complexity. Recall that w ∈ ℝS+ is scaled so that w1 (X) is an integer for each
+X(⊆ S . Between) two (iterations of the   ) while loop, the size of the set Si or the value of
+1
+w
+  (F i ⧵F ∗
+            ) ∩ S i − 1
+                      w
+                        (Fi ∩ F ∗
+                                  ) ∩ S i  strictly decreases by Lemma 11. The size of Si
+can decrease at most n times. Between two iterations where the size of Si decreases,
+1684                                                                                         K. Bérczi et al.
+
+               (               )    (                )
+the value of w1 (Fi ⧵F ∗ ) ∩ Si − w1 (Fi ∩ F ∗ ) ∩ Si can decrease at most 2‖w‖-1 times.
+Hence the total number of iterations is O(n ⋅ ‖w‖-1 ).
+   Correctness. By the above, the procedure terminates after a finite number of
+iterations. First, we show that if the the algorithm returns Infeasible, then
+it correctly recognizes the problem to be infeasible. To see this, assume that the
+algorithm terminated in the ith step and declared the problem to be infeasible.
+Then (F ∗ △ Fi ) ∩ Si = � , so by the definitions of Si and m as in Lemma 8, we
+obtain
+   (c − p[m|𝓁,u|w] )(F ∗ ) − (c − p[m|𝓁,u|w] )(Fi )
+                                  ∑                      ∑      m         ∑
+      = c(F ∗ ) − c(Fi ) −                  u(s) −                  +           𝓁(s)
+                                                               w(s)
+                              s∈F   ∗⧵F
+                                          i          s∈F ⧵F∗          s∈F⧵F   ∗
+
+                              u(s) ≠ +∞              u(s) = +∞        𝓁(s) ≠ −∞
+                            (         )
+                 ∑                m
+         +                    −
+                                 w(s)
+            s ∈ F ⧵ F∗
+            𝓁(s) = −∞
+                              ∑               ∑
+      = c(F) − c(Fi ) −            u(s) +           𝓁(s)
+                              s∈F ∗ ⧵Fi        s∈Fi ⧵F ∗
+                                ∗
+        = (c − p[di |𝓁,u|w] )(F ) − (c − p[di |𝓁,u|w] )(Fi )
+         > 0,
+hence the problem is infeasible by Lemma 8.
+   Assume now that the algorithm terminates with returning a deviation vector
+whose feasibility follows from the fact that the while loop ended. If F ∗ is a minimum
+c0-cost member of F , then we are clearly done. Otherwise, there exists an index q
+such that F ∗ is a minimum cq+1-cost member of F . Suppose to the contrary that
+p[dq+1 |𝓁,u|w] is not optimal. By Lemma 6, there exists 𝛿 < dq+1 such that the deviation
+vector p[𝛿|𝓁,u|w] is optimal. Thus, by Lemma 10, we get
+
+
+
+
+Fig. 2  An illustration of Algorithm 3, where F = {F ∗ , A, B}, the weights are identically 1, the top two
+rows show the values of 𝓁 and u, respectively, and the costs c are presented at the bottom (Input). At each
+step, the set found by the oracle O is shown by a thick line
+Newton‑type algorithms for inverse optimization: weighted…                                              1685
+
+
+   0 ≥ (c − p[𝛿|𝓁,u|w] )(F ∗ ) − (c − p[𝛿|𝓁,u|w] )(Fq )
+                                  ∑             𝛿             ∑
+     = c(F ∗ ) − c(Fq ) −                           −                     u(s)
+                                    ∗⧵F
+                                              w(s)              ∗⧵F
+                              s∈F         q               s∈F         q
+                            𝛿∕w(s) ≤ u(s)                u(s) < 𝛿∕w(s)
+                                                             (          )
+                  ∑                             ∑                  𝛿
+       +                        𝓁(s) +                         −
+                                                                 w(s)
+             s ∈ Fq ⧵ F ∗                  s ∈ Fq ⧵ F ∗
+          −𝛿∕w(s) < 𝓁(s)                𝓁(s) ≤ −𝛿∕w(s)
+                                   ∑            dq+1            ∑                         ∑
+     > c(F ∗ ) − c(Fq ) −                               −                    u(s) +                   𝓁(s)
+                                                w(s)
+                              s ∈ F ∗ ⧵ Fq                  s ∈ F ∗ ⧵ Fq              s ∈ Fq ⧵ F ∗
+                          dq+1 ∕w(s) ≤ u(s)              u(s) < dq+1 ∕w(s)         −dq+1 ∕w(s) < 𝓁(s)
+                                 (          )
+                  ∑                   dq+1
+       +                           −
+                                      w(s)
+             s ∈ Fq ⧵ F ∗
+        𝓁(s) ≤ −dq+1 ∕w(s)
+     = cq+1 (F ∗ ) − cq+1 (Fq )
+     = 0,
+
+a contradiction. This concludes the proof of the theorem. 	                                                 ◻
+
+   Note that the Algorithm 3 runs in strongly polynomial time assuming that O
+can be realized by a strongly polynomial-time algorithm. An illustration of the
+algorithm is given on Fig. 2.
+
+
+3.4 Min‑max theorem
+
+With the help of Lemmas 6 and 7, we provide a min-max characterization for
+the weighted infinity norm of an optimal deviation vector in the unconstrained
+setting. The interpretation of this min-max result is the following. Each member
+F ∈ F requires some extent of modification in the costs. Clearly, the minimum
+extent of modification is at least the maximum of the extent of those require-
+ments. However, by the min-max result, we do not need to make a larger modifi-
+cation than that. Therefore, given a member F ∈ F requiring the largest extent of
+modification 𝛿 , we know that p[𝛿||w] is optimal. Note that Algorithm 3 traces such
+a member.
+                                            ∑
+   Recall that we use the notation w1 (X) ∶= s∈X w(s)
+                                                  1
+                                                     .
+                 �                            �
+Theorem 13 Let S, F, F ∗ , c, −∞, +∞, ‖ ⋅ ‖∞,w be a minimum-cost inverse optimi-
+zation problem. Then
+1686                                                                                 K. Bérczi et al.
+
+                  �                                           �
+               min ‖p‖∞,w �� p is a feasible deviation vector
+                      �            �                                  ��
+                                      c(F ∗ ) − c(F) �
+                                                     � F ∈ F, F ≠ F
+                                                                    ∗
+                 = max 0, max          1
+                                                                         .
+                                       w
+                                         (F ∗ △ F)
+
+Proof By Lemma 6, there exists 𝛿 ≥ 0 such that p[𝛿||w] is an optimal deviation vector
+for the problem (S, F, F ∗ , c, −∞, +∞, ‖ ⋅ ‖∞,w ).
+   For ease of discussion, let us define
+                                 {                                 }
+                                   c(F ∗ ) − c(F) |
+                                                  | F ∈ F, F ≠ F
+                                                                 ∗
+                   d ∶= max         1
+                                                                     .
+                                      (F ∗ △ F)
+                                    w
+
+Our goal is to show that 𝛿 = max{0, d}.
+    If F ∗ is a minimum c-cost member of F , then we are clearly done. Otherwise,
+𝛿, d > 0 holds, and it suffices to show 𝛿 = d . Let F ∈ F , F ≠ F ∗ be arbitrary. Since
+p[𝛿||w] is feasible, we obtain
+       0 ≥ (c − p[𝛿||w] )(F ∗ ) − (c − p[𝛿||w] )(F)
+           (                        ) (                                 (        ))
+                        ∑ 𝛿                           ∑ 𝛿          ∑         𝛿
+                  ∗
+         = c(F ) −                    − c(F) −                  −         −
+                       s∈F ∗
+                              w(s)                  s∈F∩F ∗
+                                                            w(s) s∈F⧵F∗     w(s)
+                                 ∑      𝛿
+         = c(F ∗ ) − c(F) −
+                                       w(s)
+                              s∈F △F
+                                  ∗
+
+
+         = c(F ) − c(F) − 𝛿 ⋅ w1 (F ∗ △ F).
+                ∗
+
+
+This implies
+                                          c(F ∗ ) − c(F)
+                                     𝛿≥    1
+                                                           ,
+                                           w
+                                             (F ∗ △ F)
+
+hence 𝛿 ≥ d . To prove 𝛿 ≤ d , it is enough to show that p[d||w] is a feasible deviation
+vector. For any F ∈ F , F ≠ F ∗, we have
+
+   (c − p[d||w] )(F ∗ ) − (c − p[d||w] )(F) = c(F ∗ ) − c(F) − d ⋅ w1 (F ∗ △ F)
+                                                               c(F ∗ ) − c(F)
+                                          ≤ c(F ∗ ) − c(F) −   1
+                                                                                ⋅ w1 (F ∗ △ F)
+                                                               w
+                                                                 (F ∗ △ F)
+                                          = 0,
+which means that p[d||w] is indeed feasible. 	                                                   ◻
+
+Remark 14 Theorem 13 provides further insight into why the proposed framework is
+referred to as Newton-type. For simplicity, consider a minimum-cost inverse optimi-
+zation problem of the form (S, F, F ∗ , c, −∞, +∞, ‖ ⋅ ‖∞,w ) with uniform weights set
+to 1, and assume that the optimal solution is nonzero, meaning that the maximum in
+Newton‑type algorithms for inverse optimization: weighted…                                         1687
+
+
+Theorem 13 is attained by the second term. The min-max result states that a devia-
+tion vector p∗ with 𝛿 ∗ ∶= ‖p∗ ‖∞,w is optimal if and only if
+                        {                                       }
+                          c(F ∗ ) − c(F)    ∗|
+                  max                    − 𝛿 | F ∈ F, F ≠ F   ∗
+                                                                  = 0.
+                           |F ∗ △ F|
+Thus, finding 𝛿 ∗ is equivalent to locating a root of the function
+                               {                                      }
+                                  c(F ∗ ) − c(F)
+                 f (𝛿) ∶= max                    − 𝛿 || F ∈ F, F ≠ F ∗ .
+                                    |F ∗ △ F|
+Our algorithms, similar to Newton’s method, aim to find a root of this function: in
+the i-th iteration, 𝛿i+1 is computed as the solution to the equation |F∗ △F |i − 𝛿 = 0.
+                                                                    c(F ∗ )−c(F )
+                                                                                       i
+
+
+
+
+4 Conclusions
+
+In this paper, we considered general minimum-cost inverse optimization problems
+in the constrained setting, i.e. with lower and upper bounds on the coordinates of
+the deviation vector. We provided simple, purely combinatorial algorithms for the
+weighted bottleneck Hamming distance and 𝓁∞-norm objectives. The algorithms
+follow a scheme that resembles Newton’s algorithm. For the weighted bottleneck
+Hamming distance objective, the algorithm runs in strongly polynomial time,
+assuming that a strongly polynomial algorithm for the underlying optimization prob-
+lem is available. We also exhibited a faster binary search algorithm for this objec-
+tive. For the weighted 𝓁∞-norm objective, the algorithm runs in pseudo-polynomial
+time in general and in strongly polynomial time for unit weights, assuming that a
+strongly polynomial algorithm for the underlying optimization problem is available.
+   Despite the extensive literature on inverse optimization, only few results are
+known when the desired deviation vector p is required to be integral, see e.g. [1,
+16, 17]. If 𝓁 , u and c are integral vectors, then the deviation vector p[𝛿|𝓁,u|w] defined
+in the bottleneck Hamming distance case is integral independently from the choice
+of 𝛿 , and therefore the fractional and integral optima coincide. For the unweighted
+𝓁∞-norm objective, i.e. when in addition w ≡ 1 holds, the deviation vector p[𝛿|𝓁,u|w]
+might not be integral as we assign value 𝛿 to some of its coordinates. However, Lem-
+mas 6 and 7 together imply that if p[𝛿|𝓁,u|w] is an optimal fractional deviation vector,
+then p[⌈𝛿⌉�𝓁,u�w] is an optimal integral deviation vector.
+   We close the paper by mentioning an open problem. Lemmas 1 and 6 prove the
+existence of optimal deviation vectors that have strong structural properties. How-
+ever, these statements do not give any information on the complete set of optimal
+deviation vectors. Therefore, it remains an interesting question whether one can give
+a characterization of the set of all optimal deviation vectors.
+Acknowledgements The authors are grateful to the anonymous reviewers for their helpful comments
+and, in particular, for suggesting the open problem. This research has been implemented with the support
+1688                                                                                         K. Bérczi et al.
+
+
+provided by the Lendület Programme of the Hungarian Academy of Sciences – grant number LP2021-
+1/2021, by the Ministry of Innovation and Technology of Hungary – grant number ELTE TKP 2021-
+NKTA-62, and by Dynasnet European Research Council Synergy project – grant number ERC-2018-
+SYG 810115.
+
+Funding Open access funding provided by Eötvös Loránd University.
+
+Data availability statement No new data were created or analysed in this study. Data sharing is not appli-
+cable to this article.
+
+Open Access This article is licensed under a Creative Commons Attribution 4.0 International License,
+which permits use, sharing, adaptation, distribution and reproduction in any medium or format, as long
+as you give appropriate credit to the original author(s) and the source, provide a link to the Creative
+Commons licence, and indicate if changes were made. The images or other third party material in this
+article are included in the article’s Creative Commons licence, unless indicated otherwise in a credit line
+to the material. If material is not included in the article’s Creative Commons licence and your intended
+use is not permitted by statutory regulation or exceeds the permitted use, you will need to obtain permis-
+sion directly from the copyright holder. To view a copy of this licence, visit http://creativecommons.org/
+licenses/by/4.0/.
+
+
+
+
+References
+ 1. Ahmadian, S., Bhaskar, U., Sanità, L., Swamy, C., Algorithms for inverse optimization problems. In
+    26th Annual European Symposium on Algorithms (ESA,: volume 112 of Leibniz International Pro-
+    ceedings in Informatics, p. 2018. LIPIcs, Schloss Dagstuhl-Leibniz-Zentrum für Informatik (2018)
+ 2. Ahuja, R.K., Orlin, J.B.: Inverse optimization. Oper. Res. 49(5), 771–783 (2001)
+ 3. Ahuja, R.K., Orlin, J.B.: Combinatorial algorithms for inverse network flow problems. Networks
+    40(4), 181–187 (2002)
+ 4. Aman, M., Hassanpour, H., Tayyebi, J.: Inverse matroid optimization problem under the weighted
+    Hamming distances. Bulletin of the transilvania university of Brasov, series III: mathematics, infor-
+    matics, physics 9(58), 85–98 (2016)
+ 5. Bérczi, K., Mendoza-Cadena, L.M., Varga, K.: Inverse optimization problems with multiple weight
+    functions. Discret. Appl. Math. 327, 134–147 (2023)
+ 6. Bérczi, K., Mendoza-Cadena, L.M., Varga, K.: Newton-type algorithms for inverse optimization:
+    weighted span objective. In LATIN 2024: Theoretical Informatics, volume 14579 of Lecture Notes
+    in Computer Science, pages 334–347. Springer, (2024)
+ 7. Burkard, R.E., Pleschiutschnig, C., Zhang, J.: Inverse median problems. Discret. Optim. 1(1), 23–39
+    (2004)
+ 8. Burton, D., Toint, P.L.: On an instance of the inverse shortest paths problem. Math. Program. 53,
+    45–61 (1992)
+ 9. Chan, T.C.Y., Eberg, M., Forster, K., Holloway, C., Ieraci, L., Shalaby, Y., Yousefi, N.: An inverse
+    optimization approach to measuring clinical pathway concordance. Manage. Sci. 68(3), 1882–1903
+    (2021)
+10. Chan, T.C.Y., Mahmood, R., Zhu, I.Y.: Inverse optimization: theory and applications. Oper. Res.
+    (2023). https://​doi.​org/​10.​1287/​opre.​2022.​0382
+11. Chen, L., Chen, Y., Langevin, A.: An inverse optimization approach for a capacitated vehicle rout-
+    ing problem. Eur. J. Oper. Res. 295(3), 1087–1098 (2021)
+12. Demange, M., Monnot, J.: An introduction to inverse combinatorial problems. In Paradigms of
+    Combinatorial Optimization: Problems and New Approaches, pages 547–586. John Wiley & Sons,
+    Inc., second edition, (2014)
+13. Dong, Q., Li, X., Yang, Y.: Partial inverse min-max spanning tree problem under the weighted bot-
+    tleneck Hamming distance. In AAIM 2022: Algorithmic Aspects in Information and Management,
+    volume 13513 of Lecture Notes in Computer Science, pages 351–362. Springer, (2022)
+14. Duin, C.W., Volgenant, A.: Some inverse optimization problems under the Hamming distance. Eur.
+    J. Oper. Res. 170, 887–899 (2006)
+Newton‑type algorithms for inverse optimization: weighted…                                          1689
+
+
+15. Faragó, A., Szentesi, ’Aron, Szviatovszki, B.: Inverse optimization in high-speed networks. Discret.
+    Appl. Math. 129(1), 83–98 (2003)
+16. Frank, A., Hajdu, G.: A simple algorithm and min-max formula for the inverse arborescence prob-
+    lem. Discret. Appl. Math. 295, 85–93 (2021)
+17. Frank, A., Murota, K.: A discrete convex min-max formula for box-TDI polyhedra. Math. Oper. Res.
+    47(2), 1026–1047 (2022)
+18. Guan, X., He, X., Pardalos, P.M., Zhang, B.: Inverse max+sum spanning tree problem under Ham-
+    ming distance by modifying the sum-cost vector. J. Global Optim. 69(4), 911–925 (2017)
+19. Guan, X., Zhang, B.: Inverse 1-median problem on trees under weighted l∞ norm. In Algorithmic
+    Aspects in Information and Management, volume 6124 of Lecture Notes in Computer Science,
+    pages 150–160. Springer, (2010)
+20. Guan, X., Zhang, B.: Inverse 1-median problem on trees under weighted Hamming distance. J.
+    Global Optim. 54, 75–82 (2012)
+21. Heuberger, C.: Inverse combinatorial optimization: a survey on problems, methods, and results. J.
+    Comb. Optim. 8(3), 329–361 (2004)
+22. Jiang, Y., Lin, W., Liu, L., Peng, A.: Constrained inverse minimum flow problems under the
+    weighted Hamming distance. Theoret. Comput. Sci. 883, 59–68 (2021)
+23. Karimi, M., Aman, M., Dolati, A.: Inverse generalized minimum cost flow problem under the ham-
+    ming distances. J. Oper. Res. Soc. China 7(2), 355–364 (2019)
+24. Lasserre, J.B.: Inverse polynomial optimization. Math. Oper. Res. 38(3), 418–436 (2013)
+25. Li, S., Zhang, Z., Lai, H.-J.: Algorithm for constraint partial inverse matroid problem with weight
+    increase forbidden. Theoret. Comput. Sci. 640, 119–124 (2016)
+26. Liu, L., Yao, E.: Weighted inverse maximum perfect matching problems under the Hamming dis-
+    tance. J. Global Optim. 55(3), 549–557 (2013)
+27. Liu, Z., Zhang, J.: On inverse problems of optimum perfect matching. J. Comb. Optim. 7(3), 215–
+    228 (2003)
+28. Mohaghegh, M., Baroughi Bonab, F.: Inverse min-max spanning r-arborescence problem under the
+    weighted sum-type Hamming distance. Asian-Eur. J. Math. 9(3), 1650068 (2016)
+29. Neumann-Denzau, G., Behrens, J.: Inversion of seismic data using tomographical reconstruction
+    techniques for investigations of laterally inhomogeneous media. Geophys. J. Int. 79(1), 305–315
+    (1984)
+30. Qian, X., Guan, X., Jia, J., Zhang, Q., Pardalos, P.M.: Vertex quickest 1-center location problem on
+    trees and its inverse problem under weighted l∞ norm. J. Global Optim. 85(2), 461–485 (2023)
+31. Radzik, T.: Parametric flows, weighted means of cuts, and fractional combinatorial optimization. In:
+    Complexity in Numerical Optimization, pages 351–386. World Scientific, (1993)
+32. Tarantola, A.: Inverse problem theory: methods for data fitting and model parameter estimation.
+    Elsevier, Amsterdam (1987)
+33. Tayyebi, J.: On the inverse maximum perfect matching problem under the bottleneck-type Hamming
+    distance. Commun. Comb. Optim. 4(1), 35–46 (2019)
+34. Tayyebi, J., Aman, M.: On inverse linear programming problems under the bottleneck-type weighted
+    Hamming distance. Discret. Appl. Math. 240, 92–101 (2018)
+35. Tayyebi, J., Deaconu, A.: Inverse generalized maximum flow problems. Mathematics 7(10), 899
+    (2019)
+36. Wang, Q., Yang, T., Wu, L.: General restricted inverse assignment problems under l1 and l∞ norms.
+    J. Comb. Optim. 44(3), 2040–2055 (2022)
+37. Woodhouse, J.H., Dziewonski, A.M.: Mapping the upper mantle: Three-dimensional modeling of
+    earth structure by inversion of seismic waveforms. J. Geophys. Res: Solid Earth 89(B7), 5953–5986
+    (1984)
+38. Xiaoguang, Y.: Note on inverse problem with 𝓁∞ objective function. Appl. Math-J Chinese Univ.
+    13(3), 341–346 (1998)
+39. Yang, X., Zhang, J.: Some inverse min-max network problems under weighted 𝓁1 and 𝓁∞ norms
+    with bound constraints on changes. J. Comb. Optim. 13(2), 123–135 (2007)
+40. Zhang, J., Liu, Z.: A further study on inverse linear programming problems. J. Comput. Appl. Math.
+    106(2), 345–359 (1999)
+41. Zhang, J., Liu, Z.: A general model of some inverse combinatorial optimization problems and its
+    solution method under 𝓁∞ norm. J. Comb. Optim. 6(2), 207–227 (2002)
+42. Zhang, Z., Li, S., Lai, H.-J., Du, D.-Z.: Algorithms for the partial inverse matroid problem in which
+    weights can only be increased. J. Global Optim. 65(4), 801–811 (2016)
+1690                                                                                      K. Bérczi et al.
+
+
+Publisher’s Note Springer Nature remains neutral with regard to jurisdictional claims in published maps
+and institutional affiliations.
+

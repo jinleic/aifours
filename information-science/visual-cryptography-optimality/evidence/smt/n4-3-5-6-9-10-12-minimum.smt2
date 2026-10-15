@@ -1,0 +1,72 @@
+; benchmark generated from python API
+(set-info :status unknown)
+(declare-fun zero_15 () Int)
+(declare-fun zero_14 () Int)
+(declare-fun zero_13 () Int)
+(declare-fun zero_12 () Int)
+(declare-fun zero_11 () Int)
+(declare-fun zero_10 () Int)
+(declare-fun zero_9 () Int)
+(declare-fun zero_7 () Int)
+(declare-fun zero_6 () Int)
+(declare-fun zero_5 () Int)
+(declare-fun zero_3 () Int)
+(assert
+ (let ((?x17 (* 1 zero_15)))
+ (let ((?x27 (* (- 1) zero_14)))
+ (let ((?x26 (* (- 1) zero_13)))
+ (let ((?x25 (* 1 zero_12)))
+ (let ((?x32 (* (- 1) zero_11)))
+ (let ((?x31 (* 1 zero_10)))
+ (let ((?x34 (* 1 zero_9)))
+ (let ((?x43 (* (- 1) zero_7)))
+ (let ((?x42 (* 1 zero_6)))
+ (let ((?x45 (* 1 zero_5)))
+ (let ((?x50 (* 1 zero_3)))
+ (let ((?x55 (+ ?x50 ?x45 ?x42 ?x43 ?x34 ?x31 ?x32 ?x25 ?x26 ?x27 ?x17)))
+ (let ((?x21 (* (- 1) zero_15)))
+ (let ((?x23 (* 1 zero_13)))
+ (let ((?x29 (* 1 zero_11)))
+ (let ((?x36 (* (- 1) zero_9)))
+ (let ((?x40 (* 1 zero_7)))
+ (let ((?x47 (* (- 1) zero_5)))
+ (let ((?x52 (* (- 1) zero_3)))
+ (let ((?x54 (+ ?x52 ?x47 ?x40 ?x36 ?x29 ?x23 ?x21)))
+ (let ((?x19 (* 1 zero_14)))
+ (let ((?x37 (* (- 1) zero_10)))
+ (let ((?x48 (* (- 1) zero_6)))
+ (let ((?x53 (+ ?x52 ?x48 ?x40 ?x37 ?x29 ?x19 ?x21)))
+ (let ((?x51 (+ ?x50 ?x43 ?x32 ?x17)))
+ (let ((?x38 (* (- 1) zero_12)))
+ (let ((?x49 (+ ?x47 ?x48 ?x40 ?x38 ?x23 ?x19 ?x21)))
+ (let ((?x46 (+ ?x45 ?x43 ?x26 ?x17)))
+ (let ((?x44 (+ ?x42 ?x43 ?x27 ?x17)))
+ (let ((?x39 (+ ?x36 ?x37 ?x29 ?x38 ?x23 ?x19 ?x21)))
+ (let ((?x35 (+ ?x34 ?x32 ?x26 ?x17)))
+ (let ((?x33 (+ ?x31 ?x32 ?x27 ?x17)))
+ (let ((?x28 (+ ?x25 ?x26 ?x27 ?x17)))
+ (let ((?x89 (+ (ite (> (+ ?x17) 0) (+ ?x17) 0) (ite (> (+ ?x19 ?x21) 0) (+ ?x19 ?x21) 0) (ite (> (+ ?x23 ?x21) 0) (+ ?x23 ?x21) 0) (ite (> ?x28 0) ?x28 0) (ite (> (+ ?x29 ?x21) 0) (+ ?x29 ?x21) 0) (ite (> ?x33 0) ?x33 0) (ite (> ?x35 0) ?x35 0) (ite (> ?x39 0) ?x39 0) (ite (> (+ ?x40 ?x21) 0) (+ ?x40 ?x21) 0) (ite (> ?x44 0) ?x44 0) (ite (> ?x46 0) ?x46 0) (ite (> ?x49 0) ?x49 0) (ite (> ?x51 0) ?x51 0) (ite (> ?x53 0) ?x53 0) (ite (> ?x54 0) ?x54 0) (ite (> ?x55 0) ?x55 0))))
+ (<= ?x89 3))))))))))))))))))))))))))))))))))))
+(assert
+ (>= zero_3 1))
+(assert
+ (>= zero_5 1))
+(assert
+ (>= zero_6 1))
+(assert
+ (>= zero_7 1))
+(assert
+ (>= zero_9 1))
+(assert
+ (>= zero_10 1))
+(assert
+ (>= zero_11 1))
+(assert
+ (>= zero_12 1))
+(assert
+ (>= zero_13 1))
+(assert
+ (>= zero_14 1))
+(assert
+ (>= zero_15 1))
+(check-sat)

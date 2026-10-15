@@ -1,0 +1,79 @@
+{
+  "schema": "aifours-parallel-migration-audit/1",
+  "ownership": "Read-only path audit and separate output smoke checks only. Main relocation/navigation edits are already ongoing in another session; this observer will not move dedicated scratch environments or overwrite those edits.",
+  "review": {
+    "verdict": "ready-with-fixes",
+    "findings": [
+      {
+        "severity": "major",
+        "problem": "research-institute/explorer/ri.py still defaults to WORKSPACE / 'ai4s', which is /Users/jinleic/jinleic-workspace/ai4s and no longer exists. Path.glob on a missing directory returns nothing instead of raising an error, so the */README.md and */STATUS.md scans silently find zero dossiers. Whether the explicit README.md and PHYSICS_RESELECTION.md entries crash or are skipped depends on guards not shown. The new root is also outside WORKSPACE. Once the default is fixed, any relative_to(WORKSPACE), startswith(str(WORKSPACE)) or inside-workspace check will raise ValueError or reject AI4S files.",
+        "required_action": "Replace the HERE.parents-derived default with an explicit /Users/jinleic/repos/aifours (a CLI or env override is optional). Fail fast if the root is missing or no dossiers are found. Make display, ID and containment logic independent of WORKSPACE.",
+        "smoke": "Use a list-only path that stops before any model call, e.g. construct the explorer with defaults and print what it discovers. Require 36 dossiers and no exception. Repeat with ai4s=<nonexistent dir> and require an explicit error, not an empty result."
+      },
+      {
+        "severity": "major",
+        "problem": "Even with the right root, the globs assume dossiers are direct children of the root. At /Users/jinleic/repos/aifours, */README.md and */STATUS.md can only match domain or infrastructure directories (mathematics/, physics/, evidence/, maintenance/, ...). They never reach the 36 dossiers, which now live at <domain>/<dossier>/. A blanket */*/README.md would go too far and pick up evidence/ and maintenance/ subdirectories as fake dossiers. If dossier keys come from relative_to(root), they also change from <dossier> to <domain>/<dossier>, which breaks any cache or reference keyed by the old ID.",
+        "required_action": "Enumerate dossiers explicitly under the three domain directories (mathematics, information-science, physics) for every root-anchored glob in ri.py. Point any root-level *.pdf lookup at books/. Keep each dossier's key equal to its pre-move basename and store the domain as a separate attribute. Assert that basenames are unique across domains, so a map keyed by name cannot silently drop one.",
+        "smoke": "In the same list-only run, diff the discovered dossiers against the migration manifest. They must match exactly: 11/12/13 by domain, keys equal to the manifest's old basenames, and no entries from evidence/, maintenance/ or books/."
+      },
+      {
+        "severity": "major",
+        "problem": "ri.py hardcodes self.ai4s / 'PHYSICS_RESELECTION.md' as a root-level file. The git snapshot from session start shows README.md as the only file at the new root, so this file was moved or folded into something else. Depending on guards not shown, the explorer either raises FileNotFoundError or silently drops the physics reselection context.",
+        "required_action": "Get the file's new location from the manifest or from the session that owns the move, and point ri.py there. Do the same for any other root-level filenames hardcoded in that list. Do not move the file back to the root. If the manifest has no entry for it, have the owning session add one.",
+        "smoke": "The list-only run must show PHYSICS_RESELECTION.md at its new path with non-empty content. README.md must resolve to /Users/jinleic/repos/aifours/README.md."
+      },
+      {
+        "severity": "major",
+        "problem": "The active explorer reads book paths of the form /Users/jinleic/jinleic-workspace/ai4s/<book>.pdf from immutable inventory provenance. Those paths no longer exist. The same applies to any paths recorded in frozen receipts that active code re-opens. The manifest only covers dossiers, so it cannot resolve books, evidence/ or moved root files. A simple prefix swap (jinleic-workspace/ai4s -> repos/aifours) gives wrong paths for both books (now under books/) and dossiers (now under a domain directory).",
+        "required_action": "Leave the provenance strings untouched; they are correct history. Add one resolver in active code that maps old paths to new ones at read time, with these rules: (1) driven by the manifest; (2) fails closed on unmapped old-ai4s paths; (3) passes every path outside the old ai4s prefix through unchanged, since scratch/, math/ and docs/ are still valid; (4) reports both the recorded and the resolved path. Have the owning session add entries to the manifest for books/ (<old root>/<book>.pdf -> books/<book>.pdf), evidence/ and moved root files, rather than hardcoding a second mapping in ri.py.",
+        "smoke": "Run the explorer's book-extraction step with no model call. All three recorded paths must resolve to existing /Users/jinleic/repos/aifours/books/*.pdf files, with size and hash matching the inventory if it records them. Then pick one frozen receipt per domain that records input paths or hashes, and re-verify it through the resolver: every input must resolve and every recorded hash must match. The inventory and receipt files themselves must hash identically before and after."
+      },
+      {
+        "severity": "major",
+        "problem": "In the dossier review runner, ROOT is still the dossier, but ROOT.parents[1] is now /Users/jinleic/repos/aifours instead of /Users/jinleic/jinleic-workspace. CONFIG therefore points at aifours/docs/knowledge-system/DELEGATE_MODELS.json, which does not exist (the snapshot has no docs/). The workspace is no longer an ancestor of the runner, so changing the parents[n] index cannot fix this. If the runner falls back to defaults when CONFIG is missing, reviews silently use a different set of delegate models; otherwise they crash.",
+        "required_action": "In the runner, and in every per-dossier copy if it is duplicated, reference /Users/jinleic/jinleic-workspace/docs/knowledge-system/DELEGATE_MODELS.json explicitly (an env or CLI override is optional). Make a missing or unparseable config fatal before any model call. Check the runner's other ROOT.parents[...] uses, such as output and log paths, the same way. Do not copy, edit or symlink the config into the repo: copies drift, and anything in the repo can be committed.",
+        "smoke": "Use a resolve-only dry-run mode (add one if none exists) that prints CONFIG and the delegate model IDs, then exits before any request. CONFIG must equal the workspace path, exist and parse. With the override pointed at a bogus path, the runner must abort before any request."
+      },
+      {
+        "severity": "major",
+        "problem": "Code that climbs above its dossier now lands one level off, because ROOT.parent is the domain directory rather than the AI4S root. This affects ROOT.parent / 'evidence', ../evidence, ../<book>.pdf, the checkers that do not use the parents[1] pattern, and cwd-relative paths that assumed the AI4S root as the working directory (python <dossier>/x.py, open('<dossier>/...')). References to sibling dossiers keep working within a domain but break across domains, so spot-checking a single domain gives false confidence. In the other direction, evidence/ files that reference ../<dossier>/ now lack the domain segment.",
+        "required_action": "Audit editable code and configs for: ROOT.parent; parents[n] that reaches above the dossier; '../' literals; working-directory assumptions; the literal 'jinleic-workspace/ai4s'; and bare 'ai4s' path components. Resolve evidence/ and books/ from a single repo-root anchor. Resolve cross-dossier targets through domain-qualified paths or the manifest resolver. Leave frozen files as they are.",
+        "smoke": "Run one checker per domain plus every checker the audit flags, prioritizing cross-domain and evidence/books references. Use check-only or temp-output mode. Every referenced input must resolve. grep -rn 'jinleic-workspace/ai4s' over editable code and configs must return zero hits. Hits in frozen receipts, frozen campaigns and the manifest's old-path column are expected. References to jinleic-workspace/{scratch,math,docs} are intentionally external."
+      },
+      {
+        "severity": "major",
+        "problem": "Frozen receipts, frozen campaigns and inventory provenance legitimately contain old absolute paths, so the obvious repo-wide find/replace would rewrite scientific provenance. Smoke runs of checkers that write receipts in place could also overwrite frozen artifacts. The new repo has zero commits, so nothing would detect either change. A whole-tree diff would also show the concurrent session's legitimate edits, burying any real violation.",
+        "required_action": "Limit edits to an explicit allowlist: ri.py, the runner and its copies, checkers flagged by the audit, and manifest additions made through the owning session. Leave code in frozen campaigns unedited, even where it can no longer run from the new path. Before any smoke, record the sha256 of every file classified as frozen, stored outside the repo (e.g. /tmp). If the manifest or the old workspace's git history holds pre-move hashes, cross-check against those too. Once the other session finishes, a local baseline commit (user's call; no push) would make this guard durable.",
+        "smoke": "Run this around the whole suite. After all other smokes, recompute the frozen hashes and require an empty diff. Confirm the frozen files still contain their original old-path strings. Byte-identical evidence with no rewrite is what shows the relocation is sound."
+      },
+      {
+        "severity": "minor",
+        "problem": "The Lean checkers' absolute external cache paths remain valid, because scratch/ai4s* (including the Lean cache clone), scratch/rh-quasi-lean-2026-10-07/lean and math/ did not move. Two risks remain. First, Lean paths that pointed inside the old ai4s tree or depended on relative depth are now one level off: lakefile 'require ... from' path dependencies, LEAN_PATH, and dir entries in lake-manifest. Second, a smoke run that triggers lake build or a cache fetch writes into caches that non-AI4S work also uses.",
+        "required_action": "Keep the absolute external cache paths exactly as they are. Do not vendor, copy or symlink the caches or the shared math/ into the repo. Fix only Lean paths that pointed inside the old ai4s tree or relied on relative depth.",
+        "smoke": "Run touch /tmp/lean.marker. Then run one Lean checker per distinct external cache path in elaborate-only mode against the existing build, e.g. lake env lean <file>. It must succeed, and find <each cache path> -newer /tmp/lean.marker must print nothing."
+      },
+      {
+        "severity": "minor",
+        "problem": "The scratch/ai4s* virtualenvs must stay where they are, because their bin/ shebangs and activate scripts embed absolute venv paths. However, any editable installs made from the old dossier locations (.pth, .egg-link, __editable__ finders, direct_url.json) still point at /Users/jinleic/jinleic-workspace/ai4s/<dossier>. Running relocated dossier code with those interpreters will then fail to import, or silently import a stale installed copy.",
+        "required_action": "Grep each venv's site-packages for 'jinleic-workspace/ai4s' (read-only). If there are hits, re-run the editable install from the new dossier path, but only with user approval, because it changes an environment outside the repo. If there are no hits, leave the venvs untouched and keep referencing them by absolute path.",
+        "smoke": "For each venv, run its python from the new dossier with -c 'import <pkg>; print(<pkg>.__file__)'. The printed path must be under /Users/jinleic/repos/aifours or inside the venv, never under the deleted root."
+      },
+      {
+        "severity": "minor",
+        "problem": "With no symlink, anything that still writes to the old absolute path while creating parent directories will silently recreate a partial /Users/jinleic/jinleic-workspace/ai4s. Likely sources: mkdir(parents=True) or mkdir -p in scripts, explorer caches, the concurrent session's tools, or a git restore/checkout in the old workspace repo if it tracked ai4s. Writes would then split between two trees, and an unfixed ri.py default would index the stale one.",
+        "required_action": "Make consumers fail fast on a missing root instead of creating it (see the explorer-root finding). If the old path reappears, treat it as an incident and reconcile it manually with the owning session. Do not merge from it automatically.",
+        "smoke": "End the suite with: test ! -e /Users/jinleic/jinleic-workspace/ai4s"
+      }
+    ],
+    "limits": "Static review only; no tools were run. The basis is the quoted snippets plus the git snapshot from session start (root contains README.md, books/, evidence/, information-science/, maintenance/, mathematics/, physics/; no docs/ and no root .gitignore). The concurrent session may have changed things since then. Not inspected: the rest of ri.py (exists() guards, persisted indexes, other hardcoded names); how many runner copies exist and whether CONFIG has a fallback; the checkers that do not use the parents[1] pattern; lakefiles and LEAN_PATH; venv site-packages; and the manifest's format and whether it records hashes. Consumers of the old path outside the code shown are not assessed: launchd/cron jobs, shell rc files and aliases, editor workspaces, git hooks, docs/knowledge-system notes, and other sessions' memory. No claims about scientific correctness are made. The smokes test only path resolution and byte identity, and none requires a model run, deletion, publication, or credential/config change; the venv reinstall happens only with approval. Out of scope but worth noting: with no commits and no root .gitignore, a first 'git add -A' would pull in the three book PDFs and any build caches, which matters before any remote is added."
+  },
+  "observations": {
+    "explorer_dynamic_guard": "Default ai4s path, one-level globs, and book inventory paths must follow relocated domains/books. Four dossiers rely only on the dynamic guard.",
+    "frozen_evidence": "Keep receipts, sources, campaign hashes and review outputs unchanged; a mapping should translate old paths.",
+    "scratch": "Main owner currently documents Python/Lean environments as external workspace dependencies. Preserve that decision.",
+    "scouts": [
+      "MathMigrationMap",
+      "ScienceMigrationMap"
+    ]
+  }
+}

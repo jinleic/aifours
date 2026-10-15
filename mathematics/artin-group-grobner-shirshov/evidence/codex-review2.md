@@ -1,0 +1,18 @@
+VERDICT: correct-with-fixes
+
+1. **Table certification does not cover its stated scope.** [work/validate_tables.py:33](/Users/jinleic/jinleic-workspace/ai4s/artin-group-grobner-shirshov/work/validate_tables.py:33) validates default labellings; line 66 samples H4 prefix comparisons. This does not certify “every table used” in [proof.md:175](/Users/jinleic/jinleic-workspace/ai4s/artin-group-grobner-shirshov/proof.md:175) or unconditional weak-order exactness in README C13. An in-memory corruption of unsampled `leq(0,0)` still returned `ok: true`. **Fix:** validate every used labelling, or certify its correspondence to a canonical table, and replace H4 sampling with an exhaustive integer check.
+
+2. **“Remaining orders” incorrectly implies exponential growth.** [README.md:94](/Users/jinleic/jinleic-workspace/ai4s/artin-group-grobner-shirshov/README.md:94) includes omitted polynomial orders: A3’s `s3<s1<s2` has degree 1; B3’s `s3<s1<s2` has degree 2; all six centre-largest D4 orders have degree 4. **Fix:** distinguish the complete polynomial-order list from orders with exponential growth and from orders whose explicit families are supplied here.
+
+3. **“Closed form open” overstates the unresolved status.** [README.md:73](/Users/jinleic/jinleic-workspace/ai4s/artin-group-grobner-shirshov/README.md:73) and line 93 include natural-order A_n, already marked solved by Bokut at line 84. The local paper states exactly this alphabet and order. **Fix:** distinguish “not derived here” from literature-open claims and preserve the known type-A exception.
+
+4. **The specification documentation still assumes identical parameter order.** [work/specs.py:7](/Users/jinleic/jinleic-workspace/ai4s/artin-group-grobner-shirshov/work/specs.py:7) contradicts families such as D4 P45, which reverses `k1,k2`. The module introduction in `certify.py` also describes the older criterion. **Fix:** update these introductions to match the general conjugation criterion and optional transport check.
+
+What I verified:
+
+- The general validity criterion is correct, including swapped-pair commutation. Lemma 3 correctly imports **monoid** minimal leading words. A fixed family with \(r\) stars has at most \(O((L+1)^r)\) length-\(L\) words, so the Corollary’s counting and parabolic arguments are sound.
+- No consequential logic error appeared in the requested `certify.py` functions for the supplied specs. `{0}` is epsilon-closed because leading families start with nonempty fixed words. Consecutive loops and terminal loops passed exhaustive language/count comparisons through length 7. Reducedness uses both minimal-leading-language equality and RHS irreducibility.
+- Live certificates returned `ALL_OK: true`: A3/L10, H3/L9, H3b/L9, B3auto/L10 and D4/L10. D4 reproduced 355 counting states, equality through degree 369, and 260 oracle rules.
+- `validate_tables.py` passed. Additional integer checks validated the actual Theorem F labellings and their parabolic lengths. An exhaustive bitset comparison verified all **207,360,000** H4 prefix pairs in the default labelling.
+- All five Markdown family tables match their JSON specs. Seeded-random D4 rows P140, P45 and P174 passed **31** parameter vectors with entries 0–2, checking group equality, RHS normality and orientation.
+- A4/B4 monoid growth is exponential in all 24 orders. The revised SCC periodicity statement and monoid dihedral row are correct. Orders are disclosed; no novelty claim appears.

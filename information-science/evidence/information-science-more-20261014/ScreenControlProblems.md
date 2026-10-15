@@ -1,0 +1,127 @@
+I screened all 15 articles. Only one is a target: 大种群随机多自主体系统的自适应动态博弈. Its author's own 2013 paper already answers all four of the article's questions, but only for agents whose own dynamics are known. Two articles pose real formal questions (decentralized stabilizability and Jiang's stabilizability-versus-adaptive-stabilizability question), and both are too hard. The other twelve are research programs or engineering problems.
+
+The manifest is wrong for "学习控制系统". PDF 733–739 actually holds 孙明轩's P-type iterative learning control article (733–736), which is your excluded target #5, and 侯忠生's article (737–739), which is assigned separately. The real article starts at PDF 747 (book 726) and was written by 许建新. Only page 747 was staged, so I read PDF 748–751 through archive.org's OCR search of the same book, and took the author from the table-of-contents line "许建新 (726)".
+
+```json
+[
+{"title_zh":"有限信息系统的辨识与适应控制","authors":"赵延龙 (Yanlong Zhao), 中国科学院数学与系统科学研究院","book_pages":[659,660],"pdf_pages":[680,681],
+"question_zh":"如何在持续激励甚至衰减激励下构造辨识算法？如何在不回避设参数估计与量化值相关性的前提下构造出在线递推算法，给出算法的收敛性、最优性、鲁棒性等严谨的理论分析和证明？如何提出合理的控制指标？如何设计出最优的适应控制器？",
+"question_en":"For systems whose outputs are only known to lie in a set, or are quantized: how to identify them under persistent or even decaying excitation; how to build online recursive algorithms with rigorous convergence, optimality and robustness proofs, without assuming that estimates and quantized values are independent; what control indices make sense; how to design optimal adaptive controllers.",
+"precision":"VAGUE","formal_reading":null,"status":"UNKNOWN",
+"status_evidence":[{"claim":"The research program continues with partial results: recursive identification from binary-valued observations now has convergence proofs, and new algorithms are still being proposed (2024).","url":"https://arxiv.org/abs/2412.05136","quote":"Most of the existing algorithms under binary-valued observations rely on projection operators, which leads to a high computational complexity of much higher than O(n^2).","read_primary":true}],
+"tractability":"LOW","tractability_reason":"Four open-ended research directions; there is no single statement to prove or refute.","recommendation":"VAGUE"},
+
+{"title_zh":"关联系统分散控制及其应用","authors":"段志生 (Zhisheng Duan), 北京大学工学院","book_pages":[661,663],"pdf_pages":[682,684],
+"question_zh":"但是，在分散状态反馈下，大系统的分散可镇定性问题一直未得到有效的充分必要条件。……对于充分必要条件，以及关联项A12与A21对Acl的稳定性所能起到的作用方面一直未有较好的进展。",
+"question_en":"For two interconnected linear subsystems under decentralized static state feedback u1=K1x1, u2=K2x2, there is no effective necessary-and-sufficient condition for stabilizability, and the role of the couplings A12 and A21 in the stability of the closed-loop matrix Acl is not understood.",
+"precision":"FORMALIZABLE",
+"formal_reading":"Given real A1 (n1×n1), A2 (n2×n2), A12, A21, B1 (n1×m1), B2 (n2×m2), find a checkable necessary-and-sufficient condition for the existence of K1, K2 such that [[A1+B1K1, A12],[A21, A2+B2K2]] is Hurwitz, and describe how that set depends on A12 and A21. The yes/no question can be decided in principle by Tarski–Seidenberg quantifier elimination. What is open is a closed-form or polynomial-time criterion. The dynamic-controller version is already characterized by decentralized fixed modes, which the article itself cites.",
+"status":"OPEN",
+"status_evidence":[
+{"claim":"Decentralized static feedback stabilization is decidable, but no closed form or efficient criterion is known (pre-2011 state of the art; one later search found no necessary-and-sufficient condition).","url":"https://www.mit.edu/~jnt/Papers/J067-97-vb-contr.pdf","quote":"A common feature of these three problems is that, although they are easy to state, neither closed form nor efficient algorithmic solutions are known. It is rather improbable that closed form solutions to these problems are possible.","read_primary":true},
+{"claim":"Related decentralized variants are NP-hard; the unconstrained case is only conjectured to be.","url":"https://www.mit.edu/~jnt/Papers/J067-97-vb-contr.pdf","quote":"Stabilization by decentralized static output feedback is NP-hard if one imposes a bound on the norm of the controller or if the blocks are constrained to be identical.","read_primary":true},
+{"claim":"The unconstrained static-feedback complexity question is still a conjecture.","url":"https://www.mit.edu/~jnt/Papers/J067-97-vb-contr.pdf","quote":"We have not been able to establish the complexity of the problem in the absence of constraints on K, but we conjecture that it is also NP-hard.","read_primary":true}],
+"tractability":"LOW","tractability_reason":"This is a structured static-output-feedback problem, one of the long-standing open problems in control. Settling it would need either a closed-form criterion or a hardness proof for unconstrained gains, which has been conjectured since 1997.","recommendation":"TOO-HARD"},
+
+{"title_zh":"学习控制系统","authors":"许建新 (Jian-Xin Xu); name from the table of contents (OCR), affiliation not seen","book_pages":[726,730],"pdf_pages":[747,751],
+"question_zh":"为进一步推动未来学习控制的研究，我们需要从系统控制的角度弄清楚两个基本问题：学习控制系统可以学到什么？执行一个学习控制过程需要什么？",
+"question_en":"To advance learning control, two basic questions must be answered: what can a learning control system learn, and what does carrying out a learning-control process require?",
+"precision":"VAGUE","formal_reading":null,"status":"UNKNOWN",
+"status_evidence":[{"claim":"The article's own open items are a research agenda (extensions of high-order internal models), not a theorem. Text taken from the book's OCR because PDF 748–751 were not staged; OCR spacing removed.","url":"https://ia800704.us.archive.org/fulltext/inside.php?item_id=10000problems&doc=10000%E4%B8%AA%E7%A7%91%E5%AD%A6%E9%9A%BE%E9%A2%98%E4%BF%A1%E6%81%AF%E7%A7%91%E5%AD%A6%E5%8D%B7&path=/22/items/10000problems&q=%E5%AD%A6%E4%B9%A0%E6%8E%A7%E5%88%B6","quote":"高阶内模给出了学习控制处理非重复因素的一种方法，但许多问题有待解决，如多参数不确定性、控制输入系数不确定性、串级系统","read_primary":true}],
+"tractability":"LOW","tractability_reason":"Perspective essay on invariance, gradient information and machine learning in control. The manifest range 733–739 is wrong (see the note at the top of the report).","recommendation":"VAGUE"},
+
+{"title_zh":"数据驱动控制理论基础问题","authors":"侯忠生 (Zhongsheng Hou), 北京交通大学电子信息工程学院","book_pages":[722,725],"pdf_pages":[743,746],
+"question_zh":"（1）如何利用已有的在线或离线数据，给出具有良好性质的、在目标函数未知情况下的梯度计算或估计问题……（4）数据驱动控制方法与基于模型的现代控制理论与方法之间的关系。",
+"question_en":"Common basic problems of data-driven control: estimating gradients from online or offline data when the objective is unknown (data-driven optimization and its convergence), stability analysis without a model, a unified framework, and the relation to model-based control theory.",
+"precision":"VAGUE","formal_reading":null,"status":"UNKNOWN","status_evidence":[],
+"tractability":"LOW","tractability_reason":"Framework-level questions with no precise statement.","recommendation":"VAGUE"},
+
+{"title_zh":"不准确量测下非完整系统控制问题","authors":"王朝立 (Chaoli Wang), 上海理工大学光电信息与计算机工程学院","book_pages":[683,685],"pdf_pages":[704,706],
+"question_zh":"系统(4)和(5)镇定的困难在于u1和u2的耦合及φi(u1,u2,x1,x2,…,xn)的非三角形结构。……目前，只是就一些特殊情形得到了解决方案[7]，一般情形下的求解还是个开问题。",
+"question_en":"State- or output-feedback stabilization or tracking of the general uncertain nonholonomic kinematic system (4)–(5), which has unknown time-varying gains d_i(t), unknown constant parameters and non-triangular terms φ_i. Only special cases are solved.",
+"precision":"VAGUE","formal_reading":null,"status":"UNKNOWN","status_evidence":[],
+"tractability":"LOW","tractability_reason":"The functions φ_i are unconstrained, so the 'general case' is a class with no single yes/no question. The uncalibrated-camera model (3), with unknown α1, α2 and θ0, is a precise sub-case, but settling it would not settle the book's question; I did not assess it.","recommendation":"VAGUE"},
+
+{"title_zh":"自适应动态规划的结构和算法优化","authors":"刘德荣 (Derong Liu), 中国科学院自动化研究所","book_pages":[719,721],"pdf_pages":[740,742],
+"question_zh":"目前我们还没有找到一种“完美”的近似结构可以真正逼近最优性能指标函数和控制策略。针对不同类型的系统，找到最行之有效的学习方法获得最优的控制结果是自适应动态规划方法下一步努力的方向。",
+"question_en":"No 'perfect' approximation structure is yet known that truly approximates the optimal cost function and policy. Finding the most effective learning method for each class of systems is ADP's next goal.",
+"precision":"VAGUE","formal_reading":null,"status":"UNKNOWN","status_evidence":[],
+"tractability":"LOW","tractability_reason":"Asks for a 'perfect' approximator and the 'most effective' method; neither is defined.","recommendation":"VAGUE"},
+
+{"title_zh":"大种群随机多自主体系统的自适应动态博弈","authors":"李韬 (Tao Li), 中国科学院数学与系统科学研究院","book_pages":[635,637],"pdf_pages":[656,658],
+"question_zh":"能否保证闭环系统的稳定性，如果可以，能否保证闭环系统自主体的状态上界与个体数N无关；……能否保证分散辨识的一致性，能否给出误差收敛速度；能否保证分散式控制律在Nash均衡意义下的渐近最优性",
+"question_en":"For the example model with unknown local A, B and unknown global Λ: can decentralized adaptive laws guarantee (1) closed-loop stability with bounds independent of N, (2) consistency of the population-average estimate with a rate, (3) consistency of decentralized identification with a rate, and (4) asymptotic Nash optimality with a rate?",
+"precision":"FORMALIZABLE",
+"formal_reading":"Agents i=1..N follow x_i(t+1) = A x_i(t) + B u_i(t) + Λ (1/N)Σ_j x_j(t) + ω_i(t), with A and B unknown local parameters, Λ an unknown global parameter, and independent martingale-difference noises. Agent i's cost is J_i = limsup_n (1/n) Σ_{t≤n} |x_i(t+1) − Φ(t, (1/N)Σ_j x_j(t))|². Each u_i(t) may depend only on agent i's own past states and inputs. Find such laws and prove, almost surely: (1) sup_N max_i limsup (1/T)Σ|x_i|² < ∞; (2) a population-average estimate f with (1/T)Σ|x̄_N − f|² → 0 as N→∞ at an explicit rate; (3) parameter estimates consistent (as t→∞ or N→∞) at an explicit rate; (4) J_i(u_i, u_−i) ≤ inf over globally-informed v of J_i(v, u_−i) + ε_N, with ε_N → 0 at an explicit rate. Assumptions on the noise, on Φ, on B (invertible) and on ρ(Λ) must be added; the book does not state them.",
+"status":"UNKNOWN",
+"status_evidence":[
+{"claim":"The article's author answered all four questions after publication for scalar ARX agents, with rates O(1/N) for the average estimate, O(1/√N) for identification and O(1/N) for optimality (Dyn Games Appl 2013).","url":"https://lsc.amss.ac.cn/~jif/paper/[J93].pdf","quote":"as the number of agents increases to infinity, the estimates of both the PSA and the coupling strength are asymptotically strongly consistent and the decentralized control law is an almost sure asymptotic Nash-equilibrium.","read_primary":true},
+{"claim":"Gap: that paper assumes the local dynamics are known and only the coupling α (|α|<1) is unknown. The book's example also makes A and B unknown.","url":"https://lsc.amss.ac.cn/~jif/paper/[J93].pdf","quote":"In this paper, we assume the local dynamics of each agent is precisely known, but the common coupling strength between the individual state and the PSA, which is a global parameter, is unknown.","read_primary":true},
+{"claim":"Later work by the same group handles unknown parameters only in continuous time with sampled data (asymptotic Nash as the sampling step goes to 0), not the book's discrete-time example.","url":"https://www.aimsciences.org/article/doi/10.3934/mcrf.2024059","quote":"Each agent had a dynamical model with the unknown parameters and minimized a quadratic-tracking type cost functional, which was a function of the state average terms of the leaders and followers.","read_primary":true}],
+"tractability":"MEDIUM","tractability_reason":"The proof template exists (Li–Zhang 2013). The missing step combines decentralized least squares on the regressor (x_i, u_i, f*) with standard stochastic adaptive tracking and diminishing excitation. [INFERENCE] Under the tracking cost, the mean-field estimate f*(t+1)=Φ(t,f*(t)) does not depend on the unknown parameters. A scoped proof (scalar case, b≠0, |λ|<1) looks feasible in about a day. Unknown matrix B and the regime ρ(Λ)≥1 need extra assumptions or a separate analysis.","recommendation":"TARGET"},
+
+{"title_zh":"鲁棒自适应非线性控制","authors":"姜钟平 (Zhong-Ping Jiang), 纽约大学理工学院","book_pages":[633,634],"pdf_pages":[654,655],
+"question_zh":"目前，一个尚未解决的问题是：对一个具一般形式参数化非线性系统，可镇定性是否等价于自适应镇定。……输出镇定性是否等价于自适应输出镇定？",
+"question_en":"Open problem: for a general parameterized nonlinear system ẋ=f(x,θ)+g(x,θ)u, is stabilizability (a θ-dependent stabilizer α(x,θ) exists) equivalent to adaptive stabilizability (one θ-independent adaptive controller drives x→0)? And with only y=h(x) measured, is output stabilizability equivalent to adaptive output stabilizability?",
+"precision":"FORMALIZABLE",
+"formal_reading":"Smooth f and g with f(0,θ)=0, and θ an unknown constant in Θ ⊂ R^p. Hypothesis: for each θ some α(·,θ) with α(0,θ)=0 makes the origin globally asymptotically stable. Q1: is there a θ-independent causal finite-dimensional controller, smooth or hybrid (u=κ(x,ξ), ξ̇=ν(x,ξ), resets allowed), such that for every θ ∈ Θ and every initial condition the solutions are global, ξ stays bounded, and x(t)→0? Q2: the same with output measurement and output-feedback stabilizability for each θ. The answer depends on the controller class, on Θ, and on how regularly α depends on θ; the book fixes none of these.",
+"status":"OPEN",
+"status_evidence":[
+{"claim":"Answered yes after publication for systems linear in θ (ẋ=f(x,u)+g(x,u)θ, Θ closed and convex) with state feedback and a hybrid, event-triggered batch-least-squares controller. This needs uniform hypotheses (H1)–(H2): a smooth k(θ,x) and continuous V(θ,x) with V̇ ≤ −2σV.","url":"https://arxiv.org/abs/1811.10833","quote":"Thus, if the nominal feedback guarantees global asymptotic stability and local exponential stability, then unlike conventional adaptive control, the newly proposed event-triggered adaptive scheme guarantees global asymptotic regulation with a uniform exponential convergence rate.","read_primary":true},
+{"claim":"Same paper's view of its hypothesis.","url":"https://arxiv.org/pdf/1811.10833","quote":"Assumption (H1) is a standard stabilizability assumption (necessary for all possible adaptive control design methodologies).","read_primary":true},
+{"claim":"A smooth 'universal' adaptive law has been claimed for linearly parameterized systems (Lopez–Slotine), yet the authors still call the connection open. [INFERENCE] Their ρ-dynamics may escape in finite time, so I do not count this as a settlement.","url":"https://arxiv.org/pdf/2012.15815","quote":"Finally, further investigation into the connection between adaptive stabilizability [12] and stabilizability for each θ is of interest.","read_primary":true},
+{"claim":"Context: in discrete time the equivalence fails, via Guo-type critical growth exponents (4 for a known exponent; a 2026 arXiv paper gives 3√3/2 when the exponent is also unknown). The book's question is continuous-time.","url":"https://arxiv.org/abs/2609.02740","quote":"When the nonlinear growth exponent is known and only a scalar coefficient is unknown, existing theory identifies 4 as the exact critical exponent for stabilizability.","read_primary":true}],
+"tractability":"LOW","tractability_reason":"Still unsettled: nonlinear θ-dependence, mere pointwise stabilizability, smooth controller classes, and the whole output-feedback half. A complete answer would need both a general theorem and boundary counterexamples. [INFERENCE] A scoped sub-result may be reachable: extend the batch-least-squares scheme to real-analytic θ-dependence on a compact Θ, using the descending-chain property of analytic consistency sets so that estimates change only finitely often.","recommendation":"TOO-HARD"},
+
+{"title_zh":"非线性控制系统分析与设计中的结构分解方法","authors":"林宗利 (Zongli Lin), 美国弗吉尼亚大学电机与计算机工程系","book_pages":[638,640],"pdf_pages":[659,661],
+"question_zh":"我们期待也相信文献[9]提出的多变量非线性系统的结构分解方法将会像线性系统结构分解方法[8,9]一样被成功地用于解决一系列控制问题。",
+"question_en":"The author expects the new multivariable nonlinear structural decomposition (normal form) of [9] to solve many control problems, as the linear structural decomposition did.",
+"precision":"VAGUE","formal_reading":null,"status":"UNKNOWN","status_evidence":[],
+"tractability":"LOW","tractability_reason":"A programmatic expectation, not a question.","recommendation":"VAGUE"},
+
+{"title_zh":"目标跟踪中的数据关联问题","authors":"李晓榕 (X. Rong Li), 美国新奥尔良大学电气工程系","book_pages":[646,649],"pdf_pages":[667,670],
+"question_zh":"然而，由于现实的复杂性和测量系统及传感技术内在的不确定性，数据关联问题一般难以精确解决，甚至可以说，数据关联问题是无法完全彻底解决的。",
+"question_en":"Because of real-world complexity and intrinsic sensing uncertainty, data association generally cannot be solved exactly, and arguably never completely. The author advises avoiding it, for example with set-level tracking or EM-style estimation that treats association as missing data.",
+"precision":"VAGUE","formal_reading":null,"status":"UNKNOWN","status_evidence":[],
+"tractability":"LOW","tractability_reason":"Engineering problem; no formal target.","recommendation":"VAGUE"},
+
+{"title_zh":"滑动模态的抖振问题","authors":"李文林 (Wenlin Li), 河南师范大学数学与信息科学学院","book_pages":[677,679],"pdf_pages":[698,700],
+"question_zh":"国内外削弱抖振的方法很多，但基本上都是对确定系统有效，对不确定系统目前还没有找到抑制抖振的有效方法。",
+"question_en":"Many chattering-reduction methods exist, but they essentially work only for known systems; no effective chattering suppression is known for uncertain systems.",
+"precision":"VAGUE","formal_reading":null,"status":"UNKNOWN","status_evidence":[],
+"tractability":"LOW","tractability_reason":"'Effective' is undefined. [INFERENCE] Continuous higher-order sliding-mode control (for example super-twisting) is widely held to address this for matched, Lipschitz uncertainties; not checked here.","recommendation":"VAGUE"},
+
+{"title_zh":"飞行器的非最小相位控制问题","authors":"宗群 (Qun Zong), 天津大学电气与自动化工程学院","book_pages":[750,752],"pdf_pages":[771,773],
+"question_zh":"虽然从控制理论诞生之日起到今天，控制理论能够在一定程度上解决非线性、强耦合、不确定和快时变等典型问题，但针对非最小相位问题，却缺乏有效的解决方法和理论。",
+"question_en":"Control theory handles nonlinearity, strong coupling, uncertainty and fast time variation to some extent, but lacks effective methods and theory for non-minimum-phase (unstable zero-dynamics) problems in flight vehicles.",
+"precision":"VAGUE","formal_reading":null,"status":"UNKNOWN","status_evidence":[],
+"tractability":"LOW","tractability_reason":"Engineering program for hypersonic vehicles; no formal question.","recommendation":"VAGUE"},
+
+{"title_zh":"数据驱动自适应迭代学习控制系统的设计和分析","authors":"侯忠生 (Zhongsheng Hou), 北京交通大学电子信息工程学院","book_pages":[716,718],"pdf_pages":[737,739],
+"question_zh":"因此，研究数据驱动的自适应ILC系统的设计，并分析其稳定性和收敛性，即能保持其无模型数据驱动的本质，同时，还要期望分享已存在的AILC方法的优点，是一项极具理论挑战性的难题。",
+"question_en":"Design data-driven adaptive iterative learning control for nonlinear discrete-time systems that are not strictly repetitive (parameters and references drift slowly from one iteration to the next), and prove stability and convergence while staying model-free.",
+"precision":"VAGUE","formal_reading":null,"status":"UNKNOWN",
+"status_evidence":[{"claim":"Partial progress after publication: a 2022 monograph on model-based and data-driven discrete-time adaptive ILC covers iteration-varying targets and non-repetitive uncertainty.","url":"https://link.springer.com/book/10.1007/978-981-19-0464-6","quote":"The discrete-time adaptive iterative learning control (DAILC) is discussed as a cutting-edge of ILC and can address random initial states, iteration-varying targets, and other non-repetitive uncertainties in practical applications.","read_primary":true}],
+"tractability":"LOW","tractability_reason":"'Slowly varying' and the convergence target are undefined; this is a design program.","recommendation":"VAGUE"},
+
+{"title_zh":"微型飞行器控制问题","authors":"李洪儒 (Hongru Li), 中国航天科技集团公司第三研究院","book_pages":[120,127],"pdf_pages":[141,148],
+"question_zh":"要采用仿生学方法，模拟鸟类和昆虫的高稳定性和高机动性的飞行能力，则必须发展适用于微型飞行器的具有高可靠性、强适应性、高稳定性、强抗干扰能力的智能自主控制理论与方法",
+"question_en":"Bio-inspired micro air vehicles need intelligent autonomous control theory with high reliability, adaptability, stability and disturbance rejection.",
+"precision":"VAGUE","formal_reading":null,"status":"UNKNOWN","status_evidence":[],
+"tractability":"LOW","tractability_reason":"Engineering survey.","recommendation":"VAGUE"},
+
+{"title_zh":"多相航行器的航行控制问题","authors":"关世义 (Shiyi Guan), 中国航天科技集团公司第三研究院","book_pages":[128,134],"pdf_pages":[149,155],
+"question_zh":"多相航行器的显著特点是“复杂多变”，因此，解决以自学习、自组织和自适应为主要特征的智能控制问题具有特殊重要的意义。",
+"question_en":"Vehicles that travel across several media (land, water, air, space) are 'complex and variable'; intelligent control with self-learning, self-organization and self-adaptation is especially important for them.",
+"precision":"VAGUE","formal_reading":null,"status":"UNKNOWN","status_evidence":[],
+"tractability":"LOW","tractability_reason":"Conceptual engineering essay.","recommendation":"VAGUE"}
+]
+```
+**Shortlist**
+1. **大种群随机多自主体系统的自适应动态博弈** (target, medium tractability). Li and Zhang (2013) already answer all four of the book's questions when only the global coupling is unknown. The one missing piece is unknown local A and B. That extension looks feasible in about a day for the scalar case with |λ|<1, using decentralized least squares plus diminishing excitation.
+
+No other article in this group qualifies. The nearest miss is 鲁棒自适应非线性控制: Karafyllis, Kontorinaki and Krstić already answer "yes" for systems linear in θ, with state feedback and an event-triggered controller. The general and output-feedback halves remain too hard.
+
+**Manifest corrections**
+- Other ranges spill into the next article: 685 is 微分平坦, 659 is the structural-decomposition article, 671 is 脑电, 701 is the robust strictly-positive-real (SPR) article (your excluded target #1), 707 is the time-varying-system article, and 747 is 学习控制系统.
+- I could not open the book PDF itself: both copies fail to parse with my tools. Everything above comes from the staged pages, archive.org's OCR of the same book, and the primary sources linked in the evidence.

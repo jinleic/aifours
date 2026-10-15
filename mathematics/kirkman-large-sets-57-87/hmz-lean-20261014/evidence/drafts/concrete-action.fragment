@@ -1,0 +1,140 @@
+/-- Coordinate representation of label n*layer+coord; no point relabeling is hidden. -/
+def pointEncoding (n : ℕ) [NeZero n] : (Fin 3 × ZMod n) ≃ Fin (3 * n) :=
+  (Equiv.prodCongr (Equiv.refl (Fin 3)) (ZMod.finEquiv n).symm.toEquiv).trans
+    finProdFinEquiv
+
+/-- The encoding agrees with the existing Python point convention. -/
+theorem pointEncoding_val (n : ℕ) [NeZero n] (l : Fin 3) (c : ZMod n) :
+    ((pointEncoding n) (l,c)).val = n * l.val + c.val := by
+  cases n with
+  | zero => exact (NeZero.ne 0 rfl).elim
+  | succ n => simp [pointEncoding, finProdFinEquiv, ZMod.finEquiv, ZMod.val, Nat.add_comm]
+
+/-- Translation acts on the second coordinate and preserves the layer. -/
+def coordinateTranslation (n : ℕ) (g : ZMod n) : Equiv.Perm (Fin 3 × ZMod n) where
+  toFun p := (p.1,p.2+g)
+  invFun p := (p.1,p.2-g)
+  left_inv p := by simp
+  right_inv p := by simp
+
+/-- Concrete simultaneous cyclic translation on the three n-point layers. -/
+def translation (n : ℕ) [NeZero n] (g : ZMod n) : Equiv.Perm (Fin (3*n)) :=
+  (pointEncoding n).symm.trans ((coordinateTranslation n g).trans (pointEncoding n))
+
+theorem translation_encoding (n : ℕ) [NeZero n] (g : ZMod n)
+    (l : Fin 3) (c : ZMod n) :
+    translation n g (pointEncoding n (l,c)) = pointEncoding n (l,c+g) := by
+  simp [translation, coordinateTranslation]
+
+def pointCoordinate (n : ℕ) [NeZero n] (x : Fin (3*n)) : ZMod n :=
+  ((pointEncoding n).symm x).2
+
+theorem translation_coordinate (n : ℕ) [NeZero n] (g : ZMod n) (x : Fin (3*n)) :
+    pointCoordinate n (translation n g x) = pointCoordinate n x + g := by
+  simp [pointCoordinate, translation, coordinateTranslation]
+
+theorem translation_zero (n : ℕ) [NeZero n] : translation n 0 = Equiv.refl _ := by
+  ext x
+  apply (pointEncoding n).symm.injective
+  simp [translation, coordinateTranslation]
+
+theorem translation_add (n : ℕ) [NeZero n] (g h : ZMod n) (x : Fin (3*n)) :
+    translation n (g+h) x = translation n g (translation n h x) := by
+  apply (pointEncoding n).symm.injective
+  simp [translation, coordinateTranslation, add_assoc, add_comm, add_left_comm]
+
+theorem translate_triple_zero (n : ℕ) [NeZero n] (b : Triple (3*n)) :
+    renameSized (translation n 0) 3 b = b := by
+  apply Subtype.ext
+  simp [renameSized, translation_zero]
+
+theorem translate_triple_add (n : ℕ) [NeZero n] (g h : ZMod n) (b : Triple (3*n)) :
+    renameSized (translation n g) 3 (renameSized (translation n h) 3 b) =
+      renameSized (translation n (g+h)) 3 b := by
+  apply Subtype.ext
+  change (b.val.map (translation n h).toEmbedding).map (translation n g).toEmbedding =
+    b.val.map (translation n (g+h)).toEmbedding
+  rw [Finset.map_map]
+  have he : (translation n h).toEmbedding.trans (translation n g).toEmbedding =
+      (translation n (g+h)).toEmbedding := by
+    ext x
+    exact (translation_add n g h x).symm
+  rw [he]
+
+/-- Actual translation orbit, with no arbitrary choice of a representative. -/
+def translationOrbit (n : ℕ) [NeZero n] (b : Triple (3*n)) : Set (Triple (3*n)) :=
+  {c | ∃ g : ZMod n, renameSized (translation n g) 3 b = c}
+
+theorem translationOrbit_invariant (n : ℕ) [NeZero n] (g : ZMod n)
+    (b : Triple (3*n)) :
+    translationOrbit n (renameSized (translation n g) 3 b) = translationOrbit n b := by
+  ext c
+  constructor
+  · rintro ⟨h,hh⟩
+    exact ⟨h+g, (translate_triple_add n h g b).symm.trans hh⟩
+  · rintro ⟨h,hh⟩
+    refine ⟨h-g, ?_⟩
+    rw [translate_triple_add, sub_add_cancel]
+    exact hh
+
+theorem translationOrbit_fiber (n : ℕ) [NeZero n] (b c : Triple (3*n))
+    (h : translationOrbit n b = translationOrbit n c) :
+    ∃ g : ZMod n, renameSized (translation n g) 3 b = c := by
+  have hc : c ∈ translationOrbit n c := ⟨0, translate_triple_zero n c⟩
+  rw [← h] at hc
+  exact hc
+
+/-- Sum of the coordinate residues of the three actual points. -/
+def coordinateSum (n : ℕ) [NeZero n] (b : Triple (3*n)) : ZMod n :=
+  ∑ x ∈ b.val, pointCoordinate n x
+
+/-- Translating three points adds exactly 3*g, even when they lie in different layers. -/
+theorem coordinateSum_translation (n : ℕ) [NeZero n] (g : ZMod n)
+    (b : Triple (3*n)) :
+    coordinateSum n (renameSized (translation n g) 3 b) = coordinateSum n b + 3*g := by
+  change (∑ x ∈ b.val.map (translation n g).toEmbedding, pointCoordinate n x) = _
+  rw [Finset.sum_map]
+  simp only [Equiv.toEmbedding_apply, translation_coordinate]
+  rw [Finset.sum_add_distrib, Finset.sum_const, b.property, nsmul_eq_mul]
+  rfl
+
+/-- Triple translation is free whenever 3 is invertible modulo n. -/
+theorem translation_triple_free (n : ℕ) [NeZero n] (hcop : Nat.Coprime 3 n)
+    (b : Triple (3*n)) (g h : ZMod n)
+    (heq : renameSized (translation n g) 3 b = renameSized (translation n h) 3 b) :
+    g = h := by
+  have hs := congrArg (coordinateSum n) heq
+  rw [coordinateSum_translation, coordinateSum_translation] at hs
+  have hmul : (3 : ZMod n)*g = 3*h := add_left_cancel hs
+  exact ((ZMod.isUnit_iff_coprime 3 n).mpr hcop).mul_left_cancel hmul
+
+/-- The action facts for C19 are now proved, not seed-package assumptions. -/
+theorem c19_development_sound
+    (fixed : Fin 17 → Blocks 57) (base : Fin 2 → Blocks 57)
+    (hfixed : ∀ f, IsKTS (fixed f)) (hbase : ∀ a, IsKTS (base a))
+    (hinvariant : ∀ f g b, b ∈ fixed f → renameSized (translation 19 g) 3 b ∈ fixed f)
+    (htrans : ∀ a b c, b ∈ base a → c ∈ base a →
+      translationOrbit 19 b = translationOrbit 19 c → b = c)
+    (howners : ∀ b : Triple 57, ∃! i : Fin 17 ⊕ Fin 2,
+      translationOrbit 19 b ∈ ownerOrbits (translationOrbit 19) fixed base i) :
+    IsLKTS (developed (translation 19) fixed base) := by
+  apply development_sound (translation 19) (translationOrbit 19) fixed base
+    (by simp [ZMod.card]) hfixed hbase hinvariant
+    (translationOrbit_invariant 19) (translationOrbit_fiber 19)
+    (translation_triple_free 19 (by decide)) htrans howners
+
+/-- The same kernel-checked action supplies the surviving27+29+29 order87 criterion. -/
+theorem c29_development_sound
+    (fixed : Fin 27 → Blocks 87) (base : Fin 2 → Blocks 87)
+    (hfixed : ∀ f, IsKTS (fixed f)) (hbase : ∀ a, IsKTS (base a))
+    (hinvariant : ∀ f g b, b ∈ fixed f → renameSized (translation 29 g) 3 b ∈ fixed f)
+    (htrans : ∀ a b c, b ∈ base a → c ∈ base a →
+      translationOrbit 29 b = translationOrbit 29 c → b = c)
+    (howners : ∀ b : Triple 87, ∃! i : Fin 27 ⊕ Fin 2,
+      translationOrbit 29 b ∈ ownerOrbits (translationOrbit 29) fixed base i) :
+    IsLKTS (developed (translation 29) fixed base) := by
+  apply development_sound (translation 29) (translationOrbit 29) fixed base
+    (by simp [ZMod.card]) hfixed hbase hinvariant
+    (translationOrbit_invariant 29) (translationOrbit_fiber 29)
+    (translation_triple_free 29 (by decide)) htrans howners
+

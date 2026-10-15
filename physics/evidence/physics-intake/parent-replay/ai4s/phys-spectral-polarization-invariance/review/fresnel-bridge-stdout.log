@@ -1,0 +1,71 @@
+**Correct. The proposed source is a valid counterexample in the stated full-plane scalar paraxial Fresnel model.** No mathematical repair is required.
+
+1. **Severity: none — normalization, positivity, and ranks pass.**  
+   The radial integrals are
+   \[
+   \int_0^\infty te^{-t}dt=1,\quad
+   \int_0^\infty t(2-t)e^{-t}dt=0,\quad
+   \int_0^\infty t(2-t)^2e^{-t}dt=2.
+   \]
+   Together with angular orthogonality, these establish the four stated orthonormal modes. The covariance is a sum of four positive rank-one spatial-polarization operators, with eigenvalues \(3/4,1/4,3/8,1/8\). Its integrated transverse spectral power is \(3/2\). Both the full covariance rank and \(\operatorname{rank}T\) are four in this example. **Correction: none.**
+
+2. **Severity: none — nonfactorization is established directly.**  
+   At any fixed nonzero equal radius,
+   \[
+   \frac{W_{xx}(r_1,r_2)}{W_{yy}(r_1,r_2)}
+   =3e^{2i(\theta_1-\theta_2)}.
+   \]
+   The common radial factor is positive because the \(\ell=0\) contribution is positive there. The ratio is \(3\) for equal angles and \(-3\) for angular separation \(\pi/2\); consequently no constant matrix \(C\) can give \(W=gC\). This argument requires no appeal to C2. **Correction: none.**
+
+3. **Severity: none — the full-plane Fresnel symmetry is exact.**  
+   Both the Laplacian argument and the angular-integral argument are correct:
+   \[
+   (-i)^{-1}J_{-1}=i(-J_1)=-iJ_1.
+   \]
+   An independent closed-form check strengthens the proof. In the envelope convention used by the code, put \(q=1+iz/k\), \(s=|q|^2\). Then
+   \[
+   U_z\psi_{0,\pm}
+   =\frac{(x\pm iy)e^{-r^2/(2q)}}{\sqrt{\pi}\,q^2},
+   \qquad
+   U_z\psi_{1,\pm}
+   =\frac{(x\pm iy)(2s-r^2)e^{-r^2/(2q)}}
+          {\sqrt{2\pi}\,q^4}.
+   \]
+   These formulas hold for every finite \(z\geq0\), including the source plane, and prove the paired intensity equalities. Independence preserves zero cross-polarization covariance, hence
+   \[
+   J=H\operatorname{diag}(3/4,1/4),\qquad P=1/2.
+   \]
+   **Correction: none.**
+
+4. **Severity: none — zero intensity is handled correctly.**  
+   More precisely, the axis is the **only** dark locus at every finite propagation distance:
+   \[
+   |U_z\psi_{0,+}|^2
+   =\frac{r^2}{\pi s^2}e^{-r^2/s}>0\quad(r>0).
+   \]
+   Thus \(H>0\) everywhere off-axis, even where the higher radial mode vanishes. On-axis \(J=0\), so normalized polarization and \(P\) are undefined. **Correction: none; “only the axis” is an available strengthening.**
+
+5. **Severity: none — conjugation and the projector response pass.**  
+   The proposed convention agrees with [RESULTS.md](/Users/jinleic/jinleic-workspace/ai4s/phys-spectral-polarization-invariance/RESULTS.md:23):
+   \(W_{ij}=\mathbb E[E_i(r_1)E_j(r_2)^*]\).
+   Taking \(K=\psi_{0,+}^*\) gives modal amplitudes \(f=(1,0,0,0)\), and therefore exactly
+   \[
+   J_L=\operatorname{diag}(3/4,0),\qquad P(J_L)=1.
+   \]
+   There is no conjugation reversal or residual \(-1\) contribution. This bounded scalar linear functional is allowed by C2 and is outside the specified free-space point-sampling family. The differing degrees refute universal-probe invariance directly. **Correction: none.**
+
+6. **Severity: none — the numerical implementation represents the stated construction.**  
+   Inspection of [fresnel_only.py](/Users/jinleic/jinleic-workspace/ai4s/phys-spectral-polarization-invariance/code/fresnel_only.py:40) confirms the four fields, their normalizations, incoherent radial weights, and polarization powers. Summing weighted intensities correctly implements the independent-coefficient covariance.
+
+   The FFT multiplier \(e^{-izq^2/(2k)}\) has the correct sign. The independent Hankel calculation includes the radial measure, source envelope, quadratic phase, \(J_1\), angular factor, and Fresnel prefactor correctly; the angular \(2\pi\) cancels the kernel’s \(2\pi\).
+
+   Standalone calculations confirmed the Gaussian–Bessel integral against the closed-form propagation to below \(3.2\times10^{-16}\) at the specified samples. The omitted \(r>12\) tails contribute less than \(1.8\times10^{-28}\) in amplitude for these parameters. An independent analytic astigmatic calculation reproduced the stored degree range
+   \([0.001739208375514,\;0.820368150265482]\)
+   within \(3.4\times10^{-16}\). **Correction: none.**
+
+7. **Severity: low — computational evidence needs its existing scope qualification.**  
+   The FFT is a finite periodic-grid approximation; the integral comparison samples three distances and five positions. The intensity floor excludes dim numerical samples beyond the exact dark axis. Also, the degree values under `"exact"` are literals in the script, rather than symbolic propagation/projector assertions. **Checkable reporting correction:** attribute those exact degrees to the analytic proof whenever citing [fresnel-only.json](/Users/jinleic/jinleic-workspace/ai4s/phys-spectral-polarization-invariance/results/fresnel-only.json:3). These limitations do not weaken the counterexample.
+
+The standard isotropic scalar ABCD extension is justified; general astigmatic systems need not preserve the degeneracy. The example establishes neither a complete Fresnel-only classification nor a full-Maxwell result, and leaves Wolf’s sufficient conditions intact. No novelty claim is warranted. I did not run the script or write files.
+
+**Strongest defensible summary:** This finite-energy, rank-four, PSD, nonfactorized source preserves its normalized local polarization under every full-plane scalar paraxial free-space Fresnel propagation, yet an allowed scalar projector changes \(P\) from \(1/2\) to \(1\), proving that C2’s all-probe necessary condition is not necessary for Fresnel-only invariance.

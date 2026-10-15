@@ -1,0 +1,82 @@
+**Mathematical verdict: correct.** C8 establishes necessity and sufficiency for the stated four-LG-mode, sector-diagonal scalar Fresnel problem. I found no counterexample or substantive mathematical correction.
+
+**Novelty verdict: not established.** The response-set bridge and complete source parameterization are valid, but this review does not establish scientific priority.
+
+No critical, major, or minor mathematical defect was found. The numbered findings below are confirmations; none requires a mathematical correction.
+
+1. **The all-\(m\) propagation formula is correct.** The harmonic-polynomial Laplacian identity and Gaussian evolution give the stated \(q_0\). Differentiating with the source normalization held fixed gives
+   \[
+   (M+2\alpha\partial_\alpha)F_\alpha
+   =F_\alpha\frac{M(1+t^2)-R^2}{Q^2}
+   \quad(\alpha=a^{-2}),
+   \]
+   and therefore the stated \(q_1/q_0\), including its phase and waist scaling. The normalization identities also hold for every integer \(m\geq1\). See [the derivation](/Users/jinleic/jinleic-workspace/ai4s/phys-spectral-polarization-invariance/RESULTS.md:400).
+
+2. **The reachable-set correction and polynomial necessity proof are sound.** Writing \(s=\sqrt M\), the exact finite, illuminated response set is
+   \[
+   \{\operatorname{Im}w>0\}
+   \;\cup\;\{\operatorname{Im}w<0,\ |w|<s\}
+   \;\cup\;(-\infty,s),
+   \]
+   where the last interval lies on the real axis. Its projective closure is precisely the stated closed upper half-plane, lower closed half-disk, and infinity.
+
+   The inverse construction attains every upper-half-plane point at finite positive distance and radius. Consequently the degree-\(\leq4\) real polynomial vanishes on an open set. Homogeneity and continuity legitimately extend the identity to every radial direction, including \(f_0=0\). Projective density is unnecessary. See [the response lemma](/Users/jinleic/jinleic-workspace/ai4s/phys-spectral-polarization-invariance/RESULTS.md:467).
+
+3. **PSD contraction, whitening, and dark cases use the correct conventions.** With the stated source covariance convention,
+   \[
+   J=\sum_{bc}q_bq_c^*K_{bc},\qquad
+   T_{bc}=\operatorname{tr}K_{cb}.
+   \]
+   The reversed block indices in \(T\) are essential and correct. Physically,
+   \[
+   I=|q_0|^2(1,w)^\dagger T(1,w).
+   \]
+   Nonzero PSD \(K\) implies nonzero PSD \(T\). Rank two gives no dark chart directions; rank one gives at most one. PSD forces zero output at zero trace, and the axis is dark independently.
+
+   Restricting to \(\operatorname{supp}T\) before applying \(T^{-1/2}\) produces a completely positive, trace-preserving map. Kernel-containing mixed terms vanish by the Kraus argument in C2. Thus rank-one support gives replacement only, and excluding \(K=0\) correctly removes the all-dark source. See [the support argument](/Users/jinleic/jinleic-workspace/ai4s/phys-spectral-polarization-invariance/RESULTS.md:486).
+
+4. **The channel branches and endpoint restrictions are complete.** Independently checking C2’s two-input argument gives \(M^{\mathsf T}a=0\) and \(M^{\mathsf T}M=\lambda I\): either replacement or a scaled orthogonal Bloch map. The Choi eigenvalues then give exactly \(0\leq P_\star\leq1\) for the depolarizing branch and \(0\leq P_\star\leq1/3\) for the transpose branch. The unpolarized and pure endpoints introduce no missing family. See [C2’s proof](/Users/jinleic/jinleic-workspace/ai4s/phys-spectral-polarization-invariance/RESULTS.md:125).
+
+5. **The SUM reduction and PSD split are complete.** Cancellation of angular phases requires no diagonalization within either sector. Arbitrary radial and polarization correlations remain present. Every admissible pair has \(K=\Gamma_++\Gamma_-\), and every Hermitian \(0\preceq L\preceq K\) gives a valid pair \(L,K-L\); there is no additional positivity constraint.
+
+   This establishes an all-radial-probe property of \(K\), while allowing the original four-spatial-mode trace support to have rank four. C6 remains a valid separation from global all-probe necessity. The nontrivial split also explicitly has a varying minus-sector degree, so sectorwise invariance is not being smuggled into the proof. See [the parameterization](/Users/jinleic/jinleic-workspace/ai4s/phys-spectral-polarization-invariance/RESULTS.md:500).
+
+6. **The isotropic ABCD corollary is correct, including \(B=0\).** For \(B\neq0\),
+   \[
+   (-i)^{-m}J_{-m}(x)=(-i)^mJ_m(x),
+   \]
+   so the Collins kernel gives identical radial transfer for both sectors, including negative \(B\).
+
+   For \(B=0\), \(A\neq0\) and the field undergoes, up to a common phase,
+   \[
+   E(\mathbf r)\longmapsto
+   |A|^{-1}e^{ikCr^2/(2A)}E(\mathbf r/A).
+   \]
+   Negative magnification contributes \(e^{\pm im\pi}=(-1)^m\), again common to both sectors. Sufficiency follows from the classified radial map; necessity follows from the included forward Fresnel systems. See [the corollary](/Users/jinleic/jinleic-workspace/ai4s/phys-spectral-polarization-invariance/RESULTS.md:526).
+
+7. **The numerical sources exercise genuine within-sector correlations.** They are not limited to diagonal populations. In the nontrivial depolarizing split, direct finite-matrix calculation gives, for example,
+   \[
+   (\Gamma_-)_{0x,1y}=-3i/4,\qquad
+   (\Gamma_-)_{0x,0y}=1/8.
+   \]
+   Its complex trace matrix is
+   \[
+   T=\begin{pmatrix}17/16&5i/8\\-5i/8&37/16\end{pmatrix}.
+   \]
+   The FFT implementation factors each full sector covariance into coherent Jones fields and propagates them before forming \(J\), which meaningfully exercises these correlations. See [source construction](/Users/jinleic/jinleic-workspace/ai4s/phys-spectral-polarization-invariance/code/lg_fresnel_classification.py:40) and [physical propagation](/Users/jinleic/jinleic-workspace/ai4s/phys-spectral-polarization-invariance/code/lg_fresnel_classification.py:189).
+
+   The saved output contains 42 positive FFT cases, with maximum matrix discrepancy \(3.3307\times10^{-16}\), degree discrepancy \(1.7786\times10^{-13}\), and 24 Hankel samples with maximum amplitude discrepancy \(4.4816\times10^{-14}\). These support implementation consistency within the declared sampling region and intensity floor. I did not execute any verification script; these are inspected saved results, not newly reproduced measurements.
+
+The bounded prior-art check supports conservative positioning. LG differential-operator derivations and Gouy phases are established in [Pampaloni–Enderlein](https://arxiv.org/pdf/physics/0410021), and the channel geometry belongs to established [Ruskai–Szarek–Werner machinery](https://arxiv.org/pdf/quant-ph/0101003). The [2022 publisher abstract](https://www.sciencedirect.com/science/article/pii/S0030399222002365) establishes propagation-invariant, generally nonuniform polarization patterns; [Li’s 2015 abstract](https://pubmed.ncbi.nlm.nih.gov/26366912/) concerns Laguerre-Gaussian correlation functions in electromagnetic Schell-model sources. Neither checked abstract establishes an equivalent arbitrary four-mode covariance classification. Their full-text overlap was not independently resolved here, so absence of an exact antecedent has not been proved.
+
+**The strongest defensible theorem is:** for every fixed \(k,a>0\), integer \(m\geq1\), and \(p\in[0,1]\), a nonzero source in the specified sector-diagonal four-mode class has local degree \(p\) at every illuminated point for every forward full-plane scalar Fresnel distance **if and only if** its sum map, whitened on its nonzero trace support, is exactly one of:
+
+| Whitened map \(\Psi(X)\) | Trace-support rank | Parameters |
+|---|---:|---|
+| \(\operatorname{tr}(X)C\) | 1 or 2 | \(C\succeq0,\ \operatorname{tr}C=1,\ P(C)=p\) |
+| \(pUXU^\dagger+(1-p)\operatorname{tr}(X)I_2/2\) | 2 | \(0\leq p\leq1\) |
+| \(pUX^{\mathsf T}U^\dagger+(1-p)\operatorname{tr}(X)I_2/2\) | 2 | \(0\leq p\leq1/3\) |
+
+Every permitted sum admits exactly the sector choices \((\Gamma_+,\Gamma_-)=(L,K-L)\), \(0\preceq L\preceq K\). These conditions are also equivalent to the same constant-degree property under every centered lossless polarization-independent isotropic real ABCD system. Degree remains undefined at dark points.
+
+**No mathematical proof obligation remains for this scoped theorem. Novelty clearance remains unresolved.**

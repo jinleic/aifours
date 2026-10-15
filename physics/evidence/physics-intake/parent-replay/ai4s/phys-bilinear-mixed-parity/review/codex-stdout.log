@@ -1,0 +1,50 @@
+**Verdict: CORRECT.** RESULTS.md establishes the stated generic all‑N theorem, including \(c_3=0\), every F/G pattern, independent amplitudes and transverse waves, and the \(D_xP\) reduction. I found no mathematical gap or counterexample. One minor notation clarification would improve the exposition.
+
+1. **No defect — universal Pfaffian lemma.** The minus signs in the rank-two update identities are correct under the stated border convention. The four-border Jacobi identity has the correct ordering and extends to singular \(H\) as a polynomial identity. Independent differentiation gives exactly the displayed derivatives and
+   \[
+   (D_X^3-D_s)\tau.h
+   =3([12][0v]-[02][1v]+[01][2v]-\tau[012v])=0.
+   \]
+   No division by \(\operatorname{Pf}(H)\) is required. [Evidence: RESULTS.md, lines 97–132](/Users/jinleic/jinleic-workspace/ai4s/phys-bilinear-mixed-parity/RESULTS.md:97).
+
+2. **No defect — the transverse equation and coefficient dictionary.** Crucially,
+   \[
+   J_y=-a_y\wedge b+a_y\wedge b+r_0\wedge b_y=r_0\wedge b_y.
+   \]
+   The update from \(J\) to \(L\) contributes a bracket containing \(r_0\) twice, so \(G_y=-\sigma[r_0,b_y]_L\). Applying the lemma and differentiating the first equation therefore proves the independently necessary transverse equation. The minor-sum signs, \(N=B-\alpha\wedge\beta\), and dummy-last convention are consistent; no seed amplitude is divided out. Typed pairing counts give precisely the claimed charge supports. [Transverse derivation](/Users/jinleic/jinleic-workspace/ai4s/phys-bilinear-mixed-parity/RESULTS.md:166), [dictionary](/Users/jinleic/jinleic-workspace/ai4s/phys-bilinear-mixed-parity/RESULTS.md:180).
+
+3. **No defect — projection, gauge and normalization.** Multiplying the two Laurent expressions shows that their \(u^1\) bilinear coefficient is uniquely \(F_+.G_0\), for **each** equation. The operator shift has zero constant term, quadratic coefficient \(3c_3\delta=c_2\), and linear coefficient \(v+3c_3\delta^2=c_1\). Both time signs follow:
+   \[
+   -p_0(k+\delta)+p_0(\delta)=-p(k),\qquad
+   -p_0(k-\delta)-p_0(\delta)=p(-k).
+   \]
+   The auxiliary singleton supplies \(F_\varnothing=1\); the auxiliary/G pair cancels its normalization factor exactly. The matrix construction permits \(l_0=0\), since only distinct-index pair sums need be nonzero. [Evidence](/Users/jinleic/jinleic-workspace/ai4s/phys-bilinear-mixed-parity/RESULTS.md:224).
+
+4. **No defect — the quadratic specialization is an all‑N proof.** Every retained full set has \(m-n=1\) for F or \(0\) for G, making the total lambda exponent zero. The potentially divergent background also cancels **before** specialization:
+   \[
+   \theta_T-\theta_0=\eta_S\quad\text{for F},\qquad
+   \theta_T=\eta_S\quad\text{for G}.
+   \]
+   Thus the final coefficients and dispersions are regular at \(\lambda=0\) on the stated domain. Every formal residual coefficient is a regular rational function vanishing generically for nonzero lambda, hence also at zero. This covers amplitude monomials with doubled indices, not just squarefree coefficients. [Evidence](/Users/jinleic/jinleic-workspace/ai4s/phys-bilinear-mixed-parity/RESULTS.md:266).
+
+5. **Low severity — implicit recursion notation.** \(\kappa_S\) is not explicitly defined where uniqueness is asserted. Clarify \(\kappa_S=(k_S,l_S,w_S)\) and display the endpoint matrix
+   \[
+   \begin{pmatrix}
+   P(\kappa_S)&P(-\kappa_S)\\
+   l_SP(\kappa_S)&-l_SP(-\kappa_S)
+   \end{pmatrix}.
+   \]
+   Its determinant is the stated \(-2l_SP(\kappa_S)P(-\kappa_S)\). Mixed monomials establish generic nonvanishing for both degrees. This is an exposition omission, not a construction gap. With \(l_i=k_i\), dependence through \(x+y\) justifies the reduction before restricting \(y=0\). [Evidence](/Users/jinleic/jinleic-workspace/ai4s/phys-bilinear-mixed-parity/RESULTS.md:282).
+
+I actually performed these small exact, in-memory calculations with bytecode disabled:
+
+- 12 rank-two/update/Jacobi checks in dimensions 0, 2, 4 and 6, including singular matrices.
+- Six direct Taylor-differentiation checks of the bordered lemma.
+- Four block-dictionary and transverse-derivative checks for \(M=1,\ldots,4\), including \(l_0=0\).
+- 32 fresh coefficient cases covering cubic and quadratic branches, vacuum, singletons, mixed patterns through \(N=4\), doubled exponents, zero amplitudes and a tau zero.
+
+The saved JSON contains the reported 444 passing cases and 12 differentiation cases; I inspected that data without rerunning the shared verifier. **Its historical controls exclude \(N=0\); the vacuum passed freshly here.** All four manifest hashes matched. No files were changed.
+
+**Remaining unproved steps within the stated theorem: none identified.** Zero amplitudes and tau zeros cause no division; excluded spectral denominators remain genuine scope restrictions.
+
+**SOLVED**, **Certification** meaning a written algebraic proof with exact controls, and **NOVELTY-UNCLEAR** are honest labels. This is the approved second parity branch of the same book chapter. Peng priority remains unresolved, and this review supplies neither a Lean kernel certificate nor a general Lax/full-book integrability claim.

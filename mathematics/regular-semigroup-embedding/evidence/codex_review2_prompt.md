@@ -1,0 +1,10 @@
+You are an independent referee. Work read-only. You may read ONLY files inside the current directory (README.md, proof.md, sources/, work/, evidence/). Do not read anything outside it. Do not delegate to other agents. No web access is needed.
+
+A first review (evidence/codex_review.md) was already applied. Review ONLY the following newer material, skeptically:
+
+1. proof.md "Proposition F (finite verification of Q_orth, group Z2, |E| <= 6)" and its four proof steps: (i) the band enumeration claims (work/enum_locreg_bands.py, work/sat_small_band.py encoding of "locally regular and not regular", evidence/enum_locreg_bands.log); (ii) the odd-element bound argument (work/odd_bound_3d.py): is it correct that sigma is injective on H-classes, that D_S-related idempotents have isomorphic local submonoids, and that therefore |A| <= |E| for these bands? (iii) exhaustiveness of work/enum_extensions.py (does its SAT encoding capture exactly the Z2-graded E-unitary orthodox semigroups with the given even part E? is the isomorphism dedup sound?); (iv) the embedding certificates (work/embed_generic_sat.py, work/verify_embedding_certificate.py, evidence/pipeline_3d_certificates.log): does the verifier really establish S embeds in B x| Z2 with B locally regular? Note the documented fix: only x -> (beta(x), sigma(x)) must be injective.
+2. proof.md Lemma 0' (Kad'ourek-type necessary condition) and its proof, and the claim about the ideal-extension family K u {f} (work/check_xi_ideal_extensions.py).
+3. proof.md Remark C.1 (property (R) / quasi-F-orthodox, using sources/billhardt_szendrei1995_PEMS38_quasiF.pdf, Proposition 3.3).
+You may run the pure-Python scripts (python3 work/verify_embedding_certificate.py ..., python3 work/odd_bound_3d.py ..., python3 work/check_xi_ideal_extensions.py 50 1) if your sandbox allows; pysat may be unavailable.
+
+Output (Markdown): "Verdict:" per item 1(i)-(iv), 2, 3 in {correct, correct-with-minor-fixes, has-errors}; "Concrete errors:" numbered, each with file/section, what is wrong, fix; be specific; no praise.
