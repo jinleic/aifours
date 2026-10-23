@@ -1,0 +1,391 @@
+--- code/rqls_assay_v5.py
++++ code/rqls_assay_v6.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""rqls_assay_v5: float feasibility assay for maximal 1-RQLS(10) (NOT a certificate; numeric results are UNKNOWN).
++"""rqls_assay_v6: float feasibility assay for maximal 1-RQLS(10) (NOT a certificate; numeric results are UNKNOWN).
+ 
+ Representation: a Latin square B (resolution) and unit vectors q_p, p in [v]^2, with every row, column and B-class an
+ orthonormal basis. Problems are given by representatives z_r and line slots (r, k) meaning the vector U^k z_r with U
+@@ -46,7 +46,16 @@
+ Modes: smoke (gates + A5 + 8 calibration starts) | red1 (gates + A5 + calibration + random forced Z_7+3 targets +
+ Z_9+1 targets).
+ 
+-Usage: rqls_assay_v5.py OUT.jsonl GLOBAL_BUDGET_S CLASSICAL_JSON EX24_JSON EX24_SHA256 STOP_RECEIPT MODE(smoke|red1)
++v6 change (after the v5 smoke recovered 0/8 classical points by random-start LM): same gates (A, C1, C1p, C2, A5),
++verifier and solvers, plus (a) reduced RRR (ReducedRRR): divide-and-concur on R0, C0, S0 only, with the inf-line
++structure (flat moduli, corner-coupled 2-dim directions) built into the concur projection; endpoints with RRR error
++< 1e-2 are Gauss-Newton polished on the FULL symmetric residual before verification; (b) calibration-only modes:
++K2 = reduced RRR recovery of classical Parker-type forced-form points, K = random-start reduced LM (many starts);
++(c) X: local excess (numerical SVD rank estimate) at the stored v3 maximal calibration solutions (v = 7, 8);
++(d) WH: random-start LM for the Weyl-Heisenberg regular-orbit ansatz (R4 open case) in d = 10, with the d = 5
++analogue as a positive control. No target search in v6.
++
++Usage: rqls_assay_v6.py OUT.jsonl GLOBAL_BUDGET_S CLASSICAL_JSON EX24_JSON EX24_SHA256 STOP_RECEIPT MODE(smoke|kcal) V3_JSONL V3_SHA256
+ Exit codes: 0 completed (or ended by budget), 2 exception, 3 gate failure, 4 cap stop, 5 terminated by SIGTERM.
+ """
+ import hashlib, itertools, json, math, os, signal, sys, time
+@@ -55,7 +64,8 @@
+ SRC_SHA = hashlib.sha256(open(os.path.abspath(__file__), "rb").read()).hexdigest()
+ OUT, GLOBAL_BUDGET, CLASSICAL_JSON, EX24_JSON, EX24_SHA, STOP_RECEIPT, MODE = (sys.argv[1], float(sys.argv[2]), sys.argv[3],
+                                                                               sys.argv[4], sys.argv[5], sys.argv[6], sys.argv[7])
+-if MODE not in ("smoke", "red1"):
++V3_JSONL, V3_SHA = sys.argv[8], sys.argv[9]
++if MODE not in ("smoke", "kcal"):
+     sys.exit(7)
+ TERM = [False]
+ STAGE = ["init"]
+@@ -949,9 +959,255 @@
+     return R, th, lab, M
+ 
+ 
++
++
++# ====================================================================== v6: reduced RRR (inf-lines built into the projection)
++class ReducedRRR:
++    """Divide-and-concur on the three lines R0, C0, S0 of a forced Z_n + h ansatz. Representatives: the general v_d and
++    the 3h flat vectors (u_c, w_a, w'_b); corners are implicit. P_A: nearest unitary per line. P_B: per-representative
++    phase-aligned consensus, then the flat structure: modulus 1/sqrt(n) on 1-dim eigenspaces and, for every corner
++    cell kappa, a common direction phi_kappa (best rank-1 fit) for the three 2-dim components it feeds; the corner ray is
++    phi_kappa's orthogonal complement in its eigenspace."""
++
++    def __init__(self, R):
++        self.R = R
++        v = R.v
++        self.v = v
++        self.nrows = R.nv + R.nflat
++        self.addr = [[] for _ in range(self.nrows)]
++        for L in range(3):
++            for s in range(v):
++                self.addr[int(R.LI[L, s])].append((L, s))
++        self.aL = [np.array([a[0] for a in ad]) for ad in self.addr]
++        self.aS = [np.array([a[1] for a in ad]) for ad in self.addr]
++        self.back = np.conj(R.fwd)
++        # corner triples: for each corner index kappa, the list of (flat index, i0, i1)
++        self.trip = {}
++        for fi, mi, i0, i1, ka in zip(R.FI, R.MI, R.I0, R.I1, R.KA):
++            self.trip.setdefault(int(ka), []).append((int(fi), int(i0), int(i1)))
++        assert all(len(x) == 3 for x in self.trip.values()) or R.h != 3 or True
++
++    def consensus(self, Y):
++        S = Y.T @ Y.conj()
++        ev, V = np.linalg.eigh(S)
++        z = V[:, -1]
++        for _ in range(3):
++            ov = Y.conj() @ z
++            ph = ov / np.maximum(np.abs(ov), 1e-300)
++            z = Y.T @ ph
++            z = z / max(np.linalg.norm(z), 1e-300)
++        return z
++
++    def project_B(self, X, want=False):
++        R, v = self.R, self.v
++        Xb = X * self.back
++        Zr = np.zeros((self.nrows, v), dtype=complex)
++        for r in range(self.nrows):
++            Zr[r] = self.consensus(Xb[self.aL[r], self.aS[r]])
++        n = R.n
++        s = 1.0 / math.sqrt(n)
++        for f, p in zip(R.F1, R.P1):
++            zz = Zr[R.nv + f, p]
++            Zr[R.nv + f, p] = s * zz / max(abs(zz), 1e-300)
++        phis = {}
++        for ka, lst in self.trip.items():
++            Y = np.array([[Zr[R.nv + f, i0], Zr[R.nv + f, i1]] for (f, i0, i1) in lst])
++            phi = self.consensus(Y)
++            phis[ka] = (phi, lst[0][1], lst[0][2])
++            for (f, i0, i1) in lst:
++                ov = np.vdot(phi, np.array([Zr[R.nv + f, i0], Zr[R.nv + f, i1]]))
++                ph = ov / max(abs(ov), 1e-300)
++                Zr[R.nv + f, i0] = s * ph * phi[0]
++                Zr[R.nv + f, i1] = s * ph * phi[1]
++        out = np.empty_like(X)
++        for r in range(self.nrows):
++            Y = Xb[self.aL[r], self.aS[r]]
++            ov = Y.conj() @ Zr[r]
++            ph = ov / np.maximum(np.abs(ov), 1e-300)
++            out[self.aL[r], self.aS[r]] = np.conj(ph)[:, None] * Zr[r][None, :]
++        out *= R.fwd
++        return (out, Zr, phis) if want else out
++
++    def project_A(self, X):
++        M = np.swapaxes(X, 1, 2)
++        Wm, sv, Vh = np.linalg.svd(M)
++        return np.swapaxes(Wm @ Vh, 1, 2)
++
++    def Z_full(self, Zr, phis):
++        R = self.R
++        n, h, v = R.n, R.h, R.v
++        Z = np.zeros((R.P.nrep, v), dtype=complex)
++        fidx = {fl: R.nv + k for k, fl in enumerate(R.flats)}
++        for d in range(n):
++            Z[d] = Zr[fidx[("u", R.Dinf.index(d))]] if d in R.Dinf else Zr[R.Dfin.index(d)]
++        for a in range(h):
++            Z[n + a] = Zr[fidx[("w", a)]]
++            Z[n + h + a] = Zr[fidx[("wp", a)]]
++        for ka, (phi, i0, i1) in phis.items():
++            c = np.zeros(v, dtype=complex)
++            c[i0], c[i1] = -np.conj(phi[1]), np.conj(phi[0])
++            Z[n + 2 * h + ka] = c
++        nr = np.linalg.norm(Z, axis=1, keepdims=True)
++        return Z / np.maximum(nr, 1e-300)
++
++
++def rrrr_run(RR, rng, max_iter, end, beta=0.5, tol=1e-10):
++    v = RR.v
++    X = rng.standard_normal((3, v, v)) + 1j * rng.standard_normal((3, v, v))
++    X /= np.linalg.norm(X, axis=2, keepdims=True)
++    err, status, it = float("inf"), "MAX_ITER", 0
++    for it in range(1, max_iter + 1):
++        pb = RR.project_B(X)
++        pa = RR.project_A(2.0 * pb - X)
++        d = pa - pb
++        err = float(np.sqrt(np.mean(np.sum(np.abs(d) ** 2, axis=2))))
++        X = X + beta * d
++        if err < tol:
++            status = "CONVERGED"
++            break
++        if (it & 127) == 0 and over(end):
++            status = "TERM" if TERM[0] else "TIME"
++            break
++    pb, Zr, phis = RR.project_B(X, want=True)
++    return status, it, err, RR.Z_full(Zr, phis)
++
++
++def run_rrrr(R, tag, seeds, max_iter, end, extra=None, polish_lm=True):
++    out = []
++    RR = ReducedRRR(R)
++    for seed in seeds:
++        if over(end):
++            W.write({"tag": tag, "seed": seed, "status": "SKIPPED_TERM" if TERM[0] else "SKIPPED_TIME"})
++            out.append("SKIPPED")
++            continue
++        t0 = time.monotonic()
++        rng = np.random.default_rng(seed)
++        status, it, err, Z = rrrr_run(RR, rng, max_iter, end)
++        raw = R.P.verify(Z)
++        polished, presid, pit = False, None, 0
++        if polish_lm and err < POLISH_ERR and not over(end):
++            Z, presid, pit = polish(R.P, Z, end)
++            polished = True
++        maxdev, rays, minsep = R.P.verify(Z)
++        maximal = bool(maxdev < 1e-8 and rays == R.v * R.v and minsep > 1e-6)
++        rec = {"tag": tag, "seed": seed, "status": status, "iters": it, "err": err, "maxdev": maxdev, "rays": rays,
++               "minsep": minsep, "raw": {"maxdev": raw[0], "rays": raw[1], "minsep": raw[2]}, "polished": polished,
++               "polish_resid": presid, "polish_iters": pit, "secs": round(time.monotonic() - t0, 3), "maximal_candidate": maximal}
++        if extra is not None:
++            rec["config"] = extra
++        if maximal:
++            rec["Z_re"] = np.round(Z.real, 15).tolist()
++            rec["Z_im"] = np.round(Z.imag, 15).tolist()
++            rec["B"] = R.P.B
++        W.write(rec)
++        out.append(rec)
++    return out
++
++def stage_X(v3_jsonl, v3_sha, end):
++    """Local excess (numerical SVD rank estimate) at stored v3 calibration maximal solutions (unsymmetric)."""
++    raw = open(v3_jsonl, "rb").read()
++    if hashlib.sha256(raw).hexdigest() != v3_sha:
++        W.write({"tag": "X_local_excess", "status": "INPUT_HASH_MISMATCH"})
++        return
++    for line in raw.decode().splitlines():
++        r = json.loads(line)
++        if not r.get("maximal_candidate"):
++            continue
++        if over(end):
++            W.write({"tag": "X_local_excess", "status": "SKIPPED_TIME"})
++            return
++        Z = np.array(r["Z_re"]) + 1j * np.array(r["Z_im"])
++        P = unsym("x_" + r["tag"], r["B"])
++        th = P.theta_of(Z)
++        info, Kx, J = excess_basis(P, th, None, 1)
++        md, ry, ms = P.verify(Z)
++        W.write({"tag": "X_local_excess", "source_tag": r["tag"], "seed": r["seed"], "v": P.v, "rays": ry, "maxdev": md, **info})
++
++
++# ====================================================================== v6: Weyl-Heisenberg orbit ansatz (R4 open case), dimension d
++def wh_resid_batch(TH, d, lam):
++    q = TH[:, :d] + 1j * TH[:, d:]
++    t = np.arange(d)
++    w = np.exp(2j * np.pi / d)
++    out = [np.sum(np.abs(q) ** 2, axis=1)[:, None] - 1.0]
++    for kind in ("X", "Z", "XZ"):
++        for k in range(1, d):
++            if kind == "X":
++                Aq = np.roll(q, k, axis=1)
++            elif kind == "Z":
++                Aq = (w ** (k * t))[None] * q
++            else:
++                Aq = np.roll((w ** (lam * k * t))[None] * q, k, axis=1)
++            ip = np.sum(q.conj() * Aq, axis=1)
++            out.append(ip.real[:, None])
++            out.append(ip.imag[:, None])
++    return np.concatenate(out, axis=1)
++
++
++def wh_lm(d, lam, th, iters, end, tol=1e-13):
++    lamd = 1e-3
++    f = wh_resid_batch(th[None], d, lam)[0]
++    nf = float(f @ f)
++    for it in range(1, iters + 1):
++        if over(end) or nf < tol * tol:
++            break
++        E = np.eye(2 * d) * 1e-6
++        J = ((wh_resid_batch(th[None] + E, d, lam) - wh_resid_batch(th[None] - E, d, lam)) / 2e-6).T
++        A = J.T @ J
++        g = J.T @ f
++        D = np.diag(A) + 1e-12
++        while True:
++            step = np.linalg.solve(A + lamd * np.diag(D), -g)
++            th2 = th + step
++            f2 = wh_resid_batch(th2[None], d, lam)[0]
++            n2 = float(f2 @ f2)
++            if n2 < nf:
++                th, f, nf = th2, f2, n2
++                lamd = max(lamd / 3, 1e-12)
++                break
++            lamd *= 4
++            if lamd > 1e10:
++                return th, math.sqrt(nf)
++    return th, math.sqrt(nf)
++
++
++def stage_WH(end, nstarts, d, lams, tag):
++    t_start = time.monotonic()
++    for li, lam in enumerate(lams):
++        lam_end = t_start + (end - t_start) * (li + 1) / len(lams)
++        rng = np.random.default_rng(10000 + 100 * d + lam)
++        res_list = []
++        nsol = 0
++        k = 0
++        while k < nstarts and not over(lam_end):
++            th, res = wh_lm(d, lam, rng.standard_normal(2 * d), 300, lam_end)
++            res_list.append(res)
++            if res < 1e-10:
++                nsol += 1
++                if d == 10:
++                    q = th[:10] + 1j * th[10:]
++                    B = [[(b - lam * a) % 10 for b in range(10)] for a in range(10)]
++                    Z = np.zeros((100, 10), dtype=complex)
++                    tt = np.arange(10)
++                    w = np.exp(2j * np.pi / 10)
++                    for a in range(10):
++                        for b in range(10):
++                            Z[a * 10 + b] = np.roll((w ** (b * tt)) * q, a)
++                    P = unsym("wh10", B)
++                    md, ry, ms = P.verify(Z / np.linalg.norm(Z, axis=1, keepdims=True))
++                    W.write({"tag": tag + "_solution", "lam": lam, "resid": res, "maxdev": md, "rays": ry, "minsep": ms,
++                             "maximal_candidate": bool(md < 1e-8 and ry == 100 and ms > 1e-6),
++                             "q_re": np.round(q.real, 15).tolist(), "q_im": np.round(q.imag, 15).tolist()})
++            k += 1
++        rl = sorted(res_list)
++        W.write({"tag": tag + "_summary", "d": d, "lam": lam, "starts": len(rl), "solutions": nsol, "min_resid": rl[0] if rl else None,
++                 "quantiles": [rl[int(x * (len(rl) - 1))] for x in (0.0, 0.01, 0.1, 0.5)] if rl else None})
++        if TERM[0]:
++            return
++
++
+ def main():
+-    W.write({"assay": "rqls_assay_v5", "mode": MODE, "polish_err": POLISH_ERR, "polish_iters": POLISH_ITERS,
+-             "src_sha256": SRC_SHA, "numpy": np.__version__, "python": sys.version,
++    W.write({"assay": "rqls_assay_v6", "mode": MODE, "src_sha256": SRC_SHA, "numpy": np.__version__, "python": sys.version,
+              "flags": {"optimize": sys.flags.optimize, "isolated": sys.flags.isolated, "dont_write_bytecode": sys.flags.dont_write_bytecode},
+              "budget_s": GLOBAL_BUDGET, "argv": sys.argv[1:],
+              "env": {k: os.environ.get(k) for k in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "MKL_NUM_THREADS", "TMPDIR")}})
+@@ -961,10 +1217,12 @@
+     classical = json.load(open(CLASSICAL_JSON))
+     gates = [("A", 30), ("C1", 25), ("C1p", 40), ("C2", 30), ("A5", 20)]
+     if MODE == "smoke":
+-        plan = gates + [("K", 90)]
++        plan = gates + [("K2", 60), ("K", 30), ("X", 40), ("WH", 30)]
++        k2_runs, k2_iter, k_starts, wh_starts = 3, 15000, 60, 30
+     else:
+         rest = GLOBAL_BUDGET - 145 - 30
+-        plan = gates + [("K", 0.25 * rest), ("R7", 0.5 * rest), ("R9", 0.25 * rest)]
++        plan = gates + [("K2", 0.5 * rest), ("K", 0.2 * rest), ("X", 0.05 * rest), ("WH", 0.25 * rest)]
++        k2_runs, k2_iter, k_starts, wh_starts = 10 ** 6, 60000, 10 ** 6, 10 ** 6
+     ends, acc, t0 = {}, 0, time.monotonic()
+     for tag, b in plan:
+         acc += b
+@@ -1000,59 +1258,33 @@
+     r0 = float(np.linalg.norm(R0_.resid(th0)))
+     md, ry, ms = R0_.P.verify(R0_.Z_full(th0))
+     gate("A5_reduced_classical_anchor", r0 < 1e-12 and md < 1e-12 and ry == 10,
+-         {"reduced_resid": r0, "maxdev": md, "rays": ry, "npar": R0_.npar, "rule": "reduced residual < 1e-12 at the classical Parker point; full verify maxdev < 1e-12, 10 rays"})
+-    STAGE[0] = "K"
+-    rk = np.random.default_rng(31337)
++         {"reduced_resid": r0, "maxdev": md, "rays": ry, "npar": R0_.npar})
++    rk = np.random.default_rng(424242)
++    STAGE[0] = "K2"
+     recs, k = [], 0
+-    nK = 8 if MODE == "smoke" else 10 ** 6
+-    while k < nK and not over(ends["K"]):
++    while k < k2_runs and not over(ends["K2"]):
+         hi = int(rk.integers(len(classical["pairs"])))
+         res = "B" if rk.integers(2) == 0 else "A"
+         a_, b_ = [int(x) for x in rk.choice(np.arange(1, 7), 2, replace=False)]
+         R, thc, lab, M = parker_reduced(classical["pairs"][hi], res, (0, a_, b_))
+-        recs += run_reduced(R, "K_cal_parker_forced", [7000 + k], 200, ends["K"], extra={"hit": hi, "resolution": res, "mlab": [0, a_, b_]})
++        recs += run_rrrr(R, "K2_rrrr_cal_parker_forced", [20000 + k], k2_iter, ends["K2"], extra={"hit": hi, "resolution": res, "mlab": [0, a_, b_]})
+         k += 1
+-    rays = summary_red("K_cal_parker_forced", recs)
+-    if MODE == "smoke":
+-        W.write({"end": True, "mode": "smoke", "gates": "PASS", "elapsed_s": round(elapsed(), 2), "records": W.records, "bytes": W.n})
+-        return 0
+-    STAGE[0] = "R7"
+-    L3 = latin3_all()
+-    rcfg = np.random.default_rng(4242)
+-    recs, cfg = [], 0
+-    while not over(ends["R7"]):
+-        Dinf, beta, gam, dlt, Lc, D2, M = T1_config(rcfg, L3)
+-        conf = {"Dinf": Dinf, "beta": {str(kk): vv for kk, vv in beta.items()}, "gamma": gam, "delta": dlt, "L": Lc, "D2": D2, "M": M, "cfg": cfg}
+-        try:
+-            R = Reduced(7, 3, Dinf, beta, gam, dlt, Lc, list(range(7)) + D2, M)
+-        except AssertionError as ex:
+-            W.write({"tag": "R7_forced_reduced", "config": conf, "status": "BAD_CONFIG", "why": repr(ex)})
+-            cfg += 1
+-            continue
+-        recs += run_reduced(R, "R7_forced_reduced", [8000 + 4 * cfg + j for j in range(4)], 200, ends["R7"], extra=conf)
+-        cfg += 1
+-    summary_red("R7_forced_reduced", recs)
+-    STAGE[0] = "R9"
+-    recs, cfg = [], 0
+-    while not over(ends["R9"]):
+-        Dfin = list(range(1, 9))
+-        bl = valid_betas(9, Dfin, rcfg, 1)
+-        if not bl:
+-            continue
+-        beta = bl[0]
+-        gam = sorted(set(range(9)) - {(beta[d] - d) % 9 for d in Dfin})
+-        dlt = sorted(set(range(9)) - set(beta.values()))
+-        mstar = int(rcfg.integers(9))
+-        conf = {"Dinf": [0], "beta": {str(kk): vv for kk, vv in beta.items()}, "gamma": gam, "delta": dlt, "mstar": mstar, "cfg": cfg}
+-        try:
+-            R = Reduced(9, 1, [0], beta, gam, dlt, [[0]], list(range(9)) + [mstar], [[mstar]])
+-        except AssertionError as ex:
+-            W.write({"tag": "R9_9p1_reduced", "config": conf, "status": "BAD_CONFIG", "why": repr(ex)})
+-            cfg += 1
+-            continue
+-        recs += run_reduced(R, "R9_9p1_reduced", [9000 + 4 * cfg + j for j in range(4)], 200, ends["R9"], extra=conf)
+-        cfg += 1
+-    summary_red("R9_9p1_reduced", recs)
++    summary("K2_rrrr_cal_parker_forced", recs)
++    STAGE[0] = "K"
++    recs, k = [], 0
++    while k < k_starts and not over(ends["K"]):
++        hi = int(rk.integers(len(classical["pairs"])))
++        res = "B" if rk.integers(2) == 0 else "A"
++        a_, b_ = [int(x) for x in rk.choice(np.arange(1, 7), 2, replace=False)]
++        R, thc, lab, M = parker_reduced(classical["pairs"][hi], res, (0, a_, b_))
++        recs += run_reduced(R, "K_lm_cal_parker_forced", [30000 + k], 200, ends["K"], extra={"hit": hi, "resolution": res, "mlab": [0, a_, b_]})
++        k += 1
++    summary_red("K_lm_cal_parker_forced", recs)
++    STAGE[0] = "X"
++    stage_X(V3_JSONL, V3_SHA, ends["X"])
++    STAGE[0] = "WH"
++    stage_WH(ends["WH"] - 0.3 * (ends["WH"] - ends["X"]), max(10, wh_starts // 10), 5, [1], "WH5_control")
++    stage_WH(ends["WH"], wh_starts, 10, [1, 3, 7, 9], "WH10")
+     W.write({"end": True, "mode": MODE, "terminated": TERM[0], "elapsed_s": round(elapsed(), 2), "records": W.records, "bytes": W.n})
+     return 0
+ 

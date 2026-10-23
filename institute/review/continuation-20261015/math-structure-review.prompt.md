@@ -1,0 +1,9 @@
+# Independent mathematical review
+
+You may read only `/Users/jinleic/repos/aifours/institute/review/continuation-20261015/math-structure-snapshot/`. Do not modify files, delegate, read any other local paths, or use the network. The snapshot is pinned in manifest.json. The current date is 2026-10-16 PT; the research may include material newer than your training data.
+
+Review `proofs/FORCED-SUBGROUP.md` adversarially. This is a structural obstruction to a proposed research method, not a proof of the flag-transitive plane conjecture. Main claim: for every a>=3, {2^i mod (2^(2a)+2^a+1): 0<=i<3a} is Sidon in the additive cyclic group even when the modulus is composite; therefore no nontrivial difference collision confined to the forced subgroup can exclude n=2^a. The finite controls are supporting evidence only.
+
+Check all proof cases, especially the norm reduction and unit symmetry, the first-coordinate argument, and the characteristic-zero norm comparison. Check the exact meaning of the corollary when primality is only hypothetical; the fixed-sieve implication must not assume infinitely many prime cyclotomic values. Treat the Singer/Cohen remark as a separate unverified attribution, not a premise. Check the elementary non-membership lemma and the n=512 exception. Distinguish a proof that one search route is insufficient from a new theorem about plane nonexistence. Reject novelty or significance claims unsupported by the text.
+
+Return JSON (no need for an enforced schema): verdict (correct | correct-with-fixes | wrong | incomplete), main_claim, findings [{severity, location, objection, required_fix}], strongest_supported_statement, verification_suggestions, significance_limits. Supply explicit counterexamples where possible and label any unproven objection. Do not suggest general prose changes without a real mathematical or claim-scope issue.

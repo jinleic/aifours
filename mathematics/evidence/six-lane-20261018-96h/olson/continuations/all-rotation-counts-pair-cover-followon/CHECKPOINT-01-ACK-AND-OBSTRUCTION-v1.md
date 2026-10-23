@@ -1,0 +1,15 @@
+# Checkpoint 01 — acknowledged Step0 gate and uniform obstruction
+
+Clock observed before exclusive creation: 2026-10-22T02:29:39-0700. This is a substantive result checkpoint; not an exact draft-start, message-authoring, or filesystem-creation timestamp.
+
+Main explicitly acknowledged reading the ENTIRE Step0 LF1–155 and its delivery before this worker began new proof reasoning. The acknowledgement preserved the exact all-R scope, low-R P threshold, p7/Rp/kappa3 residual, actual zero-step NF diagonal only, unaccepted R3, entire V_old, the R=3p-2/kappa=p-1/k=p corner, source gates, Claude blocker, cutoffs and all prior process history. No new proof work was done while awaiting that acknowledgement; intervening work was a literal metadata-receipt read and text-only hash/byte/LF metadata setup with no files written.
+
+**Substantive candidate result after acknowledgement:** the universal target appears FALSE on a uniform actual-word family, not merely difficult to prove. For every prime p>=7 consider
+
+    w_p = rho_1^(2p-1) (sigma_0 rho_-1)^(p-1) sigma_0.
+
+It has length4p-2, R=3p-2, F=p singleton reflection blocks, H0,kappa=p-1,k=p; it is INSIDE the retained frozen corner. No hypothesis is narrowed or added to the original target. For any putative identity2p selection, the number C of selected reflections must be even. If C>=2, its C/2 disjoint intervals between consecutive paired selected reflections each contain a negative rotation in an odd-prefix-reflection zone. Hence at most p-1-C/2 actual negative rotations are eligible to contribute negatively; the initial positive block always contributes positively. With n=2p-C even and n<2p, a zero rotation coordinate modulo odd p forces equal effective-positive/effective-negative counts, requiring p-C/2 negative contributions: exactly ONE too many. If C0, identity2p would require p negative rotations (only p-1 exist) or2p equal positive rotations (only2p-1 exist). This is a handwritten group/order argument only. A complete manuscript will give every case and original-index detail explicitly.
+
+**Status/blocker:** CANDIDATE counterfamily / NOT_PROVED_AS_STATED. No actual second-family gate is available; neither this checkpoint nor later source construction/parent/Codex agreement can promote it. It does not contradict old terminalp+1 closure (this family has k=p), old exactR1/R2, or the B<kappa conditional residual (here B=kappa=p-1). Old R3 process MAJORs and documentary MINORs remain uncured; no new process departure has been identified.
+
+**Next action:** publish the complete uniform counterfamily proof at the unchanged frozen quantifiers, send the material obstruction to Main, and finish exact source/manifest/coverage/handoff without a different science target or code. The remaining requested universal implication cannot be honestly claimed once this candidate proof is upheld; the entire word-domain residual/credit from Step0 remains literal. No computation, enumeration, assertion/test, model CLI/API, network, nested agent, Git or old-file mutation occurred.

@@ -1,0 +1,2163 @@
+--- code/pilot_stream_drat_ms09_v8.py
++++ code/pilot_file_drat_v36.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""PA19 96h P-STREAM v8 (ms09), minimal combined successor of immutable P-STREAM v7 (feddecb4...).
++"""PA19 96h D2 file-proof v36 (ms09), minimal combined successor of immutable D2 v35 (59b21b36...).
+ v8/v36 SOURCE-ONLY repair of all six v7/v35 HOLD reviews (2F/21M/2m): every readable, null-shadowed or
+ contradictory nested/runner identity is retained; a missing CURRENT closeout needs explicit failure disposal
+ (legacy audit only for proven pre-closeout launches); every raw read/walk/dup/anchor/verify acquisition is
+@@ -56,12 +56,7 @@
+ KISSAT = ("/opt/homebrew/Cellar/kissat/4.0.4/bin/kissat", "05d6f3e9c402a1fe8853b0746e384e1b3d1c4a550e255f11daa2461d279aa848")
+ DRAT_OLD = (OLD + "/tools/drat-trim/drat-trim", "111b0405566d55629f5d391b80b3220cc7a3ebc3cd406a35895ff65cc9acd5e4")
+ DRAT = LANE + "/code/vendor/drat-trim"
+-DRAT_PROV = ("/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-16/review/moqls7-parent-proofcheck-v1/drat-trim",
+-             "a46c0c717f702206a7fe345de5bcdc0b10112bca6bdbf04dd42cd9848ff08e37")
+-DRAT_PROV_RECEIPT = ("/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-16/review/moqls7-parent-proofcheck-v1/"
+-                     "parent-result.json", "200d307dd52ab4d6559ff89d5faa6c3859e256bbd20c6d1fb439d237b9af3bfe")
+-DRAT_SOURCE_SHA = "d834b649f437e091597f5347f259b9f681087f89ca0844d0cee250a1a1a0c2ee"
+-CHECKERS = (("A", DRAT, DRAT_OLD[1]), ("B", DRAT_PROV[0], DRAT_PROV[1]))  # S2: sequential, same frozen buffer
++CHECKERS = (("A", DRAT, DRAT_OLD[1]),)
+ DATE = ("/bin/date", "931edbfcbd847f3c1ccb504325a502db313ce20db27634744a7416c3c4b812f0")   # V1: pinned helper
+ CONTRACT = (RUN + "/contract-v1.json", "55baff0cf1ac1a4b0ab38b0eb1b1fa5a35a47c890f352b79dae4dfea919ffcaa")
+ LANE_CEILING = 10_737_418_240         # V2: contract resources.per_lane_new_disk_bytes (re-read at prestart)
+@@ -97,25 +92,26 @@
+ P0 = [4, 3, 3, 3, 3, 3]
+ ITEMS = []  # Separate science pin + exact GO required after controls qualification
+ SOLVER_SECONDS = 300
+-CHECK_SECONDS = 600                   # per checker, two per item (measured max 0.598 s per proof MB)
++CHECK_SECONDS = 1200
+ GRACE = 60
+ TERM_WAIT = 60
+ STREAM_JOIN = 60
+ SINK_UNBLOCK = 10
+ SETTLE_TAIL = TERM_WAIT + STREAM_JOIN + SINK_UNBLOCK + STREAM_JOIN + 30   # 220 s serial settlement bound
+-PROOF_CAP = 629_145_600              # HARD: the RAM buffer never retains more than this (never written to disk)
+-CONTROL_PROOF_CAP = 8 * 1024 * 1024  # HARD RAM cap for control proofs
++PROOF_CAP = 629_145_600              # HARD: the sink never writes more than this to an item proof file
++CONTROL_PROOF_CAP = 8 * 1024 * 1024  # HARD cap for control proofs
+ LOG_CAP = 16 * 1024 * 1024           # HARD per captured stdout+stderr stream
+ RECORD_MAX = 512 * 1024              # HARD per exact retained JSON record; never truncate evidence
+ STR_MAX = 1000
+-ITEM_RECORDS = 3 * 5 + 3 * 3 + 2
+-CONTROL_RECORDS = 14 * 5 + 2
++ITEM_RECORDS = 2 * 5 + 3 * 3 + 2
++CONTROL_RECORDS = 9 * 5 + 2
+ RUN_RECORDS = 3 + 2 * 3 + 1  # launch,summary,closeout + helper intent/launch/quarantine + spare
+ CNF_ITEM_MAX = max((it["cnf"][1] for it in ITEMS), default=0)
+-ITEM_RESERVE = CNF_ITEM_MAX + (1 + len(CHECKERS)) * LOG_CAP + ITEM_RECORDS * RECORD_MAX  # S1: no proof bytes on disk
+-CONTROL_CHILDREN = 14                 # C1 kissat+A+B, C2 A+B, C3 A+B, C4 A+B, C5 kissat, C6 kissat, C7 kissat, C7b A+B
++ITEM_RESERVE = CNF_ITEM_MAX + PROOF_CAP + 2 * LOG_CAP + ITEM_RECORDS * RECORD_MAX
++CONTROL_CHILDREN = 9                  # C1 kissat+drat, C2-C4 drat, C5-C7 kissat, C7b drat (V11)
+ CONTROL_CNF_ALLOW = 1024 * 1024       # six PHP CNFs, each < 64 KiB
+-CONTROL_RESERVE = CONTROL_CHILDREN * LOG_CAP + CONTROL_CNF_ALLOW + CONTROL_RECORDS * RECORD_MAX  # S1: RAM proofs only
++CONTROL_RESERVE = (CONTROL_CHILDREN * LOG_CAP + 3 * CONTROL_PROOF_CAP + 1 + 4096 + CONTROL_CNF_ALLOW
++                   + CONTROL_RECORDS * RECORD_MAX)
+ RUN_RESERVE = RUN_RECORDS * RECORD_MAX
+ FREE_FLOOR = 12_000_000_000
+ FRESH_BASE = 12_200_000_000
+@@ -136,8 +132,8 @@
+ C6_MIN_RUN_S = 1.5                    # N10: required monotonic runtime lower bound of C6
+ C6_MAX_RUN_S = 5.0                    # N10: allowed monotonic runtime upper bound of C6
+ SETTLE_ALL_ATTEMPTS = 1               # B1: settle() attempts per child in the bounded settle_all pass
+-ITEM_WORST_SECONDS = (30 + (SOLVER_SECONDS + GRACE + SETTLE_TAIL) + 30
+-                      + len(CHECKERS) * (CHECK_SECONDS + GRACE + SETTLE_TAIL + 30) + HELPERS_PER_ITEM * HELPER_ALLOW)
++ITEM_WORST_SECONDS = (30 + (SOLVER_SECONDS + GRACE + SETTLE_TAIL) + 30 + (CHECK_SECONDS + GRACE + SETTLE_TAIL) + 30
++                      + HELPERS_PER_ITEM * HELPER_ALLOW)
+ RUN_HELPER_SECONDS = HELPERS_PER_RUN * HELPER_ALLOW
+ MAX_CHUNK = 10800
+ SETTLE = 120
+@@ -156,15 +152,6 @@
+ EXIT_CODES = (0, 10, 20, 30, 40, 50, 60, 70)
+ NONLATCHING_TRIPS = {"proof_cap", "owner_cancel_sigterm"}
+ RESOURCE_DIAG = re.compile(r"(?i)(memout|memory allocation error|out of memory|out-of-memory|failed to reallocate|reallocation failed)")
+-FEED_BLOCK = 1 << 20                  # S1: RAM block size and collector read size
+-WRITE_SLICE = 1 << 16                 # S2: feeder os.write slice
+-HOLD_SECONDS = 30                     # S6: a C7b held feed waits at most this long for the checker reap
+-SUFFIX = b"x"                         # S6: C3 trailing byte appended in transit
+-STDIN_LINE = "c reading proof from stdin"
+-DUP_LINE = re.compile(rb"\rc WARNING: detected and deleted duplicate literal (-?[1-9][0-9]*) at position ([1-9][0-9]*) "
+-                      rb"of proof line ([1-9][0-9]*)\n")
+-PARSE_LINE = re.compile(rb"\rc parsing input formula with ([0-9]+) variables and ([0-9]+) clauses\n")
+-PENDING_MAX = 1 << 16                 # S3: no duplicate-literal line is this long; longer pending bytes are kept
+ DATE_ARGV = [DATE[0], "+%Y-%m-%dT%H:%M:%S%z"]
+ DATE_RE = re.compile(rb"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[+-][0-9]{4}\n")
+ LIBPROC = ctypes.CDLL("/usr/lib/libproc.dylib", use_errno=True)   # V1: in-process process metadata (no /bin/ps)
+@@ -178,12 +165,20 @@
+ SZOMB = 5
+ LIST_SLOTS = 4096
+ 
++FEED_BLOCK = 1 << 20                  # S1: RAM block size and collector read size
++WRITE_SLICE = 1 << 16                 # S2: feeder os.write slice
++HOLD_SECONDS = 30                     # S6: a C7b held feed waits at most this long for the checker reap
++PENDING_MAX = 1 << 16                 # S3: no duplicate-literal line is this long; longer pending bytes are kept
++DUP_LINE = re.compile(rb"\rc WARNING: detected and deleted duplicate literal (-?[1-9][0-9]*) at position ([1-9][0-9]*) "
++                      rb"of proof line ([1-9][0-9]*)\n")
++PARSE_LINE = re.compile(rb"\rc parsing input formula with ([0-9]+) variables and ([0-9]+) clauses\n")
++
+ 
+ KNOWN_CLOSEOUT_SCHEMAS = {'PA19-96H-PILOT-CLOSEOUT-v33', 'PA19-96H-PILOT-CLOSEOUT-v34', 'PA19-96H-PILOT-CLOSEOUT-v35', 'PA19-96H-PSTREAM-CLOSEOUT-v5', 'PA19-96H-PSTREAM-CLOSEOUT-v6', 'PA19-96H-PSTREAM-CLOSEOUT-v7', 'PA19-96H-PSTREAM-CLOSEOUT-v8', 'PA19-96H-PILOT-CLOSEOUT-v36'}
+ PHASE = "controls-only"
+-LAUNCH_SCHEMA = "PA19-96H-PSTREAM-LAUNCH-v8"
+-SUMMARY_SCHEMA = "PA19-96H-PSTREAM-SUMMARY-v8"
+-CLOSEOUT_SCHEMA = "PA19-96H-PSTREAM-CLOSEOUT-v8"
++LAUNCH_SCHEMA = "PA19-96H-PILOT-LAUNCH-v36"
++SUMMARY_SCHEMA = "PA19-96H-PILOT-SUMMARY-v36"
++CLOSEOUT_SCHEMA = "PA19-96H-PILOT-CLOSEOUT-v36"
+ KNOWN_LAUNCH_SCHEMAS = {'PA19-96H-PILOT-LAUNCH-v14', 'PA19-96H-PILOT-LAUNCH-v32', 'PA19-96H-PILOT-LAUNCH-v33', 'PA19-96H-PILOT-LAUNCH-v34', 'PA19-96H-PILOT-LAUNCH-v35', 'PA19-96H-PSTREAM-LAUNCH-v4', 'PA19-96H-PSTREAM-LAUNCH-v5', 'PA19-96H-PSTREAM-LAUNCH-v6', 'PA19-96H-PSTREAM-LAUNCH-v7', 'PA19-96H-PSTREAM-LAUNCH-v8', 'PA19-96H-PILOT-LAUNCH-v36'}
+ LEGACY_NO_CLOSEOUT_LAUNCH_SCHEMAS = {'PA19-96H-PILOT-LAUNCH-v14', 'PA19-96H-PILOT-LAUNCH-v32', 'PA19-96H-PSTREAM-LAUNCH-v4'}  # GD2: runners that never wrote closeout.json
+ TREE_ENTRY_MAX, TREE_DEPTH_MAX, CENSUS_SECONDS, SHA_SECONDS = 50000, 24, 30.0, 30.0
+@@ -197,8 +192,8 @@
+ ORDER = itertools.count(1)
+ LATCH = []          # persistent safety/unsettled reasons; non-empty refuses every later child
+ OWNED = []          # every Child (pre-allocated before Popen), for the computed settlement summary
+-LIVE_BUFFERS = []   # S5: every ProofBuffer; the unreleased ones are charged to the lane RSS trip
+-LIVE_FEEDERS = []   # V5: every Feeder; a feeder still holding its tuple is charged too
++LIVE_BUFFERS = []
++LIVE_FEEDERS = []
+ HELPERS = []        # V1: every metadata Helper (pre-allocated before Popen)
+ HELPER_LOG = []     # V1: bounded helper records for the summary
+ TREE = {}           # N8: anchored directories: path -> (fd, dev, ino)
+@@ -240,6 +235,7 @@
+     except BaseException as exc:
+         latch("required host clock failed %r" % (exc,))
+         return None
++
+ 
+ 
+ def serialize(obj):
+@@ -334,6 +330,7 @@
+     return h, len(data)
+ 
+ 
++
+ def raw_record(purpose, path):
+     """GD3: RAW_FDS entry created BEFORE a raw descriptor acquisition (one record per attempt). Fields are only
+     extended, never dropped: fd (number HISTORY, never identity evidence), state, observed_identity
+@@ -497,6 +494,7 @@
+     return raw
+ 
+ 
++
+ def free_bytes():
+     st = os.statvfs(LANE)
+     return st.f_bavail * st.f_frsize
+@@ -595,6 +593,7 @@
+                 todo.append(child)
+     deadline_check(end, "descendant traversal completion")
+     return sorted(found)
++
+ 
+ 
+ def _entry_kind(m):
+@@ -1317,6 +1316,7 @@
+         STATE["cleanup_deadline"] = previous_end
+ 
+ 
++
+ def registry_refusals():
+     """Fail-closed STOP registry: new-round STOP*/HALT*/SAT-CANDIDATE* markers in LANE/control or
+     RUN/control; any change, loss or addition in the inherited old cycle2-root STOP/HALT set."""
+@@ -1450,6 +1450,440 @@
+     return why
+ 
+ 
++
++class ProofSink:
++    """Owned, inspectable FIFO-to-file transport; a failed construction remains in LIVE_SINKS."""
++
++    def __init__(self, fifo_path, file_path, cap):
++        self.fifo_path, self.file_path, self.cap = fifo_path, file_path, cap
++        self.dir_fd = self.fifo_name = None
++        self.fifo_ino = self.fifo_identity = self.file_identity = None
++        self.fifo_create_started = self.fifo_created = False
++        self.file_create_started = self.file_created = False
++        self.cap_charged = False
++        self.file = None
++        self.file_closed = None
++        self.flush_completed = self.fsync_completed = self.close_completed = False
++        self.reader_fd = self.unblock_fd = self.rehash_fd = None
++        self.reader_fd_observed_identity = self.unblock_fd_observed_identity = None
++        self.rehash_fd_observed_identity = None    # observed (dev, ino, kind) per acquisition, or unavailable
++        self.reader_fd_acquired = self.unblock_fd_acquired = self.rehash_fd_acquired = False   # explicit states
++        self.rehash_record = None                  # GD3: the RAW_FDS record of the rehash acquisition
++        self.reader_fd_closed = self.unblock_fd_closed = self.rehash_fd_closed = True
++        self.sha = hashlib.sha256()
++        self.written = self.received = self.discarded = 0
++        self.over_cap = self.connected = self.eof = False
++        self.error = self.construction_error = None
++        self.unblocked_by_runner = False
++        self.thread = None
++        self.started = False
++        self.stage = "initialized"
++        self.finish_started = False
++        self.finish_deadline = None
++        self.finished = None
++        LIVE_SINKS.append(self)                 # ownership precedes charge, creation, wrapping and startup
++        try:
++            if not isinstance(cap, int) or isinstance(cap, bool) or cap < 0:
++                raise RuntimeError("invalid proof cap %r" % (cap,))
++            self.stage = "charging"
++            charge_output(cap)
++            self.cap_charged = True
++            self.dir_fd, self.fifo_name = tree_path(fifo_path)
++            self.stage = "creating_fifo"
++            self.fifo_create_started = True
++            st = mkfifo_anchored(fifo_path)     # raw creation is inventoried before any later operation can fail
++            self.fifo_created = True
++            self.fifo_ino = st.st_ino
++            self.fifo_identity = [st.st_dev, st.st_ino]
++            if not stat.S_ISFIFO(st.st_mode):
++                raise RuntimeError("created proof FIFO is not a FIFO")
++            self.stage = "opening_file"
++            self.file_create_started = True
++            self.file = open_wb(file_path)      # helper owns/rolls back the raw fd if fdopen fails
++            self.file_created = True
++            self.file_closed = False
++            st = os.fstat(self.file.fileno())
++            self.file_identity = [st.st_dev, st.st_ino]
++            if not stat.S_ISREG(st.st_mode) or st.st_nlink != 1 or st.st_size != 0:
++                raise RuntimeError("new proof file is not an empty, singly-linked regular file")
++            self.stage = "allocating_thread"
++            self.thread = threading.Thread(target=self._run, daemon=True)
++            self.stage = "starting_thread"
++            self.thread.start()
++            self.started = True
++            self.stage = "running"
++        except BaseException as exc:
++            self.construction_error = repr(exc)
++            self._error("construction", exc)
++            self.stage = "construction_failed"
++            latch("proof sink construction failed %s: %r" % (self.file_path, exc))
++            try:
++                self.finish()                 # bounded rollback; never removes a created entry
++            except BaseException as rollback_exc:
++                self._error("construction rollback", rollback_exc)
++                latch("proof sink construction rollback failed %s: %r" % (self.file_path, rollback_exc))
++            raise
++
++    def _error(self, what, exc):
++        self.error = (self.error + "; " if self.error else "") + "%s:%r" % (what, exc)
++
++    def _close_file(self):
++        if self.file is None:
++            return
++        for what, fn in (("flush", self.file.flush), ("fsync", lambda: os.fsync(self.file.fileno())),
++                         ("close", self.file.close)):
++            try:
++                fn()                          # every cleanup stage is independent; close is attempted after errors
++                if what == "flush":
++                    self.flush_completed = True
++                elif what == "fsync":
++                    self.fsync_completed = True
++                else:
++                    self.close_completed = True
++            except BaseException as exc:
++                self._error(what, exc)
++        try:
++            self.file_closed = self.file.closed is True
++        except BaseException as exc:
++            self.file_closed = None
++            self._error("file closed inspection", exc)
++
++    def _run(self):
++        self.started = True
++        try:
++            st = os.stat(self.fifo_name, dir_fd=self.dir_fd, follow_symlinks=False)
++            if not stat.S_ISFIFO(st.st_mode) or [st.st_dev, st.st_ino] != self.fifo_identity:
++                raise RuntimeError("proof FIFO changed before reader open")
++            self.reader_fd = os.open(self.fifo_name, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC,
++                                     dir_fd=self.dir_fd)           # blocks only until finish supplies a writer
++            self.reader_fd_acquired = True
++            self.reader_fd_closed = False
++            try:
++                st = os.fstat(self.reader_fd)
++            except BaseException as exc:
++                self.reader_fd_observed_identity = {"unavailable": repr(exc)}
++                raise
++            self.reader_fd_observed_identity = {"dev": st.st_dev, "ino": st.st_ino, "kind": _entry_kind(st.st_mode)}
++            if not stat.S_ISFIFO(st.st_mode) or [st.st_dev, st.st_ino] != self.fifo_identity:
++                raise RuntimeError("opened proof reader is not the retained FIFO")
++            self.connected = True
++            while True:
++                b = os.read(self.reader_fd, 1 << 20)
++                if not b:
++                    self.eof = True
++                    break
++                self.received += len(b)
++                if not self.over_cap and self.written + len(b) <= self.cap:
++                    view, offset = memoryview(b), 0
++                    while offset < len(view):
++                        n = self.file.write(view[offset:])
++                        if not isinstance(n, int) or isinstance(n, bool) or n <= 0 or n > len(view) - offset:
++                            raise RuntimeError("proof file write made invalid progress %r" % (n,))
++                        self.sha.update(view[offset:offset + n])
++                        self.written += n
++                        offset += n
++                else:
++                    self.over_cap = True       # preserve the hard cap while draining the producer to EOF
++                    self.discarded += len(b)
++        except BaseException as exc:
++            self._error("reader", exc)
++        finally:
++            if self.reader_fd is not None and not self.reader_fd_closed:
++                try:
++                    os.close(self.reader_fd)
++                    self.reader_fd_closed = True
++                except BaseException as exc:
++                    self._error("reader fd close", exc)
++            self._close_file()
++
++    def _mirror_rehash_record(self):
++        """Sink fields mirror the single RAW_FDS rehash record; the descriptor NUMBER is history only."""
++        record = self.rehash_record if isinstance(self.rehash_record, dict) else {}
++        state = record.get("state")
++        self.rehash_fd = record.get("fd")
++        self.rehash_fd_acquired = type(record.get("fd")) is int
++        self.rehash_fd_observed_identity = record.get("observed_identity")
++        self.rehash_fd_closed = (True if state in (None, "not_acquired", "closed")
++                                 else False if state == "acquired" else None)
++
++    def _rehash_file(self, end):
++        """Hash the retained inode itself, not an independently reopened pathname. GD3: the acquisition is
++        inventoried in RAW_FDS (self.rehash_record) BEFORE os.open with its observed identity. I2-2: the measured
++        result is held locally, the ONE owning close always runs, and only then is the UNCHANGED original allowance
++        checked; an uncertain close or late completion returns no success (no second close/hash, no new allowance)."""
++        if time.monotonic() >= end:
++            raise RuntimeError("proof sink allowance exhausted before rehash open")
++        dfd, name = tree_path(self.file_path)
++        self.rehash_record = record = raw_record("proof sink rehash", self.file_path)
++        try:
++            fd, before, _record = open_regular(name, dfd, record=record)
++        finally:
++            self._mirror_rehash_record()
++        try:
++            if [before.st_dev, before.st_ino] != self.file_identity or before.st_nlink != 1 \
++                    or before.st_size != self.written or not 0 <= before.st_size <= self.cap:
++                raise RuntimeError("rehash descriptor is not the retained singly-linked proof at written size")
++            h, n = hashlib.sha256(), 0
++            while True:
++                if time.monotonic() >= work_deadline(deadline=end):
++                    raise RuntimeError("proof sink allowance exhausted during rehash")
++                b = os.read(fd, min(1 << 20, self.cap + 1 - n))
++                if not b:
++                    break
++                h.update(b)
++                n += len(b)
++                if n > self.cap:
++                    raise RuntimeError("proof file grew beyond its hard cap during rehash")
++            after = os.fstat(fd)
++            named = os.stat(name, dir_fd=dfd, follow_symlinks=False)
++            if time.monotonic() >= end:
++                raise RuntimeError("proof sink allowance exhausted after rehash")
++            result = [h.hexdigest(), n], before, after, named
++        finally:
++            try:
++                raw_close(record)
++            except BaseException as exc:
++                self._error("rehash fd close", exc)
++            self._mirror_rehash_record()
++        if self.rehash_fd_closed is not True:
++            raise RuntimeError("proof sink rehash descriptor close outcome uncertain; no rehash success")
++        if time.monotonic() >= end:
++            raise RuntimeError("proof sink allowance exhausted at rehash close completion")
++        return result
++
++    def finish(self, timeout=None):
++        """One irreversible attempt under the caller's remaining cleanup allowance; later calls never wait again."""
++        if self.finished is not None:
++            return self.finished
++        self.finish_started = True
++        end = work_deadline(SINK_UNBLOCK + STREAM_JOIN if timeout is None else max(0.0, timeout))
++        self.finish_deadline = end
++        alive = None
++        rec = {"fifo": self.fifo_path, "file": self.file_path, "cap": self.cap,
++               "fifo_identity": self.fifo_identity, "file_identity": self.file_identity,
++               "fifo_same_inode_still_fifo": False, "file_same_identity_regular": False,
++               "file_nlink_one": False, "file_size_matches_written": False, "file_within_cap": False,
++               "file_metadata_stable_during_rehash": False, "file_identity_at_finish": None,
++               "file_rehash": None, "file_rehash_matches": False, "file_integrity": False,
++               "finish_deadline_in_bounds": False, "sink_settled": False}
++        try:
++            alive = self.thread is not None and self.thread.is_alive()
++            unblock_end = min(end, time.monotonic() + SINK_UNBLOCK)
++            while alive and not self.connected and time.monotonic() < unblock_end:
++                try:
++                    st = os.stat(self.fifo_name, dir_fd=self.dir_fd, follow_symlinks=False)
++                    if not stat.S_ISFIFO(st.st_mode) or [st.st_dev, st.st_ino] != self.fifo_identity:
++                        raise RuntimeError("proof FIFO changed before unblock")
++                    self.unblock_fd = os.open(self.fifo_name,
++                                              os.O_WRONLY | os.O_NONBLOCK | os.O_NOFOLLOW | os.O_CLOEXEC,
++                                              dir_fd=self.dir_fd)
++                    self.unblock_fd_acquired = True
++                    self.unblock_fd_closed = False
++                    try:
++                        st = os.fstat(self.unblock_fd)
++                    except BaseException as exc:
++                        self.unblock_fd_observed_identity = {"unavailable": repr(exc)}
++                        raise
++                    self.unblock_fd_observed_identity = {"dev": st.st_dev, "ino": st.st_ino,
++                                                         "kind": _entry_kind(st.st_mode)}
++                    if not stat.S_ISFIFO(st.st_mode) or [st.st_dev, st.st_ino] != self.fifo_identity:
++                        raise RuntimeError("opened unblock writer is not the retained FIFO")
++                    self.unblocked_by_runner = True
++                    break
++                except OSError as exc:
++                    if exc.errno != errno.ENXIO:
++                        self._error("unblock", exc)
++                        break
++                    time.sleep(min(0.05, max(0.0, unblock_end - time.monotonic())))
++                except BaseException as exc:
++                    self._error("unblock", exc)
++                    break
++                finally:
++                    if self.unblock_fd is not None and not self.unblock_fd_closed:
++                        try:
++                            os.close(self.unblock_fd)
++                            self.unblock_fd_closed = True
++                        except BaseException as exc:
++                            self._error("unblock fd close", exc)
++                alive = self.thread is not None and self.thread.is_alive()
++            if self.thread is not None and self.thread.ident is not None:
++                self.thread.join(min(STREAM_JOIN, max(0.0, end - time.monotonic())))
++            alive = self.thread is not None and self.thread.is_alive()
++            if not alive and not self.started and self.file is not None and self.file_closed is not True:
++                self._close_file()             # constructor rollback before any reader acquired the file
++            if time.monotonic() >= end:
++                raise RuntimeError("proof sink cleanup allowance exhausted")
++            if self.fifo_identity is not None:
++                st = os.stat(self.fifo_name, dir_fd=self.dir_fd, follow_symlinks=False)
++                rec["fifo_same_inode_still_fifo"] = (stat.S_ISFIFO(st.st_mode)
++                                                      and [st.st_dev, st.st_ino] == self.fifo_identity)
++            if not alive and self.file_closed is True and self.file_identity is not None:
++                if time.monotonic() >= end:
++                    raise RuntimeError("proof sink allowance exhausted before file integrity check")
++                rec["file_rehash"], before, after, named = self._rehash_file(end)
++                rec["file_identity_at_finish"] = [after.st_dev, after.st_ino]
++                rec["file_same_identity_regular"] = (stat.S_ISREG(before.st_mode) and stat.S_ISREG(after.st_mode)
++                                                       and [before.st_dev, before.st_ino] == self.file_identity
++                                                       and [after.st_dev, after.st_ino] == self.file_identity
++                                                       and stat.S_ISREG(named.st_mode)
++                                                       and [named.st_dev, named.st_ino] == self.file_identity)
++                rec["file_nlink_one"] = before.st_nlink == after.st_nlink == named.st_nlink == 1
++                rec["file_size_matches_written"] = before.st_size == after.st_size == named.st_size == self.written
++                rec["file_within_cap"] = (0 <= before.st_size <= self.cap and 0 <= after.st_size <= self.cap
++                                           and 0 <= named.st_size <= self.cap)
++                rec["file_metadata_stable_during_rehash"] = (census_entry(before) == census_entry(after)
++                                                             == census_entry(named))
++                rec["file_rehash_matches"] = rec["file_rehash"] == [self.sha.hexdigest(), self.written]
++                rec["file_integrity"] = all(rec[k] is True for k in
++                                            ("file_same_identity_regular", "file_nlink_one",
++                                             "file_size_matches_written", "file_within_cap",
++                                             "file_metadata_stable_during_rehash", "file_rehash_matches"))
++                if rec["file_integrity"]:
++                    # I2-2: success-path registration only inside the UNCHANGED original cleanup allowance.
++                    if time.monotonic() >= end:
++                        raise RuntimeError("proof sink allowance exhausted before success registration")
++                    register_written(self.file_path, self.sha.hexdigest(), self.written)
++                else:
++                    latch("proof file identity/size/rehash mismatch: " + self.file_path)
++        except BaseException as exc:
++            rec["finish_error"] = repr(exc)
++            self._error("finish", exc)
++            latch("proof sink finish failed %s: %r" % (self.file_path, exc))
++        rec.update(connected=self.connected, eof=self.eof, received=self.received, written=self.written,
++                   discarded=self.discarded, over_cap=self.over_cap, error=self.error,
++                   construction_error=self.construction_error, unblocked_by_runner=self.unblocked_by_runner,
++                   thread_started=self.started, thread_alive_after_join=alive,
++                   reader_fd_closed=self.reader_fd_closed, unblock_fd_closed=self.unblock_fd_closed,
++                   rehash_fd_closed=self.rehash_fd_closed,
++                   reader_fd=self.reader_fd, unblock_fd=self.unblock_fd, rehash_fd=self.rehash_fd,
++                   reader_fd_observed_identity=self.reader_fd_observed_identity,
++                   unblock_fd_observed_identity=self.unblock_fd_observed_identity,
++                   rehash_fd_observed_identity=self.rehash_fd_observed_identity,
++                   reader_fd_acquired=self.reader_fd_acquired, unblock_fd_acquired=self.unblock_fd_acquired,
++                   rehash_fd_acquired=self.rehash_fd_acquired,
++                   rehash_fd_record=None if self.rehash_record is None else dict(self.rehash_record),
++                   file_closed=self.file_closed, flush_completed=self.flush_completed,
++                   fsync_completed=self.fsync_completed, close_completed=self.close_completed,
++                   sha256_of_written=self.sha.hexdigest())
++        rec["finish_deadline_in_bounds"] = time.monotonic() <= end
++        rec["sink_settled"] = (rec["finish_deadline_in_bounds"] is True and self.construction_error is None
++                                and self.started is True and alive is False and self.error is None
++                                and self.reader_fd_closed is True and self.unblock_fd_closed is True
++                                and self.rehash_fd_closed is True
++                                and self.file_closed is True and self.flush_completed is True
++                                and self.fsync_completed is True and self.close_completed is True
++                                and rec["fifo_same_inode_still_fifo"] is True and rec["file_integrity"] is True)
++        self.finished = rec                     # failed/live transport is frozen too: no repeated waits or hashes
++        self.stage = "settled" if rec["sink_settled"] else "unresolved"
++        if rec["fifo_same_inode_still_fifo"] is not True:
++            latch("proof FIFO replaced, missing or identity unproved: " + self.fifo_path)
++        if alive is not False:
++            latch("proof sink thread unsettled or unreadable: " + self.fifo_path)
++        if self.error is not None:
++            latch("proof sink I/O error %s" % self.error)
++        if not rec["sink_settled"]:
++            latch("proof sink not settled: " + self.file_path)
++        return rec
++
++    def census_paths(self):
++        return {p for p in (self.fifo_path, self.file_path) if p is not None}
++
++    def census_refusals(self, snapshot):
++        """Growth is allowed only for the retained, singly-linked proof inode at its exact settled size."""
++        why = []
++        if not isinstance(snapshot, dict):
++            return ["proof sink census is not a complete snapshot mapping"]
++        if self.construction_error is not None:
++            why.append("proof sink construction failed: " + self.construction_error)
++        fifo = snapshot.get(self.fifo_path)
++        if not isinstance(fifo, (tuple, list)) or len(fifo) != 9 or fifo[0] != "fifo" \
++                or self.fifo_identity is None or list(fifo[1:3]) != self.fifo_identity:
++            why.append("proof FIFO census identity/kind mismatch: " + self.fifo_path)
++        proof = snapshot.get(self.file_path)
++        if not isinstance(proof, (tuple, list)) or len(proof) != 9 or proof[0] != "file" \
++                or self.file_identity is None or list(proof[1:3]) != self.file_identity:
++            why.append("proof file census identity/kind mismatch: " + self.file_path)
++        else:
++            if proof[7] != 1:
++                why.append("proof file census link count is not one: " + self.file_path)
++            if not isinstance(proof[3], int) or isinstance(proof[3], bool) or proof[3] != self.written \
++                    or not isinstance(self.cap, int) or isinstance(self.cap, bool) or not 0 <= proof[3] <= self.cap:
++                why.append("proof file census size does not equal written within cap: " + self.file_path)
++        return why
++
++    def late_obligations(self):
++        state = self.accounting()
++        return [{"path": self.fifo_path, "kind": "fifo", "identity": self.fifo_identity,
++                 "creation_started": self.fifo_create_started, "created": self.fifo_created,
++                 "note": "retain FIFO and any producer/reader endpoint until parent disposition"},
++                {"path": self.file_path, "kind": "file", "identity": self.file_identity,
++                 "creation_started": self.file_create_started, "created": self.file_created,
++                 "written": self.written, "cap": self.cap,
++                 "outstanding_growth_bytes": state["outstanding_growth_bytes"],
++                 "note": "retain partial proof and reservation; a live collector can still write to the cap"},
++                {"what": "proof sink reader and descriptors", "thread_ident": state["thread_ident"],
++                 "thread_alive": state["thread_alive"], "reader_fd": self.reader_fd,
++                 "reader_fd_closed": self.reader_fd_closed, "unblock_fd": self.unblock_fd,
++                 "unblock_fd_closed": self.unblock_fd_closed, "rehash_fd": self.rehash_fd,
++                 "rehash_fd_closed": self.rehash_fd_closed, "file_closed": self.file_closed,
++                 "reader_fd_observed_identity": self.reader_fd_observed_identity,
++                 "unblock_fd_observed_identity": self.unblock_fd_observed_identity,
++                 "rehash_fd_observed_identity": self.rehash_fd_observed_identity,
++                 "reader_fd_acquired": self.reader_fd_acquired, "unblock_fd_acquired": self.unblock_fd_acquired,
++                 "rehash_fd_acquired": self.rehash_fd_acquired,
++                 "rehash_fd_record": None if self.rehash_record is None else dict(self.rehash_record),
++                 "construction_error": self.construction_error}]
++
++    def accounting(self):
++        alive = None
++        inspection_error = None
++        try:
++            alive = self.thread is not None and self.thread.is_alive()
++        except BaseException as exc:
++            inspection_error = repr(exc)
++        file_open = self.file is not None and self.file_closed is not True
++        settled = self.finished is not None and self.finished.get("sink_settled") is True
++        growth = max(0, self.cap - self.written) if isinstance(self.cap, int) and not isinstance(self.cap, bool) \
++            and (file_open or alive is not False) else 0
++        return {"kind": "proof_file_sink", "fifo": self.fifo_path, "file": self.file_path, "cap": self.cap,
++                "stage": self.stage, "cap_charged": self.cap_charged,
++                "fifo_create_started": self.fifo_create_started, "fifo_created": self.fifo_created,
++                "fifo_identity": self.fifo_identity, "file_create_started": self.file_create_started,
++                "file_created": self.file_created, "file_identity": self.file_identity,
++                "file_open": file_open, "file_closed": self.file_closed,
++                "flush_completed": self.flush_completed, "fsync_completed": self.fsync_completed,
++                "close_completed": self.close_completed, "thread_allocated": self.thread is not None,
++                "thread_started": self.started, "thread_ident": None if self.thread is None else self.thread.ident,
++                "thread_alive": alive, "thread_inspection_error": inspection_error,
++                "reader_fd": self.reader_fd, "reader_fd_closed": self.reader_fd_closed,
++                "unblock_fd": self.unblock_fd, "unblock_fd_closed": self.unblock_fd_closed,
++                "rehash_fd": self.rehash_fd, "rehash_fd_closed": self.rehash_fd_closed,
++                "reader_fd_observed_identity": self.reader_fd_observed_identity,
++                "unblock_fd_observed_identity": self.unblock_fd_observed_identity,
++                "rehash_fd_observed_identity": self.rehash_fd_observed_identity,
++                "reader_fd_acquired": self.reader_fd_acquired, "unblock_fd_acquired": self.unblock_fd_acquired,
++                "rehash_fd_acquired": self.rehash_fd_acquired,
++                "rehash_fd_record": None if self.rehash_record is None else dict(self.rehash_record),
++                "received": self.received, "written": self.written, "discarded": self.discarded,
++                "over_cap": self.over_cap, "connected": self.connected, "eof": self.eof,
++                "unblocked_by_runner": self.unblocked_by_runner, "sha256_of_written": self.sha.hexdigest(),
++                "construction_error": self.construction_error, "error": self.error,
++                "finish_started": self.finish_started, "finish_deadline": self.finish_deadline,
++                "finished": self.finished is not None, "sink_settled": settled,
++                "outstanding_growth_bytes": growth,
++                "unresolved": not settled or alive is not False or file_open
++                              or self.reader_fd_closed is not True or self.unblock_fd_closed is not True
++                              or self.rehash_fd_closed is not True
++                              or inspection_error is not None}
++
++
++
++def new_filter():
++    """S3: per-checker capture-filter state; V8: 'cont' = pass through until the next newline after an over-long
++    partial line was flushed."""
++    return {"raw_sha": hashlib.sha256(), "raw_bytes": 0, "raw_eof": False, "pending": b"", "header_clauses": None,
++            "dup_low": 0, "dup_high": 0, "dup_bytes": 0, "tail": 0, "cont": False, "flushes": 0}
++
+ def buffer_charge():
+     held = {}
+     for b in LIVE_BUFFERS:
+@@ -1465,575 +1899,6 @@
+             key = ("tuple", id(f.blocks))
+             held[key] = max(held.get(key, 0), f.expected)
+     return sum(held.values())
+-
+-
+-class ProofBuffer:
+-    """Owned capped RAM collector. Timeouts bound source work and joins, not OS-call latency;
+-    an incomplete close or late return retains parent ownership, never a synthetic settlement."""
+-
+-    def __init__(self, fifo_path, cap):
+-        self.fifo_path, self.cap = fifo_path, cap
+-        self.dir_fd = self.fifo_name = self.fifo_identity = self.fifo_ino = None
+-        self.blocks = []
+-        self.sha = None
+-        self.retained = self.received = self.discarded = 0
+-        self.over_cap = self.connected = self.eof = self.released = self.release_requested = False
+-        self.frozen_id = None
+-        self.errors = []
+-        self.construction_error = None
+-        self.unblocked_by_runner = False
+-        self.finished = None
+-        self.finish_started = False
+-        self.finish_deadline = None
+-        self.thread = None
+-        self.thread_started = False
+-        self.reader_fd = self.reader_fd_identity = None
+-        self.reader_fd_observed_identity = None    # observed (dev, ino, kind) of the acquired reader, or unavailable
+-        self.reader_fd_closed = True
+-        self.reader_close_attempted = False
+-        self.reader_close_error = None
+-        self.unblock_fd = self.unblock_fd_identity = None
+-        self.unblock_fd_observed_identity = None
+-        self.unblock_fd_closed = True
+-        self.unblock_close_attempted = False
+-        self.unblock_close_error = None
+-        self.unblock_open_attempts = 0
+-        self.reader_fd_acquired = self.unblock_fd_acquired = False   # explicit per-endpoint acquisition state
+-        LIVE_BUFFERS.append(self)                 # every field exists before any fallible acquisition
+-        try:
+-            self.sha = hashlib.sha256()
+-            self.dir_fd, self.fifo_name = tree_path(fifo_path)
+-            st = mkfifo_anchored(fifo_path)
+-            self.fifo_ino = st.st_ino
+-            self.fifo_identity = [st.st_dev, st.st_ino]
+-            self.thread = threading.Thread(target=self._run, daemon=True)
+-            self.thread.start()
+-            self.thread_started = True
+-        except BaseException as exc:
+-            self.construction_error = repr(exc)
+-            self._error("construction", exc)
+-            latch("proof buffer construction unproven %r" % (exc,))
+-            try:
+-                self.finish()
+-                self.release()
+-            except BaseException as cleanup_exc:
+-                self._error("construction rollback", cleanup_exc)
+-            raise
+-
+-    @property
+-    def error(self):
+-        return "; ".join(self.errors) if self.errors else None
+-
+-    def _error(self, what, exc):
+-        self.errors.append("%s: %r" % (what, exc))
+-
+-    def _close_reader(self):
+-        if self.reader_fd is None or self.reader_close_attempted:
+-            return
+-        self.reader_close_attempted = True
+-        try:
+-            os.close(self.reader_fd)
+-        except BaseException as exc:
+-            self.reader_fd_closed = None          # outcome unknown; retained fd must never be blindly retried
+-            self.reader_close_error = "reader fd close: %r" % (exc,)
+-            self.errors.append(self.reader_close_error)
+-        else:
+-            self.reader_fd_closed = True
+-            self.reader_fd = None
+-
+-    def _close_unblock(self):
+-        if self.unblock_fd is None or self.unblock_close_attempted:
+-            return
+-        self.unblock_close_attempted = True
+-        try:
+-            os.close(self.unblock_fd)
+-        except BaseException as exc:
+-            self.unblock_fd_closed = None
+-            self.unblock_close_error = "unblock fd close: %r" % (exc,)
+-            self.errors.append(self.unblock_close_error)
+-        else:
+-            self.unblock_fd_closed = True
+-            self.unblock_fd = None
+-
+-    def _run(self):
+-        self.thread_started = True
+-        acc = None
+-        try:
+-            acc = bytearray()
+-            self.reader_fd = os.open(self.fifo_name, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC,
+-                                     dir_fd=self.dir_fd)          # producer or bounded finish supplies a writer
+-            self.reader_fd_acquired = True
+-            self.reader_fd_identity = self.reader_fd             # descriptor NUMBER history, never identity evidence
+-            self.reader_fd_closed = False
+-            try:
+-                fst = os.fstat(self.reader_fd)
+-            except BaseException as exc:
+-                self.reader_fd_observed_identity = {"unavailable": repr(exc)}
+-                raise
+-            self.reader_fd_observed_identity = {"dev": fst.st_dev, "ino": fst.st_ino, "kind": _entry_kind(fst.st_mode)}
+-            if not stat.S_ISFIFO(fst.st_mode) or [fst.st_dev, fst.st_ino] != self.fifo_identity:
+-                raise RuntimeError("collector opened a different FIFO")
+-            self.connected = True
+-            while True:
+-                b = os.read(self.reader_fd, FEED_BLOCK)
+-                if not b:
+-                    self.eof = True
+-                    break
+-                self.received += len(b)
+-                if not self.over_cap and self.retained + len(b) <= self.cap:
+-                    acc += b
+-                    self.sha.update(b)
+-                    self.retained += len(b)
+-                    while len(acc) >= FEED_BLOCK:
+-                        self.blocks.append(bytes(acc[:FEED_BLOCK]))
+-                        del acc[:FEED_BLOCK]
+-                else:
+-                    self.over_cap = True
+-                    self.discarded += len(b)
+-        except BaseException as exc:
+-            self._error("reader", exc)
+-        finally:
+-            self._close_reader()
+-            try:
+-                if acc:
+-                    self.blocks.append(bytes(acc))
+-            except BaseException as exc:
+-                self._error("tail", exc)
+-
+-    def digest(self):
+-        """Independent second pass over retained RAM blocks."""
+-        h = hashlib.sha256()
+-        n = 0
+-        for b in self.blocks:
+-            h.update(b)
+-            n += len(b)
+-        return [h.hexdigest(), n]
+-
+-    def finish(self, timeout=None):
+-        """One source-level bounded attempt; all endpoint/history evidence survives failure."""
+-        if self.finished is not None:
+-            return self.finished
+-        self.finish_started = True
+-        end = work_deadline(SINK_UNBLOCK + STREAM_JOIN if timeout is None else max(0.0, timeout))
+-        self.finish_deadline = end
+-        alive = None
+-        rec = {"fifo": self.fifo_path, "storage": "RAM only", "cap": self.cap, "fifo_identity": self.fifo_identity,
+-               "fifo_same_inode_still_fifo": False, "buffer_rehash_matches": False,
+-               "finish_deadline_in_bounds": False, "sink_settled": False}
+-        try:
+-            active = lambda: self.thread is not None and self.thread.is_alive()
+-            alive = active()
+-            unblock_end = min(end, time.monotonic() + SINK_UNBLOCK)
+-            while alive and not self.connected and time.monotonic() < unblock_end:
+-                try:
+-                    self.unblock_open_attempts += 1
+-                    self.unblock_fd = os.open(self.fifo_name,
+-                                              os.O_WRONLY | os.O_NONBLOCK | os.O_NOFOLLOW | os.O_CLOEXEC,
+-                                              dir_fd=self.dir_fd)
+-                    self.unblock_fd_acquired = True
+-                    self.unblock_fd_identity = self.unblock_fd   # descriptor NUMBER history, never identity evidence
+-                    self.unblock_fd_closed = False
+-                    self.unblocked_by_runner = True
+-                    try:
+-                        st = os.fstat(self.unblock_fd)
+-                    except BaseException as exc:
+-                        self.unblock_fd_observed_identity = {"unavailable": repr(exc)}
+-                        raise
+-                    self.unblock_fd_observed_identity = {"dev": st.st_dev, "ino": st.st_ino,
+-                                                         "kind": _entry_kind(st.st_mode)}
+-                    if not stat.S_ISFIFO(st.st_mode) or [st.st_dev, st.st_ino] != self.fifo_identity:
+-                        raise RuntimeError("opened unblock writer is not the retained FIFO")
+-                except OSError as exc:
+-                    if self.unblock_fd is not None or exc.errno != errno.ENXIO:
+-                        self._error("unblock", exc)
+-                        break
+-                    time.sleep(min(SUPERVISE_SLICE, max(0.0, unblock_end - time.monotonic())))
+-                except BaseException as exc:
+-                    self._error("unblock", exc)
+-                    break
+-                else:
+-                    break
+-                finally:
+-                    self._close_unblock()        # at most once for the one acquired descriptor
+-                alive = active()
+-            if self.thread is not None and self.thread.ident is not None:
+-                self.thread.join(max(0.0, min(STREAM_JOIN, end - time.monotonic())))
+-            alive = active()
+-            if time.monotonic() > end:
+-                raise RuntimeError("proof buffer cleanup allowance exhausted")
+-            if self.fifo_identity is not None:
+-                st = os.stat(self.fifo_name, dir_fd=self.dir_fd, follow_symlinks=False)
+-                rec["fifo_same_inode_still_fifo"] = (stat.S_ISFIFO(st.st_mode)
+-                                                       and [st.st_dev, st.st_ino] == self.fifo_identity)
+-            if not alive and self.construction_error is None:
+-                self.blocks = tuple(self.blocks)
+-                self.frozen_id = id(self.blocks)
+-                rec["blocks"] = len(self.blocks)
+-                rec["buffer_rehash"] = self.digest()
+-        except BaseException as exc:
+-            rec["finish_error"] = repr(exc)
+-            self._error("finish", exc)
+-        digest = None if self.sha is None else self.sha.hexdigest()
+-        rec.update(connected=self.connected, eof=self.eof, received=self.received, retained=self.retained,
+-                   discarded=self.discarded, over_cap=self.over_cap, error=self.error, errors=list(self.errors),
+-                   construction_error=self.construction_error, unblocked_by_runner=self.unblocked_by_runner,
+-                   thread_started=self.thread_started, thread_alive_after_join=alive,
+-                   reader_fd=self.reader_fd, reader_fd_identity=self.reader_fd_identity,
+-                   reader_fd_acquired=self.reader_fd_acquired, unblock_fd_acquired=self.unblock_fd_acquired,
+-                   reader_fd_observed_identity=self.reader_fd_observed_identity,
+-                   reader_fd_closed=self.reader_fd_closed, reader_close_attempted=self.reader_close_attempted,
+-                   reader_close_error=self.reader_close_error,
+-                   unblock_fd=self.unblock_fd, unblock_fd_identity=self.unblock_fd_identity,
+-                   unblock_fd_observed_identity=self.unblock_fd_observed_identity,
+-                   unblock_fd_closed=self.unblock_fd_closed, unblock_close_attempted=self.unblock_close_attempted,
+-                   unblock_close_error=self.unblock_close_error, unblock_open_attempts=self.unblock_open_attempts,
+-                   sha256_of_retained=digest)
+-        rec["buffer_rehash_matches"] = rec.get("buffer_rehash") == [digest, self.retained] and digest is not None
+-        rec["finish_deadline_in_bounds"] = time.monotonic() <= end
+-        rec["sink_settled"] = (alive is False and self.thread_started is True and not self.errors
+-                               and self.construction_error is None and rec["fifo_same_inode_still_fifo"] is True
+-                               and rec["buffer_rehash_matches"] is True and self.reader_fd_closed is True
+-                               and self.unblock_fd_closed is True and rec["finish_deadline_in_bounds"] is True)
+-        self.finished = rec                      # failed/live result is frozen: no second join or close attempt
+-        if rec["sink_settled"] is not True:
+-            latch("proof buffer integrity/closure unproven: " + self.fifo_path)
+-        return rec
+-
+-    def release(self):
+-        """Drop only the ended collector's RAM reference; unknown endpoints remain separately inventoried."""
+-        self.release_requested = True
+-        if self.thread is not None and self.thread.is_alive():
+-            return False
+-        self.released = True
+-        self.blocks = ()
+-        return True
+-
+-    def holders(self):
+-        return [f.label for f in list(LIVE_FEEDERS) if f.blocks and self.frozen_id is not None
+-                and id(f.blocks) == self.frozen_id]
+-
+-    def accounting(self):
+-        return {"fifo": self.fifo_path, "retained": self.retained, "released": self.released,
+-                "release_requested": self.release_requested,
+-                "collector_alive": self.thread is not None and self.thread.is_alive(),
+-                "thread_constructed": self.thread is not None, "thread_started": self.thread_started,
+-                "construction_error": self.construction_error, "error": self.error, "errors": list(self.errors),
+-                "fifo_identity": self.fifo_identity, "reader_fd_acquired": self.reader_fd_acquired,
+-                "unblock_fd_acquired": self.unblock_fd_acquired,
+-                "reader_fd": self.reader_fd, "reader_fd_identity": self.reader_fd_identity,
+-                "reader_fd_observed_identity": self.reader_fd_observed_identity,
+-                "reader_fd_closed": self.reader_fd_closed, "reader_close_attempted": self.reader_close_attempted,
+-                "reader_close_error": self.reader_close_error,
+-                "unblock_fd": self.unblock_fd, "unblock_fd_identity": self.unblock_fd_identity,
+-                "unblock_fd_observed_identity": self.unblock_fd_observed_identity,
+-                "unblock_fd_closed": self.unblock_fd_closed, "unblock_close_attempted": self.unblock_close_attempted,
+-                "unblock_close_error": self.unblock_close_error, "unblock_open_attempts": self.unblock_open_attempts,
+-                "finish_started": self.finish_started, "finish_deadline": self.finish_deadline,
+-                "still_held_by_feeders": self.holders(), "frozen": self.frozen_id is not None,
+-                "finished": self.finished}
+-
+-    def census_paths(self):
+-        return {self.fifo_path}
+-
+-    def census_refusals(self, snap):
+-        v = snap.get(self.fifo_path)
+-        return [] if v is not None and v[0] == "fifo" and list(v[1:3]) == self.fifo_identity else ["proof FIFO identity drift"]
+-
+-    def late_obligations(self):
+-        return [{"path": self.fifo_path, "kind": "fifo", "note": "native writer or runner collector may retain endpoint"},
+-                {"what": "RAM collector blocks", "bytes_known": self.retained, "note": "runner resources until exit"},
+-                {"what": "RAM collector descriptors", "reader_fd": self.reader_fd,
+-                 "reader_fd_identity": self.reader_fd_identity, "fifo_identity": self.fifo_identity,
+-                 "reader_fd_acquired": self.reader_fd_acquired, "unblock_fd_acquired": self.unblock_fd_acquired,
+-                 "reader_fd_observed_identity": self.reader_fd_observed_identity,
+-                 "unblock_fd_observed_identity": self.unblock_fd_observed_identity,
+-                 "reader_fd_closed": self.reader_fd_closed,
+-                 "reader_close_attempted": self.reader_close_attempted, "reader_close_error": self.reader_close_error,
+-                 "unblock_fd": self.unblock_fd, "unblock_fd_identity": self.unblock_fd_identity,
+-                 "unblock_fd_closed": self.unblock_fd_closed, "unblock_close_attempted": self.unblock_close_attempted,
+-                 "unblock_close_error": self.unblock_close_error, "errors": list(self.errors),
+-                 "note": "unknown close outcomes retain original descriptor identity; no retry on a possibly reused fd"}]
+-
+-
+-
+-class Feeder:
+-    """One owned pipe writer. Descriptor numbers survive unknown close outcomes; only affirmative
+-    os.close completion clears rfd/wfd. Source deadlines bound joins, not synchronous OS-call latency.
+-    I2-1: *_endpoint_identity retains each original descriptor NUMBER (history only); the object identity is the
+-    OBSERVED {'dev','ino','kind'} recorded right after os.pipe, before any handoff or close (explicitly
+-    {'unavailable': ...} if fstat fails, which refuses construction after one close per endpoint)."""
+-
+-    def __init__(self, blocks, mode="plain", label=""):
+-        if mode not in ("plain", "suffix", "hold"):
+-            raise RuntimeError("unknown feed mode %r" % (mode,))
+-        if not isinstance(blocks, tuple):
+-            raise RuntimeError("proof buffer not frozen")
+-        self.blocks = blocks
+-        self.mode, self.label = mode, label
+-        self.expected = 0
+-        self.sha = self.hold = self.thread = None
+-        self.fed = self.proof_fed = 0
+-        self.delivery_error = self.exception = self.construction_error = None
+-        self.errors = []
+-        self.close_errors = []
+-        self.hold_released_by_event = None
+-        self.started = self.start_attempted = self.start_completed = False
+-        self.start_acquisition_unknown = False
+-        self.pipe_acquisition_started = self.pipe_acquisition_completed = self.pipe_acquisition_unknown = False
+-        self.rfd = self.wfd = None
+-        self.read_endpoint_identity = self.write_endpoint_identity = None          # original NUMBERS (history)
+-        self.read_endpoint_observed_identity = self.write_endpoint_observed_identity = None
+-        self.read_endpoint_acquired = self.write_endpoint_acquired = False
+-        self.read_endpoint_closed = self.write_endpoint_closed = True  # no endpoint acquired yet
+-        self.read_close_attempted = self.write_close_attempted = False
+-        self.read_close_fd = self.write_close_fd = None
+-        self.read_close_error = self.write_close_error = None
+-        self.abandon_error = None
+-        self.finished = None
+-        self.finish_started = False
+-        self.finish_deadline = None
+-        LIVE_FEEDERS.append(self)                 # complete inspectable state before Event/Thread/pipe acquisition
+-        try:
+-            self.expected = sum(len(b) for b in blocks)
+-            self.sha = hashlib.sha256()
+-            self.hold = threading.Event()
+-            self.thread = threading.Thread(target=self._run, daemon=True)
+-            self.pipe_acquisition_started = True
+-            self.rfd, self.wfd = os.pipe()
+-            self.read_endpoint_identity, self.write_endpoint_identity = self.rfd, self.wfd
+-            self.read_endpoint_acquired = self.write_endpoint_acquired = True
+-            self.read_endpoint_closed = self.write_endpoint_closed = False
+-            self.pipe_acquisition_completed = True
+-            for side, fd in (("read", self.rfd), ("write", self.wfd)):
+-                try:
+-                    st = os.fstat(fd)
+-                except BaseException as obs_exc:
+-                    setattr(self, side + "_endpoint_observed_identity", {"unavailable": repr(obs_exc)})
+-                    raise
+-                setattr(self, side + "_endpoint_observed_identity",
+-                        {"dev": st.st_dev, "ino": st.st_ino, "kind": _entry_kind(st.st_mode)})
+-                if not stat.S_ISFIFO(st.st_mode):
+-                    raise RuntimeError("acquired %s endpoint is not a pipe" % side)
+-        except BaseException as exc:
+-            if self.pipe_acquisition_started and not self.pipe_acquisition_completed:
+-                self.pipe_acquisition_unknown = True
+-                self.read_endpoint_closed = self.write_endpoint_closed = None
+-            self.construction_error = repr(exc)
+-            self._error("construction", exc)
+-            try:
+-                self.abandon()
+-            except BaseException as cleanup_exc:
+-                self._error("construction rollback", cleanup_exc)
+-            latch("feeder construction unproven %r" % (exc,))
+-            raise
+-
+-    @property
+-    def close_error(self):
+-        return "; ".join(self.close_errors) if self.close_errors else None
+-
+-    def _error(self, what, exc):
+-        self.errors.append("%s: %r" % (what, exc))
+-
+-    def _close_endpoint(self, name, propagate=False):
+-        side = "read" if name == "rfd" else "write"
+-        closed_key, attempted_key = side + "_endpoint_closed", side + "_close_attempted"
+-        error_key = side + "_close_error"
+-        if getattr(self, attempted_key):
+-            prior = getattr(self, error_key)
+-            if prior is not None and propagate:
+-                raise RuntimeError(prior)         # uncertain descriptor may have been reused: never retry it
+-            return prior
+-        fd = getattr(self, name)
+-        if fd is None:
+-            if getattr(self, closed_key) is True:
+-                return None
+-            prior = getattr(self, error_key)
+-            if prior is None:
+-                prior = side + " endpoint identity unavailable before closure"
+-                setattr(self, error_key, prior)
+-                self.close_errors.append(prior)
+-                self.errors.append(prior)
+-            setattr(self, closed_key, None)
+-            if propagate:
+-                raise RuntimeError(prior)
+-            return prior
+-        setattr(self, attempted_key, True)
+-        setattr(self, side + "_close_fd", fd)
+-        try:
+-            os.close(fd)
+-        except BaseException as exc:
+-            message = "%s endpoint closure uncertain: %r" % (side, exc)
+-            setattr(self, closed_key, None)
+-            setattr(self, error_key, message)
+-            self.close_errors.append(message)
+-            self.errors.append(message)
+-            if propagate:
+-                raise
+-            return message
+-        else:
+-            setattr(self, closed_key, True)
+-            setattr(self, name, None)
+-            return None
+-
+-    def plan(self):
+-        return {"mode": self.mode, "buffer_bytes": self.expected, "blocks": len(self.blocks)}
+-
+-    def close_read(self):
+-        return self._close_endpoint("rfd", propagate=True)
+-
+-    def start(self):
+-        if self.start_attempted or self.finished is not None or self.construction_error is not None:
+-            raise RuntimeError("feeder start is not an unused, constructed acquisition")
+-        self.start_attempted = True
+-        try:
+-            self.thread.start()
+-            self.start_completed = True
+-        except BaseException as exc:
+-            if self.exception is None:
+-                self.exception = repr(exc)
+-            self._error("start", exc)
+-            self.start_acquisition_unknown = self.thread is None or self.thread.ident is None
+-            raise
+-        finally:
+-            self.started = self.thread is not None and self.thread.ident is not None
+-
+-    def abandon(self):
+-        """Only a proven never-started writer can be abandoned. Each acquired endpoint gets at most
+-        one close attempt; repeated calls return existing faults without retrying uncertain fd numbers."""
+-        if self.started or self.start_acquisition_unknown or (self.thread is not None and self.thread.ident is not None):
+-            if self.abandon_error is None:
+-                self.abandon_error = "abandon: feeder is started or thread launch state is unproven"
+-                self.errors.append(self.abandon_error)
+-            return list(self.close_errors) + [self.abandon_error]
+-        self._close_endpoint("rfd")
+-        self._close_endpoint("wfd")
+-        self.blocks = ()
+-        return list(self.close_errors)
+-
+-    def _deliver(self, data):
+-        mv, off = memoryview(data), 0
+-        while off < len(mv):
+-            try:
+-                n = os.write(self.wfd, mv[off:off + WRITE_SLICE])
+-            except OSError as exc:
+-                self.delivery_error = "%s after %d fed bytes" % (
+-                    "EPIPE" if isinstance(exc, BrokenPipeError) else repr(exc), self.fed)
+-                return off, False
+-            if type(n) is not int or n <= 0 or n > len(mv) - off:
+-                raise OSError(errno.EIO, "feeder write made no valid progress")
+-            self.sha.update(mv[off:off + n])
+-            off += n
+-            self.fed += n
+-        return off, True
+-
+-    def _run(self):
+-        self.started = True
+-        try:
+-            if self.mode == "hold":
+-                self.hold_released_by_event = self.hold.wait(HOLD_SECONDS)
+-                if self.hold_released_by_event is not True:
+-                    raise RuntimeError("held feed event allowance exhausted")
+-            ok = True
+-            for b in self.blocks:
+-                k, ok = self._deliver(b)
+-                self.proof_fed += k
+-                if not ok:
+-                    break
+-            if ok and self.mode == "suffix":
+-                self._deliver(SUFFIX)
+-        except BaseException as exc:
+-            if self.exception is None:
+-                self.exception = repr(exc)
+-            self._error("writer", exc)
+-        finally:
+-            self._close_endpoint("wfd")          # EOF only after one affirmative close; failure retains identity
+-
+-    def finish(self, timeout):
+-        """After checker reap, release the hold and perform one bounded join. Cache failed/live receipts too."""
+-        if self.finished is not None:
+-            return self.finished
+-        self.finish_started = True
+-        end = work_deadline(max(0.0, timeout))
+-        self.finish_deadline = end
+-        alive = None
+-        try:
+-            if self.started or (self.thread is not None and self.thread.ident is not None):
+-                self.hold.set()
+-                self.thread.join(max(0.0, min(STREAM_JOIN, end - time.monotonic())))
+-            elif not self.start_acquisition_unknown:
+-                self.abandon()
+-            alive = None if self.start_acquisition_unknown else self.thread is not None and self.thread.is_alive()
+-            if time.monotonic() > end:
+-                raise RuntimeError("feeder cleanup allowance exhausted")
+-        except BaseException as exc:
+-            if self.exception is None:
+-                self.exception = repr(exc)
+-            self._error("finish", exc)
+-        if alive is False:
+-            self.blocks = ()
+-        self.finished = {"mode": self.mode, "started": self.started, "buffer_bytes": self.expected,
+-                         "fed_bytes": self.fed, "fed_sha256": None if self.sha is None else self.sha.hexdigest(),
+-                         "proof_bytes_fed": self.proof_fed, "undelivered_proof_bytes": self.expected - self.proof_fed,
+-                         "delivery_error": self.delivery_error, "exception": self.exception,
+-                         "close_error": self.close_error, "close_errors": list(self.close_errors), "errors": list(self.errors),
+-                         "hold_released_by_event": self.hold_released_by_event, "thread_alive_after_join": alive,
+-                         "construction_error": self.construction_error,
+-                         "read_endpoint": self.rfd, "write_endpoint": self.wfd,
+-                         "read_endpoint_identity": self.read_endpoint_identity,
+-                         "write_endpoint_identity": self.write_endpoint_identity,
+-                         "read_endpoint_observed_identity": self.read_endpoint_observed_identity,
+-                         "write_endpoint_observed_identity": self.write_endpoint_observed_identity,
+-                         "read_endpoint_acquired": self.read_endpoint_acquired,
+-                         "write_endpoint_acquired": self.write_endpoint_acquired,
+-                         "read_endpoint_closed": self.read_endpoint_closed,
+-                         "write_endpoint_closed": self.write_endpoint_closed,
+-                         "read_close_attempted": self.read_close_attempted, "write_close_attempted": self.write_close_attempted,
+-                         "read_close_fd": self.read_close_fd, "write_close_fd": self.write_close_fd,
+-                         "read_close_error": self.read_close_error, "write_close_error": self.write_close_error,
+-                         "pipe_acquisition_started": self.pipe_acquisition_started,
+-                         "pipe_acquisition_completed": self.pipe_acquisition_completed,
+-                         "pipe_acquisition_unknown": self.pipe_acquisition_unknown,
+-                         "start_attempted": self.start_attempted, "start_completed": self.start_completed,
+-                         "start_acquisition_unknown": self.start_acquisition_unknown,
+-                         "finish_deadline_in_bounds": time.monotonic() <= end}
+-        return self.finished
+-
+-    def accounting(self):
+-        alive = None if self.start_acquisition_unknown else self.thread is not None and self.thread.is_alive()
+-        unresolved = (alive is not False or bool(self.blocks) or self.read_endpoint_closed is not True
+-                      or self.write_endpoint_closed is not True or self.rfd is not None or self.wfd is not None
+-                      or self.construction_error is not None or bool(self.errors)
+-                      or self.pipe_acquisition_unknown or self.start_acquisition_unknown
+-                      or (self.finished is not None and self.finished.get("finish_deadline_in_bounds") is not True))
+-        return {"label": self.label, "mode": self.mode, "started": self.started,
+-                "thread_alive": alive, "retained_bytes": self.expected if self.blocks else 0,
+-                "read_endpoint": self.rfd, "write_endpoint": self.wfd,
+-                "read_endpoint_identity": self.read_endpoint_identity, "write_endpoint_identity": self.write_endpoint_identity,
+-                "read_endpoint_observed_identity": self.read_endpoint_observed_identity,
+-                "write_endpoint_observed_identity": self.write_endpoint_observed_identity,
+-                "read_endpoint_acquired": self.read_endpoint_acquired,
+-                "write_endpoint_acquired": self.write_endpoint_acquired,
+-                "read_endpoint_closed": self.read_endpoint_closed, "write_endpoint_closed": self.write_endpoint_closed,
+-                "read_close_attempted": self.read_close_attempted, "write_close_attempted": self.write_close_attempted,
+-                "read_close_fd": self.read_close_fd, "write_close_fd": self.write_close_fd,
+-                "read_close_error": self.read_close_error, "write_close_error": self.write_close_error,
+-                "close_error": self.close_error, "close_errors": list(self.close_errors), "errors": list(self.errors),
+-                "construction_error": self.construction_error, "exception": self.exception,
+-                "pipe_acquisition_unknown": self.pipe_acquisition_unknown,
+-                "start_acquisition_unknown": self.start_acquisition_unknown,
+-                "finish_started": self.finish_started, "finish_deadline": self.finish_deadline,
+-                "finished": self.finished, "unresolved": unresolved}
+-
+-    def late_obligations(self):
+-        return [{"what": "runner-owned stdin feeder", "label": self.label, "state": self.accounting(),
+-                 "note": "retain pipe identities, uncertain closure history and any held RAM until parent disposition"}]
+-
+-
+-def new_filter():
+-    """S3: per-checker capture-filter state; V8: 'cont' = pass through until the next newline after an over-long
+-    partial line was flushed."""
+-    return {"raw_sha": hashlib.sha256(), "raw_bytes": 0, "raw_eof": False, "pending": b"", "header_clauses": None,
+-            "dup_low": 0, "dup_high": 0, "dup_bytes": 0, "tail": 0, "cont": False, "flushes": 0}
+ 
+ 
+ def open_wb(path):
+@@ -2398,39 +2263,6 @@
+     return bad
+ 
+ 
+-def c7b_missing_input_refusals(rec, lines, expected_lines):
+-    """P C7b only: the pinned checker exits before reading a held proof. Its exact native
+-    diagnostic, zero-byte EPIPE, event release and affirmative endpoint closure are independent obligations."""
+-    why = []
+-    if not healthy(rec) or rec.get("returncode") != 255:
+-        why.append("not a healthy rc255 self-exit")
+-    if lines != expected_lines:
+-        why.append("complete native diagnostic differs")
+-    feed = rec.get("stdin_feed") if isinstance(rec, dict) else None
+-    feed = feed if isinstance(feed, dict) else {}
+-    if feed.get("mode") != "hold" or feed.get("started") is not True \
+-            or feed.get("thread_alive_after_join") is not False:
+-        why.append("held feeder was not started and joined")
+-    if any(type(feed.get(k)) is not int or feed[k] != 0 for k in ("fed_bytes", "proof_bytes_fed")):
+-        why.append("feed counters are not exact zero")
+-    if feed.get("delivery_error") != "EPIPE after 0 fed bytes":
+-        why.append("delivery_error is not exact zero-byte EPIPE")
+-    if feed.get("hold_released_by_event") is not True:
+-        why.append("hold was not released by the reap event")
+-    if feed.get("read_endpoint_closed") is not True or feed.get("write_endpoint_closed") is not True:
+-        why.append("feeder endpoint closure is not affirmative")
+-    if feed.get("read_endpoint_acquired") is not True or feed.get("write_endpoint_acquired") is not True \
+-            or not _observed(feed.get("read_endpoint_observed_identity"), "fifo") \
+-            or not _observed(feed.get("write_endpoint_observed_identity"), "fifo"):
+-        why.append("feeder endpoint acquisition/observed pipe identity unproven")
+-    if any(k not in feed or feed[k] is not None for k in ("exception", "construction_error", "close_error")) \
+-            or feed.get("close_errors") != [] or feed.get("errors") != []:
+-        why.append("feeder error history missing/nonempty")
+-    if feed.get("finish_deadline_in_bounds") is not True:
+-        why.append("feeder completion not observed in bounds")
+-    return why
+-
+-
+ class Owned:
+     """G1-G4: one retained Popen, exclusive wait owner (SIGCHLD=SIG_DFL), non-reaping WNOWAIT
+     observations and a real owned waitpid status. Popen.poll/wait are NEVER evidence. One verified SIGTERM;
+@@ -2990,6 +2822,7 @@
+             latch("metadata helper invalid: %r" % invalid)
+             raise RuntimeError("required host clock invalid")
+         return bytes(self.out).decode("ascii").strip()
++
+ 
+ 
+ 
+@@ -3382,10 +3215,12 @@
+ 
+ 
+ 
++
+ def segments(path):
+     """Capture lines (CR or LF separated), read through the anchored run tree (N8), bounded by LOG_CAP (N7)."""
+     txt = read_tree(path, LOG_CAP).decode("utf-8", "replace")
+     return [s for s in re.split(r"[\r\n]", txt) if s != ""]
++
+ 
+ 
+ def supervise(child, sink):
+@@ -3452,13 +3287,14 @@
+     return child.stop, peak
+ 
+ 
+-def run_child(argv, label, wall, reserve, inputs, sink=None, feeder=None):
++
++def run_child(argv, label, wall, reserve, inputs, sink=None):
+     """Prepared outputs -> admission -> spawn -> supervise -> settle.  Returns (rec|None, lines, refusal)."""
+     ch = None
+     try:
+         cwd = os.path.join(STATE["out"], "cwd", "%02d-%s" % (STATE["seq"] + 1, label))
+         mkdir_anchored(cwd)  # r4#4: inside the cleanup guard; N8: exclusive and anchored
+-        ch = Child(argv, label, wall, reserve, inputs, sink, cwd, feeder)
++        ch = Child(argv, label, wall, reserve, inputs, sink, cwd)
+         if ch.refused:
+             return None, [], ch.refused
+         peak = None
+@@ -3478,10 +3314,6 @@
+         settle_all()
+         if sink is not None and (ch is None or ch.proc is None):
+             sink.finish()  # never-spawned producer: unblock and join the reader
+-        if feeder is not None and not feeder.started:
+-            errs = feeder.abandon()  # never-spawned checker: both pipe ends closed; V6: errors latch
+-            if errs:
+-                latch("never-started feeder endpoint close errors %r" % (errs,))
+ 
+ 
+ 
+@@ -3509,66 +3341,71 @@
+             latch("child cleanup unproven; retain parent block")
+ 
+ 
+-def run_kissat(cnf_path, label, seconds, cap, reserve, inputs, owner):
+-    """kissat -q -f --seed=1 --time=S CNF [PROOF_FIFO]; with a cap the proof goes ONLY to a RAM ProofBuffer (S1).
+-    N6: a created ProofBuffer is appended to the caller's `owner` list at creation, so the caller's finally
+-    releases it on every path, including an exception before this function returns.
+-    Returns (rec|None, lines, refusal, buffer|None)."""
++def run_kissat(cnf_path, proof_file, label, seconds, cap, reserve, inputs):
+     argv = [KISSAT[0], "-q", "-f", "--seed=1", "--time=%d" % seconds, cnf_path]
+     sink = None
+-    if cap is not None:
+-        sink = ProofBuffer(os.path.join(STATE["out"], "fifo", label + ".proof.fifo"), cap)
+-        try:
+-            owner.append(sink)
+-        except BaseException:
+-            sink.finish()
+-            sink.release()
+-            raise
++    if proof_file is not None:
++        sink = ProofSink(os.path.join(STATE["out"], "fifo", label + ".proof.fifo"), proof_file, cap)   # N8: anchored
+         argv.append(sink.fifo_path)
+-    rec, lines, refused = run_child(argv, label + ".kissat", seconds, reserve,
+-                                    dict(inputs, proof_storage=None if sink is None else "RAM only", proof_cap=cap),
+-                                    sink)
+-    return rec, lines, refused, sink
+-
+-
+-def run_check(cnf_path, buf, checker, label, seconds, reserve, inputs, mode="plain"):
+-    name, path, pin = checker
+-    if buf.released:
+-        raise RuntimeError("proof buffer already released")
+-    feeder = None
+-    try:
+-        feeder = Feeder(buf.blocks, mode, label="%s.drat%s" % (label, name))
+-        return run_child([path, cnf_path, "-i", "-t", str(seconds)], "%s.drat%s" % (label, name), seconds, reserve,
+-                         dict(inputs, cnf=cnf_path, checker=[name, path, pin], proof_source="RAM stdin", feed_mode=mode),
+-                         feeder=feeder)
+-    finally:
+-        if feeder is not None and not feeder.started:
+-            if feeder.abandon():
+-                latch("never-started feeder endpoint rollback unproven")
+-
+-
+-def buffer_integrity(rec):
+-    if not isinstance(rec, dict):
++    return run_child(argv, label + ".kissat", seconds, reserve, dict(inputs, proof_file=proof_file, proof_cap=cap), sink)
++
++
++
++def run_drat(cnf_path, proof_path, label, seconds, reserve, inputs):
++    return run_child([DRAT, cnf_path, proof_path, "-i", "-t", str(seconds)], label + ".drat", seconds, reserve,
++                     dict(inputs, cnf=cnf_path, proof=proof_path))
++
++
++def sink_integrity(sink_rec):
++    """Closure/file integrity shared by ordinary, capped and never-connected proof sinks, including the exact
++    observed reader/unblock/rehash acquisition evidence and the coherent rehash close history (I1-1)."""
++    if not isinstance(sink_rec, dict):
+         return False
+-    if any(k not in rec or rec[k] is not None for k in
+-           ("error", "construction_error", "reader_close_error", "unblock_close_error")) or rec.get("errors") != []:
++    r = sink_rec
++    true_fields = ("sink_settled", "thread_started", "reader_fd_closed", "unblock_fd_closed", "rehash_fd_closed", "file_closed",
++                   "flush_completed", "fsync_completed", "close_completed", "fifo_same_inode_still_fifo",
++                   "file_same_identity_regular", "file_nlink_one", "file_size_matches_written", "file_within_cap",
++                   "file_metadata_stable_during_rehash", "file_rehash_matches", "file_integrity",
++                   "finish_deadline_in_bounds")
++    if any(r.get(k) is not True for k in true_fields) or r.get("thread_alive_after_join") is not False:
+         return False
+-    required_true = ("sink_settled", "thread_started", "fifo_same_inode_still_fifo", "reader_fd_closed", "unblock_fd_closed",
+-                     "buffer_rehash_matches", "finish_deadline_in_bounds")
+-    return (all(rec.get(k) is True for k in required_true)
+-            and rec.get("thread_alive_after_join") is False and rec.get("error") is None
+-            and rec.get("construction_error") is None and _hex64(rec.get("sha256_of_retained"))
+-            and all(type(rec.get(k)) is int and rec[k] >= 0 for k in ("received", "retained", "discarded", "cap"))
+-            and rec["retained"] <= rec["cap"] and rec["received"] == rec["retained"] + rec["discarded"]
+-            and _measured_pair(rec.get("buffer_rehash"), list)
+-            and rec.get("buffer_rehash") == [rec["sha256_of_retained"], rec["retained"]]
+-            and fifo_endpoint_refusals(rec) == [])
++    if "error" not in r or r["error"] is not None or "construction_error" not in r \
++            or r["construction_error"] is not None:
++        return False
++    if any(not isinstance(r.get(k), int) or isinstance(r[k], bool) or r[k] < 0
++           for k in ("cap", "written", "received", "discarded")):
++        return False
++    ident, final_ident = r.get("file_identity"), r.get("file_identity_at_finish")
++    for value in (ident, final_ident):
++        if type(value) is not list or len(value) != 2 or any(type(x) is not int or x < 0 for x in value):
++            return False
++    if final_ident != ident:
++        return False
++    # I1-1: the exact producer acquisition/observation schema of EVERY transport endpoint is consumed: missing,
++    # unavailable, numeric or contradictory observations refuse; never-acquired endpoints must be explicit.
++    if fifo_endpoint_refusals(r):
++        return False
++    file_seen = {"dev": ident[0], "ino": ident[1], "kind": "file"}
++    record = r.get("rehash_fd_record")
++    if r.get("rehash_fd_acquired") is not True or not _observed(r.get("rehash_fd_observed_identity"), "file") \
++            or r["rehash_fd_observed_identity"] != file_seen or type(r.get("rehash_fd")) is not int \
++            or not isinstance(record, dict) or record.get("state") != "closed" \
++            or record.get("close_attempted") is not True or record.get("close_error") is not None \
++            or record.get("observed_identity") != file_seen or type(record.get("fd")) is not int \
++            or record["fd"] != r["rehash_fd"]:
++        return False
++    digest = r.get("sha256_of_written")
++    return (isinstance(digest, str) and len(digest) == 64 and all(c in "0123456789abcdef" for c in digest)
++            and r["written"] <= r["cap"] and r["received"] == r["written"] + r["discarded"]
++            and _measured_pair(r.get("file_rehash"), list)
++            and r.get("file_rehash") == [digest, r["written"]])
+ 
+ 
+ def sink_complete(sink_rec):
+-    return (buffer_integrity(sink_rec) and sink_rec.get("connected") is True and sink_rec.get("eof") is True
++    """Only an affirmatively closed, uncapped complete proof is eligible for ordinary qualification."""
++    return (sink_integrity(sink_rec) and sink_rec.get("connected") is True and sink_rec.get("eof") is True
+             and sink_rec.get("over_cap") is False and sink_rec.get("unblocked_by_runner") is False
+-            and sink_rec["discarded"] == 0 and sink_rec["received"] == sink_rec["retained"])
++            and sink_rec.get("discarded") == 0 and sink_rec.get("received") == sink_rec.get("written"))
+ 
+ 
+ def status_lines(lines):
+@@ -3592,14 +3429,13 @@
+     return sorted(d.split(": ", 1)[0] for d in defects)
+ 
+ 
+-def checker_defects(name, cnf_expect, buf_sha, buf_bytes, drat_rec, drat_lines):
+-    """S4/V9/V10: per-checker P-STREAM qualification with canonical (unique) parser records; every defect ID is
+-    prefixed with the checker name."""
++
++def file_checker_defects(name, cnf_expect, proof_bytes, drat_rec, drat_lines):
++    """Canonical file-checker records plus independently validated, noncontradictory ownership receipts."""
+     bad = []
+     X = name + "."
+-    feed = drat_rec.get("stdin_feed") or {}
+-    filt = drat_rec.get("stdout_filter") or {}
+-    if drat_rec.get("returncode") != 0 or drat_rec.get("stop") != "self":
++    rec = drat_rec if isinstance(drat_rec, dict) else {}
++    if rec.get("returncode") != 0 or rec.get("stop") != "self":
+         bad.append(defect(X + "EXIT", "checker not self-exit rc0"))
+     st = status_lines(drat_lines)
+     if st != ["s VERIFIED"]:
+@@ -3608,78 +3444,54 @@
+     hdr = [s[:200] for s in drat_lines if s.startswith("c parsing input formula")]
+     if hdr != ["c parsing input formula with %s variables and %s clauses" % (v, c)]:
+         bad.append(defect(X + "HEADER", "parser header records %r != the CNF pin header" % (hdr[:4],)))
+-    rd = [s[:200] for s in drat_lines if s.startswith("c reading proof")]
+-    if rd != [STDIN_LINE]:
+-        bad.append(defect(X + "STDIN", "stdin records %r != [%r]" % (rd[:4], STDIN_LINE)))
+-    if feed.get("mode") != "plain":
+-        bad.append(defect(X + "FEED_MODE", "feed mode %r is not plain" % (feed.get("mode"),)))
+-    if type(feed.get("fed_bytes")) is not int or type(feed.get("proof_bytes_fed")) is not int \
+-            or not _hex64(feed.get("fed_sha256")) or type(buf_bytes) is not int \
+-            or feed.get("fed_bytes") != buf_bytes or feed.get("fed_sha256") != buf_sha \
+-            or feed.get("proof_bytes_fed") != buf_bytes:
+-        bad.append(defect(X + "FEED_DIGEST", "fed bytes/SHA-256 != collected proof buffer (exact types)"))
+-    if feed.get("started") is not True or feed.get("thread_alive_after_join") is not False \
+-            or any(k not in feed or feed[k] is not None for k in
+-                   ("delivery_error", "exception", "close_error", "construction_error")) \
+-            or feed.get("read_endpoint_closed") is not True or feed.get("write_endpoint_closed") is not True \
+-            or feed.get("close_errors") != [] or feed.get("errors") != [] \
+-            or feed.get("finish_deadline_in_bounds") is not True \
+-            or feed.get("read_endpoint_acquired") is not True or feed.get("write_endpoint_acquired") is not True \
+-            or not _observed(feed.get("read_endpoint_observed_identity"), "fifo") \
+-            or not _observed(feed.get("write_endpoint_observed_identity"), "fifo"):
+-        bad.append(defect(X + "FEED_STATE", "stdin feed incomplete, failed, unobserved or unsettled"))
+-    fb = feed.get("fed_bytes")
+     fin = [s[:200] for s in drat_lines if s.startswith("c finished parsing")]
+-    if not isinstance(fb, int) or isinstance(fb, bool) or fin != ["c finished parsing, read %d bytes from proof file" % fb]:
+-        bad.append(defect(X + "CONSUMED", "consumed records %r != [read %r bytes]" % (fin[:4], fb)))
+-    nd = drat_rec.get("nondropped_bytes")
+-    if filt.get("raw_eof") is not True or type(filt.get("dup_bytes_dropped")) is not int \
+-            or type(filt.get("raw_bytes")) is not int or type(nd) is not int \
+-            or filt["dup_bytes_dropped"] < 0 or nd < 0 or filt.get("raw_bytes") != nd + filt["dup_bytes_dropped"]:
+-        bad.append(defect(X + "FILTER", "checker output filter accounting mismatch"))
++    if not isinstance(proof_bytes, int) or isinstance(proof_bytes, bool) \
++            or fin != ["c finished parsing, read %d bytes from proof file" % proof_bytes]:
++        bad.append(defect(X + "CONSUMED", "consumed records %r != [read %r bytes]" % (fin[:4], proof_bytes)))
+     for pat, key in FORBIDDEN:
+         if any(pat in s for s in drat_lines):
+             bad.append(defect(X + "FORBIDDEN." + key, "checker output contains %r" % pat))
+-    if drat_rec.get("settled") is not True or drat_rec.get("capture_over_cap") is not False:
+-        bad.append(defect(X + "SETTLE", "settlement/capture defect seq %s" % drat_rec.get("seq")))
+-    if drat_rec.get("exit_observed_by_deadline") is not True:
++    if not rec.get("settled") or rec.get("capture_over_cap") is not False:
++        bad.append(defect(X + "SETTLE", "settlement/capture defect seq %s" % rec.get("seq")))
++    receipt_bad = receipt_contradictions(drat_rec, allowed_trips=())
++    if receipt_bad:
++        bad.append(defect(X + "RECEIPT", "contradictory or incomplete checker receipt %r" % (receipt_bad,)))
++    if rec.get("exit_observed_by_deadline") is not True:
+         bad.append(defect(X + "TIMING", "exit not observed by the checker deadline (N4)"))
+-    contradictions = receipt_contradictions(drat_rec, allowed_trips=())
+-    if contradictions:
+-        bad.append(defect(X + "RECEIPT", "contradictory/incomplete ownership evidence %r" % contradictions))
+     return bad
+ 
+ 
+ 
+-def qualify_stream(cnf_expect, solver_rec, kissat_lines, proof_cap, checks, cnf_post, buf_post):
+-    """S4/V9/V10: item-level qualification over the solver leg (complete output exactly ['s UNSATISFIABLE']), the
+-    RAM buffer and every pinned checker in order; checks = [(name, drat_rec, drat_lines), ...].  UNSAT requires []."""
++def qualify_unsat(cnf_expect, solver_rec, kissat_lines, proof_sha, proof_bytes, proof_cap, drat_rec, drat_lines,
++                  cnf_post, proof_post):
++    """UNSAT requires exact solver output, sink-bound proof identity, fresh post-hashes and complete receipts."""
+     bad = []
+-    if solver_rec.get("returncode") != 20 or solver_rec.get("stop") != "self":
++    rec = solver_rec if isinstance(solver_rec, dict) else {}
++    sink = rec.get("proof_sink")
++    if rec.get("returncode") != 20 or rec.get("stop") != "self":
+         bad.append(defect("SOLVER_EXIT", "solver not self-exit rc20"))
+     if kissat_lines != ["s UNSATISFIABLE"]:
+         bad.append(defect("SOLVER_OUTPUT", "complete solver output %r != ['s UNSATISFIABLE']" % (kissat_lines[:4],)))
+-    buf = solver_rec.get("proof_sink") or {}
+-    if not sink_complete(solver_rec.get("proof_sink")):
+-        bad.append(defect("BUFFER_INCOMPLETE", "proof buffer incomplete/over cap/error"))
+-    buf_sha, buf_bytes = buf.get("sha256_of_retained"), buf.get("retained")
+-    if not isinstance(buf_bytes, int) or isinstance(buf_bytes, bool) or buf_bytes <= 0 or buf_bytes > proof_cap:
+-        bad.append(defect("BUFFER_SIZE", "proof size outside (0, cap]"))
+-    if [c[0] for c in checks] != [c[0] for c in CHECKERS]:
+-        bad.append(defect("CHECKER_SET", "not every pinned checker ran, in order"))
+-    for name, rec, lines in checks:
+-        bad += checker_defects(name, cnf_expect, buf_sha, buf_bytes, rec, lines)
++    if not sink_complete(sink):
++        bad.append(defect("SINK_INCOMPLETE", "proof sink incomplete/over cap/error"))
++    if not isinstance(proof_bytes, int) or isinstance(proof_bytes, bool) or proof_bytes <= 0 or proof_bytes > proof_cap:
++        bad.append(defect("PROOF_SIZE", "proof size outside (0, cap]"))
++    if not isinstance(sink, dict) or proof_sha != sink.get("sha256_of_written") \
++            or not isinstance(proof_bytes, int) or isinstance(proof_bytes, bool) \
++            or type(sink.get("written")) is not int or proof_bytes != sink.get("written"):
++        bad.append(defect("PROOF_SINK_BINDING", "passed proof digest/bytes do not equal the solver sink measurement"))
++    bad += file_checker_defects("A", cnf_expect, proof_bytes, drat_rec, drat_lines)
+     if not _measured_pair(cnf_post, tuple) or cnf_post != (cnf_expect[0], cnf_expect[1]):
+         bad.append(defect("CNF_POST", "CNF file digest/bytes != expected"))
+-    if not _measured_pair(buf_post, list) or buf_post != [buf_sha, buf_bytes]:
+-        bad.append(defect("BUFFER_POST", "proof buffer re-hash after the checks != collector measurement"))
+-    if solver_rec.get("settled") is not True or solver_rec.get("capture_over_cap") is not False:
+-        bad.append(defect("SOLVER_SETTLE", "settlement/capture defect seq %s" % solver_rec.get("seq")))
+-    if solver_rec.get("exit_observed_by_deadline") is not True:
++    if not _measured_pair(proof_post, tuple) or proof_post != (proof_sha, proof_bytes):
++        bad.append(defect("PROOF_POST", "fresh proof file digest/bytes != the passed proof measurement"))
++    if not rec.get("settled") or rec.get("capture_over_cap") is not False:
++        bad.append(defect("SOLVER_SETTLE", "settlement/capture defect seq %s" % rec.get("seq")))
++    receipt_bad = receipt_contradictions(solver_rec, allowed_trips=())
++    if receipt_bad:
++        bad.append(defect("SOLVER_RECEIPT", "contradictory or incomplete solver receipt %r" % (receipt_bad,)))
++    if rec.get("exit_observed_by_deadline") is not True:
+         bad.append(defect("SOLVER_TIMING", "exit not observed by the solver deadline (N4)"))
+-    contradictions = receipt_contradictions(solver_rec, allowed_trips=())
+-    if contradictions:
+-        bad.append(defect("SOLVER_RECEIPT", "contradictory/incomplete ownership evidence %r" % contradictions))
+     return bad
+ 
+ 
+@@ -3811,6 +3623,7 @@
+     return why
+ 
+ 
++
+ def completed_checker(rec, lines, expect):
+     """r3#8: a completed drat-trim outcome: exactly 's VERIFIED' rc0 or 's NOT VERIFIED' rc1, no
+     MEMOUT/TIMEOUT/ERROR text, healthy settlement."""
+@@ -3823,187 +3636,253 @@
+ 
+ 
+ def controls():
+-    """S6/V11: same-binary positive and intended-reason controls through the RAM/stdin transport for BOTH pinned
+-    checkers.  Each checker's intended predicate is evaluated before the next child is launched; C2/C3/C4 compare
+-    complete defect-ID sets; C6/C7/C7b are bound to the pinned binaries' measured or source-stated diagnostics.
+-    Stops at the first refused, unhealthy or not-as-intended control (later controls are not started).  V5/N6:
+-    every control buffer is owned by `bufs` from its creation (run_kissat) and released in the finally.  N10: C6
+-    is bound to monotonic execution evidence of the --time=CONTROL_TIMER_S expiry (c6_timer_refusals)."""
++    """Sequential controls only: safety outranks intended outcomes; every checker is followed by fresh file hashes."""
+     recs = {}
+-    bufs = []
+-    d = os.path.join(STATE["out"], "controls")    # N8: created and anchored with the run tree
+-    per_child = LOG_CAP + 3 * RECORD_MAX
++    artifacts = {}                              # immutable intended bytes, including capped and empty proof files
++    d = os.path.join(STATE["out"], "controls")
++    per_child = LOG_CAP + CONTROL_PROOF_CAP + 3 * RECORD_MAX
+ 
+     def fail(name, why):
+         recs[name] = dict(recs.get(name, {}), failed=why)
++        if LATCH or cancelled():
++            recs[name].update(safety_latch=list(LATCH), cancelled=cancelled())
+         return False, recs
+ 
+-    def checked(tag, cnf_path, pins, buf, mode, predicate):
+-        out = []
+-        for chk in CHECKERS:
+-            dr, dl, rf = run_check(cnf_path, buf, chk, tag, CONTROL_CHILD_WALL, per_child, pins, mode)
+-            if dr is None:
+-                return out, "checker %s refused %r" % (chk[0], rf)
+-            out.append((chk[0], dr, dl))
+-            if (pins.get("cnf_pin") is not None and list(sha_tree(cnf_path)) != pins["cnf_pin"]) or buf.digest() != pins["proof_pin"]:
+-                latch("control artifacts changed across checker execution")
+-                return out, "post-check control artifact identity mismatch"
+-            if LATCH or cancelled():
+-                return out, "safety/cancellation cannot be an intended control outcome"
+-            why = predicate(chk[0], dr, dl)
+-            if why:
+-                return out, "checker %s: %s" % (chk[0], why)   # V11: the next checker is never launched
+-        return out, None
+-
+-    def view(checks):
+-        return {n: {"drat": r, "checker_status_lines": status_lines(l)} for n, r, l in checks}
+-
+-    try:
+-        raw = php_cnf(6, 5)
+-        cnf = os.path.join(d, "php6x5.cnf")
+-        h, n = write_bytes_x(cnf, raw)
+-        exp = (h, n, raw.split(b"\n", 1)[0].decode())
+-        ks, kl, rf, b1 = run_kissat(cnf, "C1", CONTROL_CHILD_WALL, CONTROL_PROOF_CAP, per_child, {"cnf_pin": [h, n]},
+-                                    bufs)
+-        if ks is None:
+-            return fail("C1_positive_php6x5", "refused %r" % rf)
+-        recs["C1_positive_php6x5"] = {"kissat": ks, "kissat_lines": kl[:8]}
+-        if not (healthy(ks) and ks["returncode"] == 20 and kl == ["s UNSATISFIABLE"] and sink_complete(ks["proof_sink"])):
+-            return fail("C1_positive_php6x5", "solver leg not exactly rc20 ['s UNSATISFIABLE'], unhealthy or buffer incomplete")
+-        ph, pn = ks["proof_sink"]["sha256_of_retained"], ks["proof_sink"]["retained"]
+-        pins = {"cnf_pin": [h, n], "proof_pin": [ph, pn]}
+-
+-        def positive(name, r, l):
+-            ids = defect_ids(checker_defects(name, exp, ph, pn, r, l))
+-            return None if ids == [] and completed_checker(r, l, "VERIFIED") else "positive predicate failed %r" % ids
+-
+-        c1k, why = checked("C1", cnf, pins, b1, "plain", positive)
+-        recs["C1_positive_php6x5"]["checkers"] = view(c1k)
+-        if why:
+-            return fail("C1_positive_php6x5", why)
+-        c1 = qualify_stream(exp, ks, kl, CONTROL_PROOF_CAP, c1k, sha_tree(cnf), b1.digest())
+-        recs["C1_positive_php6x5"].update(intended="PASS: qualify_stream == [] through checker A then checker B", defects=c1)
+-        if c1 != []:
+-            return fail("C1_positive_php6x5", "positive control did not pass %r" % defect_ids(c1))
+-        # C2 (deterministic): same header and clause count, first clause missing one literal; the deterministic
+-        # PHP(6,5) proof stays VERIFIED (measured in every earlier run), so the ONLY item defect is CNF_POST.
+-        lines = raw.split(b"\n")
+-        first = lines[1].split()
+-        mutated = b"\n".join([lines[0], b" ".join(first[:-2] + first[-1:])] + lines[2:])
+-        cnf2 = os.path.join(d, "php6x5-one-literal-removed.cnf")
+-        h2, n2 = write_bytes_x(cnf2, mutated)
+-        c2k, why = checked("C2", cnf2, {"cnf_pin": [h2, n2], "proof_pin": [ph, pn]}, b1, "plain", positive)
+-        recs["C2_mutated_cnf_digest"] = {"intended": "each checker completed 's VERIFIED' with no checker defect; item "
+-                                                     "defect IDs exactly ['CNF_POST']", "checkers": view(c2k)}
+-        if why:
+-            return fail("C2_mutated_cnf_digest", why)
+-        c2 = qualify_stream(exp, ks, kl, CONTROL_PROOF_CAP, c2k, sha_tree(cnf2), b1.digest())
+-        recs["C2_mutated_cnf_digest"]["defects"] = c2
+-        if defect_ids(c2) != ["CNF_POST"]:
+-            return fail("C2_mutated_cnf_digest", "item defect IDs %r != ['CNF_POST']" % defect_ids(c2))
+-        # C3: the valid proof + one trailing byte appended IN TRANSIT.
+-        def suffix_reject(name, r, l):
+-            ids = defect_ids(checker_defects(name, exp, ph, pn, r, l))
+-            want = sorted(name + "." + k for k in ("FEED_MODE", "FEED_DIGEST", "CONSUMED", "FORBIDDEN.WRONG_PREFIX"))
+-            if ids != want or not completed_checker(r, l, "VERIFIED") \
+-                    or (r.get("stdin_feed") or {}).get("fed_bytes") != pn + len(SUFFIX):
+-                return "suffix predicate failed: IDs %r != %r or not completed/fed+1" % (ids, want)
++    def launch(fn, *args):
++        if LATCH or cancelled():
++            return None, [], ["controls stopped by a safety latch or cancellation"]
++        return fn(*args)                       # run_child retains the final native-pin/admission authority
++
++    def post_files(name):
++        fresh, errors = {}, []
++        for path, pin in artifacts.items():
++            try:
++                fresh[path] = sha_tree(path, limit=pin[1])
++                if fresh[path] != pin:
++                    errors.append("control artifact changed %s: %r != %r" % (path, fresh[path], pin))
++            except BaseException as exc:
++                errors.append("control artifact rehash failed %s: %r" % (path, exc))
++        recs.setdefault(name, {})["artifact_post"] = fresh
++        if errors:
++            recs[name]["artifact_integrity_errors"] = errors
++            for error in errors:
++                latch(error)
+             return None
+-
+-        c3k, why = checked("C3", cnf, pins, b1, "suffix", suffix_reject)
+-        recs["C3_trailing_proof_byte"] = {"intended": "per checker: completed 's VERIFIED', checker defect IDs exactly "
+-                                                      "{FEED_MODE, FEED_DIGEST, CONSUMED, FORBIDDEN.WRONG_PREFIX}, fed == "
+-                                                      "buffer + 1", "checkers": view(c3k)}
+-        if why:
+-            return fail("C3_trailing_proof_byte", why)
+-        # C4: satisfiable PHP(5,5) with the PHP(6,5) proof.
+-        raw4 = php_cnf(5, 5)
+-        cnf4 = os.path.join(d, "php5x5-sat.cnf")
+-        h4, n4 = write_bytes_x(cnf4, raw4)
+-        exp4 = (h4, n4, raw4.split(b"\n", 1)[0].decode())
+-
+-        def foreign_reject(name, r, l):
+-            ids = defect_ids(checker_defects(name, exp4, ph, pn, r, l))
+-            want = sorted(name + "." + k for k in ("EXIT", "STATUS", "FORBIDDEN.NOT_VERIFIED"))
+-            if ids != want or not completed_checker(r, l, "NOT VERIFIED"):
+-                return "foreign-proof predicate failed: IDs %r != %r or not completed 's NOT VERIFIED' rc1" % (ids, want)
++        return fresh
++
++    def adopt_sink(name, path, rec):
++        sink = rec.get("proof_sink") if isinstance(rec, dict) else None
++        if not sink_integrity(sink):
+             return None
+-
+-        c4k, why = checked("C4", cnf4, {"cnf_pin": [h4, n4], "proof_pin": [ph, pn]}, b1, "plain", foreign_reject)
+-        recs["C4_sat_formula_foreign_proof"] = {"intended": "per checker: completed exactly ['s NOT VERIFIED'] rc1, "
+-                                                            "checker defect IDs exactly {EXIT, STATUS, "
+-                                                            "FORBIDDEN.NOT_VERIFIED}", "checkers": view(c4k)}
+-        if why:
+-            return fail("C4_sat_formula_foreign_proof", why)
+-        # C5: HARD RAM proof cap 4096 B on PHP(11,10).
+-        raw5 = php_cnf(11, 10)
+-        cnf5 = os.path.join(d, "php11x10.cnf")
+-        h5, n5 = write_bytes_x(cnf5, raw5)
+-        ks5, kl5, rf, b5 = run_kissat(cnf5, "C5", CONTROL_CHILD_WALL, 4096, per_child, {"cnf_pin": [h5, n5]}, bufs)
+-        if ks5 is None:
+-            return fail("C5_proof_hard_cap", "refused %r" % rf)
+-        ps5 = ks5["proof_sink"] or {}
+-        recs["C5_proof_hard_cap"] = {"intended": "stop=proof_cap, retained<=4096 B, received == retained + discarded > "
+-                                                 "retained, settled, over_cap, collector joined", "kissat": ks5}
+-        if not (not LATCH and not cancelled() and ks5.get("trips") == ["proof_cap"]
+-                and ks5.get("capture_over_cap") is False and not receipt_contradictions(ks5, allowed_trips=("proof_cap",))
+-                and buffer_integrity(ps5) and ks5["stop"] == "proof_cap" and ps5.get("retained", 4097) <= 4096 and ps5.get("over_cap")
+-                and ps5.get("discarded", 0) > 0 and ps5.get("received") == ps5.get("retained", 0) + ps5.get("discarded", 0)
+-                and ks5["settled"] is True and ps5.get("thread_alive_after_join") is False and not ks5["resource_diagnostics"]):
+-            return fail("C5_proof_hard_cap", "intended reason or settlement missing")
+-        # C6: kissat --time=CONTROL_TIMER_S, no proof, on PHP(13,12): N10 timer expiry bound to monotonic
+-        # execution evidence (runtime in [C6_MIN_RUN_S, C6_MAX_RUN_S]), rc 0 and exactly ['s UNKNOWN'].
+-        raw6 = php_cnf(13, 12)
+-        cnf6 = os.path.join(d, "php13x12.cnf")
+-        h6, n6 = write_bytes_x(cnf6, raw6)
+-        ks6, kl6, rf, _ = run_kissat(cnf6, "C6", CONTROL_TIMER_S, None, per_child, {"cnf_pin": [h6, n6]}, bufs)
+-        if ks6 is None:
+-            return fail("C6_native_time_limit", "refused %r" % rf)
+-        why6 = c6_timer_refusals(ks6, kl6)
+-        recs["C6_native_time_limit"] = {"intended": "healthy self-exit rc 0, complete output exactly ['s UNKNOWN'], "
+-                                                    "monotonic runtime lower bound >= %.1f s and upper bound <= %.1f "
+-                                                    "s for --time=%d (runs 008/010/012 at --time=1: rc 0, "
+-                                                    "'s UNKNOWN')" % (C6_MIN_RUN_S, C6_MAX_RUN_S, CONTROL_TIMER_S),
+-                                        "kissat": ks6, "kissat_lines": kl6[:8], "refusals": why6}
+-        if why6:
+-            return fail("C6_native_time_limit", "intended timer-expiry outcome missing %r" % (why6,))
+-        # C7: missing input with a RAM proof buffer: kissat's missing-input diagnostic, collector unblocked and joined.
+-        absent = os.path.join(d, "absent.cnf")
+-        ks7, kl7, rf, b7 = run_kissat(absent, "C7", 10, CONTROL_PROOF_CAP, per_child, {"cnf_pin": None}, bufs)
+-        if ks7 is None:
+-            return fail("C7_no_input_sink_liveness", "refused %r" % rf)
+-        ps7 = ks7["proof_sink"] or {}
+-        want7 = ["kissat: error: can not read '%s'" % absent]
+-        recs["C7_no_input_sink_liveness"] = {"intended": "healthy self-exit rc 1, complete output exactly %r (runs "
+-                                                         "008/010/012), collector unblocked by the runner, 0 bytes, "
+-                                                         "joined" % want7, "kissat": ks7, "kissat_lines": kl7[:8]}
+-        if not (healthy(ks7) and buffer_integrity(ps7) and ks7["returncode"] == 1 and kl7 == want7 and ps7.get("unblocked_by_runner") is True
+-                and ps7.get("retained") == 0 and ps7.get("thread_alive_after_join") is False):
+-            return fail("C7_no_input_sink_liveness", "intended missing-input outcome or collector settlement missing")
+-        # C7b: missing CNF for each checker with a HELD feed: drat-trim.c:1425-1427 prints exactly
+-        # 'c error opening "<path>".' and returns ERROR (-1, exit status 255) before reading stdin; the feeder then
+-        # meets a closed read end (EPIPE, 0 bytes fed); every thread settles.
+-        absent2 = os.path.join(d, "absent-checker.cnf")
+-        want7b = ['c error opening "%s".' % absent2]
+-
+-        def missing_input(name, r, l):
+-            refusals = c7b_missing_input_refusals(r, l, want7b)
+-            return "missing-input predicate failed %r" % (refusals,) if refusals else None
+-
+-        c7k, why = checked("C7b", absent2, {"cnf_pin": None, "proof_pin": [ph, pn]}, b1, "hold", missing_input)
+-        recs["C7b_checker_no_input_feed_liveness"] = {"intended": "per checker: healthy self-exit rc 255, complete output "
+-                                                                  "exactly %r, held feed EPIPE with 0 bytes fed, hold "
+-                                                                  "released by the reap, started feeder joined, both "
+-                                                                  "endpoints affirmatively closed and error history clean" % want7b,
+-                                                      "checkers": view(c7k)}
+-        if why:
+-            return fail("C7b_checker_no_input_feed_liveness", why)
+-        return True, recs
+-    finally:
+-        for b in bufs:
+-            if b is not None:
+-                b.release()
+-        recs["buffer_accounting"] = [b.accounting() for b in bufs if b is not None]
++        artifacts[path] = (sink["sha256_of_written"], sink["written"])
++        return post_files(name)                # baseline is the sink measurement, never an unbound fresh digest
++
++    c1name = "C1_positive_php6x5"
++    if LATCH or cancelled():
++        return fail(c1name, "controls not admitted while safety/cancellation is pending")
++    raw = php_cnf(6, 5)
++    cnf = os.path.join(d, "php6x5.cnf")
++    h, n = write_bytes_x(cnf, raw)
++    artifacts[cnf] = (h, n)
++    exp = (h, n, raw.split(b"\n", 1)[0].decode())
++    proof = os.path.join(d, "php6x5.drat")
++    ks, kl, rf = launch(run_kissat, cnf, proof, "C1", CONTROL_CHILD_WALL, CONTROL_PROOF_CAP,
++                        per_child, {"cnf_pin": [h, n]})
++    recs[c1name] = {"kissat": ks, "kissat_lines": kl[:8]}
++    if LATCH or cancelled():
++        return fail(c1name, "safety/cancellation after solver leg")
++    if ks is None:
++        return fail(c1name, "refused %r" % rf)
++    if not (healthy(ks) and not receipt_contradictions(ks) and ks["returncode"] == 20
++            and kl == ["s UNSATISFIABLE"] and sink_complete(ks.get("proof_sink"))):
++        return fail(c1name, "solver leg not exactly rc20 ['s UNSATISFIABLE'], unhealthy or sink incomplete")
++    before1 = adopt_sink(c1name, proof, ks)
++    if before1 is None or LATCH or cancelled():
++        return fail(c1name, "solver artifacts changed or sink integrity/safety failed")
++    ph, pn = artifacts[proof]
++    dr, dl, rf = launch(run_drat, cnf, proof, "C1", CONTROL_CHILD_WALL, per_child,
++                        {"cnf_pin": [h, n], "proof_pin": [ph, pn]})
++    recs[c1name]["drat"] = dr
++    post1 = post_files(c1name)
++    if post1 is None or LATCH or cancelled():
++        return fail(c1name, "post-check artifact integrity or safety/cancellation failure")
++    if dr is None:
++        return fail(c1name, "checker refused %r" % rf)
++    c1 = qualify_unsat(exp, ks, kl, ph, pn, CONTROL_PROOF_CAP, dr, dl, post1[cnf], post1[proof])
++    recs[c1name].update(intended="PASS: qualify_unsat == [] and completed 's VERIFIED'", defects=c1)
++    if c1 != [] or not completed_checker(dr, dl, "VERIFIED"):
++        return fail(c1name, "positive control did not pass %r" % defect_ids(c1))
++
++    # C2 changes only the CNF's intended bytes; both actual post-check files are freshly rehashed.
++    c2name = "C2_mutated_cnf_digest"
++    if LATCH or cancelled():
++        return fail(c2name, "safety/cancellation prevents the next control")
++    lines = raw.split(b"\n")
++    first = lines[1].split()
++    mutated = b"\n".join([lines[0], b" ".join(first[:-2] + first[-1:])] + lines[2:])
++    cnf2 = os.path.join(d, "php6x5-one-literal-removed.cnf")
++    h2, n2 = write_bytes_x(cnf2, mutated)
++    artifacts[cnf2] = (h2, n2)
++    dr2, dl2, rf = launch(run_drat, cnf2, proof, "C2", CONTROL_CHILD_WALL, per_child,
++                          {"cnf_pin": [h2, n2], "proof_pin": [ph, pn]})
++    recs[c2name] = {"drat": dr2, "checker_status_lines": status_lines(dl2)}
++    post2 = post_files(c2name)
++    if post2 is None or LATCH or cancelled():
++        return fail(c2name, "post-check artifact integrity or safety/cancellation failure")
++    if dr2 is None:
++        return fail(c2name, "refused %r" % rf)
++    c2 = qualify_unsat(exp, ks, kl, ph, pn, CONTROL_PROOF_CAP, dr2, dl2, post2[cnf2], post2[proof])
++    recs[c2name].update(intended="completed 's VERIFIED'; defect IDs exactly ['CNF_POST']", defects=c2)
++    if not (completed_checker(dr2, dl2, "VERIFIED") and defect_ids(c2) == ["CNF_POST"]):
++        return fail(c2name, "defect IDs %r != ['CNF_POST'] or not completed" % defect_ids(c2))
++
++    # C3 also rejects a proof that is not the solver sink's measurement, not merely its parser prefix.
++    c3name = "C3_trailing_proof_byte"
++    if LATCH or cancelled():
++        return fail(c3name, "safety/cancellation prevents the next control")
++    pbytes = read_tree(proof, CONTROL_PROOF_CAP)
++    proof3 = os.path.join(d, "php6x5-trailing.drat")
++    p3h, p3n = write_bytes_x(proof3, pbytes + b"x")
++    artifacts[proof3] = (p3h, p3n)
++    dr3, dl3, rf = launch(run_drat, cnf, proof3, "C3", CONTROL_CHILD_WALL, per_child,
++                          {"cnf_pin": [h, n], "proof_pin": [p3h, p3n]})
++    recs[c3name] = {"drat": dr3, "checker_status_lines": status_lines(dl3)}
++    post3 = post_files(c3name)
++    if post3 is None or LATCH or cancelled():
++        return fail(c3name, "post-check artifact integrity or safety/cancellation failure")
++    if dr3 is None:
++        return fail(c3name, "refused %r" % rf)
++    c3 = qualify_unsat(exp, ks, kl, p3h, p3n, CONTROL_PROOF_CAP + 1, dr3, dl3, post3[cnf], post3[proof3])
++    want3 = ["A.CONSUMED", "A.FORBIDDEN.WRONG_PREFIX", "PROOF_SINK_BINDING"]
++    recs[c3name].update(intended="completed 's VERIFIED'; defect IDs exactly %r" % want3, defects=c3)
++    if not (completed_checker(dr3, dl3, "VERIFIED") and defect_ids(c3) == want3):
++        return fail(c3name, "defect IDs %r != %r or not completed" % (defect_ids(c3), want3))
++
++    # C4 preserves the measured native NOT VERIFIED outcome; artifact drift is a separate safety failure.
++    c4name = "C4_sat_formula_foreign_proof"
++    if LATCH or cancelled():
++        return fail(c4name, "safety/cancellation prevents the next control")
++    raw4 = php_cnf(5, 5)
++    cnf4 = os.path.join(d, "php5x5-sat.cnf")
++    h4, n4 = write_bytes_x(cnf4, raw4)
++    artifacts[cnf4] = (h4, n4)
++    exp4 = (h4, n4, raw4.split(b"\n", 1)[0].decode())
++    dr4, dl4, rf = launch(run_drat, cnf4, proof, "C4", CONTROL_CHILD_WALL, per_child,
++                          {"cnf_pin": [h4, n4], "proof_pin": [ph, pn]})
++    recs[c4name] = {"drat": dr4, "checker_status_lines": status_lines(dl4)}
++    post4 = post_files(c4name)
++    if post4 is None or LATCH or cancelled():
++        return fail(c4name, "post-check artifact integrity or safety/cancellation failure")
++    if dr4 is None:
++        return fail(c4name, "refused %r" % rf)
++    c4 = file_checker_defects("A", exp4, pn, dr4, dl4)
++    want4 = ["A.EXIT", "A.FORBIDDEN.NOT_VERIFIED", "A.STATUS"]
++    recs[c4name].update(intended="completed exactly ['s NOT VERIFIED'] rc1; checker defect IDs exactly %r" % want4,
++                        defects=c4)
++    if not (completed_checker(dr4, dl4, "NOT VERIFIED") and defect_ids(c4) == want4):
++        return fail(c4name, "defect IDs %r != %r or not completed" % (defect_ids(c4), want4))
++
++    # C5 permits only the intended proof-cap trip; capture, ownership and file integrity must remain clean.
++    c5name = "C5_proof_hard_cap"
++    if LATCH or cancelled():
++        return fail(c5name, "safety/cancellation prevents the next control")
++    raw5 = php_cnf(11, 10)
++    cnf5 = os.path.join(d, "php11x10.cnf")
++    h5, n5 = write_bytes_x(cnf5, raw5)
++    artifacts[cnf5] = (h5, n5)
++    proof5 = os.path.join(d, "php11x10.drat")
++    ks5, kl5, rf = launch(run_kissat, cnf5, proof5, "C5", CONTROL_CHILD_WALL, 4096, per_child, {"cnf_pin": [h5, n5]})
++    recs[c5name] = {"kissat": ks5, "kissat_lines": kl5[:8]}
++    if LATCH or cancelled():
++        return fail(c5name, "safety/cancellation after capped solver leg")
++    if ks5 is None:
++        return fail(c5name, "refused %r" % rf)
++    ps5 = ks5.get("proof_sink") or {}
++    post5 = adopt_sink(c5name, proof5, ks5)
++    if post5 is None or LATCH or cancelled():
++        return fail(c5name, "capped sink settlement/file integrity or safety failed")
++    size5 = post5[proof5][1]
++    recs[c5name].update(intended="only proof_cap; capture clean; exact rehash and settled retained proof inode <=4096 B",
++                        proof_file_bytes=size5)
++    if not (ks5.get("stop") == "proof_cap" and ks5.get("trips") == ["proof_cap"]
++            and ks5.get("capture_over_cap") is False and ks5.get("settled") is True
++            and not receipt_contradictions(ks5, allowed_trips=("proof_cap",)) and ks5.get("resource_diagnostics") == []
++            and sink_integrity(ps5) and ps5.get("sink_settled") is True and ps5.get("over_cap") is True
++            and ps5.get("connected") is True and ps5.get("eof") is True
++            and ps5.get("unblocked_by_runner") is False and size5 == ps5.get("written") <= 4096
++            and ps5.get("discarded", 0) > 0 and ps5.get("received") == ps5.get("written", 0) + ps5.get("discarded", 0)):
++        return fail(c5name, "intended reason alone, exact file integrity, capture cleanliness or settlement missing")
++
++    # C6 retains the exact native timer contract; core timing supplies unrounded monotonic evidence.
++    c6name = "C6_native_time_limit"
++    if LATCH or cancelled():
++        return fail(c6name, "safety/cancellation prevents the next control")
++    raw6 = php_cnf(13, 12)
++    cnf6 = os.path.join(d, "php13x12.cnf")
++    h6, n6 = write_bytes_x(cnf6, raw6)
++    artifacts[cnf6] = (h6, n6)
++    ks6, kl6, rf = launch(run_kissat, cnf6, None, "C6", CONTROL_TIMER_S, None, per_child, {"cnf_pin": [h6, n6]})
++    recs[c6name] = {"kissat": ks6, "kissat_lines": kl6[:8]}
++    if LATCH or cancelled():
++        return fail(c6name, "safety/cancellation after timer solver leg")
++    if ks6 is None:
++        return fail(c6name, "refused %r" % rf)
++    why6 = c6_timer_refusals(ks6, kl6)
++    if receipt_contradictions(ks6):
++        why6.append("contradictory or incomplete solver ownership receipt")
++    recs[c6name].update(intended="healthy self-exit rc 0, complete output exactly ['s UNKNOWN'], unrounded monotonic "
++                                "runtime lower bound >= %.1f s and upper bound <= %.1f s for --time=%d "
++                                "(runs 008/010/012 at --time=1: rc 0, 's UNKNOWN')"
++                                % (C6_MIN_RUN_S, C6_MAX_RUN_S, CONTROL_TIMER_S), refusals=why6)
++    if why6:
++        return fail(c6name, "intended timer-expiry outcome missing %r" % (why6,))
++
++    # C7's empty file must be just as settled and inode/hash-bound as an ordinary or capped proof file.
++    c7name = "C7_no_input_sink_liveness"
++    if LATCH or cancelled():
++        return fail(c7name, "safety/cancellation prevents the next control")
++    absent = os.path.join(d, "absent.cnf")
++    proof7 = os.path.join(d, "absent.drat")
++    ks7, kl7, rf = launch(run_kissat, absent, proof7, "C7", 10, CONTROL_PROOF_CAP, per_child, {"cnf_pin": None})
++    recs[c7name] = {"kissat": ks7, "kissat_lines": kl7[:8]}
++    if LATCH or cancelled():
++        return fail(c7name, "safety/cancellation after missing-input solver leg")
++    if ks7 is None:
++        return fail(c7name, "refused %r" % rf)
++    ps7 = ks7.get("proof_sink") or {}
++    post7 = adopt_sink(c7name, proof7, ks7)
++    if post7 is None or LATCH or cancelled():
++        return fail(c7name, "never-connected sink settlement/file integrity or safety failed")
++    want7 = ["kissat: error: can not read '%s'" % absent]
++    recs[c7name].update(intended="healthy self-exit rc 1, complete output exactly %r (runs 008/010/012); "
++                                "runner-unblocked, joined sink and exact empty proof inode/hash" % want7)
++    if not (healthy(ks7) and not receipt_contradictions(ks7) and ks7["returncode"] == 1 and kl7 == want7
++            and sink_integrity(ps7) and ps7.get("sink_settled") is True
++            and ps7.get("unblocked_by_runner") is True and ps7.get("connected") is True and ps7.get("eof") is True
++            and ps7.get("over_cap") is False and ps7.get("written") == ps7.get("received") == ps7.get("discarded") == 0
++            and post7[proof7] == (ps7.get("sha256_of_written"), 0)):
++        return fail(c7name, "intended missing-input outcome or exact empty sink settlement missing")
++
++    # C7b retains drat-trim.c:1425-1427's measured rc255 diagnostic and rehashes every retained artifact afterward.
++    c7bname = "C7b_checker_no_input"
++    if LATCH or cancelled():
++        return fail(c7bname, "safety/cancellation prevents the next control")
++    absent2 = os.path.join(d, "absent-checker.cnf")
++    dr7, dl7, rf = launch(run_drat, absent2, proof, "C7b", CONTROL_CHILD_WALL, per_child,
++                          {"cnf_pin": None, "proof_pin": [ph, pn]})
++    recs[c7bname] = {"drat": dr7, "checker_lines": dl7[:8]}
++    post7b = post_files(c7bname)
++    if post7b is None or LATCH or cancelled():
++        return fail(c7bname, "post-check artifact integrity or safety/cancellation failure")
++    if dr7 is None:
++        return fail(c7bname, "refused %r" % rf)
++    want7b = ['c error opening "%s".' % absent2]
++    recs[c7bname].update(intended="healthy self-exit rc 255, complete output exactly %r" % want7b)
++    if not (healthy(dr7) and not receipt_contradictions(dr7) and dr7["returncode"] == 255 and dl7 == want7b):
++        return fail(c7bname, "intended missing-input outcome missing")
++    if LATCH or cancelled():
++        return fail(c7bname, "safety/cancellation at controls completion")
++    return True, recs
+ 
+ 
+ 
+@@ -4035,6 +3914,7 @@
+     for w in why:
+         latch("terminal gate: " + w)
+     return why
++
+ 
+ 
+ def commit_record(path, rec_unknown, rec_unsat):
+@@ -4108,6 +3988,7 @@
+             "original_operation_allowance_mono": end}
+ 
+ 
++
+ HEX64 = re.compile(r"[0-9a-f]{64}")
+ HEADER_RE = re.compile(r"p cnf [1-9][0-9]* [1-9][0-9]*")
+ 
+@@ -4143,6 +4024,7 @@
+         if it.get("id") != "ms06:b%05d:direct" % it["b"]:
+             why.append("id not canonical")
+     return why
++
+ 
+ 
+ def main():
+@@ -4271,19 +4153,13 @@
+ 
+ 
+ def run_plan(summary, outcome):
+-    """The plan body; every early stop is a plain return with the outcome flags set.  V5: an item's proof buffer is
+-    released in a finally on every path (N6: owned by `item_bufs` from its creation); V12: item shape re-checked
++    """The plan body; every early stop is a plain return with the outcome flags set.  V12: item shape re-checked
+     immediately before generation; N8: run-tree files are hashed through the anchored tree."""
+     out_dir = STATE["out"]
+     if sha_file(DRAT_OLD[0])[0] != DRAT_OLD[1] or sha_file(KISSAT[0])[0] != KISSAT[1]:
+         raise RuntimeError("binary pin mismatch")
+     if sha_file(DRAT)[0] != DRAT_OLD[1] or os.lstat(DRAT).st_ino == os.lstat(DRAT_OLD[0]).st_ino:
+         raise RuntimeError("vendored drat-trim mismatch or shared inode")
+-    prov = json.loads(read_pinned(*DRAT_PROV_RECEIPT)).get("drat_trim") or {}
+-    if prov.get("binary_sha256") != DRAT_PROV[1] or prov.get("source_sha256") != DRAT_SOURCE_SHA \
+-            or sha_file(DRAT_PROV[0])[0] != DRAT_PROV[1] \
+-            or os.lstat(DRAT_PROV[0]).st_ino in (os.lstat(DRAT).st_ino, os.lstat(DRAT_OLD[0]).st_ino):
+-        raise RuntimeError("provenanced drat-trim pin/receipt mismatch or shared inode")
+     ok, recs = controls()
+     summary["controls_ok"] = ok
+     summary["controls_record_sha256"] = write_x(os.path.join(out_dir, "controls.json"), recs)
+@@ -4304,7 +4180,7 @@
+     D = json.loads(read_pinned(*SKEL))
+     special = [p for p in D["profiles"] if list(p) != P0]
+     for it in ITEMS:
+-        why = item_shape_refusals(it)
++        why = item_shape_refusals(it)              # V12: again, immediately before generation
+         if why:
+             raise RuntimeError("item shape %r" % (why,))
+         label = it["id"].replace(":", "_")
+@@ -4336,91 +4212,66 @@
+             raise RuntimeError("CNF file re-hash mismatch")
+         inputs = {"item": it["id"], "cnf_pin": [it["cnf"][0], it["cnf"][1]], "list_pin": it["list"][1],
+                   "skeleton_pin": SKEL[1], "encoder_pin": ENC[1]}
+-        buf = None
+-        item_bufs = []                             # N6: owns the item's buffer from its creation
+-        try:
+-            ks, kl, refused, buf = run_kissat(cnf_path, label, SOLVER_SECONDS, PROOF_CAP, LOG_CAP + 3 * RECORD_MAX,
+-                                              inputs, item_bufs)
+-            if ks is None:
+-                rec.update(reason="solver admission refused", refusal=refused, host_clock_end=clock())
++        proof_path = os.path.join(out_dir, label + ".drat")
++        ks, kl, refused = run_kissat(cnf_path, proof_path, label, SOLVER_SECONDS, PROOF_CAP,
++                                     PROOF_CAP + LOG_CAP + 3 * RECORD_MAX, inputs)
++        if ks is None:
++            rec.update(reason="solver admission refused", refusal=refused, host_clock_end=clock())
++            write_x(rec_path, rec)
++            summary["items"][it["id"]] = {"status": "UNKNOWN", "reason": "solver admission refused"}
++            summary["stopped"] = {"phase": "solver_admission", "item": it["id"], "why": refused}
++            outcome["refused"] = True
++            return
++        rec["solver"] = ks
++        rec["solver_status_lines"] = status_lines(kl)
++        if ks["returncode"] == 10 and rec["solver_status_lines"] == ["s SATISFIABLE"] and ks["stop"] == "self" \
++                and ks["settled"]:
++            rec["status"] = "SAT_CANDIDATE"
++            rec["sat"] = verify_sat(cnf_path, kl, label, it["cnf"][1])
++            rec["host_clock_end"] = clock()
++            write_x(rec_path, rec)
++            summary["items"][it["id"]] = {"status": "SAT_CANDIDATE", "sat": rec["sat"]}
++            summary["stopped"] = {"phase": "sat_candidate", "item": it["id"]}
++            outcome["sat"] = True
++            return
++        sink_ok = sink_complete(ks["proof_sink"])
++        if sink_ok:
++            rec["proof"] = {"sha256": ks["proof_sink"]["sha256_of_written"], "bytes": ks["proof_sink"]["written"]}
++        if ks["returncode"] == 20 and ks["stop"] == "self" and ks["settled"] and sink_ok and not LATCH \
++                and not cancelled():
++            dr, dl, refused = run_drat(cnf_path, proof_path, label, CHECK_SECONDS, LOG_CAP + 3 * RECORD_MAX,
++                                       dict(inputs, proof_pin=[rec["proof"]["sha256"], rec["proof"]["bytes"]]))
++            if dr is None:
++                rec.update(reason="checker admission refused", refusal=refused, host_clock_end=clock())
+                 write_x(rec_path, rec)
+-                summary["items"][it["id"]] = {"status": "UNKNOWN", "reason": "solver admission refused"}
+-                summary["stopped"] = {"phase": "solver_admission", "item": it["id"], "why": refused}
++                summary["items"][it["id"]] = {"status": "UNKNOWN", "reason": "checker admission refused"}
++                summary["stopped"] = {"phase": "checker_admission", "item": it["id"], "why": refused}
+                 outcome["refused"] = True
+                 return
+-            rec["solver"] = ks
++            rec["checker"] = dr
++            rec["checker_status_lines"] = status_lines(dl)
++            rec["checker_parse_lines"] = [s[:200] for s in dl if s.startswith("c parsing")
++                                          or s.startswith("c finished parsing")][:4]
+             rec["solver_lines"] = kl[:8]
+-            rec["solver_status_lines"] = status_lines(kl)
+-            if ks["returncode"] == 10 and rec["solver_status_lines"] == ["s SATISFIABLE"] and ks["stop"] == "self" \
+-                    and ks["settled"]:
+-                rec["status"] = "SAT_CANDIDATE"
+-                rec["sat"] = verify_sat(cnf_path, kl, label, it["cnf"][1])
+-                rec["host_clock_end"] = clock()
+-                write_x(rec_path, rec)
+-                summary["items"][it["id"]] = {"status": "SAT_CANDIDATE", "sat": rec["sat"]}
+-                summary["stopped"] = {"phase": "sat_candidate", "item": it["id"]}
+-                outcome["sat"] = True
+-                return
+-            sink_ok = sink_complete(ks["proof_sink"])
+-            if sink_ok:
+-                rec["proof"] = {"sha256": ks["proof_sink"]["sha256_of_retained"], "bytes": ks["proof_sink"]["retained"],
+-                                "storage": "RAM only (P-STREAM); never written to disk"}
+-            if ks["returncode"] == 20 and ks["stop"] == "self" and ks["settled"] and sink_ok and not LATCH \
+-                    and not cancelled():
+-                checks = []
+-                rec["checkers"] = {}
+-                for name, path, pin in CHECKERS:
+-                    dr, dl, refused = run_check(cnf_path, buf, (name, path, pin), label, CHECK_SECONDS,
+-                                                LOG_CAP + 3 * RECORD_MAX,
+-                                                dict(inputs, proof_pin=[rec["proof"]["sha256"], rec["proof"]["bytes"]]))
+-                    if dr is None:
+-                        rec.update(reason="checker %s admission refused" % name, refusal=refused,
+-                                   host_clock_end=clock())
+-                        write_x(rec_path, rec)
+-                        summary["items"][it["id"]] = {"status": "UNKNOWN",
+-                                                      "reason": "checker %s admission refused" % name}
+-                        summary["stopped"] = {"phase": "checker_admission", "item": it["id"], "checker": name,
+-                                              "why": refused}
+-                        outcome["refused"] = True
+-                        return
+-                    checks.append((name, dr, dl))
+-                    filt = dr.get("stdout_filter") or {}
+-                    rec["checkers"][name] = {
+-                        "record": dr, "status_lines": status_lines(dl),
+-                        "parse_lines": [s[:200] for s in dl if s.startswith("c parsing") or
+-                                        s.startswith("c finished parsing") or s.startswith("c reading proof")][:6],
+-                        "duplicate_literal_warnings": {   # V8/P3: both phases counted and disclosed, never gated
+-                            "formula_phase_proof_line_le_header_clauses": filt.get("dup_lines_at_or_below_header_clauses"),
+-                            "proof_phase_proof_line_gt_header_clauses": filt.get("dup_lines_above_header_clauses"),
+-                            "basis": "drat-trim.c:1133/1153/1229: exact phase partition for any log without early EOF"}}
+-                    if checker_defects(name, it["cnf"], rec["proof"]["sha256"], rec["proof"]["bytes"], dr, dl) \
+-                            or LATCH or cancelled():
+-                        break  # S4: a later checker cannot rescue the item
+-                post_cnf, post_buf = sha_tree(cnf_path), buf.digest()
+-                buf.release()
+-                rec["post_check_hashes"] = {"cnf": list(post_cnf), "proof_buffer": post_buf}
+-                rec["defects"] = qualify_stream(it["cnf"], ks, kl, PROOF_CAP, checks, post_cnf, post_buf)
+-                rec["defect_ids"] = defect_ids(rec["defects"])
+-                rec["host_clock_end"] = clock()
+-                rec["terminal_gate"] = terminal_gate()
+-                unsat = None
+-                if not rec["defects"] and not rec["terminal_gate"] and not LATCH:
+-                    unsat = dict(rec, status="UNSAT", count_for_scientific_coverage=True,
+-                                 commit="UNSAT chosen at an explicit commit boundary with no earlier cancel stamp or "
+-                                        "latch")
+-                commit = commit_record(rec_path, dict(rec, commit="UNKNOWN record"), unsat)
+-                rec["status"] = "UNSAT_PROVISIONAL" if commit["committed_unsat"] else "UNKNOWN"
+-                summary.setdefault("commits", {})[it["id"]] = commit
+-            else:
+-                rec["reason"] = "no settled self-exit rc20 verdict with a complete proof buffer (or latch/cancel)"
+-                rec["host_clock_end"] = clock()
+-                write_x(rec_path, rec)
+-        finally:
+-            for b in item_bufs:
+-                b.release()                        # N6: a live collector stays charged; closeout retries
++            post_cnf, post_proof = sha_tree(cnf_path), sha_tree(proof_path, limit=PROOF_CAP)
++            rec["post_check_hashes"] = {"cnf": list(post_cnf), "proof": list(post_proof)}
++            rec["defects"] = qualify_unsat(it["cnf"], ks, kl, rec["proof"]["sha256"], rec["proof"]["bytes"],
++                                           PROOF_CAP, dr, dl, post_cnf, post_proof)
++            rec["defect_ids"] = defect_ids(rec["defects"])
++            rec["host_clock_end"] = clock()
++            rec["terminal_gate"] = terminal_gate()
++            unsat = None
++            if not rec["defects"] and not rec["terminal_gate"] and not LATCH:
++                unsat = dict(rec, status="UNSAT", count_for_scientific_coverage=True,
++                             commit="UNSAT chosen at an explicit commit boundary with no earlier cancel stamp or latch")
++            commit = commit_record(rec_path, dict(rec, commit="UNKNOWN record"), unsat)
++            rec["status"] = "UNSAT_PROVISIONAL" if commit["committed_unsat"] else "UNKNOWN"
++            summary.setdefault("commits", {})[it["id"]] = commit
++        else:
++            rec["reason"] = "no settled self-exit rc20 verdict with a complete proof sink (or latch/cancel)"
++            rec["host_clock_end"] = clock()
++            write_x(rec_path, rec)
+         summary["items"][it["id"]] = {k: rec.get(k) for k in ("status", "defect_ids", "terminal_gate", "reason", "proof")}
+-        summary["items"][it["id"]]["duplicate_literal_warnings"] = {
+-            n: v.get("duplicate_literal_warnings") for n, v in (rec.get("checkers") or {}).items()}
+         if LATCH or cancelled():
+             summary["stopped"] = {"phase": "latch_or_cancel", "item": it["id"]}
+             return
+@@ -4563,5 +4414,6 @@
+ 
+ 
+ 
++
+ if __name__ == "__main__":
+     sys.exit(main())

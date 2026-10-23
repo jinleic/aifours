@@ -1,0 +1,39 @@
+# Unified diff: CONTROL-PLAN-gbs5-v5.md (sha256 4532e639be3d2210fd07f758a320c52b2b2a2653387fbd33bf09444659b0d15e, unchanged) -> CONTROL-PLAN-gbs5-v5b.md (sha256 e30a04800a19f1a2b544723dc8e5415f8f26a0ca0078e89ca057ea2aba2a6858)
+# Scope: the two launch commands (shell status = driver status; cd/redirection failures non-zero) and the
+# appended known limits (MINOR 2, MINOR 3) of review/n8-gb-staged-v5-delta-codex-v1.note.md (af2a46b33654b07b7c4d6ea4410cd1bca1a6fcc03897785b6422b5d125b2631e).
+--- a/CONTROL-PLAN-gbs5-v5.md
++++ b/CONTROL-PLAN-gbs5-v5b.md
+@@ -114,5 +114,6 @@
+ GO=/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-16/review/<parent-go-file>.json
+-cd "$DESK" && set -C && TMPDIR="$DESK/tmp/" /opt/homebrew/opt/python@3.14/bin/python3.14 -I -B \
++( cd "$DESK" && set -C && TMPDIR="$DESK/tmp/" /opt/homebrew/opt/python@3.14/bin/python3.14 -I -B \
+   "$DESK/scripts/gb_staged_v5.py" run "$DESK/PRE-EXEC-gbs5-controls-v5.json" "$GO" \
+-  > "$DESK/logs/run-gbs5-controls-v5.console.txt" 2>&1; echo "driver exit status $?"
++  > "$DESK/logs/run-gbs5-controls-v5.console.txt" 2>&1
++  driver_rc=$?; printf 'driver exit status %s\n' "$driver_rc"; exit "$driver_rc" )
+ ```
+@@ -147,5 +148,6 @@
+ # parent GO: "scope": "science", "items": ["gb:<ID>:a1"], "pre_exec_sha256": <that PRE-EXEC>, script v5
+-cd "$DESK" && set -C && TMPDIR="$DESK/tmp/" /opt/homebrew/opt/python@3.14/bin/python3.14 -I -B \
++( cd "$DESK" && set -C && TMPDIR="$DESK/tmp/" /opt/homebrew/opt/python@3.14/bin/python3.14 -I -B \
+   "$DESK/scripts/gb_staged_v5.py" run "$DESK/PRE-EXEC-gbs5-<ID>-a1.json" "$GO" \
+-  > "$DESK/logs/run-gbs5-<ID>-a1.console.txt" 2>&1; echo "driver exit status $?"
++  > "$DESK/logs/run-gbs5-<ID>-a1.console.txt" 2>&1
++  driver_rc=$?; printf 'driver exit status %s\n' "$driver_rc"; exit "$driver_rc" )
+ ```
+@@ -187 +189,15 @@
+ - Nothing is deleted. Spent FIFOs, `.prepare` records, logs, failed attempts and UNKNOWN receipts are kept.
++- Known limits accepted by the parent for the control run. Source: the Codex v5 delta review
++  `review/n8-gb-staged-v5-delta-codex-v1.note.md` (af2a46b3…631e). The code is not changed, to avoid a new review
++  cycle.
++  - MINOR 2: `release_problems()` validates the release path (`lexists`, `islink`, `isfile`, `realpath`) and then
++    opens it with an ordinary `open()`: no `O_NOFOLLOW`, no descriptor-relative open, no `fstat` of the opened file.
++    The runtime does not exclude a replacement in `review/` between the check and the open. Operationally it cannot
++    happen: only the parent publishes releases, each created exclusively and never replaced, and the producer has
++    no release-writing path.
++  - MINOR 3: some selfcheck descriptions overstate coverage.
++    - H14 calls the reader synchronously inside the publication wrapper. It is not an independent concurrent reader,
++      and it never reads between the summary link and its directory sync.
++    - H2 checks that release hashes are present. It does not mutate a release and show rejection at science launch.
++    - H17 omits exit-5 cases and the deferred-handler handoff around blocking and default-disposition installation.
++    The check results, not their descriptions, are the evidence.

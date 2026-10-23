@@ -1,0 +1,889 @@
+--- code/pilot_stream_drat_ms06_v7.py
++++ code/pilot_stream_drat_ms06_v8.py
+@@ -1,5 +1,11 @@
+ #!/usr/bin/env python3
+-"""PA19 96h P-STREAM v7 (ms06), minimal combined successor of immutable P-STREAM v6 (88ee1132...).
++"""PA19 96h P-STREAM v8 (ms06), minimal combined successor of immutable P-STREAM v7 (2fad976a...).
++v8/v36 SOURCE-ONLY repair of all six v7/v35 HOLD reviews (2F/21M/2m): every readable, null-shadowed or
++contradictory nested/runner identity is retained; a missing CURRENT closeout needs explicit failure disposal
++(legacy audit only for proven pre-closeout launches); every raw read/walk/dup/anchor/verify acquisition is
++inventoried before inspection with its observed identity and one retained close outcome; settlement-only helper
++safety outranks cancellation; digest, preservation, verify_sat read/check/close, rehash close and registration
++are fenced by their ORIGINAL allowances; transports and consumers bind exact observed endpoint identities.
+ v7/v35 MINIMAL repair of all five v6/v34 HOLD reviews (guards 2F/4M; integration 2M+2M; tests 2M/1m+3M):
+ readable nested identities survive a missing outer PID; absent mandatory summary/closeout binding and wrongly
+ typed closeout fields require explicit publication-failure disposition; concurrent helper cancellation never masks
+@@ -64,7 +70,7 @@
+ TREE_SUBDIRS = ("children", "cwd", "fifo", "controls")   # N8: created and anchored with the run tree
+ BUSY_SLOTS = 2                              # N3: contract resources.per_lane_busy_processes (runner + one child)
+ ALLOCATION_SCHEMA = "PA19-96H-PARENT-ALLOCATION-v2"
+-KNOWN_SUMMARY_SCHEMAS = {'PA19-96H-PILOT-SUMMARY-v14', 'PA19-96H-PILOT-SUMMARY-v32', 'PA19-96H-PILOT-SUMMARY-v33', 'PA19-96H-PILOT-SUMMARY-v34', 'PA19-96H-PILOT-SUMMARY-v35', 'PA19-96H-PSTREAM-SUMMARY-v4', 'PA19-96H-PSTREAM-SUMMARY-v5', 'PA19-96H-PSTREAM-SUMMARY-v6', 'PA19-96H-PSTREAM-SUMMARY-v7'}
++KNOWN_SUMMARY_SCHEMAS = {'PA19-96H-PILOT-SUMMARY-v14', 'PA19-96H-PILOT-SUMMARY-v32', 'PA19-96H-PILOT-SUMMARY-v33', 'PA19-96H-PILOT-SUMMARY-v34', 'PA19-96H-PILOT-SUMMARY-v35', 'PA19-96H-PSTREAM-SUMMARY-v4', 'PA19-96H-PSTREAM-SUMMARY-v5', 'PA19-96H-PSTREAM-SUMMARY-v6', 'PA19-96H-PSTREAM-SUMMARY-v7', 'PA19-96H-PSTREAM-SUMMARY-v8', 'PA19-96H-PILOT-SUMMARY-v36'}
+ DISPOSITION_SCHEMA = "PA19-96H-PARENT-RELEASE-v2"
+ ENC = (LANE + "/code/vendor/encode_skel_b.py", "d0002e60d11ef5cba568309fde5b15e29280ca127bc0e6bb1f4d22929a5628e5")
+ SKEL = (OLD + "/cycle2/skel-b/skeletons-b-ms06.json", "9ec0fd1dd036cbddf197f495684c2d6a54bc36feff35cb6466799a13493e0488")
+@@ -173,12 +179,13 @@
+ LIST_SLOTS = 4096
+ 
+ 
+-KNOWN_CLOSEOUT_SCHEMAS = {'PA19-96H-PILOT-CLOSEOUT-v33', 'PA19-96H-PILOT-CLOSEOUT-v34', 'PA19-96H-PILOT-CLOSEOUT-v35', 'PA19-96H-PSTREAM-CLOSEOUT-v5', 'PA19-96H-PSTREAM-CLOSEOUT-v6', 'PA19-96H-PSTREAM-CLOSEOUT-v7'}
++KNOWN_CLOSEOUT_SCHEMAS = {'PA19-96H-PILOT-CLOSEOUT-v33', 'PA19-96H-PILOT-CLOSEOUT-v34', 'PA19-96H-PILOT-CLOSEOUT-v35', 'PA19-96H-PSTREAM-CLOSEOUT-v5', 'PA19-96H-PSTREAM-CLOSEOUT-v6', 'PA19-96H-PSTREAM-CLOSEOUT-v7', 'PA19-96H-PSTREAM-CLOSEOUT-v8', 'PA19-96H-PILOT-CLOSEOUT-v36'}
+ PHASE = "controls-only"
+-LAUNCH_SCHEMA = "PA19-96H-PSTREAM-LAUNCH-v7"
+-SUMMARY_SCHEMA = "PA19-96H-PSTREAM-SUMMARY-v7"
+-CLOSEOUT_SCHEMA = "PA19-96H-PSTREAM-CLOSEOUT-v7"
+-KNOWN_LAUNCH_SCHEMAS = {'PA19-96H-PILOT-LAUNCH-v14', 'PA19-96H-PILOT-LAUNCH-v32', 'PA19-96H-PILOT-LAUNCH-v33', 'PA19-96H-PILOT-LAUNCH-v34', 'PA19-96H-PILOT-LAUNCH-v35', 'PA19-96H-PSTREAM-LAUNCH-v4', 'PA19-96H-PSTREAM-LAUNCH-v5', 'PA19-96H-PSTREAM-LAUNCH-v6', 'PA19-96H-PSTREAM-LAUNCH-v7'}
++LAUNCH_SCHEMA = "PA19-96H-PSTREAM-LAUNCH-v8"
++SUMMARY_SCHEMA = "PA19-96H-PSTREAM-SUMMARY-v8"
++CLOSEOUT_SCHEMA = "PA19-96H-PSTREAM-CLOSEOUT-v8"
++KNOWN_LAUNCH_SCHEMAS = {'PA19-96H-PILOT-LAUNCH-v14', 'PA19-96H-PILOT-LAUNCH-v32', 'PA19-96H-PILOT-LAUNCH-v33', 'PA19-96H-PILOT-LAUNCH-v34', 'PA19-96H-PILOT-LAUNCH-v35', 'PA19-96H-PSTREAM-LAUNCH-v4', 'PA19-96H-PSTREAM-LAUNCH-v5', 'PA19-96H-PSTREAM-LAUNCH-v6', 'PA19-96H-PSTREAM-LAUNCH-v7', 'PA19-96H-PSTREAM-LAUNCH-v8', 'PA19-96H-PILOT-LAUNCH-v36'}
++LEGACY_NO_CLOSEOUT_LAUNCH_SCHEMAS = {'PA19-96H-PILOT-LAUNCH-v14', 'PA19-96H-PILOT-LAUNCH-v32', 'PA19-96H-PSTREAM-LAUNCH-v4'}  # GD2: runners that never wrote closeout.json
+ TREE_ENTRY_MAX, TREE_DEPTH_MAX, CENSUS_SECONDS, SHA_SECONDS = 50000, 24, 30.0, 30.0
+ ALL_PID_SLOTS = 65536
+ NATIVE_LAUNCH_STOP = datetime.fromisoformat("2026-10-22T20:56:33-07:00").timestamp()
+@@ -315,31 +322,114 @@
+         CREATED[path].update(state="failed", error=repr(exc), publication_complete=False)
+         raise
+     h = hashlib.sha256(data).hexdigest()
++    try:
++        # GD5: the digest and the success/promotion boundary are fenced by the ORIGINAL publication allowance;
++        # a durable but late publication is a failed publication, never publication_complete.
++        deadline_check(end, "publication digest/success boundary")
++    except BaseException as exc:
++        CREATED[path].update(state="failed", error=repr(exc), publication_complete=False)
++        raise
+     register_written(path, h, len(data))
+     CREATED[path]["publication_complete"] = True
+     return h, len(data)
+ 
+ 
+-def open_regular(path, dir_fd=None):
+-    """N7/N8: open an existing REGULAR file read-only without following a final symlink and without blocking on a
+-    FIFO (O_NONBLOCK; the fstat check refuses every non-regular kind); returns (fd, fstat)."""
+-    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC, dir_fd=dir_fd)
++def raw_record(purpose, path):
++    """GD3: RAW_FDS entry created BEFORE a raw descriptor acquisition (one record per attempt). Fields are only
++    extended, never dropped: fd (number HISTORY, never identity evidence), state, observed_identity
++    ({'dev','ino','kind'} or {'unavailable': repr}), close_attempted/close_error and the transfer owner."""
++    record = {"purpose": purpose, "path": path, "fd": None, "state": "opening", "observed_identity": None,
++              "close_attempted": False, "close_error": None, "error": None, "transfer": None}
++    RAW_FDS.append(record)
++    return record
++
++
++def raw_acquire(record, acquire):
++    """One acquisition for a pre-registered record. OSError from the syscall proves that no descriptor was
++    returned (not_acquired); any other exception leaves acquisition_uncertain (unresolved, never guessed). The
++    observed (dev, ino, kind) is retained BEFORE any caller inspection; an unavailable observation is explicit,
++    the descriptor then gets its one owning close and the observation failure is re-raised."""
++    try:
++        fd = acquire()
++    except OSError as exc:
++        record.update(state="not_acquired", error=repr(exc))
++        raise
++    except BaseException as exc:
++        record.update(state="acquisition_uncertain", error=repr(exc))
++        raise
++    record.update(fd=fd, state="acquired")
+     try:
+         st = os.fstat(fd)
+-        if not stat.S_ISREG(st.st_mode):
+-            raise RuntimeError("not a regular file: %s" % path)
+-    except BaseException:
+-        os.close(fd)
++    except BaseException as exc:
++        record["observed_identity"] = {"unavailable": repr(exc)}
++        raw_close(record, propagate=False)
+         raise
++    record["observed_identity"] = {"dev": st.st_dev, "ino": st.st_ino, "kind": _entry_kind(st.st_mode)}
+     return fd, st
++
++
++def raw_close(record, propagate=True):
++    """Exactly ONE owning close of a proven raw acquisition. An exception leaves close_uncertain: the number may
++    already be reused, so it is never retried and the record is never forgotten. True only on a returned close."""
++    if record.get("state") != "acquired" or record.get("close_attempted") is not False \
++            or type(record.get("fd")) is not int:
++        raise RuntimeError("raw descriptor close refused: no proven single raw owner")
++    record["close_attempted"] = True
++    try:
++        os.close(record["fd"])
++    except BaseException as exc:
++        record.update(state="close_uncertain", close_error=repr(exc))
++        if propagate:
++            raise
++        return False
++    record["state"] = "closed"
++    return True
++
++
++def raw_record_refusals(record):
++    """A RAW_FDS record is resolved ONLY with coherent evidence; every other state or shape remains owned."""
++    if not isinstance(record, dict):
++        return ["malformed raw descriptor record"]
++    state, fd, seen = record.get("state"), record.get("fd"), record.get("observed_identity")
++    if state == "not_acquired":
++        if fd is None and seen is None and record.get("close_attempted") is False:
++            return []
++        return ["not_acquired record carries descriptor/observation/close evidence"]
++    if state == "closed":
++        if type(fd) is int and fd >= 0 and record.get("close_attempted") is True and record.get("close_error") is None:
++            return []
++        return ["closed record lacks one returned owning close of a known descriptor"]
++    if state == "anchored":
++        tree = TREE.get(record.get("path"))
++        if type(fd) is int and record.get("close_attempted") is False and _observed(seen, "dir") \
++                and tree == (fd, seen["dev"], seen["ino"]):
++            return []
++        return ["anchored descriptor is not owned by its TREE entry with the observed identity"]
++    return ["raw descriptor ownership unresolved in state %r" % (state,)]
++
++
++def open_regular(path, dir_fd=None, record=None):
++    """N7/N8: open an existing REGULAR file read-only without following a final symlink and without blocking on a
++    FIFO (O_NONBLOCK; the fstat check refuses every non-regular kind). GD3: inventoried in RAW_FDS (or the
++    caller's pre-registered record) BEFORE os.open; a refused inspection gets exactly one owning close. Returns
++    (fd, fstat, record); the caller owns the single raw_close or an explicit wrapper transfer."""
++    record = raw_record("open_regular", path) if record is None else record
++    fd, st = raw_acquire(record, lambda: os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC,
++                                                 dir_fd=dir_fd))
++    if not stat.S_ISREG(st.st_mode):
++        raw_close(record, propagate=False)
++        raise RuntimeError("not a regular file: %s" % path)
++    return fd, st, record
+ 
+ 
+ def read_regular_bounded(path, limit, dir_fd=None, deadline=None):
+     """N7: whole-file read of a regular file of at most `limit` bytes; larger files and growth are refused.
+-    The original allowance is fixed before acquisition and rechecked after EOF and after the owning close."""
++    The original allowance is fixed before acquisition and rechecked after acquisition, after EOF and after the
++    one owning close (GD3: an uncertain close stays inventoried in RAW_FDS)."""
+     end = work_deadline(deadline=deadline)
+-    fd, st = open_regular(path, dir_fd)
++    fd, st, record = open_regular(path, dir_fd)
+     try:
++        deadline_check(end, "bounded metadata read acquisition completion")
+         if st.st_size > limit:
+             raise RuntimeError("%s is %d bytes > limit %d" % (path, st.st_size, limit))
+         parts, n = [], 0
+@@ -355,15 +445,16 @@
+                 raise RuntimeError("%s grew beyond limit %d" % (path, limit))
+         data = b"".join(parts)
+     finally:
+-        os.close(fd)
++        raw_close(record)
+     deadline_check(end, "bounded metadata read close completion")
+     return data
+ 
+ 
+ def sha_file(path, limit=SHA_FILE_MAX, dir_fd=None, deadline=None):
+     end = work_deadline(SHA_SECONDS, deadline)        # original allowance, fixed BEFORE acquisition
+-    fd, before = open_regular(path, dir_fd)
++    fd, before, record = open_regular(path, dir_fd)
+     try:
++        deadline_check(end, "hash acquisition completion: " + path)
+         h, n = hashlib.sha256(), 0
+         while True:
+             deadline_check(end, "hash progress: " + path)
+@@ -380,7 +471,7 @@
+         deadline_check(end, "hash identity completion: " + path)
+         result = (h.hexdigest(), n)
+     finally:
+-        os.close(fd)
++        raw_close(record)
+     deadline_check(end, "hash close completion: " + path)     # late completion is never timely evidence
+     return result
+ 
+@@ -563,28 +654,18 @@
+ 
+ 
+ def anchor_dir(path, dir_fd, name):
+-    """Raw directory acquisition is inventoried in RAW_FDS before inspection. A failed inspection gets exactly
+-    one owner close; an exception from that close leaves state close_uncertain (never retried, never forgotten)."""
+-    record = {"purpose": "anchor_dir", "path": path, "fd": None, "state": "opening", "close_error": None,
+-              "observed_identity": None}
+-    RAW_FDS.append(record)
++    """Raw directory acquisition is inventoried in RAW_FDS before os.open (GD3 raw_acquire): the observed identity
++    is retained before inspection; a failed inspection or TREE transfer gets exactly one owning close; an exception
++    from that close leaves close_uncertain (never retried, never forgotten). 'anchored' is resolved only while TREE
++    owns exactly this descriptor and observed identity (raw_record_refusals)."""
++    record = raw_record("anchor_dir", path)
++    fd, st = raw_acquire(record, lambda: os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
++                                                 dir_fd=dir_fd))
+     try:
+-        fd = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=dir_fd)
++        TREE[path] = (fd, st.st_dev, st.st_ino)
++        record.update(state="anchored", transfer="TREE")
+     except BaseException:
+-        record["state"] = "not_acquired"
+-        raise
+-    record.update(fd=fd, state="acquired")
+-    try:
+-        st = os.fstat(fd)
+-        record["observed_identity"] = {"dev": st.st_dev, "ino": st.st_ino, "kind": _entry_kind(st.st_mode)}
+-        TREE[path] = (fd, st.st_dev, st.st_ino)
+-        record["state"] = "anchored"
+-    except BaseException:
+-        try:
+-            os.close(fd)
+-            record["state"] = "closed"
+-        except BaseException as close_exc:
+-            record.update(state="close_uncertain", close_error=repr(close_exc))
++        raw_close(record, propagate=False)
+         raise
+     return TREE[path]
+ 
+@@ -611,7 +692,8 @@
+ 
+ 
+ def create_excl(path, mode=0o644):
+-    """G7/G9: inventory the acquired descriptor immediately; failed/partial creations remain visible."""
++    """G7/G9: inventory the acquired descriptor immediately; failed/partial creations remain visible. GD3: a failed
++    inspection's single rollback close records its outcome; an uncertain close keeps the creation owned."""
+     dfd, name = tree_path(path)
+     fd = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, mode, dir_fd=dfd)
+     try:
+@@ -619,8 +701,18 @@
+                          "acquired_fd": fd, "fd_owner": "raw_creation"}
+         st = os.fstat(fd)
+         CREATED[path]["identity"] = [st.st_dev, st.st_ino]
+-    except BaseException:
+-        os.close(fd)
++    except BaseException as exc:
++        made = CREATED.get(path) if isinstance(CREATED.get(path), dict) else None
++        if made is not None:
++            made.update(error=repr(exc), acquired_fd=fd, fd_owner="raw_creation_rollback")
++        try:
++            os.close(fd)
++        except BaseException as close_exc:
++            if made is not None:
++                made.update(acquired_fd_close="close_uncertain", acquired_fd_close_error=repr(close_exc))
++            raise
++        if made is not None:
++            made["acquired_fd_close"] = "closed"
+         raise
+     return fd
+ 
+@@ -721,6 +813,40 @@
+     return type(x) is container and len(x) == 2 and _hex64(x[0]) and type(x[1]) is int and x[1] >= 0
+ 
+ 
++def _observed(x, kind):
++    """Exact observed descriptor identity {'dev','ino','kind'}: non-negative non-bool ints and the expected kind.
++    A descriptor NUMBER, an unavailable observation or any extra/missing key is never identity evidence."""
++    return (type(x) is dict and set(x) == {"dev", "ino", "kind"} and type(x["dev"]) is int and x["dev"] >= 0
++            and type(x["ino"]) is int and x["ino"] >= 0 and x["kind"] == kind)
++
++
++def fifo_endpoint_refusals(rec):
++    """I1-1/IP1-1 consumer schema shared by the RAM collector and the file sink: exact retained FIFO identity; the
++    reader endpoint acquired and observed as that FIFO; the unblock endpoint either acquired, observed as that FIFO
++    and recorded as the runner unblock, or explicitly never acquired (no number, no observation, no unblock).
++    Missing, unavailable, numeric, truthy or contradictory evidence refuses."""
++    fifo = rec.get("fifo_identity")
++    if type(fifo) is not list or len(fifo) != 2 or any(type(x) is not int or x < 0 for x in fifo):
++        return ["retained FIFO identity missing/malformed"]
++    expected = {"dev": fifo[0], "ino": fifo[1], "kind": "fifo"}
++    why = []
++    if rec.get("reader_fd_acquired") is not True or not _observed(rec.get("reader_fd_observed_identity"), "fifo") \
++            or rec["reader_fd_observed_identity"] != expected:
++        why.append("reader endpoint acquisition/observed FIFO identity unproven")
++    unblock = rec.get("unblock_fd_acquired")
++    if unblock is True:
++        if not _observed(rec.get("unblock_fd_observed_identity"), "fifo") \
++                or rec["unblock_fd_observed_identity"] != expected or rec.get("unblocked_by_runner") is not True:
++            why.append("acquired unblock endpoint lacks its observed FIFO identity/unblock record")
++    elif unblock is False:
++        if "unblock_fd_observed_identity" not in rec or rec["unblock_fd_observed_identity"] is not None \
++                or "unblock_fd" not in rec or rec["unblock_fd"] is not None or rec.get("unblocked_by_runner") is not False:
++            why.append("never-acquired unblock endpoint carries contradictory evidence")
++    else:
++        why.append("unblock endpoint acquisition state missing/not an exact boolean")
++    return why
++
++
+ def attempt_owner_manifest(entry_dir, launch):
+     """G1: derive inventory from durable runner, child/helper intents/launches, settlements and full censuses.
+     Never infer complete ownership from summary booleans. Legacy/missing/partial evidence is explicit uncertainty
+@@ -760,6 +886,46 @@
+     add(launch.get("pid"), ri, bound, False, "launch-record.json:runner")
+     if not isinstance(ri, dict) or not ri.get("start"):
+         unknowns.append("legacy/incomplete runner identity and unrecorded legacy helpers")
++    def collect_record(record, source):
++        """GD1: EVERY readable identity field is collected independently: the item itself when it carries a start
++        list, identity_at_start, identity and start_identity (a present null or malformed field never shadows a
++        readable one); readable but different identities at one item are an explicit contradiction and ALL are
++        retained. Emitted runner_identity values are traversed wherever they appear."""
++        stack, count = [record], 0
++        while stack:
++            deadline_check(end, "ownership JSON work allowance")
++            count += 1
++            if count > TREE_ENTRY_MAX:
++                unknowns.append("ownership JSON traversal work cap: " + source)
++                break
++            item = stack.pop()
++            if isinstance(item, dict):
++                found = [item] if isinstance(item.get("start"), list) else []
++                for key in ("identity_at_start", "identity", "start_identity"):
++                    if key in item:
++                        if isinstance(item[key], dict):
++                            found.append(item[key])
++                        elif item[key] is not None:
++                            unknowns.append("malformed %s at %s" % (key, source))
++                outer = item["pid"] if "pid" in item else item.get("leader_pid")
++                distinct = {(repr(x.get("pid")), repr(x.get("start"))) for x in found}
++                if len(distinct) > 1:
++                    unknowns.append("contradictory readable identities at %s: %r" % (source, sorted(distinct)))
++                bound = item.get("started_by_epoch", item.get("observed_by_epoch"))
++                leader = (type(outer) is int and item.get("pgid") == outer) or item.get("kind") in ("child", "helper")
++                for identity in found:
++                    # Outer PID missing/invalid/contradictory never discards a readable identity (add() records why).
++                    add(outer, identity, bound, leader, source)
++                if not found and ("pid" in item or "leader_pid" in item):
++                    add(outer, None, bound, leader, source)
++                for key, value in item.items():
++                    if key in ("runner", "runner_identity", "children", "helpers", "metadata_helpers", "ownership_manifest", "unresolved",
++                               "unsettled_owners", "known_identities", "live_census", "group_members", "descendants"):
++                        stack.append(value)
++            elif isinstance(item, list):
++                stack.extend(item)
++            elif type(item) is int:
++                add(item, None, None, False, source)
+     snap = run_tree_census(entry_dir)
+     intents, launches, nolaunches = set(), set(), set()
+     for path, v in sorted(snap.items()):
+@@ -775,6 +941,9 @@
+         except BaseException as exc:
+             unknowns.append("unreadable ownership record %s: %r" % (path, exc))
+             continue
++        # GD1: every readable intent/launch/no-launch/settlement record contributes ALL of its identities,
++        # including the emitted runner_identity, independently of the specific branches below.
++        collect_record(rec, path)
+         if path.endswith(".intent.json"):
+             intents.add(path[:-len(".intent.json")])
+         elif path.endswith(".nolaunch.json"):
+@@ -809,31 +978,6 @@
+                 unknowns.append("incomplete census " + path)
+     for base in sorted(intents - launches - nolaunches):
+         unknowns.append("intent without proven launch/no-launch: " + base)
+-    def collect_record(record, source):
+-        stack, count = [record], 0
+-        while stack:
+-            deadline_check(end, "ownership JSON work allowance")
+-            count += 1
+-            if count > TREE_ENTRY_MAX:
+-                unknowns.append("ownership JSON traversal work cap: " + source)
+-                break
+-            item = stack.pop()
+-            if isinstance(item, dict):
+-                identity = item if isinstance(item.get("start"), list) else item.get("identity_at_start", item.get("identity"))
+-                identity = identity if isinstance(identity, dict) else None
+-                if "pid" in item or (identity is not None and identity is not item):
+-                    # Outer PID missing/invalid never discards a readable nested identity (add() records why).
+-                    add(item.get("pid"), identity, item.get("started_by_epoch", item.get("observed_by_epoch")),
+-                        (type(item.get("pid")) is int and item.get("pgid") == item.get("pid"))
+-                        or item.get("kind") in ("child", "helper"), source)
+-                for key, value in item.items():
+-                    if key in ("runner", "runner_identity", "children", "helpers", "metadata_helpers", "ownership_manifest", "unresolved",
+-                               "unsettled_owners", "known_identities", "live_census", "group_members", "descendants"):
+-                        stack.append(value)
+-            elif isinstance(item, list):
+-                stack.extend(item)
+-            elif type(item) is int:
+-                add(item, None, None, False, source)
+     for name in ("summary.json", "closeout.json"):
+         path = os.path.join(entry_dir, name)
+         if os.path.lexists(path):
+@@ -976,8 +1120,15 @@
+             publication_matches = False
+         if not publication_matches and d.get("publication_failure_disposed") is not True:
+             why.append("closeout/observed exit/malformed publication needs explicit parent failure disposition")
+-    elif d.get("publication_failure_disposed") is not True and d.get("legacy_audit") is not True:
+-        why.append("missing closeout requires explicit legacy/failed-publication disposition")
++    elif manifest.get("closeout_legacy_proven") is True:
++        # Only a BOUND launch with a proven pre-closeout runner schema may use the legacy audit path.
++        if d.get("publication_failure_disposed") is not True and d.get("legacy_audit") is not True:
++            why.append("missing legacy closeout requires explicit legacy audit or failed-publication disposition")
++    elif d.get("publication_failure_disposed") is not True:
++        # GD2: a current (or unproven) attempt's absent mandatory closeout is a failed publication. A bare
++        # legacy flag never establishes eligibility; only explicit NEW failure disposal permits audited release
++        # and the attempt remains nonqualifying.
++        why.append("missing current mandatory closeout requires explicit NEW publication-failure disposition")
+     deadline_check(end, "parent disposition validation completion")
+     return why
+ 
+@@ -1035,16 +1186,24 @@
+                     if not summary_exit_proposals:
+                         publication_unknowns.append("summary exit proposal unavailable")
+                     if summary["schema"] in ("PA19-96H-PSTREAM-SUMMARY-v6", "PA19-96H-PILOT-SUMMARY-v34",
+-                                             "PA19-96H-PSTREAM-SUMMARY-v7", "PA19-96H-PILOT-SUMMARY-v35") \
++                                             "PA19-96H-PSTREAM-SUMMARY-v7", "PA19-96H-PILOT-SUMMARY-v35",
++                                             "PA19-96H-PSTREAM-SUMMARY-v8", "PA19-96H-PILOT-SUMMARY-v36") \
+                             and ("proposed_exit_code" not in summary or "exit_code" not in summary):
+                         publication_unknowns.append("mandatory current summary exit proposal missing")
+             except BaseException as exc:
+                 publication_unknowns.append("partial/unparseable summary: %r" % (exc,))
+-        if release.get("closeout_sha256") is None and os.path.lexists(os.path.join(entry_dir, "closeout.json")):
+-            return ["closeout exists but release does not bind its exact digest"]
++        closeout_legacy_proven = False
++        if release.get("closeout_sha256") is None:
++            if os.path.lexists(os.path.join(entry_dir, "closeout.json")):
++                return ["closeout exists but release does not bind its exact digest"]
++            if isinstance(launch, dict) and launch.get("schema") in LEGACY_NO_CLOSEOUT_LAUNCH_SCHEMAS:
++                closeout_legacy_proven = True
++            else:
++                publication_unknowns.append("mandatory current closeout publication absent")
+         manifest = attempt_owner_manifest(entry_dir, launch)
+         manifest["publication_unknowns"] = publication_unknowns
+         manifest["summary_exit_proposals"] = summary_exit_proposals
++        manifest["closeout_legacy_proven"] = closeout_legacy_proven
+         manifest["unknowns"].extend(publication_unknowns)
+         return disposition_refusals(entry_dir, release, manifest, smsha)
+     except BaseException as exc:
+@@ -1339,6 +1498,7 @@
+         self.unblock_close_attempted = False
+         self.unblock_close_error = None
+         self.unblock_open_attempts = 0
++        self.reader_fd_acquired = self.unblock_fd_acquired = False   # explicit per-endpoint acquisition state
+         LIVE_BUFFERS.append(self)                 # every field exists before any fallible acquisition
+         try:
+             self.sha = hashlib.sha256()
+@@ -1402,7 +1562,8 @@
+             acc = bytearray()
+             self.reader_fd = os.open(self.fifo_name, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC,
+                                      dir_fd=self.dir_fd)          # producer or bounded finish supplies a writer
+-            self.reader_fd_identity = self.reader_fd
++            self.reader_fd_acquired = True
++            self.reader_fd_identity = self.reader_fd             # descriptor NUMBER history, never identity evidence
+             self.reader_fd_closed = False
+             try:
+                 fst = os.fstat(self.reader_fd)
+@@ -1456,7 +1617,7 @@
+         end = work_deadline(SINK_UNBLOCK + STREAM_JOIN if timeout is None else max(0.0, timeout))
+         self.finish_deadline = end
+         alive = None
+-        rec = {"fifo": self.fifo_path, "storage": "RAM only", "cap": self.cap,
++        rec = {"fifo": self.fifo_path, "storage": "RAM only", "cap": self.cap, "fifo_identity": self.fifo_identity,
+                "fifo_same_inode_still_fifo": False, "buffer_rehash_matches": False,
+                "finish_deadline_in_bounds": False, "sink_settled": False}
+         try:
+@@ -1469,7 +1630,8 @@
+                     self.unblock_fd = os.open(self.fifo_name,
+                                               os.O_WRONLY | os.O_NONBLOCK | os.O_NOFOLLOW | os.O_CLOEXEC,
+                                               dir_fd=self.dir_fd)
+-                    self.unblock_fd_identity = self.unblock_fd
++                    self.unblock_fd_acquired = True
++                    self.unblock_fd_identity = self.unblock_fd   # descriptor NUMBER history, never identity evidence
+                     self.unblock_fd_closed = False
+                     self.unblocked_by_runner = True
+                     try:
+@@ -1517,6 +1679,7 @@
+                    construction_error=self.construction_error, unblocked_by_runner=self.unblocked_by_runner,
+                    thread_started=self.thread_started, thread_alive_after_join=alive,
+                    reader_fd=self.reader_fd, reader_fd_identity=self.reader_fd_identity,
++                   reader_fd_acquired=self.reader_fd_acquired, unblock_fd_acquired=self.unblock_fd_acquired,
+                    reader_fd_observed_identity=self.reader_fd_observed_identity,
+                    reader_fd_closed=self.reader_fd_closed, reader_close_attempted=self.reader_close_attempted,
+                    reader_close_error=self.reader_close_error,
+@@ -1555,6 +1718,8 @@
+                 "collector_alive": self.thread is not None and self.thread.is_alive(),
+                 "thread_constructed": self.thread is not None, "thread_started": self.thread_started,
+                 "construction_error": self.construction_error, "error": self.error, "errors": list(self.errors),
++                "fifo_identity": self.fifo_identity, "reader_fd_acquired": self.reader_fd_acquired,
++                "unblock_fd_acquired": self.unblock_fd_acquired,
+                 "reader_fd": self.reader_fd, "reader_fd_identity": self.reader_fd_identity,
+                 "reader_fd_observed_identity": self.reader_fd_observed_identity,
+                 "reader_fd_closed": self.reader_fd_closed, "reader_close_attempted": self.reader_close_attempted,
+@@ -1578,7 +1743,8 @@
+         return [{"path": self.fifo_path, "kind": "fifo", "note": "native writer or runner collector may retain endpoint"},
+                 {"what": "RAM collector blocks", "bytes_known": self.retained, "note": "runner resources until exit"},
+                 {"what": "RAM collector descriptors", "reader_fd": self.reader_fd,
+-                 "reader_fd_identity": self.reader_fd_identity,
++                 "reader_fd_identity": self.reader_fd_identity, "fifo_identity": self.fifo_identity,
++                 "reader_fd_acquired": self.reader_fd_acquired, "unblock_fd_acquired": self.unblock_fd_acquired,
+                  "reader_fd_observed_identity": self.reader_fd_observed_identity,
+                  "unblock_fd_observed_identity": self.unblock_fd_observed_identity,
+                  "reader_fd_closed": self.reader_fd_closed,
+@@ -1592,7 +1758,10 @@
+ 
+ class Feeder:
+     """One owned pipe writer. Descriptor numbers survive unknown close outcomes; only affirmative
+-    os.close completion clears rfd/wfd. Source deadlines bound joins, not synchronous OS-call latency."""
++    os.close completion clears rfd/wfd. Source deadlines bound joins, not synchronous OS-call latency.
++    I2-1: *_endpoint_identity retains each original descriptor NUMBER (history only); the object identity is the
++    OBSERVED {'dev','ino','kind'} recorded right after os.pipe, before any handoff or close (explicitly
++    {'unavailable': ...} if fstat fails, which refuses construction after one close per endpoint)."""
+ 
+     def __init__(self, blocks, mode="plain", label=""):
+         if mode not in ("plain", "suffix", "hold"):
+@@ -1612,7 +1781,8 @@
+         self.start_acquisition_unknown = False
+         self.pipe_acquisition_started = self.pipe_acquisition_completed = self.pipe_acquisition_unknown = False
+         self.rfd = self.wfd = None
+-        self.read_endpoint_identity = self.write_endpoint_identity = None
++        self.read_endpoint_identity = self.write_endpoint_identity = None          # original NUMBERS (history)
++        self.read_endpoint_observed_identity = self.write_endpoint_observed_identity = None
+         self.read_endpoint_acquired = self.write_endpoint_acquired = False
+         self.read_endpoint_closed = self.write_endpoint_closed = True  # no endpoint acquired yet
+         self.read_close_attempted = self.write_close_attempted = False
+@@ -1634,6 +1804,16 @@
+             self.read_endpoint_acquired = self.write_endpoint_acquired = True
+             self.read_endpoint_closed = self.write_endpoint_closed = False
+             self.pipe_acquisition_completed = True
++            for side, fd in (("read", self.rfd), ("write", self.wfd)):
++                try:
++                    st = os.fstat(fd)
++                except BaseException as obs_exc:
++                    setattr(self, side + "_endpoint_observed_identity", {"unavailable": repr(obs_exc)})
++                    raise
++                setattr(self, side + "_endpoint_observed_identity",
++                        {"dev": st.st_dev, "ino": st.st_ino, "kind": _entry_kind(st.st_mode)})
++                if not stat.S_ISFIFO(st.st_mode):
++                    raise RuntimeError("acquired %s endpoint is not a pipe" % side)
+         except BaseException as exc:
+             if self.pipe_acquisition_started and not self.pipe_acquisition_completed:
+                 self.pipe_acquisition_unknown = True
+@@ -1801,6 +1981,8 @@
+                          "read_endpoint": self.rfd, "write_endpoint": self.wfd,
+                          "read_endpoint_identity": self.read_endpoint_identity,
+                          "write_endpoint_identity": self.write_endpoint_identity,
++                         "read_endpoint_observed_identity": self.read_endpoint_observed_identity,
++                         "write_endpoint_observed_identity": self.write_endpoint_observed_identity,
+                          "read_endpoint_acquired": self.read_endpoint_acquired,
+                          "write_endpoint_acquired": self.write_endpoint_acquired,
+                          "read_endpoint_closed": self.read_endpoint_closed,
+@@ -1827,6 +2009,10 @@
+                 "thread_alive": alive, "retained_bytes": self.expected if self.blocks else 0,
+                 "read_endpoint": self.rfd, "write_endpoint": self.wfd,
+                 "read_endpoint_identity": self.read_endpoint_identity, "write_endpoint_identity": self.write_endpoint_identity,
++                "read_endpoint_observed_identity": self.read_endpoint_observed_identity,
++                "write_endpoint_observed_identity": self.write_endpoint_observed_identity,
++                "read_endpoint_acquired": self.read_endpoint_acquired,
++                "write_endpoint_acquired": self.write_endpoint_acquired,
+                 "read_endpoint_closed": self.read_endpoint_closed, "write_endpoint_closed": self.write_endpoint_closed,
+                 "read_close_attempted": self.read_close_attempted, "write_close_attempted": self.write_close_attempted,
+                 "read_close_fd": self.read_close_fd, "write_close_fd": self.write_close_fd,
+@@ -1886,12 +2072,15 @@
+ 
+ def walk_bounded(root, root_fd=None, deadline=None):
+     """G4: bounded incremental descriptor-relative walk; no whole-directory list before checking work caps.
+-    No symlink following; every fd/iterator has a finally owner. Exceeding depth/entry/time caps is uncertainty."""
++    No symlink following. GD3: the root dup/open and EVERY child directory descriptor is inventoried in RAW_FDS
++    before acquisition with its observed identity, and gets exactly one owning close whose uncertain outcome stays
++    owned (never retried). Exceeding depth/entry/time caps is uncertainty."""
+     end = work_deadline(deadline=deadline)
+     count = [0]
+     snap = {}
+-    fd = os.dup(root_fd) if root_fd is not None else os.open(
+-        root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
++    root_record = raw_record("walk_bounded root dup" if root_fd is not None else "walk_bounded root", root)
++    fd, _root_st = raw_acquire(root_record, (lambda: os.dup(root_fd)) if root_fd is not None else (lambda: os.open(
++        root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)))
+     def visit(dfd, base, depth):
+         if depth > TREE_DEPTH_MAX:
+             raise RuntimeError("census depth exceeds cap")
+@@ -1904,19 +2093,19 @@
+                 path = os.path.join(base, entry.name)
+                 snap[path] = census_entry(st)
+                 if stat.S_ISDIR(st.st_mode):
+-                    child = os.open(entry.name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
+-                                    dir_fd=dfd)
++                    record = raw_record("walk_bounded directory", path)
++                    child, fst = raw_acquire(record, lambda: os.open(
++                        entry.name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=dfd))
+                     try:
+-                        fst = os.fstat(child)
+                         if (fst.st_dev, fst.st_ino) != (st.st_dev, st.st_ino):
+                             raise RuntimeError("directory replaced while walking: " + path)
+                         visit(child, path, depth + 1)
+                     finally:
+-                        os.close(child)
++                        raw_close(record)
+     try:
+         visit(fd, root, 0)
+     finally:
+-        os.close(fd)
++        raw_close(root_record)
+     if time.monotonic() > end:
+         raise RuntimeError("census completed beyond work deadline")
+     return snap
+@@ -2073,8 +2262,12 @@
+         except BaseException as exc:
+             out.append({"kind": "unknown file sink", "resource_id": id(sink), "error": repr(exc)})
+     for record in RAW_FDS:
+-        if record.get("state") not in ("anchored", "closed", "not_acquired"):
+-            out.append({"kind": "raw descriptor", "resource_id": id(record), "state": dict(record),
++        # GD3/T3-3: resolved ONLY with coherent evidence (an 'anchored' record must still be TREE-owned with its
++        # observed identity); every acquisition, transfer, close or shape uncertainty stays a blocker.
++        refusals = raw_record_refusals(record)
++        if refusals:
++            out.append({"kind": "raw descriptor", "resource_id": id(record),
++                        "state": dict(record) if isinstance(record, dict) else repr(record), "unknowns": refusals,
+                         "runner_identity": STATE.get("runner_identity")})
+     for path, state in CREATED.items():
+         if state.get("state") not in ("complete", "fifo", "dir"):
+@@ -2226,6 +2419,10 @@
+         why.append("hold was not released by the reap event")
+     if feed.get("read_endpoint_closed") is not True or feed.get("write_endpoint_closed") is not True:
+         why.append("feeder endpoint closure is not affirmative")
++    if feed.get("read_endpoint_acquired") is not True or feed.get("write_endpoint_acquired") is not True \
++            or not _observed(feed.get("read_endpoint_observed_identity"), "fifo") \
++            or not _observed(feed.get("write_endpoint_observed_identity"), "fifo"):
++        why.append("feeder endpoint acquisition/observed pipe identity unproven")
+     if any(k not in feed or feed[k] is not None for k in ("exception", "construction_error", "close_error")) \
+             or feed.get("close_errors") != [] or feed.get("errors") != []:
+         why.append("feeder error history missing/nonempty")
+@@ -2386,25 +2583,53 @@
+         return sorted({item["pid"] for item in self.known_identities.values()})
+ 
+     def remember_identity(self, item):
+-        pid = item["pid"]
+-        ident = item.get("identity")
+-        start = ident.get("start") if isinstance(ident, dict) else None
+-        key = (pid, tuple(start) if isinstance(start, list) else None)
+-        if key not in self.known_identities:
+-            if len(self.known_identities) >= LIST_SLOTS:
+-                raise RuntimeError("persistent identity history cap exhausted; completeness unproven")
+-            self.known_identities[key] = dict(item, first_observed_by_epoch=item.get("observed_by_epoch"), observations=1)
++        """Every readable observation is retained. T1-5/GD1: a missing/invalid outer PID never drops a valid nested
++        identity, and an outer/nested PID contradiction retains BOTH keys; each case records explicit census
++        uncertainty. An observation without any valid PID refuses (fail closed, never silently omitted)."""
++        ident = item.get("identity") if isinstance(item, dict) else None
++        ident = ident if isinstance(ident, dict) else None
++        outer = item.get("pid") if isinstance(item, dict) else None
++        inner = ident.get("pid") if ident is not None else None
++        outer_ok, inner_ok = type(outer) is int and outer > 0, type(inner) is int and inner > 0
++        start = ident.get("start") if ident is not None else None
++        if start is not None and not (isinstance(start, list) and len(start) == 2
++                                      and all(type(x) is int and x >= 0 for x in start)):
++            self._identity_uncertain("malformed start in identity observation for pid %r/%r" % (outer, inner))
++            start = None
++        keys = []
++        if outer_ok and (not inner_ok or inner == outer):
++            if ident is not None and "pid" in ident and not inner_ok:
++                self._identity_uncertain("malformed nested pid for outer pid %s" % outer)
++                start = None
++            keys.append((outer, start))
++        elif inner_ok and not outer_ok:
++            self._identity_uncertain("missing/invalid outer pid %r; nested identity %s retained" % (outer, inner))
++            keys.append((inner, start))
++        elif inner_ok and outer_ok:
++            self._identity_uncertain("outer pid %s contradicts nested identity pid %s; both retained" % (outer, inner))
++            keys += [(inner, start), (outer, None)]
+         else:
+-            retained = self.known_identities[key]
+-            retained["observations"] += 1
+-            retained["last_observed_by_epoch"] = item.get("observed_by_epoch")
+-            retained["ever_unreadable"] = retained.get("ever_unreadable", False) or item.get("identity_error") is not None
+-        # A distinct start/unknown observation never overwrites a previous readable start for this PID.
+-        starts = {k[1] for k in self.known_identities if k[0] == pid and k[1] is not None}
+-        if len(starts) > 1:
+-            reason = "multiple retained starts for pid %s; owned census identity uncertain" % pid
+-            if reason not in self.census_uncertainty:
+-                self.census_uncertainty.append(reason)
++            raise RuntimeError("identity observation without any valid pid; completeness unproven")
++        for pid, retained_start in keys:
++            key = (pid, tuple(retained_start) if retained_start is not None else None)
++            if key not in self.known_identities:
++                if len(self.known_identities) >= LIST_SLOTS:
++                    raise RuntimeError("persistent identity history cap exhausted; completeness unproven")
++                self.known_identities[key] = dict(item, pid=pid, outer_pid=outer,
++                                                  first_observed_by_epoch=item.get("observed_by_epoch"), observations=1)
++            else:
++                retained = self.known_identities[key]
++                retained["observations"] += 1
++                retained["last_observed_by_epoch"] = item.get("observed_by_epoch")
++                retained["ever_unreadable"] = retained.get("ever_unreadable", False) or item.get("identity_error") is not None
++            # A distinct start/unknown observation never overwrites a previous readable start for this PID.
++            starts = {k[1] for k in self.known_identities if k[0] == pid and k[1] is not None}
++            if len(starts) > 1:
++                self._identity_uncertain("multiple retained starts for pid %s; owned census identity uncertain" % pid)
++
++    def _identity_uncertain(self, reason):
++        if reason not in self.census_uncertainty:
++            self.census_uncertainty.append(reason)
+ 
+     def live_census(self, deadline=None):
+         if self.quarantined:
+@@ -2726,15 +2951,19 @@
+         if self.record.get("stdout_close_error"):
+             problems.append("stdout endpoint closure unproven")
+         native_drift = exe_refusals(self.exe_binding)
++        # GD4: settlement-discovered safety (executable drift, exit/settlement beyond HELPER_WALL/HELPER_ALLOW or
++        # the frozen cutoffs) is determined BEFORE, and independently of, any cancellation-only classification.
++        settlement_safety = list(native_drift)
++        done, epoch = time.monotonic(), time.time()
++        if self.exit_observed_mono is None or self.exit_observed_mono > self.popen_call_mono + HELPER_WALL \
++                or done > self.popen_call_mono + HELPER_ALLOW \
++                or (STATE["abs_end"] is not None and (epoch > STATE["abs_end"] or done > STATE["mono_end"])):
++            settlement_safety.append("helper observed completion outside frozen bounds")
+         invalid = list(native_drift)
+         if self.stop is not None or not self.eof or self.out_total > HELPER_OUT_CAP or rc != 0 \
+                 or DATE_RE.fullmatch(bytes(self.out)) is None:
+             invalid.append("stopped/incomplete/invalid required host clock")
+-        done, epoch = time.monotonic(), time.time()
+-        if self.exit_observed_mono is None or self.exit_observed_mono > self.popen_call_mono + HELPER_WALL \
+-                or done > self.popen_call_mono + HELPER_ALLOW \
+-                or (STATE["abs_end"] is not None and (epoch > STATE["abs_end"] or done > STATE["mono_end"])):
+-            invalid.append("helper observed completion outside frozen bounds")
++        invalid += settlement_safety[len(native_drift):]
+         self.settled = not problems
+         self.record.update(pid=self.pid, pgid=self.pgid, launch_order=self.launch_order, rc=rc,
+                            settled=self.settled, problems=problems, unsettled=problems, invalid=invalid,
+@@ -2746,13 +2975,17 @@
+                            owned_wait_status=self.wait_status, observed_returncode=self.exit_status,
+                            exe_binding=self.exe_binding, exe_identity_ok=not native_drift,
+                            out_bytes=self.out_total, term_delivery=self.term_delivery,
+-                           settled_after_launch_s=done - self.popen_call_mono)
++                           settled_after_launch_s=done - self.popen_call_mono,
++                           settlement_safety_defects=list(settlement_safety))
+         HELPER_LOG.append(self.record)
+         if not self.settled:
+             self._record_unsettled("helper resources/census unproven: %r" % problems)
+             raise RuntimeError("metadata helper not settled")
+         if invalid:
+-            if self.stop == "owner_cancel_sigterm" and self.record.get("trips") == ["owner_cancel_sigterm"]:
++            # Cancellation-only refusal REQUIRES the absence of every independent safety defect (collected trips
++            # and settlement-discovered drift/timing); otherwise the defect is latched first.
++            if self.stop == "owner_cancel_sigterm" and self.record.get("trips") == ["owner_cancel_sigterm"] \
++                    and not settlement_safety:
+                 raise HelperRefused("settled helper cancelled; required clock unavailable")
+             latch("metadata helper invalid: %r" % invalid)
+             raise RuntimeError("required host clock invalid")
+@@ -3328,7 +3561,8 @@
+             and all(type(rec.get(k)) is int and rec[k] >= 0 for k in ("received", "retained", "discarded", "cap"))
+             and rec["retained"] <= rec["cap"] and rec["received"] == rec["retained"] + rec["discarded"]
+             and _measured_pair(rec.get("buffer_rehash"), list)
+-            and rec.get("buffer_rehash") == [rec["sha256_of_retained"], rec["retained"]])
++            and rec.get("buffer_rehash") == [rec["sha256_of_retained"], rec["retained"]]
++            and fifo_endpoint_refusals(rec) == [])
+ 
+ 
+ def sink_complete(sink_rec):
+@@ -3389,8 +3623,11 @@
+                    ("delivery_error", "exception", "close_error", "construction_error")) \
+             or feed.get("read_endpoint_closed") is not True or feed.get("write_endpoint_closed") is not True \
+             or feed.get("close_errors") != [] or feed.get("errors") != [] \
+-            or feed.get("finish_deadline_in_bounds") is not True:
+-        bad.append(defect(X + "FEED_STATE", "stdin feed incomplete, failed or unsettled"))
++            or feed.get("finish_deadline_in_bounds") is not True \
++            or feed.get("read_endpoint_acquired") is not True or feed.get("write_endpoint_acquired") is not True \
++            or not _observed(feed.get("read_endpoint_observed_identity"), "fifo") \
++            or not _observed(feed.get("write_endpoint_observed_identity"), "fifo"):
++        bad.append(defect(X + "FEED_STATE", "stdin feed incomplete, failed, unobserved or unsettled"))
+     fb = feed.get("fed_bytes")
+     fin = [s[:200] for s in drat_lines if s.startswith("c finished parsing")]
+     if not isinstance(fb, int) or isinstance(fb, bool) or fin != ["c finished parsing, read %d bytes from proof file" % fb]:
+@@ -3447,27 +3684,48 @@
+ 
+ 
+ 
+-def verify_sat(cnf_path, kissat_lines, label):
+-    """Two independent checks of a SAT model: clause satisfaction and both PA19 definitions."""
++def verify_sat(cnf_path, kissat_lines, label, cnf_limit, deadline=None):
++    """Two independent checks of a SAT model: clause satisfaction and both PA19 definitions. I1-2: ONE allowance is
++    fixed BEFORE acquisition; the CNF read is bounded by the exact expected CNF byte count with progress/completion
++    fences; the single owned close always runs and the same allowance fences read/check/close completion BEFORE
++    candidate publication. GD3: the open_regular acquisition record is TRANSFERRED to the wrapper (never a second
++    RAW_FDS owner); a wrapper exception leaves it UNKNOWN and is never followed by a blind numeric close."""
++    if type(cnf_limit) is not int or cnf_limit < 0:
++        raise RuntimeError("verify_sat requires the exact expected CNF byte bound")
++    end = work_deadline(SHA_SECONDS, deadline)      # original allowance, fixed BEFORE acquisition
+     lits = set()
+     for s in kissat_lines:
+         if s.startswith("v "):
+             lits.update(int(x) for x in s[2:].split() if x != "0")
+     sat_all = True
+     dfd, name = tree_path(cnf_path)                # N8: anchored read of the run-tree CNF
+-    fd, _st = open_regular(name, dfd)
+-    record = {"purpose": "verify_sat_read", "path": cnf_path, "fd": fd, "state": "acquired", "close_error": None,
+-              "observed_identity": {"dev": _st.st_dev, "ino": _st.st_ino, "kind": _entry_kind(_st.st_mode)}}
+-    RAW_FDS.append(record)
++    fd, _st, record = open_regular(name, dfd, record=raw_record("verify_sat_read", cnf_path))
++    try:
++        deadline_check(end, "verify_sat acquisition completion")
++        if _st.st_size > cnf_limit:
++            raise RuntimeError("CNF exceeds its expected byte bound before verify_sat read")
++    except BaseException:
++        raw_close(record, propagate=False)         # still the single raw owner: one close, outcome retained
++        raise
++    record["state"] = "wrapper_handoff"
+     try:
+         f = os.fdopen(fd, "rb")
+     except BaseException:
+         record["state"] = "uncertain_after_wrapper_exception"     # retained, never blindly closed
+         latch("raw descriptor ownership uncertain after wrapper exception: " + cnf_path)
+         raise
+-    record["state"] = "transferred_to_wrapper"
++    record.update(state="transferred_to_wrapper", transfer="file_object")
+     try:
+-        for ln in f:
++        n = 0
++        while True:
++            deadline_check(end, "verify_sat read progress")
++            ln = f.readline(cnf_limit + 1 - n)
++            deadline_check(end, "verify_sat read completion")
++            if not ln:
++                break
++            n += len(ln)
++            if n > cnf_limit:
++                raise RuntimeError("CNF grew beyond its expected byte bound during verify_sat")
+             if ln.startswith(b"p") or ln.startswith(b"c"):
+                 continue
+             cl = [int(x) for x in ln.split()[:-1]]
+@@ -3475,6 +3733,7 @@
+                 sat_all = False
+                 break
+     finally:
++        record["close_attempted"] = True
+         try:
+             f.close()
+             record["state"] = "closed"
+@@ -3482,6 +3741,7 @@
+             record.update(state="close_uncertain", close_error=repr(exc))
+             latch("verify_sat descriptor close outcome uncertain: " + cnf_path)
+             raise
++    deadline_check(end, "verify_sat read/check/close completion")
+     A = [[None] * 8 for _ in range(19)]
+     cells_ok = True
+     for r in range(19):
+@@ -3825,8 +4085,18 @@
+         raise
+     h = hashlib.sha256(chosen).hexdigest()
+     register_written(path, h, len(chosen))
+-    completion_why = cutoff_refusals() + confinement_refusals() + preservation_refusals()
+-    completion_why += cutoff_refusals()           # recheck AFTER post-publication preservation work
++    # GD5: post-publication validation consumes the ORIGINAL operation allowance (no separately calculated
++    # preservation allowance), and the final success/promotion boundary is fenced against that same `end`.
++    prior_cleanup = STATE.get("cleanup_deadline")
++    STATE["cleanup_deadline"] = end if prior_cleanup is None else min(prior_cleanup, end)
++    try:
++        completion_why = cutoff_refusals() + confinement_refusals() + preservation_refusals()
++        completion_why += cutoff_refusals()           # recheck AFTER post-publication preservation work
++        done_mono, done_epoch = time.monotonic(), time.time()
++        if done_mono > end:
++            completion_why.append("item publication completion observed beyond its original operation allowance")
++    finally:
++        STATE["cleanup_deadline"] = prior_cleanup
+     for w in completion_why:
+         latch("item publication completion: " + w)
+     before = STATE["cancel_order"]
+@@ -3834,7 +4104,8 @@
+     return {"boundary": boundary, "cancel_order": before, "committed_unsat": qualified,
+             "scientific_authority": "PROVISIONAL; parent raw audit required", "sha256": h,
+             "publication_completed_in_bounds": not completion_why, "publication_defects": completion_why,
+-            "publication_done_mono": time.monotonic(), "publication_done_epoch": time.time()}
++            "publication_done_mono": done_mono, "publication_done_epoch": done_epoch,
++            "original_operation_allowance_mono": end}
+ 
+ 
+ HEX64 = re.compile(r"[0-9a-f]{64}")
+@@ -4079,7 +4350,7 @@
+             if ks["returncode"] == 10 and rec["solver_status_lines"] == ["s SATISFIABLE"] and ks["stop"] == "self" \
+                     and ks["settled"]:
+                 rec["status"] = "SAT_CANDIDATE"
+-                rec["sat"] = verify_sat(cnf_path, kl, label)
++                rec["sat"] = verify_sat(cnf_path, kl, label, it["cnf"][1])
+                 rec["host_clock_end"] = clock()
+                 write_x(rec_path, rec)
+                 summary["items"][it["id"]] = {"status": "SAT_CANDIDATE", "sat": rec["sat"]}

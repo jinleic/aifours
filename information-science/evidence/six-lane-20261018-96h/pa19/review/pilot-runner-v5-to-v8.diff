@@ -1,0 +1,1040 @@
+--- code/pilot_file_drat_v5.py	2026-10-18 23:42:44.434875675 -0700
++++ code/pilot_file_drat_v8.py	2026-10-18 23:59:49.306054127 -0700
+@@ -1,40 +1,45 @@
+ #!/usr/bin/env python3
+-"""PA19 96h pilot runner v5.  v1-v4 are preserved and never run; v3 (dfd1036b...) was sent for GO and
+-returned NO-GO with parent findings P1-P4, all addressed here; v4 was never frozen or sent (self-review
+-found the control-phase reservation undercounted nine 16 MiB capture caps, and FIFOs were placed beside
+-evidence files; v5 reserves 10 x LOG_CAP + 4 MiB for controls and keeps FIFOs in OUT_DIR/fifo/):
+-  P1 monitor parsing: the authoritative v3 observer starts with an {"event":"observer_start",...}
+-     line; only that exact event schema (with the pinned observer source SHA) is allowed, every other
+-     complete line must be a strict sample {t, free, floor_bytes, scope}; an observer_end event refuses;
+-     the stability window is [time.time()-300, time.time()], not anchored at the last sample.
+-  P2 terminal consumer gate: after the checker and the post-check hashes, a final per-item gate
+-     (cancel latch, STOP registry, in-flight floor, trips, settlement, proof-sink completeness) must pass
+-     before any status UNSAT / count_for_scientific_coverage=true is written.
+-  P3 explicit nonzero exit codes (EXIT_* below); exit code describes runner execution only and never
+-     certifies science; per-item records carry the scientific status.
+-  P4 proof hard cap: kissat writes its binary DRAT proof into a lane-local FIFO read by an owned sink
+-     thread that writes the proof FILE and never writes beyond PROOF_CAP bytes; excess bytes are drained
+-     and discarded (counted) so the producer can exit, and the producer is SIGTERMed (trip proof_cap).
+-     The proof file is therefore hard-bounded; producer-read bytes/SHA are measured contemporaneously.
++"""PA19 96h pilot runner v8 (= v7 + an unsettled/never-settled child forces EXIT_SAFETY_STOP even if no latch
++reason was recorded; v7 was never frozen or sent).  v7 = v6 + exit-code/settle fixes found in self-review before freeze: v6 returned None
++from early "return" paths inside try/finally, so sys.exit(None) would exit 0; v6 left the capture file open when
++no reader thread existed).  v1-v6 are preserved and were never run.  v3 got parent NO-GO (P1-P4);
++v5 (b1400f67...) got a focused Codex review 'needs-rework' (review/codex-pilot-v5-r1/result.json,
++27f48bc8...): 7 blockers + 2 majors.  v6 changes, by finding:
++  F1 commit ordering: all blocking metadata/registry/disk work happens BEFORE the final cancel/latch
++     check, which is the last statement before the exclusive record write; a cancel arriving after that
++     check is recorded as post-commit and cannot turn an UNKNOWN into UNSAT.
++  F2 exception-safe settlement: Child.settle always reaches Popen.wait(); quarantine/settle receipts are
++     written inside try/except and their failure latches the runner instead of escaping; constructor
++     failures after Popen go through the same bounded-SIGTERM/quarantine/wait path.
++  F3 bounded stream settlement: capture-reader and proof-sink threads are joined with a bound; an alive
++     stream thread, a nonempty process group, a quarantine or any receipt failure sets a persistent
++     LATCH that refuses every later child (controls included) and forces EXIT_SAFETY_STOP.
++  F4 latching trips: every supervision trip except proof_cap (item-local) and owner cancel latches.
++  F5 admission immediately before EVERY Popen (controls, solver, checker): LATCH, cancel, STOP registry,
++     stability rule, fresh statvfs + remaining reservations, per-child chunk fit against the frozen
++     absolute end; supervision also enforces the per-child absolute deadline.
++  F6 controls use explicit small proof caps; CONTROL_RESERVE is the exact sum of every control cap.
++  F7 every native child gets an exclusive parent-readable launch record immediately after Popen
++     (children/NN-label.launch.json: pid, pgid, ps identity, argv, pins, absolute deadline, outputs,
++     reservation) and a settle record; registration failure enters owned cleanup.
++  F8 controls require their intended diagnostic AND healthy settlement AND no supervision trip.
++  F9 monitor lines: exact field sets, types and fixed values for observer_start and samples.
+ 
+ NOT TO BE RUN without the item-specific parent GO whose JSON names this file's SHA-256.
+ 
+-Scope (frozen): same-binary controls C1-C7, then three exact independent-M2
+-(encode_skel_b.build_partbatch) items of multiset ms09, sequentially, one native child at a time:
++Scope (frozen): controls C1-C7, then three exact independent-M2 (encode_skel_b.build_partbatch) items
++of multiset ms09, sequentially, one native child at a time:
+   b00070:00000-00024, b00005:00200-00299, b00005:00300-00350.
+ Per item: build the CNF in memory with the vendored unchanged encoder; require the frozen
+ digest/length/header; write it by exclusive creation and re-hash it from disk; run
+-  kissat -q -f --seed=1 --time=600 CNF PROOF_FIFO     (sink -> exclusive proof file, hard cap)
++  kissat -q -f --seed=1 --time=600 CNF PROOF_FIFO     (owned sink -> exclusive proof file, HARD cap)
+ then, only on a self-exit rc20 's UNSATISFIABLE' with a complete sink, run
+   drat-trim CNF PROOF_FILE -i -t 1200                 (lane copy of the pinned binary)
+-on the same regular files and re-hash both afterwards.
+-Safety: no deletion, no overwrite, no SIGKILL, no subprocess timeout, no ulimit; lane FIFOs are new
+-and never removed.  Each native child gets its own session/process group; the only signal ever sent
+-is one SIGTERM to an UNREAPED owned Popen child (Popen.send_signal polls first), followed by a bounded
+-60 s wait; a survivor gets a creation-only quarantine receipt, no further signal, no new child, and
+-the runner keeps waiting for it.  Settlement = Popen.wait() reaped, os.killpg(pgid, 0) ->
+-ProcessLookupError, capture and proof sinks closed and fsynced, artifacts hashed, receipt written.
+-Anything unobservable -> UNKNOWN/UNSETTLED, never UNSAT.
++and re-hash both files.  Safety: no deletion/overwrite, no SIGKILL, no subprocess timeout, no ulimit;
++lane FIFOs are new and never removed.  The only signal ever sent is ONE SIGTERM to an UNREAPED owned
++Popen child (Popen.send_signal polls first), then a bounded 60 s wait; a survivor gets a quarantine
++receipt, no further signal, LATCH, and the runner keeps waiting for it.  Anything unobservable ->
++UNKNOWN/UNSETTLED, never UNSAT.
+ """
+ import errno
+ import hashlib
+@@ -62,6 +67,8 @@
+ LAUNCH_CONTRACT = (RUN + "/control/launch-contract-tightening-v1.json", "8ac556699352a42f3d97f83861039e21f57db0646da2f38391ee1f11e330aa20")
+ MONITOR = RUN + "/control/resource-observer-live-v3.jsonl"
+ OBSERVER_SOURCE_SHA = "fe311f28d122310da004d0968272ae294a99757756b4898f0d9db4cb13f04196"
++OBSERVER_CWD = RUN
++SAMPLE_SCOPE = "metadata only; not scientific checkpoint or launch admission"
+ OLD_LIVE_MARKERS = {  # inherited registry v1 live cycle2-root markers: must stay byte-identical and complete
+     "STOP-m2skel7": "06359a697a2029fc599f176944f8ec11d5403739e9a12e96e8a098edca561974",
+     "STOP-m2skel8": "294e4946af9b8d84d556aeef37eed717aa69c5502f016f1c609a34374c7b5b86",
+@@ -89,17 +96,24 @@
+ CHECK_SECONDS = 1200
+ GRACE = 60
+ TERM_WAIT = 60
+-SINK_JOIN_SECONDS = 60
+-PROOF_CAP = 1_258_291_200            # HARD: the sink never writes more than this to the proof file
++STREAM_JOIN = 60
++SINK_UNBLOCK = 10
++PROOF_CAP = 1_258_291_200            # HARD: the sink never writes more than this to an item proof file
++CONTROL_PROOF_CAP = 8 * 1024 * 1024  # HARD cap for control proofs (PHP(6,5) proofs are KB-sized)
+ LOG_CAP = 16 * 1024 * 1024           # HARD per captured stdout+stderr stream
+-CNF_MAX = 9_500_000
+-ITEM_RESERVE = CNF_MAX + PROOF_CAP + 2 * LOG_CAP + 1_048_576
+-CONTROL_RESERVE = 10 * LOG_CAP + 4 * 1024 * 1024  # 9 capped control captures + tiny CNF/proof/records
++RECORD_ALLOW = 2 * 1024 * 1024       # launch/settle/item JSON records per phase (bounded by construction)
++CNF_ITEM_MAX = max(it["cnf"][1] for it in ITEMS)
++ITEM_RESERVE = CNF_ITEM_MAX + PROOF_CAP + 2 * LOG_CAP + RECORD_ALLOW
++CONTROL_CHILDREN = 8                  # C1 kissat+drat, C2 drat, C3 drat, C4 drat, C5 kissat, C6 kissat, C7 kissat
++CONTROL_CNF_ALLOW = 1024 * 1024       # five PHP CNFs, each < 64 KiB
++CONTROL_RESERVE = (CONTROL_CHILDREN * LOG_CAP + 3 * CONTROL_PROOF_CAP + 1 + 4096 + CONTROL_CNF_ALLOW + RECORD_ALLOW)
+ FREE_FLOOR = 12_000_000_000
+ FRESH_BASE = 12_200_000_000
+ LANE_RSS_TRIP = 6 * 1024 ** 3
+-ITEM_WORST_SECONDS = 30 + SOLVER_SECONDS + GRACE + TERM_WAIT + SINK_JOIN_SECONDS + 30 + CHECK_SECONDS + GRACE + TERM_WAIT + 30
+-CONTROLS_WORST_SECONDS = 900
++CONTROL_CHILD_WALL = 60
++CONTROLS_WORST_SECONDS = CONTROL_CHILDREN * (CONTROL_CHILD_WALL + GRACE + TERM_WAIT + STREAM_JOIN + 30)
++ITEM_WORST_SECONDS = (30 + SOLVER_SECONDS + GRACE + TERM_WAIT + STREAM_JOIN + SINK_UNBLOCK + STREAM_JOIN + 30
++                      + CHECK_SECONDS + GRACE + TERM_WAIT + STREAM_JOIN + 30)
+ MAX_CHUNK = 10800
+ SETTLE = 120
+ MARGIN = 60
+@@ -114,10 +128,12 @@
+ EXIT_SAFETY_STOP = 50
+ EXIT_EXCEPTION = 60
+ EXIT_PRESTART_REFUSED = 70
+-SAMPLE_KEYS = {"t", "free", "floor_bytes", "scope"}
+-START_KEYS = {"event", "at", "pid", "pgid", "cwd", "source_sha256"}
++NONLATCHING_TRIPS = {"proof_cap", "owner_cancel_sigterm"}
+ 
+ CANCEL = threading.Event()
++LATCH = []          # persistent safety/unsettled reasons; non-empty refuses every later child
++OWNED = []          # every Child ever started, for the computed settlement summary
++STATE = {"seq": 0, "out": None, "abs_end": None, "chunk_end": None, "remaining_reserve": 0}
+ 
+ 
+ def on_term(signum, frame):
+@@ -220,14 +236,27 @@
+     return why
+ 
+ 
++def _aware(s):
++    dt = datetime.fromisoformat(s)
++    if dt.tzinfo is None:
++        raise ValueError("naive timestamp")
++    return dt
++
++
++def _int(x, lo=None):
++    if not isinstance(x, int) or isinstance(x, bool) or (lo is not None and x < lo):
++        raise ValueError("bad integer %r" % (x,))
++    return x
++
++
+ def stability_refusals(projected):
+-    """resource-stability-addendum v1 rule over the v2-pinned v3 monitor (P1)."""
++    """resource-stability-addendum v1 rule over the v2-pinned v3 monitor (P1 + F9 strict schema)."""
+     st = os.lstat(MONITOR)
+     if not stat.S_ISREG(st.st_mode):
+         return ["monitor is not a regular file"]
+     with open(MONITOR, "rb") as f:
+         raw = f.read()
+-    complete = raw.split(b"\n")[:-1]  # the last element is b"" after a final newline or an ignored partial line
++    complete = raw.split(b"\n")[:-1]  # last element: b"" after a final newline, or an ignored partial line
+     rows = []
+     for i, ln in enumerate(complete):
+         try:
+@@ -235,17 +264,19 @@
+             if not isinstance(o, dict):
+                 raise ValueError("not an object")
+             if "event" in o:
+-                if i == 0 and set(o) == START_KEYS and o["event"] == "observer_start" \
+-                        and o["source_sha256"] == OBSERVER_SOURCE_SHA \
+-                        and datetime.fromisoformat(o["at"]).tzinfo is not None:
+-                    continue
+-                return ["monitor event line %d not an allowed observer_start (or observer ended): %r" % (i, ln[:160])]
+-            if set(o) != SAMPLE_KEYS or not isinstance(o["free"], int) or isinstance(o["free"], bool):
+-                raise ValueError("sample schema")
+-            dt = datetime.fromisoformat(o["t"])
+-            if dt.tzinfo is None:
+-                raise ValueError("naive timestamp")
+-            rows.append((dt.timestamp(), o["free"]))
++                if not (i == 0 and set(o) == {"event", "at", "pid", "pgid", "cwd", "source_sha256"}
++                        and o["event"] == "observer_start" and o["source_sha256"] == OBSERVER_SOURCE_SHA
++                        and o["cwd"] == OBSERVER_CWD):
++                    return ["monitor event line %d is not the allowed first observer_start: %r" % (i, ln[:160])]
++                _aware(o["at"])
++                _int(o["pid"], 1)
++                _int(o["pgid"], 1)
++                continue
++            if set(o) != {"t", "free", "floor_bytes", "scope"} or o["floor_bytes"] != 12_000_000_000 \
++                    or o["scope"] != SAMPLE_SCOPE:
++                raise ValueError("sample schema/fixed values")
++            _int(o["floor_bytes"], 0)
++            rows.append((_aware(o["t"]).timestamp(), _int(o["free"], 0)))
+         except Exception as exc:
+             return ["malformed monitor line %d: %r (%r)" % (i, ln[:160], exc)]
+     if not rows:
+@@ -275,8 +306,32 @@
+     return why
+ 
+ 
++def admit(label, projected, child_worst_seconds):
++    """F5: fresh admission immediately before a Popen; returns refusal reasons ([] = admitted)."""
++    why = []
++    if LATCH:
++        why.append("latched: %r" % LATCH)
++    if CANCEL.is_set():
++        why.append("owner cancel")
++    try:
++        why += registry_refusals()
++        why += stability_refusals(projected)
++        fb = free_bytes()
++        if fb < FRESH_BASE + projected:
++            why.append(f"fresh free {fb} < 12.2e9 + {projected}")
++        if fb - STATE["remaining_reserve"] < FREE_FLOOR:
++            why.append(f"free {fb} - remaining reservations {STATE['remaining_reserve']} < 12e9")
++    except Exception as exc:
++        why.append("admission exception %r" % exc)
++    now = time.time()
++    if now + child_worst_seconds > STATE["abs_end"] or now + child_worst_seconds + SETTLE + MARGIN > STATE["chunk_end"] \
++            or now + child_worst_seconds > OWNED_SETTLED_BY - 180:
++        why.append("per-child chunk fit / absolute end")
++    return why
++
++
+ class ProofSink:
+-    """Owned FIFO reader writing the proof FILE with a HARD byte cap (P4)."""
++    """Owned FIFO reader writing the proof FILE with a HARD byte cap."""
+ 
+     def __init__(self, fifo_path, file_path, cap):
+         if os.path.lexists(fifo_path) or os.path.lexists(file_path):
+@@ -324,7 +379,7 @@
+ 
+     def finish(self):
+         """After the producer is reaped: unblock a never-connected reader, then bounded join."""
+-        deadline = time.time() + 10
++        deadline = time.time() + SINK_UNBLOCK
+         while self.thread.is_alive() and not self.connected and time.time() < deadline:
+             try:
+                 fd = os.open(self.fifo_path, os.O_WRONLY | os.O_NONBLOCK)
+@@ -336,24 +391,34 @@
+                     self.error = (self.error or "") + " unblock:" + repr(exc)
+                     break
+                 time.sleep(0.05)
+-        self.thread.join(SINK_JOIN_SECONDS)
++        self.thread.join(STREAM_JOIN)
++        alive = self.thread.is_alive()
+         rec = {"fifo": self.fifo_path, "file": self.file_path, "cap": self.cap, "connected": self.connected,
+                "eof": self.eof, "received": self.received, "written": self.written, "discarded": self.discarded,
+                "over_cap": self.over_cap, "error": self.error, "unblocked_by_runner": self.unblocked_by_runner,
+-               "thread_alive_after_join": self.thread.is_alive(), "sha256_of_written": self.sha.hexdigest()}
+-        if not rec["thread_alive_after_join"]:
+-            rec["file_rehash"] = list(sha_file(self.file_path))
++               "thread_alive_after_join": alive, "sha256_of_written": self.sha.hexdigest()}
++        if alive:
++            LATCH.append("proof sink thread unsettled: " + self.fifo_path)
++        else:
++            try:
++                rec["file_rehash"] = list(sha_file(self.file_path))
++            except Exception as exc:
++                rec["file_rehash_error"] = repr(exc)
+         return rec
+ 
+ 
+ class Child:
+-    """One owned native child in its own session; HARD byte-capped stdout+stderr capture file."""
++    """One owned native child in its own session; HARD byte-capped capture; exclusive launch record."""
+ 
+-    def __init__(self, argv, out_path, cap):
+-        self.argv, self.out_path, self.cap = argv, out_path, cap
++    def __init__(self, argv, label, wall, reserve, extra):
++        STATE["seq"] += 1
++        self.seq = STATE["seq"]
++        self.argv, self.label = argv, label
++        base = os.path.join(STATE["out"], "children", "%02d-%s" % (self.seq, label))
++        self.out_path, self.launch_path, self.settle_path = base + ".out", base + ".launch.json", base + ".settle.json"
+         self.captured, self.over_cap, self.reader_error = 0, False, None
+-        self.term_sent_at, self.stop = None, None
+-        self.sink = open(out_path, "xb")  # exclusive capture file BEFORE the child exists
++        self.term_sent_at, self.stop, self.reader, self.settled_rec = None, None, None, None
++        self.sink = open(self.out_path, "xb")  # exclusive capture file BEFORE the child exists
+         try:
+             self.proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                          stderr=subprocess.STDOUT, start_new_session=True,
+@@ -361,17 +426,25 @@
+         except BaseException:
+             self.sink.close()
+             raise
++        OWNED.append(self)
+         self.pid = self.pgid = self.proc.pid
+         self.started = time.time()
++        self.deadline = min(self.started + wall + GRACE, STATE["abs_end"])
+         try:
+             self.identity_at_start = identity(self.pid)
++            write_x(self.launch_path, {"seq": self.seq, "label": label, "runner_pid": os.getpid(), "pid": self.pid,
++                                       "pgid": self.pgid, "identity": self.identity_at_start, "argv": argv,
++                                       "cwd": LANE + "/tmp", "start_epoch": self.started,
++                                       "absolute_deadline_epoch": self.deadline, "capture": self.out_path,
++                                       "capture_cap": LOG_CAP, "retained_reservation_bytes": reserve,
++                                       "binaries": {"kissat": KISSAT, "drat_trim": [DRAT, DRAT_OLD[1]]}, "extra": extra})
++            print("CHILD_LAUNCH", self.launch_path, flush=True)
+             self.reader = threading.Thread(target=self._read, daemon=True)
+             self.reader.start()
+-        except BaseException:
+-            # never leave an owned child unsupervised: one SIGTERM to the unreaped child, then wait
+-            self.proc.send_signal(signal.SIGTERM)
+-            self.proc.wait()
+-            self.sink.close()
++        except BaseException as exc:
++            LATCH.append("child registration/reader failure %r" % exc)
++            self.term("registration_failure")
++            self.settle()  # bounded SIGTERM wait, quarantine, then wait(): never escapes before reaping
+             raise
+ 
+     def _read(self):
+@@ -380,11 +453,11 @@
+                 b = self.proc.stdout.read1(65536)
+                 if not b:
+                     break
+-                room = self.cap - self.captured
++                room = LOG_CAP - self.captured
+                 if room > 0:
+                     self.sink.write(b[:room])
+                 self.captured += len(b)
+-                if self.captured > self.cap:
++                if self.captured > LOG_CAP:
+                     self.over_cap = True
+         except Exception as exc:
+             self.reader_error = repr(exc)
+@@ -406,20 +479,35 @@
+             self.term_sent_at = time.time()
+             self.proc.send_signal(signal.SIGTERM)  # Popen polls first; never signals a reaped PID
+ 
+-    def settle(self, out_dir, label):
+-        """Explicit wait; after the single SIGTERM no further signal is ever sent."""
+-        quarantine = None
++    def settle(self):
++        """F2/F3: always reaches wait(); bounded stream join; persistent LATCH on anything unsettled."""
++        if self.settled_rec is not None:
++            return self.settled_rec
++        quarantine, problems = None, []
+         if self.term_sent_at is not None:
+-            deadline = self.term_sent_at + TERM_WAIT
+-            while self.proc.poll() is None and time.time() < deadline:
++            end = self.term_sent_at + TERM_WAIT
++            while self.proc.poll() is None and time.time() < end:
+                 time.sleep(0.1)
+             if self.proc.poll() is None:
+-                quarantine = os.path.join(out_dir, label + ".QUARANTINE.json")
+-                write_x(quarantine, {"host_clock": clock(), "pid": self.pid, "pgid": self.pgid,
+-                                     "argv": self.argv, "note": "survived SIGTERM + 60 s; no further signal; "
+-                                     "runner keeps waiting and starts no new child"})
++                LATCH.append("quarantine pid %d" % self.pid)
++                quarantine = self.settle_path[:-len(".settle.json")] + ".QUARANTINE.json"
++                try:
++                    write_x(quarantine, {"pid": self.pid, "pgid": self.pgid, "argv": self.argv,
++                                         "epoch": time.time(), "note": "survived SIGTERM + 60 s; no further "
++                                         "signal; runner keeps waiting and starts no new child"})
++                except BaseException as exc:
++                    problems.append("quarantine receipt failed %r" % exc)
+         rc = self.proc.wait()
+-        self.reader.join()
++        stream_alive = None
++        if self.reader is not None:
++            self.reader.join(STREAM_JOIN)
++            stream_alive = self.reader.is_alive()
++        else:
++            problems.append("no capture reader")
++            try:
++                self.sink.close()
++            except Exception as exc:
++                problems.append("capture close %r" % exc)
+         try:
+             os.killpg(self.pgid, 0)
+             group_empty = False
+@@ -427,21 +515,36 @@
+             group_empty = True
+         except PermissionError:
+             group_empty = False
+-        return {"pid": self.pid, "pgid": self.pgid, "identity_at_start": self.identity_at_start,
+-                "argv": self.argv, "returncode": rc, "stop": self.stop or "self",
+-                "seconds": round(time.time() - self.started, 3), "captured_bytes": self.captured,
+-                "capture_over_cap": self.over_cap, "reader_error": self.reader_error,
+-                "group_empty_after_reap": group_empty, "quarantine_record": quarantine,
+-                "output_path": self.out_path, "output_sha256": sha_file(self.out_path)[0]}
+-
+-
+-def segments(path):
+-    with open(path, "rb") as f:
+-        txt = f.read().decode("utf-8", "replace")
+-    return [s for s in re.split(r"[\r\n]", txt) if s != ""]
++        settled = (stream_alive is False and group_empty and quarantine is None and not problems
++                   and self.reader_error is None)
++        rec = {"seq": self.seq, "label": self.label, "pid": self.pid, "pgid": self.pgid,
++               "identity_at_start": self.identity_at_start if hasattr(self, "identity_at_start") else None,
++               "argv": self.argv, "returncode": rc, "stop": self.stop or "self",
++               "seconds": round(time.time() - self.started, 3), "captured_bytes": self.captured,
++               "capture_over_cap": self.over_cap, "reader_error": self.reader_error,
++               "stream_thread_alive_after_join": stream_alive, "group_empty_after_reap": group_empty,
++               "quarantine_record": quarantine, "problems": problems, "settled": settled,
++               "launch_record": self.launch_path, "output_path": self.out_path}
++        if not settled:
++            LATCH.append("child %d %s not settled" % (self.seq, self.label))
++        try:
++            if stream_alive is False:
++                rec["output_sha256"] = sha_file(self.out_path)[0]
++            write_x(self.settle_path, rec)
++        except BaseException as exc:
++            LATCH.append("settle receipt failed %r" % exc)
++            rec["settle_receipt_error"] = repr(exc)
++        self.settled_rec = rec
++        return rec
+ 
+ 
+-def supervise(child, wall, sink):
++def segments(path):
++    with open(path, "rb") as f:
++        txt = f.read().decode("utf-8", "replace")
++    return [s for s in re.split(r"[\r\n]", txt) if s != ""]
++
++
++def supervise(child, sink):
+     """Monitor until exit or a single trip; any monitor exception is itself a trip."""
+     me = os.getpid()
+     last_rss = last_reg = 0.0
+@@ -451,10 +554,12 @@
+             now = time.time()
+             if CANCEL.is_set():
+                 child.term("owner_cancel_sigterm")
+-            elif now - child.started > wall + GRACE:
+-                child.term("runner_wall_bound")
+-            elif sink is not None and (sink.over_cap or sink.error):
+-                child.term("proof_cap" if sink.over_cap else "proof_sink_error")
++            elif now > child.deadline:
++                child.term("absolute_or_wall_deadline")
++            elif sink is not None and sink.over_cap:
++                child.term("proof_cap")
++            elif sink is not None and sink.error:
++                child.term("proof_sink_error")
+             elif child.over_cap:
+                 child.term("capture_cap")
+             elif free_bytes() < FREE_FLOOR:
+@@ -476,44 +581,55 @@
+         if child.term_sent_at is not None:
+             break
+         time.sleep(0.25)
++    if child.stop is not None and child.stop not in NONLATCHING_TRIPS:
++        LATCH.append("trip %s on %s" % (child.stop, child.label))  # F4
+     return child.stop, peak
+ 
+ 
+-def run_child(argv, out_dir, label, wall, sink=None):
+-    ch = Child(argv, os.path.join(out_dir, label + ".out"), LOG_CAP)
++def run_child(argv, label, wall, reserve, sink=None, extra=None):
++    """Admission immediately before Popen; returns (record or None if refused, lines, refusal)."""
++    why = admit(label, reserve, wall + GRACE + TERM_WAIT + STREAM_JOIN + 30)
++    if why:
++        return None, [], why
++    ch = Child(argv, label, wall, reserve, extra)
++    trip, peak = None, None
+     try:
+         if CANCEL.is_set():
+             ch.term("owner_cancel_sigterm")
+-        trip, peak = supervise(ch, wall, sink)
++        trip, peak = supervise(ch, sink)
+     except BaseException as exc:
+-        ch.term("runner_exception:%r" % exc)
+-        trip, peak = ch.stop, None
++        LATCH.append("runner exception during supervision %r" % exc)
++        ch.term("runner_exception")
+     finally:
+-        rec = ch.settle(out_dir, label)
+-    rec["trip"] = trip
++        rec = ch.settle()
++    rec["trip"] = ch.stop
+     rec["peak_sampled_lane_rss_bytes"] = peak
+-    return rec, segments(ch.out_path)
++    lines = segments(ch.out_path) if rec.get("stream_thread_alive_after_join") is False else []
++    return rec, lines, []
+ 
+ 
+-def run_kissat(cnf_path, proof_file, out_dir, label, seconds, proof_cap=PROOF_CAP):
++def run_kissat(cnf_path, proof_file, label, seconds, cap, reserve):
+     """kissat with its proof routed through a hard-capped owned sink; proof_file None = no proof."""
+     argv = [KISSAT[0], "-q", "-f", "--seed=1", "--time=%d" % seconds, cnf_path]
+     sink = None
+     if proof_file is not None:
+-        fifo_dir = os.path.join(out_dir, "fifo")
++        fifo_dir = os.path.join(STATE["out"], "fifo")
+         os.makedirs(fifo_dir, exist_ok=True)
+-        sink = ProofSink(os.path.join(fifo_dir, label + ".proof.fifo"), proof_file, proof_cap)
++        sink = ProofSink(os.path.join(fifo_dir, label + ".proof.fifo"), proof_file, cap)
+         argv.append(sink.fifo_path)
+     try:
+-        rec, lines = run_child(argv, out_dir, label + ".kissat", seconds, sink)
++        rec, lines, refused = run_child(argv, label + ".kissat", seconds, reserve, sink,
++                                        {"proof_file": proof_file, "proof_cap": cap})
+     finally:
+         sink_rec = sink.finish() if sink is not None else None
+-    rec["proof_sink"] = sink_rec
+-    return rec, lines
++    if rec is not None:
++        rec["proof_sink"] = sink_rec
++    return rec, lines, refused
+ 
+ 
+-def run_drat(cnf_path, proof_path, out_dir, label, seconds):
+-    return run_child([DRAT, cnf_path, proof_path, "-i", "-t", str(seconds)], out_dir, label + ".drat", seconds)
++def run_drat(cnf_path, proof_path, label, seconds, reserve):
++    return run_child([DRAT, cnf_path, proof_path, "-i", "-t", str(seconds)], label + ".drat", seconds, reserve,
++                     None, {"cnf": cnf_path, "proof": proof_path})
+ 
+ 
+ def sink_complete(sink_rec):
+@@ -524,18 +640,18 @@
+             and sink_rec.get("file_rehash") == [sink_rec["sha256_of_written"], sink_rec["written"]])
+ 
+ 
+-def qualify_unsat(cnf_expect, solver_rec, kissat_lines, proof_sha, proof_bytes, drat_rec, drat_lines,
++def qualify_unsat(cnf_expect, solver_rec, kissat_lines, proof_sha, proof_bytes, proof_cap, drat_rec, drat_lines,
+                   cnf_post, proof_post):
+     bad = []
+-    if solver_rec["returncode"] != 20 or solver_rec["stop"] != "self" or solver_rec["trip"] is not None:
++    if solver_rec["returncode"] != 20 or solver_rec["stop"] != "self":
+         bad.append("solver not self-exit rc20")
+     if [s for s in kissat_lines if s.startswith("s ")] != ["s UNSATISFIABLE"]:
+         bad.append("solver status lines not exactly ['s UNSATISFIABLE']")
+-    if solver_rec.get("proof_sink") is not None and not sink_complete(solver_rec["proof_sink"]):
++    if not sink_complete(solver_rec.get("proof_sink")):
+         bad.append("proof sink incomplete/over cap/error")
+-    if proof_bytes <= 0 or proof_bytes > PROOF_CAP:
++    if proof_bytes <= 0 or proof_bytes > proof_cap:
+         bad.append("proof size outside (0, cap]")
+-    if drat_rec["returncode"] != 0 or drat_rec["stop"] != "self" or drat_rec["trip"] is not None:
++    if drat_rec["returncode"] != 0 or drat_rec["stop"] != "self":
+         bad.append("checker not self-exit rc0")
+     st = [s for s in drat_lines if s.startswith("s ")]
+     if st != ["s VERIFIED"]:
+@@ -550,31 +666,16 @@
+         if any(pat in s for s in drat_lines):
+             bad.append("checker output contains %r" % pat)
+     if cnf_post != (cnf_expect[0], cnf_expect[1]):
+-        bad.append("CNF file changed during run")
++        bad.append("CNF file digest/bytes != expected")
+     if proof_post != (proof_sha, proof_bytes):
+-        bad.append("proof file changed during check")
++        bad.append("proof file digest/bytes != sink measurement")
+     for rec in (solver_rec, drat_rec):
+-        if rec["group_empty_after_reap"] is not True or rec["quarantine_record"] or rec["reader_error"] \
+-                or rec["capture_over_cap"]:
+-            bad.append("settlement/capture defect pid %s" % rec["pid"])
++        if not rec["settled"] or rec["capture_over_cap"]:
++            bad.append("settlement/capture defect seq %s" % rec["seq"])
+     return bad
+ 
+ 
+-def terminal_gate():
+-    """P2: final consumer gate evaluated immediately before a counted status is written."""
+-    why = []
+-    if CANCEL.is_set():
+-        why.append("cancel latched")
+-    try:
+-        why += registry_refusals()
+-        if free_bytes() < FREE_FLOOR:
+-            why.append("free below in-flight floor at terminal gate")
+-    except Exception as exc:
+-        why.append("terminal gate exception %r" % exc)
+-    return why
+-
+-
+-def verify_sat(cnf_path, kissat_lines, out_dir, label):
++def verify_sat(cnf_path, kissat_lines, label):
+     """Two independent checks of a SAT model: clause satisfaction and both PA19 definitions."""
+     lits = set()
+     for s in kissat_lines:
+@@ -602,7 +703,7 @@
+                                   for r in range(19) for q in range(r + 1, 19))
+     colpair_ok = cells_ok and all(len({(A[r][c], A[r][d]) for r in range(19)}) == 19
+                                   for c in range(8) for d in range(c + 1, 8))
+-    cand = os.path.join(out_dir, label + ".SAT-CANDIDATE.json")
++    cand = os.path.join(STATE["out"], label + ".SAT-CANDIDATE.json")
+     write_x(cand, {"host_clock": clock(), "array": A, "clauses_all_satisfied": sat_all,
+                    "cells_exactly_one": cells_ok, "row_pair_agreements_le_1": rowpair_ok,
+                    "column_pair_ordered_pairs_distinct": colpair_ok,
+@@ -624,81 +725,142 @@
+     return ("p cnf %d %d\n" % (p * h, len(cl)) + "".join(" ".join(map(str, c)) + " 0\n" for c in cl)).encode()
+ 
+ 
+-def controls(out_dir):
+-    """Same-binary positive and intended-reason mutation controls; returns (ok, records)."""
+-    recs, ok = {}, True
+-    d = os.path.join(out_dir, "controls")
++def healthy(rec):
++    """F8: a control child must have exited by itself, with no trip, fully settled."""
++    return rec is not None and rec["stop"] == "self" and rec["settled"] and not rec["capture_over_cap"] \
++        and rec["returncode"] is not None and rec["returncode"] >= 0
++
++
++def controls():
++    """Same-binary positive and intended-reason mutation controls; (ok, records).  Stops at the first
++    control that is refused, unhealthy or not as intended (later controls are not started)."""
++    recs = {}
++    d = os.path.join(STATE["out"], "controls")
+     os.mkdir(d)
++    per_child = LOG_CAP + CONTROL_PROOF_CAP + RECORD_ALLOW // 8
++
++    def fail(name, why):
++        recs[name] = dict(recs.get(name, {}), failed=why)
++        return False, recs
++
+     raw = php_cnf(6, 5)
+     cnf = os.path.join(d, "php6x5.cnf")
+     h, n = write_bytes_x(cnf, raw)
+     exp = (h, n, raw.split(b"\n", 1)[0].decode())
+     proof = os.path.join(d, "php6x5.drat")
+-    ks, kl = run_kissat(cnf, proof, d, "C1", 60)
++    ks, kl, rf = run_kissat(cnf, proof, "C1", CONTROL_CHILD_WALL, CONTROL_PROOF_CAP, per_child)
++    if ks is None:
++        return fail("C1_positive_php6x5", "refused %r" % rf)
++    recs["C1_positive_php6x5"] = {"kissat": ks}
++    if not (healthy(ks) and sink_complete(ks["proof_sink"])):
++        return fail("C1_positive_php6x5", "solver leg unhealthy or sink incomplete")
+     ph, pn = sha_file(proof)
+-    dr, dl = run_drat(cnf, proof, d, "C1", 60)
+-    c1 = qualify_unsat(exp, ks, kl, ph, pn, dr, dl, sha_file(cnf), sha_file(proof))
+-    recs["C1_positive_php6x5"] = {"intended": "PASS (sink complete, consumed bytes equal)", "defects": c1,
+-                                  "kissat": ks, "drat": dr}
+-    ok &= (c1 == [])
+-    # C2: truncated CNF (last clause dropped, header unchanged) + valid proof -> early-EOF rejection.
++    dr, dl, rf = run_drat(cnf, proof, "C1", CONTROL_CHILD_WALL, per_child)
++    if dr is None:
++        return fail("C1_positive_php6x5", "checker refused %r" % rf)
++    c1 = qualify_unsat(exp, ks, kl, ph, pn, CONTROL_PROOF_CAP, dr, dl, sha_file(cnf), sha_file(proof))
++    recs["C1_positive_php6x5"].update(intended="PASS", defects=c1, drat=dr)
++    if c1 != [] or not healthy(dr):
++        return fail("C1_positive_php6x5", "positive control did not pass")
++    # C2: truncated CNF FILE (last clause dropped, header unchanged) + valid proof.  Intended reason: the
++    # primary defence, CNF digest/bytes != expected.  The checker's own text is recorded only as information
++    # because drat-trim's behaviour after an early EOF is not deterministic (uninitialised formula slot).
+     trunc = raw[: raw.rstrip(b"\n").rfind(b"\n") + 1]
+     cnf2 = os.path.join(d, "php6x5-truncated.cnf")
+     write_bytes_x(cnf2, trunc)
+-    dr2, dl2 = run_drat(cnf2, proof, d, "C2", 60)
+-    c2 = qualify_unsat(exp, ks, kl, ph, pn, dr2, dl2, (h, n), (ph, pn))
+-    recs["C2_truncated_cnf"] = {"intended": "REJECT: early EOF or proof never consumed", "defects": c2, "drat": dr2}
+-    ok &= any(("early EOF" in x) or ("clauses less than expected" in x) or ("consumed" in x) for x in c2)
+-    # C3: proof with one trailing garbage byte -> consumed bytes != file bytes (wrong binary prefix).
++    dr2, dl2, rf = run_drat(cnf2, proof, "C2", CONTROL_CHILD_WALL, per_child)
++    if dr2 is None:
++        return fail("C2_truncated_cnf", "refused %r" % rf)
++    c2 = qualify_unsat(exp, ks, kl, ph, pn, CONTROL_PROOF_CAP, dr2, dl2, sha_file(cnf2), (ph, pn))
++    recs["C2_truncated_cnf"] = {"intended": "REJECT with 'CNF file digest/bytes != expected'; checker settled",
++                                "defects": c2, "drat": dr2, "checker_status_lines": [s for s in dl2 if s.startswith("s ")],
++                                "early_eof_text_seen": any("early EOF" in s for s in dl2)}
++    if not ("CNF file digest/bytes != expected" in c2 and dr2["settled"] and dr2["stop"] == "self"):
++        return fail("C2_truncated_cnf", "intended reason or settlement missing")
++    # C3: valid proof + one trailing garbage byte.  Intended: checker self-exit, 'wrong binary prefix'
++    # warning AND consumed bytes != file bytes, so 's VERIFIED' alone is shown insufficient.
+     with open(proof, "rb") as f:
+         pbytes = f.read()
+     proof3 = os.path.join(d, "php6x5-trailing.drat")
+     p3h, p3n = write_bytes_x(proof3, pbytes + b"x")
+-    dr3, dl3 = run_drat(cnf, proof3, d, "C3", 60)
+-    c3 = qualify_unsat(exp, ks, kl, p3h, p3n, dr3, dl3, (h, n), (p3h, p3n))
+-    recs["C3_trailing_proof_byte"] = {"intended": "REJECT: consumed bytes / binary prefix", "defects": c3, "drat": dr3}
+-    ok &= any(("consumed" in x) or ("wrong binary prefix" in x) for x in c3)
+-    # C4: satisfiable formula (PHP 5x5) checked against the PHP 6x5 proof -> rejection.
++    dr3, dl3, rf = run_drat(cnf, proof3, "C3", CONTROL_CHILD_WALL, per_child)
++    if dr3 is None:
++        return fail("C3_trailing_proof_byte", "refused %r" % rf)
++    c3 = qualify_unsat(exp, ks, kl, p3h, p3n, CONTROL_PROOF_CAP + 1, dr3, dl3, (h, n), (p3h, p3n))
++    recs["C3_trailing_proof_byte"] = {"intended": "REJECT: consumed bytes != file bytes and 'wrong binary prefix'",
++                                      "defects": c3, "drat": dr3,
++                                      "checker_status_lines": [s for s in dl3 if s.startswith("s ")]}
++    if not (healthy(dr3) and "checker-consumed proof bytes != proof file bytes" in c3
++            and "checker output contains 'wrong binary prefix'" in c3):
++        return fail("C3_trailing_proof_byte", "intended reason or health missing")
++    # C4: satisfiable PHP(5,5) checked with the PHP(6,5) proof.  Intended: checker self-exit with exactly
++    # 's NOT VERIFIED'.
+     raw4 = php_cnf(5, 5)
+     cnf4 = os.path.join(d, "php5x5-sat.cnf")
+-    h4, n4 = write_bytes_x(cnf4, raw4)
+-    exp4 = (h4, n4, raw4.split(b"\n", 1)[0].decode())
+-    dr4, dl4 = run_drat(cnf4, proof, d, "C4", 60)
+-    c4 = qualify_unsat(exp4, ks, kl, ph, pn, dr4, dl4, (h4, n4), (ph, pn))
+-    recs["C4_sat_formula_foreign_proof"] = {"intended": "REJECT", "defects": c4, "drat": dr4}
+-    ok &= (c4 != [])
+-    # C5: HARD proof cap 4096 B on a hard instance -> sink never writes beyond 4096, trip proof_cap, settled.
++    write_bytes_x(cnf4, raw4)
++    dr4, dl4, rf = run_drat(cnf4, proof, "C4", CONTROL_CHILD_WALL, per_child)
++    if dr4 is None:
++        return fail("C4_sat_formula_foreign_proof", "refused %r" % rf)
++    st4 = [s for s in dl4 if s.startswith("s ")]
++    recs["C4_sat_formula_foreign_proof"] = {"intended": "checker self-exit, status exactly ['s NOT VERIFIED']",
++                                            "drat": dr4, "checker_status_lines": st4}
++    if not (healthy(dr4) and st4 == ["s NOT VERIFIED"]):
++        return fail("C4_sat_formula_foreign_proof", "intended reason or health missing")
++    # C5: HARD proof cap 4096 B on PHP(11,10): sink never writes beyond 4096, trip proof_cap, settled.
+     cnf5 = os.path.join(d, "php11x10.cnf")
+     write_bytes_x(cnf5, php_cnf(11, 10))
+     proof5 = os.path.join(d, "php11x10.drat")
+-    ks5, kl5 = run_kissat(cnf5, proof5, d, "C5", 60, proof_cap=4096)
++    ks5, kl5, rf = run_kissat(cnf5, proof5, "C5", CONTROL_CHILD_WALL, 4096, per_child)
++    if ks5 is None:
++        return fail("C5_proof_hard_cap", "refused %r" % rf)
+     size5 = os.lstat(proof5).st_size
+-    recs["C5_proof_hard_cap"] = {"intended": "trip=proof_cap, file<=4096 B, reaped, group empty, no quarantine",
++    recs["C5_proof_hard_cap"] = {"intended": "stop=proof_cap, file<=4096 B, settled, sink over_cap and joined",
+                                  "kissat": ks5, "proof_file_bytes": size5}
+-    ok &= (ks5["trip"] == "proof_cap" and size5 <= 4096 and ks5["group_empty_after_reap"] is True
+-           and not ks5["quarantine_record"] and ks5["proof_sink"]["over_cap"] is True
+-           and not ks5["proof_sink"]["thread_alive_after_join"])
+-    # C6: native solver time limit, no proof file -> self exit without an UNSAT verdict.
++    if not (ks5["stop"] == "proof_cap" and size5 <= 4096 and ks5["settled"] and ks5["proof_sink"]["over_cap"]
++            and not ks5["proof_sink"]["thread_alive_after_join"]):
++        return fail("C5_proof_hard_cap", "intended reason or settlement missing")
++    # C6: kissat --time=1, no proof: clean self-exit without a verdict.
+     cnf6 = os.path.join(d, "php13x12.cnf")
+     write_bytes_x(cnf6, php_cnf(13, 12))
+-    ks6, kl6 = run_kissat(cnf6, None, d, "C6", 1)
+-    recs["C6_native_time_limit"] = {"intended": "self exit, no s UNSATISFIABLE", "kissat": ks6,
+-                                    "status_lines": [s for s in kl6 if s.startswith("s ")]}
+-    ok &= (ks6["trip"] is None and ks6["returncode"] != 20 and ks6["group_empty_after_reap"] is True
+-           and "s UNSATISFIABLE" not in kl6)
+-    # C7: unreadable input (path does not exist) with a proof sink -> no verdict, sink settles, no hang.
+-    ks7, kl7 = run_kissat(os.path.join(d, "absent.cnf"), os.path.join(d, "absent.drat"), d, "C7", 10)
+-    recs["C7_no_input_sink_liveness"] = {"intended": "no rc20, reaped, sink thread finished", "kissat": ks7}
+-    ok &= (ks7["returncode"] != 20 and ks7["group_empty_after_reap"] is True
+-           and not ks7["proof_sink"]["thread_alive_after_join"])
+-    return ok, recs
++    ks6, kl6, rf = run_kissat(cnf6, None, "C6", 1, None, per_child)
++    if ks6 is None:
++        return fail("C6_native_time_limit", "refused %r" % rf)
++    st6 = [s for s in kl6 if s.startswith("s ")]
++    recs["C6_native_time_limit"] = {"intended": "healthy self-exit, rc not 10/20, no SAT/UNSAT status line",
++                                    "kissat": ks6, "status_lines": st6}
++    if not (healthy(ks6) and ks6["returncode"] not in (10, 20)
++            and not any(s in ("s SATISFIABLE", "s UNSATISFIABLE") for s in st6)):
++        return fail("C6_native_time_limit", "intended reason or health missing")
++    # C7: missing input with a proof sink: kissat self-exit with an error rc naming the path; sink settles.
++    absent = os.path.join(d, "absent.cnf")
++    ks7, kl7, rf = run_kissat(absent, os.path.join(d, "absent.drat"), "C7", 10, CONTROL_PROOF_CAP, per_child)
++    if ks7 is None:
++        return fail("C7_no_input_sink_liveness", "refused %r" % rf)
++    recs["C7_no_input_sink_liveness"] = {"intended": "healthy self-exit rc>0 not 10/20 mentioning absent.cnf; sink joined",
++                                         "kissat": ks7}
++    if not (healthy(ks7) and ks7["returncode"] not in (0, 10, 20) and any("absent.cnf" in s for s in kl7)
++            and not ks7["proof_sink"]["thread_alive_after_join"]):
++        return fail("C7_no_input_sink_liveness", "intended reason or settlement missing")
++    return True, recs
++
++
++def terminal_gate():
++    """F1/F2: registry and disk evidence collected BEFORE the final cancel/latch check."""
++    why = []
++    try:
++        why += registry_refusals()
++        if free_bytes() < FREE_FLOOR:
++            why.append("free below in-flight floor at terminal gate")
++    except Exception as exc:
++        why.append("terminal gate exception %r" % exc)
++    return why
+ 
+ 
+ def main():
+     signal.signal(signal.SIGTERM, on_term)
+     signal.signal(signal.SIGINT, on_term)
+     if len(sys.argv) != 4:
+-        print("usage: pilot_file_drat_v5.py GO.json GO_SHA256 OUT_DIR", flush=True)
++        print("usage: pilot_file_drat_v8.py GO.json GO_SHA256 OUT_DIR", flush=True)
+         return EXIT_PRESTART_REFUSED
+     go_path, go_sha, out_dir = sys.argv[1], sys.argv[2], os.path.abspath(sys.argv[3])
+     if not out_dir.startswith(LANE + "/evidence/pilot-v1/"):
+@@ -720,67 +882,62 @@
+         print("REFUSED: chunk-fit", flush=True)
+         return EXIT_PRESTART_REFUSED
+     os.mkdir(out_dir)
+-    reserve_total = CONTROL_RESERVE + len(ITEMS) * ITEM_RESERVE
++    os.mkdir(os.path.join(out_dir, "children"))
++    STATE.update(out=out_dir, abs_end=abs_end, chunk_end=t_start + MAX_CHUNK,
++                 remaining_reserve=CONTROL_RESERVE + len(ITEMS) * ITEM_RESERVE)
+     launch = {
+-        "schema": "PA19-96H-PILOT-LAUNCH-v5", "host_clock": clock(), "owner": "ContinuePA19",
++        "schema": "PA19-96H-PILOT-LAUNCH-v8", "host_clock": clock(), "owner": "ContinuePA19",
+         "go": {"path": go_path, "sha256": go_sha}, "runner": {"path": os.path.abspath(__file__), "sha256": self_sha},
+         "pid": os.getpid(), "ppid": os.getppid(), "pgid": os.getpgid(0), "identity": identity(os.getpid()),
+         "cwd": os.getcwd(), "argv": sys.argv, "python": sys.version,
+         "binaries": {"kissat": KISSAT, "drat_trim_lane_copy": DRAT, "drat_trim_old": DRAT_OLD},
+         "inputs": {"encoder": ENC, "skeleton": SKEL, "items": ITEMS, "registry": REGISTRY,
+                    "launch_contract": LAUNCH_CONTRACT, "monitor": MONITOR, "observer_source": OBSERVER_SOURCE_SHA},
+-        "absolute_child_end_epoch": abs_end, "max_chunk_end_epoch": t_start + MAX_CHUNK,
+-        "retained_output_reservation_bytes": reserve_total, "output_dir": out_dir,
++        "absolute_end_epoch": abs_end, "max_chunk_end_epoch": t_start + MAX_CHUNK,
++        "retained_output_reservation_bytes": STATE["remaining_reserve"],
++        "reservation_breakdown": {"control_reserve": CONTROL_RESERVE, "item_reserve_each": ITEM_RESERVE},
++        "output_dir": out_dir, "children_dir": os.path.join(out_dir, "children"),
+         "limits": {"solver_s": SOLVER_SECONDS, "check_s": CHECK_SECONDS, "grace_s": GRACE, "term_wait_s": TERM_WAIT,
+-                   "proof_cap_hard": PROOF_CAP, "log_cap_hard": LOG_CAP, "lane_rss_trip": LANE_RSS_TRIP,
+-                   "free_floor": FREE_FLOOR, "fresh_base": FRESH_BASE},
++                   "stream_join_s": STREAM_JOIN, "proof_cap_hard": PROOF_CAP, "control_proof_cap_hard": CONTROL_PROOF_CAP,
++                   "log_cap_hard": LOG_CAP, "lane_rss_trip": LANE_RSS_TRIP, "free_floor": FREE_FLOOR,
++                   "fresh_base": FRESH_BASE},
+         "exit_codes": {"0": "plan complete (each item terminal UNSAT/UNKNOWN); not a science verdict",
+                        "10": "SAT candidate", "20": "controls failed", "30": "admission refused",
+-                       "40": "owner cancel", "50": "safety stop", "60": "exception", "70": "prestart refused"},
++                       "40": "owner cancel", "50": "safety stop / latch", "60": "exception", "70": "prestart refused"},
+     }
+     write_x(os.path.join(out_dir, "launch-record.json"), launch)
+     print("LAUNCH_RECORD", os.path.join(out_dir, "launch-record.json"), flush=True)
+-    summary = {"schema": "PA19-96H-PILOT-SUMMARY-v5", "items": {}, "controls_ok": None, "stopped": None,
++    summary = {"schema": "PA19-96H-PILOT-SUMMARY-v8", "items": {}, "controls_ok": None, "stopped": None,
+                "terminal_policy": "exit code reports runner execution only; per-item records carry the scientific "
+-                                  "status; an item counts only if status UNSAT passed qualify_unsat AND the terminal "
+-                                  "gate; case closure is decided by the parent audit, not by this runner"}
+-    code = EXIT_EXCEPTION
++                                  "status; an item counts only if status UNSAT passed qualify_unsat, the terminal gate "
++                                  "and the final cancel/latch check; case closure is decided by the parent audit"}
++    outcome = {"sat": False, "controls_failed": False, "refused": False, "exception": False, "complete": False}
++    try:
++        run_plan(summary, outcome)
++    except BaseException as exc:
++        outcome["exception"] = True
++        summary["stopped"] = {"phase": "exception", "error": repr(exc)}
++    finally:
++        code = final_code(summary, outcome)
++    return code
+ 
+-    def gate(projected, remaining_reserve):
+-        why = registry_refusals()
+-        fb = free_bytes()
+-        if fb < FRESH_BASE + projected:
+-            why.append(f"fresh free {fb} < 12.2e9 + {projected}")
+-        if fb - remaining_reserve < FREE_FLOOR:
+-            why.append(f"free {fb} - remaining reservations {remaining_reserve} < 12e9")
+-        if time.time() + ITEM_WORST_SECONDS > min(abs_end, OWNED_SETTLED_BY - 180):
+-            why.append("chunk-fit/absolute deadline")
+-        if CANCEL.is_set():
+-            why.append("owner cancel")
+-        why += stability_refusals(projected)
+-        return why, fb
+ 
+-    try:
++def run_plan(summary, outcome):
++    """The plan body; every early stop is a plain return with the outcome flags set."""
++    out_dir = STATE["out"]
++    if True:
+         if sha_file(DRAT_OLD[0])[0] != DRAT_OLD[1] or sha_file(KISSAT[0])[0] != KISSAT[1]:
+             raise RuntimeError("binary pin mismatch")
+         if sha_file(DRAT)[0] != DRAT_OLD[1] or os.lstat(DRAT).st_ino == os.lstat(DRAT_OLD[0]).st_ino:
+             raise RuntimeError("vendored drat-trim mismatch or shared inode")
+-        why, fb = gate(CONTROL_RESERVE, reserve_total)
+-        if why:
+-            summary["stopped"] = {"phase": "controls_gate", "why": why, "free": fb}
+-            code = EXIT_ADMISSION_REFUSED
+-            return code
+-        ok, recs = controls(out_dir)
++        ok, recs = controls()
+         summary["controls_ok"] = ok
+         summary["controls_record_sha256"] = write_x(os.path.join(out_dir, "controls.json"), recs)
+-        if CANCEL.is_set():
+-            summary["stopped"] = {"phase": "controls", "why": ["owner cancel"]}
+-            code = EXIT_CANCELLED
+-            return code
++        STATE["remaining_reserve"] -= CONTROL_RESERVE
+         if not ok:
+-            summary["stopped"] = {"phase": "controls", "why": ["a control did not behave as intended"]}
+-            code = EXIT_CONTROLS_FAILED
+-            return code
++            outcome["controls_failed"] = True
++            summary["stopped"] = {"phase": "controls"}
++            return
+         read_pinned(ENC[0], ENC[1])
+         sys.dont_write_bytecode = True
+         spec = importlib.util.spec_from_file_location("encode_skel_b_lane", ENC[0])
+@@ -788,20 +945,11 @@
+         spec.loader.exec_module(E)
+         D = json.loads(read_pinned(*SKEL))
+         special = [p for p in D["profiles"] if list(p) != P0]
+-        remaining = len(ITEMS) * ITEM_RESERVE
+         for it in ITEMS:
+             label = it["id"].replace(":", "_")
+             rec = {"id": it["id"], "status": "UNKNOWN", "count_for_scientific_coverage": False,
+                    "host_clock_start": clock()}
+-            why, fb = gate(ITEM_RESERVE, remaining)
+-            rec["gate"] = {"why": why, "free": fb}
+-            if why:
+-                rec["reason"] = "admission refused"
+-                write_x(os.path.join(out_dir, label + ".record.json"), rec)
+-                summary["items"][it["id"]] = {"status": "UNKNOWN", "reason": "admission refused"}
+-                summary["stopped"] = {"phase": "item_gate", "item": it["id"], "why": why}
+-                code = EXIT_CANCELLED if CANCEL.is_set() else EXIT_ADMISSION_REFUSED
+-                return code
++            rec_path = os.path.join(out_dir, label + ".record.json")
+             Ej = json.loads(read_pinned(*it["list"]))
+             if not (Ej["num_placements"] == len(Ej["placements"]) == it["denominator"]):
+                 raise RuntimeError("list denominator mismatch " + it["id"])
+@@ -819,66 +967,108 @@
+             if sha_file(cnf_path) != (it["cnf"][0], it["cnf"][1]):
+                 raise RuntimeError("CNF file re-hash mismatch")
+             proof_path = os.path.join(out_dir, label + ".drat")
+-            ks, kl = run_kissat(cnf_path, proof_path, out_dir, label, SOLVER_SECONDS)
++            ks, kl, refused = run_kissat(cnf_path, proof_path, label, SOLVER_SECONDS, PROOF_CAP,
++                                         PROOF_CAP + LOG_CAP + RECORD_ALLOW // 2)
++            if ks is None:
++                rec.update(reason="solver admission refused", refusal=refused, host_clock_end=clock())
++                write_x(rec_path, rec)
++                summary["items"][it["id"]] = {"status": "UNKNOWN", "reason": "solver admission refused"}
++                summary["stopped"] = {"phase": "solver_admission", "item": it["id"], "why": refused}
++                outcome["refused"] = True
++                return
+             rec["solver"] = ks
+             rec["solver_status_lines"] = [s for s in kl if s.startswith("s ")]
+-            safety = bool(ks["quarantine_record"]) or ks["group_empty_after_reap"] is not True \
+-                or (ks["proof_sink"] or {}).get("thread_alive_after_join", False)
+-            if ks["returncode"] == 10 and rec["solver_status_lines"] == ["s SATISFIABLE"] and ks["stop"] == "self":
++            if ks["returncode"] == 10 and rec["solver_status_lines"] == ["s SATISFIABLE"] and ks["stop"] == "self" \
++                    and ks["settled"]:
+                 rec["status"] = "SAT_CANDIDATE"
+-                rec["sat"] = verify_sat(cnf_path, kl, out_dir, label)
+-                write_x(os.path.join(out_dir, label + ".record.json"), rec)
++                rec["sat"] = verify_sat(cnf_path, kl, label)
++                rec["host_clock_end"] = clock()
++                write_x(rec_path, rec)
+                 summary["items"][it["id"]] = {"status": "SAT_CANDIDATE", "sat": rec["sat"]}
+                 summary["stopped"] = {"phase": "sat_candidate", "item": it["id"]}
+-                code = EXIT_SAT_CANDIDATE
+-                return code
++                outcome["sat"] = True
++                return
+             sink_ok = sink_complete(ks["proof_sink"])
+             if sink_ok:
+                 rec["proof"] = {"sha256": ks["proof_sink"]["sha256_of_written"], "bytes": ks["proof_sink"]["written"]}
+-            if ks["returncode"] == 20 and ks["stop"] == "self" and ks["trip"] is None and not safety \
+-                    and sink_ok and not CANCEL.is_set():
+-                dr, dl = run_drat(cnf_path, proof_path, out_dir, label, CHECK_SECONDS)
++            if ks["returncode"] == 20 and ks["stop"] == "self" and ks["settled"] and sink_ok and not LATCH \
++                    and not CANCEL.is_set():
++                dr, dl, refused = run_drat(cnf_path, proof_path, label, CHECK_SECONDS, LOG_CAP + RECORD_ALLOW // 2)
++                if dr is None:
++                    rec.update(reason="checker admission refused", refusal=refused, host_clock_end=clock())
++                    write_x(rec_path, rec)
++                    summary["items"][it["id"]] = {"status": "UNKNOWN", "reason": "checker admission refused"}
++                    summary["stopped"] = {"phase": "checker_admission", "item": it["id"], "why": refused}
++                    outcome["refused"] = True
++                    return
+                 rec["checker"] = dr
+                 rec["checker_status_lines"] = [s for s in dl if s.startswith("s ")]
+                 rec["checker_parse_lines"] = [s for s in dl if s.startswith("c parsing") or s.startswith("c finished parsing")]
+                 post_cnf, post_proof = sha_file(cnf_path), sha_file(proof_path)
+                 rec["post_check_hashes"] = {"cnf": list(post_cnf), "proof": list(post_proof)}
+                 rec["defects"] = qualify_unsat(it["cnf"], ks, kl, rec["proof"]["sha256"], rec["proof"]["bytes"],
+-                                               dr, dl, post_cnf, post_proof)
+-                safety = safety or bool(dr["quarantine_record"]) or dr["group_empty_after_reap"] is not True
++                                               PROOF_CAP, dr, dl, post_cnf, post_proof)
++                rec["host_clock_end"] = clock()
+                 rec["terminal_gate"] = terminal_gate()
+-                if not rec["defects"] and not rec["terminal_gate"] and not safety:
++                # F1: the final cancel/latch check is the last statement before the exclusive write.
++                if not rec["defects"] and not rec["terminal_gate"] and not LATCH and not CANCEL.is_set():
+                     rec["status"] = "UNSAT"
+                     rec["count_for_scientific_coverage"] = True
++                    rec["commit_check"] = "cancel and latch observed clear immediately before this write"
++                write_x(rec_path, rec)
++                if CANCEL.is_set() and rec["status"] == "UNSAT":
++                    summary["post_commit_cancel"] = it["id"]
+             else:
+-                rec["reason"] = "no self-exit rc20 verdict with a complete proof sink (or trip/cancel/safety)"
+-            rec["host_clock_end"] = clock()
+-            write_x(os.path.join(out_dir, label + ".record.json"), rec)
++                rec["reason"] = "no settled self-exit rc20 verdict with a complete proof sink (or latch/cancel)"
++                rec["host_clock_end"] = clock()
++                write_x(rec_path, rec)
+             summary["items"][it["id"]] = {k: rec.get(k) for k in ("status", "count_for_scientific_coverage",
+                                                                   "defects", "terminal_gate", "reason", "proof")}
+-            remaining -= ITEM_RESERVE
+-            if safety:
+-                summary["stopped"] = {"phase": "safety", "item": it["id"]}
+-                code = EXIT_SAFETY_STOP
+-                return code
+-            if CANCEL.is_set():
+-                summary["stopped"] = {"phase": "owner_cancel", "item": it["id"]}
+-                code = EXIT_CANCELLED
+-                return code
+-        code = EXIT_PLAN_COMPLETE
+-        return code
+-    except BaseException as exc:
+-        summary["stopped"] = {"phase": "exception", "error": repr(exc)}
+-        code = EXIT_EXCEPTION
+-        return code
+-    finally:
+-        summary["exit_code"] = code
+-        summary["host_clock_end"] = clock()
+-        summary["settlement"] = "every child is reaped in Child.settle before control returns; per-child " \
+-                                "group_empty_after_reap/quarantine and proof-sink fields are in records; no child " \
+-                                "is started after an exception"
+-        write_x(os.path.join(out_dir, "summary.json"), summary)
++            STATE["remaining_reserve"] -= ITEM_RESERVE
++            if LATCH or CANCEL.is_set():
++                summary["stopped"] = {"phase": "latch_or_cancel", "item": it["id"]}
++                return
++        outcome["complete"] = True
++
++
++def final_code(summary, outcome):
++    """Computed exit code (never inferred from a plain return) and the computed settlement summary."""
++    out_dir = STATE["out"]
++    if True:
++        if outcome["sat"]:
++            code = EXIT_SAT_CANDIDATE
++        elif LATCH:
++            code = EXIT_SAFETY_STOP
++        elif outcome["exception"]:
++            code = EXIT_EXCEPTION
++        elif CANCEL.is_set():
++            code = EXIT_CANCELLED
++        elif outcome["controls_failed"]:
++            code = EXIT_CONTROLS_FAILED
++        elif outcome["refused"]:
++            code = EXIT_ADMISSION_REFUSED
++        elif outcome["complete"]:
++            code = EXIT_PLAN_COMPLETE
++        else:
++            code = EXIT_EXCEPTION
++        children = [c.settled_rec if c.settled_rec is not None else {"seq": c.seq, "label": c.label, "pid": c.pid,
++                                                                       "settled": False, "note": "never settled"}
++                    for c in OWNED]
++        all_settled = all(r.get("settled") for r in children)
++        if not all_settled and code != EXIT_SAT_CANDIDATE:
++            code = EXIT_SAFETY_STOP
++        summary.update(exit_code=code, latch=list(LATCH), cancel=CANCEL.is_set(),
++                       children=[{k: r.get(k) for k in ("seq", "label", "pid", "returncode", "stop", "settled")}
++                                 for r in children],
++                       all_children_settled=all_settled)
++        try:
++            summary["host_clock_end"] = clock()
++            write_x(os.path.join(out_dir, "summary.json"), summary)
++        except BaseException as exc:
++            print("SUMMARY WRITE FAILED %r" % exc, flush=True)
++            code = EXIT_SAFETY_STOP
+         print("SUMMARY", os.path.join(out_dir, "summary.json"), "exit", code, flush=True)
++    return code
+ 
+ 
+ if __name__ == "__main__":

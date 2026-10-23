@@ -1,0 +1,150 @@
+--- control/beta_capture_audit_v1.py
++++ control/beta_capture_audit_v2.py
+@@ -3,7 +3,7 @@
+ Implements audit_capture() of the frozen parent consumer contract
+ /Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/control/beta-audit-consumer-contract-v1.json
+ (sha256 b26a98caba1fbf17de0376fde24905052b68ebc0d5f567cdebfac092a6cdfd96). X5 RESULT_SCHEMA belongs to audit_schema.
+-Importing this module reads, writes and launches nothing and consults no clock or environment. audit_capture()
++This module starts no processes and performs no application-file I/O; standard-library imports may read runtime files. Trusted Python/import state and -B remain parent launch preconditions. audit_capture()
+ returns causes only: no verdict, file write, process or /bin/date. Every byte it judges comes from the caller's
+ read_bytes(path, cap), called only at paths bound by the parent expectation.
+ 
+@@ -42,11 +42,12 @@
+   not a verified complete capture), which beats the content cause. Content is judged only on a verified complete
+   capture: stdout must equal the actual bytes of the bound result.json (its single canonical line is X5's), and
+   stderr must be empty. An empty complete capture is not a missing capture.
+-- Capture and receipt paths must lie outside job_dir, and the stdout and stderr paths must differ.
++- Cross-role path placement is parent authority; this predicate adds no uncontracted disjointness restriction.
+ - Reads happen only at bound paths, at most once per path per call, with one cap (READ_CAP), in evaluation order
+   X2, X3, X4, X7 (artifact names and pin paths sorted).
+ """
+ import hashlib
++import math
+ 
+ EXPECTATION_FORMAT = "beta-parent-audit-expectation-v1"
+ OBSERVATION_FORMAT = "beta-parent-audit-observation-v1"
+@@ -55,8 +56,6 @@
+ MODES = ("PLAN", "FIXTURE")
+ RESULT_NAME = "result.json"
+ READ_CAP = 16 << 20  # successor4 v3 plan/source-pin/artifact cap, also applied to captures and the receipt
+-MAX_READ_ENTRIES = 256  # declared outputs, census and each pin map; bounds the reads that records can drive
+-MAX_DEPTH = 32  # nesting bound of the typed deep equality used for parent date records
+ READ_FAILURES = (OSError, ValueError)  # defined read_bytes failures; every other exception propagates
+ 
+ X1 = "X1 EXIT_MISMATCH"
+@@ -174,41 +173,52 @@
+     return all(part not in ("", ".", "..") for part in path.split("/")[1:])
+ 
+ 
+-def _outside(path, job_dir):
+-    """Path is neither job_dir nor below it; an unbound job_dir is judged by X4 instead."""
+-    return job_dir is None or (path != job_dir and not path.startswith(job_dir + "/"))
+-
+-
+ def _plain_name(name):
+     return type(name) is str and name not in ("", ".", "..") and "/" not in name and "\x00" not in name
+ 
+ 
+ def _names(value):
+-    """Exact list of 1..MAX_READ_ENTRIES distinct plain names, else None."""
+-    if type(value) is not list or not 1 <= len(value) <= MAX_READ_ENTRIES:
++    """Exact nonempty list of distinct plain names, else None; no uncontracted count limit."""
++    if type(value) is not list or len(value) == 0:
+         return None
+     if not all(_plain_name(name) for name in value) or len(set(value)) != len(value):
+         return None
+     return value
+ 
+ 
+-def _exact(left, right, depth=0):
+-    """Typed JSON deep equality: bool never equals int, keys are str, non-JSON types never match."""
+-    if depth > MAX_DEPTH or type(left) is not type(right):
+-        return False
+-    if type(left) is dict:
+-        if len(left) != len(right):
++def _exact(left, right):
++    """Iterative typed JSON equality, with no uncontracted nesting limit; cyclic non-JSON inputs refuse."""
++    stack = [(left, right)]
++    expanded = set()
++    while stack:
++        a, b = stack.pop()
++        if type(a) is not type(b):
+             return False
+-        for key in left:
+-            if type(key) is not str or key not in right or not _exact(left[key], right[key], depth + 1):
+-                return False
+-        return True
+-    if type(left) is list:
+-        return len(left) == len(right) and all(_exact(a, b, depth + 1) for a, b in zip(left, right))
+-    if type(left) in (str, int, float, bool):
+-        return left == right
+-    return left is None
+-
++        if type(a) is dict:
++            pair = (id(a), id(b))
++            if pair in expanded:
++                return False
++            expanded.add(pair)
++            if len(a) != len(b) or any(type(k) is not str or k not in b for k in a):
++                return False
++            stack.extend((a[k], b[k]) for k in a)
++        elif type(a) is list:
++            pair = (id(a), id(b))
++            if pair in expanded:
++                return False
++            expanded.add(pair)
++            if len(a) != len(b):
++                return False
++            stack.extend(zip(a, b))
++        elif type(a) is float:
++            if not math.isfinite(a) or not math.isfinite(b) or a != b:
++                return False
++        elif type(a) in (str, int, bool):
++            if a != b:
++                return False
++        elif a is not None:
++            return False
++    return True
+ 
+ def _bound_job_dir(expectation):
+     job_dir = _get(expectation, "job_dir")
+@@ -218,10 +228,10 @@
+ def _bound_capture_path(expectation, stream):
+     """Declared capture path of stream, or None when the parent binding is unusable."""
+     paths = _get(expectation, "capture_paths")
+-    if type(paths) is not dict or set(paths) != STREAM_KEYS or _exact(paths["stdout"], paths["stderr"]):
++    if type(paths) is not dict or set(paths) != STREAM_KEYS:
+         return None
+     path = paths[stream]
+-    if not _norm_abs(path) or not _outside(path, _bound_job_dir(expectation)):
++    if not _norm_abs(path):
+         return None
+     return path
+ 
+@@ -229,7 +239,7 @@
+ def _exit_matches(expectation, observed):
+     want = _get(expectation, "expected_exit")
+     got = _get(observed, "actual_exit")
+-    return type(want) is int and 0 <= want <= 255 and type(got) is int and got == want
++    return type(want) is int and type(got) is int and got == want
+ 
+ 
+ def _capture(expectation, observed, stream, reader):
+@@ -337,7 +347,7 @@
+ 
+ def _receipt_ok(expectation, observed, reader):
+     path, digest = _get(expectation, "receipt_path"), _get(expectation, "receipt_sha256")
+-    if not _norm_abs(path) or not _hex64(digest) or not _outside(path, _bound_job_dir(expectation)):
++    if not _norm_abs(path) or not _hex64(digest):
+         return False
+     receipt = _get(observed, "receipt")
+     ok = (type(receipt) is dict and set(receipt) == RECEIPT_KEYS and _same_str(receipt["path"], path)
+@@ -347,7 +357,7 @@
+ 
+ 
+ def _pins_bound(pins, observed_pins, reader):
+-    if (type(pins) is not dict or not 1 <= len(pins) <= MAX_READ_ENTRIES
++    if (type(pins) is not dict
+             or not all(_norm_abs(path) and _hex64(digest) for path, digest in pins.items())):
+         return False
+     ok = _exact(pins, observed_pins)

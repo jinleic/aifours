@@ -1,0 +1,15 @@
+# Sun7 positive written-rule envelope and residual census — frozen scope v1
+
+Frozen 2026-10-19T23:19:25-0700 after `/bin/date`, before this follow-up derivation/audit. Parent-owned, written mathematics and source reading only; no numerical scripts, science/control/native runs, theorem execution or new agent wave. All previous artifacts immutable. Global runtime HOLD and owner one-third throttle remain.
+
+## Problem
+FINAL-BC-repair-v1 C1 retains conditional proof-level non-use claims for IL5 (K), IL6 (P), IL10 (RPLP beyond F7), IL12 (minimal frame), TS3/CS5 and related census rows. Interface exposure alone does not settle these. The accepted written-rule verdict /Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-16/review/sun-coset7-written-parent-verdict-v1.md SHA256 73a25ba6b2848e5412de4c8fac667c7bbd899cf22b165f0fed5db29f3eea9f35, LF23/38/40/42 and mandatory overlays LF48–49 already accepts T/K/K1/K2/P/VFC/RPLP/CAP with stated universal conditions. Thus negative claims about unused K/P/RPLP/CAP are unnecessary IF their full positive written dependency envelope can be joined to S5W/S6W without importing an old internal lemma.
+
+## Bounded target
+1. Compare every retained K/P/RPLP/CAP interface against its literal written acceptance and mandatory overlays; allow a conservative extra dependency, never infer that an old source is computation-free. Explicitly distinguish the accepted rule proofs from producer/checker executions and certificate results.
+2. Supply a named written-rule envelope node whose inputs are the already accepted elementary/triangle/VFC/fibre and S5W/S6W statements at their exact scopes. Verify any old K/P/internal citation is discharged by the independent written derivations recorded in WV, not simply relabelled. Do not include L5/FH seven-piece or minimal-order clauses in this node.
+3. Audit retained final-chain source bodies and mandatory overlays for any actual load-bearing use of Sun7 inside a subgroup, least-order/minimal frame, L5/FH seven-piece argument, old C18/internal-only results, StageB or other certificate/solver/computation results. Record exact occurrences and distinguish proof use, theorem-statement substitution, independent written proof, superseded wording and historical/provenance-only text. Search misses alone do not prove non-use.
+4. Preserve unresolved IN1/IN10/KS5/PROV and non-census composition obligations explicitly until source-backed disposition. Rebuild a conservative acyclic named-node order if the envelope is admitted; do not force the old numerical order or claim the withdrawn 68-to-79 reconciliation.
+
+## Outputs and acceptance boundary
+A source-pinned positive-envelope/census candidate, exact remaining obligations, and self-contained independent review packets. If a load-bearing internal/computational premise cannot be discharged, report it as OPEN. This scope authorizes no new Sun7 theorem acceptance. Full Sun7 remains UNACCEPTED until complete second-family and parent composition gates. No novelty, Lean, human-review or runtime claim.

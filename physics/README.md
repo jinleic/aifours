@@ -90,3 +90,137 @@ Yangian-only solution of the Hubbard spectrum; spin-liquid ground states of J1�
 Not precisely posed: most astrophysics, acoustics, nuclear-structure, materials and device items,
 and conceptual questions such as 为什么严格的多体波函数计算不能给出超导态 (answered by off-diagonal
 long-range order, Yang, Rev. Mod. Phys. 34, 694 (1962)).
+
+## Difficult-problem visit (2026-10-15)
+
+The owner requested one difficult physics-volume problem with a six-hour total ceiling, alongside
+mathematics and information science. The [hard-problem catalog](evidence/physics-hard-20261015/catalog.md)
+records candidates, status sources, budget classes, probes and parent-review restrictions.
+
+Selected `phys-p0422`, **用统计物理学方法处理约束满足问题面临的五个挑战** (M. Alava, E. Aurell,
+周海军, book pp. 422–427; PDF pp. 455–460), Challenge 5: rigorous random-k-SAT threshold bounds,
+initially k=4 and k=5. A certified negative trial-functional value is not a threshold theorem without
+the general-k interpolation, limiting/concentration argument and model transfers. Improved bounds
+would address only part of the chapter, not determine exact thresholds.
+
+The [institute run](../institute/runs/hard-2026-10-15/README.md) first timed out during 10-minute
+identification. With owner approval it restarted at 12:02 PT with a fresh six-hour allocation and a
+30-minute selected-question identification stage. Authority for those engine visits:
+[`record.json`](../institute/runs/hard-2026-10-15/problems/phys-p0422/record.json).
+Its batch 03 continuation closed **unverified** (accept-with-fixes) at 14:49 PT. That snapshot's
+written proof and rational enclosures gave random 4-SAT/5-SAT whp unsatisfiability at 9.96/21.14.
+It had no formal verification or established novelty. The
+[batch ledger](../institute/review/hard-2026-10-15-outcomes.md) records that historical outcome.
+
+### Authorized continuation (2026-10-16)
+
+The [new certificate package](evidence/hard-continuation-20261015/README.md) improves the
+explicit densities and adds a 3-SAT refinement:
+
+| Arity | Written proof + rigorous numerical certificate | Separate Lean-kernel endpoint |
+|---|---|---|
+| 3-SAT | **4.26679** | **4.26718** |
+| 4-SAT | **9.9325** | **9.934** |
+| 5-SAT | **21.1175** | **21.123** |
+
+All use iid legal signed clauses, with replacement across clauses. The
+[Lean development](evidence/hard-continuation-20261015/formal/README.md) proves a general-arity
+criterion and convergence to zero, not the written proof's exponential rate or explicit finite-n
+constants. The new 3-SAT closure passed fresh kernel replay within 4 GiB per process; earlier
+k=4/5 kernel checks required about 12 GB, a corrected resource limitation. The strongest numerical
+rows are not kernel theorems.
+
+The 3-SAT value is 0.00121 below Vorobyev's explicit 4.268 endpoint, within his established method.
+Prior work already states near-cavity variational upper bounds, and earlier general-k Lean material
+exists. These are reproducible numerical/formal instantiations, not a new principle, exact thresholds,
+human peer review or an established global record. See the
+[continuation ledger](../institute/review/continuation-20261015/outcomes.md) for controls and priority holes.
+
+## Six concurrent research lanes (2026-10-16–18)
+
+An explicit rank-two input on 2000 qubits has a computer-assisted coherent-information enclosure
+of `[1.1373755593e-8, 1.1432769066e-8]` bits at **total-error p=1/5** (outward-rounded), implying
+positive depolarizing-channel quantum capacity for every `0 ≤ p ≤ 1/5`. Its exact witness premises,
+sector replay, numerical controls, independent float cross-check and hostile reviews are documented
+in the [parent verdict](../institute/runs/six-lane-2026-10-16/review/depolarizing-parent-verdict.md).
+The trust base includes binary64 arithmetic assumptions and FLINT/Arb; this is not a Lean theorem.
+The point improves the certified finite-witness threshold 0.194868 but not the claimed asymptotic
+0.2029161 threshold. Significance and priority remain separate from certification.
+
+Other scoped results are AMH Open Problem 1 moment feasibility (not code existence), three-qubit
+depolarizing-output majorization for all physical replacement parameters, and partial four-qubit
+indices.
+
+**The Díaz et al. Maximum Hypothesis for random 5-regular 3-colouring now has a computer-assisted
+proof.** It rests on an exact slice-concavity lemma, nine facet cones each checked by three
+independently written outer checkers, and a central-box certificate checked by two hardened central
+checkers. With Theorem 1.1 of the pinned 2009 preprint, **χ(G_{n,5}) = 3 asymptotically almost
+surely**. The corollary imports the preprint's analytic arguments, and the published version was not
+compared ([parent verdict](../institute/runs/six-lane-2026-10-16/review/colour-maximum-parent-verdict.md)).
+
+The two-qutrit 2-unitary orbit is also isolated among dual and among T-dual gates: every other such
+gate is at Frobenius distance at least 1. This answers the non-trivial reading of T7 at d = 3. Geng
+(2022) had already computed the 33-dimensional linear kernel, so novelty is unclear
+([parent verdict](../institute/runs/six-lane-2026-10-16/review/dualunitary-t7-parent-verdict.md)).
+**Every set of four mutually orthogonal quantum Latin squares of order 7 is classical, so
+2 ≤ M(7) ≤ 3.** This answers the n = 7 instance of Ball–Simoens Problem 16 (arXiv:2607.12933v2),
+the smallest open case of their Table 2. The proof is computer-assisted: a written reduction to three
+support-pattern classes, two independently written encodings per class, and six UNSAT certificates
+that the parent regenerated byte-for-byte and verified with drat-trim. It imports the Egan–Wanless
+MOLS(7) classification; whether M(7) is 2 or 3, and every n ≥ 8, stay open. NOVELTY-UNCLEAR after a
+bounded audit ([parent verdict](../institute/runs/six-lane-2026-10-16/review/moqls7-parent-verdict.md)).
+At n = 8, the classes with exactly one or two non-classical squares are excluded: the written
+K1 argument and the 39-net K2 reduction passed Codex and Claude reviews, with all wording fixes applied in r2;
+the parent independently rebuilt all 78 CNFs, verified all 78 DRAT proofs, and checked the
+catalogue's 39 distinct net isomorphism classes and relaxed positive controls.
+The class with exactly three non-classical squares is excluded as well: 2165 net representatives, each with a parent-regenerated CNF
+and a parent-verified DRAT proof. This is partial progress only; K4 and K5 remain open
+([K1/K2 record](../institute/runs/six-lane-2026-10-16/review/moqls8-k1k2-parent-verdict.md),
+[K3 record](../institute/runs/six-lane-2026-10-16/review/moqls8-k3-parent-verdict.md)).
+**The maximum entangling power of a two-qutrit dual unitary that is not 2-unitary is exactly 15/16**,
+and the same holds for T-dual gates. Every non-2-unitary dual gate has rank U^Γ ≤ 6 (for T-dual gates,
+realignment rank ≤ 6), which proves Rather's 2023 Conjecture 3.3.2 and the optimum described as likely in
+arXiv:2508.04777v3. It is a reviewed written proof with exact algebra and two exact attaining gates, not a
+Lean formalization; NOVELTY-UNCLEAR after a bounded audit
+([parent verdict](../institute/runs/six-lane-2026-10-16/review/qutrit-sharp-parent-verdict.md)).
+**Theorem K1 at n = 7 (2026-10-17):** no set of three mutually orthogonal quantum Latin squares of order 7 has exactly one
+non-classical square. Hence every 2-resolvable and every pandiagonal QLS(7) has cardinality 7, so neither an MCPQLS(7)
+(Huang–Li 2026) nor a maximal-cardinality 2-RQLS(7) (Zhang–Cao 2026) exists. It is a computer-assisted proof with five
+independent parent routes, including a full re-enumeration of the reduced Latin squares of order 7, and Codex/Claude reviews
+returned ACCEPT-WITH-FIXES with the fixes delta-checked. NOVELTY-UNCLEAR, not Lean
+([parent verdict](../institute/runs/six-lane-2026-10-16/review/moqls7-k1-parent-verdict.md)). **Theorem K2 (2026-10-18,
+partial):** no such triple has exactly two non-classical squares. It is a computer-assisted proof: the parent replayed all
+294 UNSAT certificates and checked main-class coverage, and four hostile reviews returned ACCEPT-WITH-FIXES. It carries a
+stated provenance caveat ([parent verdict](../institute/runs/six-lane-2026-10-16/review/moqls7-k2-parent-verdict.md)).
+**Final update: M(7) = 2**, computer-assisted and internally correctness-accepted: every triple is
+classical, and a non-classical pair exists. The [final parent verdict v2](../institute/runs/six-lane-2026-10-16/review/moqls7-M7-equals2-parent-gate-verdict-v2.md)
+supersedes the earlier K3-pending status. Its provenance caveats remain: 35 K2 classes lack
+script-hash-observed parent replay, and the streamed M7 proofs were not retained or digested.
+No fresh upper-bound replay, Lean proof, human review or priority claim is supplied by this update.
+The later Problem16 n=8 and maximal 1-RQLS(10) targets remain unresolved at the
+[96-hour closeout](../institute/runs/six-lane-2026-10-18-96h/report/continuation-report-2026-10-22-final-v17.md).
+See the [six-lane ledger](../institute/runs/six-lane-2026-10-16/outcomes.md) for exact scope.
+
+
+**Random regular colouring continuation (2026-10-17).** χ(G_{n,7}) = 4 a.a.s. for the uniform simple
+random 7-regular graph is CORRECTNESS-ACCEPTED after Codex and Claude reviews and parent delta review
+([verdict](../institute/runs/six-lane-2026-10-16/review/chi7-parent-verdict.md)). It is DERIVED-OPEN:
+its key sharper constant already appears in Achlioptas–Naor and in Nir–Pérez-Giménez for random lifts,
+so it is not counted as an explicitly named gate. **χ(G_{n,8}) = 4 and χ(G_{n,12}) = 5 a.a.s.** are now
+CORRECTNESS-ACCEPTED on final r3 proofs after Codex hostile, Claude complete and Codex delta reviews, byte-identical
+parent verifier replays and independent parent rational arithmetic
+([χ8](../institute/runs/six-lane-2026-10-16/review/chi8-parent-verdict.md),
+[χ12](../institute/runs/six-lane-2026-10-16/review/chi12-parent-verdict.md)).
+They close KPW's {4,5} and {5,6} windows at degrees8 and12 beyond the previous constants7.4156 and11.8297, through
+one shared hypercontractive global-decay mechanism. DERIVED-OPEN, priority unresolved; recorded under the contract's
+new-theorem half of that clause only (the method has an earlier random-lift precedent;
+[attribution addendum](../institute/runs/six-lane-2026-10-16/review/physics-priority-addendum-v1.md)), not as two separate results. The older χ7/χ8 generic SSC formulation is
+clarified by a parent [conditional-contiguity addendum](../institute/runs/six-lane-2026-10-16/review/colouring-ssc-formulation-addendum-v1.md).
+At that stage, the continuation was **AME(4,6) minimum support**, with exact witness≤59 or complete lower bound60 required
+([contract](../institute/runs/six-lane-2026-10-16/screening/phys-2-ame46-support-contract.json)). A partial result is accepted:
+**every AME(4,6) state has at least 48 nonzero coefficients** in every product orthonormal basis (published bound 38).
+The bound 42 is a written proof importing only Tarry's theorem. The steps to 46 and 48 add computer-assisted enumerations;
+their 55 load-bearing UNSAT certificates, orbit/schema bindings and 161 phase certificates were independently rechecked by
+the parent, with Codex and Claude reviews ([s ≥ 42](../institute/runs/six-lane-2026-10-16/review/ame46-lower42-parent-verdict.md),
+[s ≥ 46](../institute/runs/six-lane-2026-10-16/review/ame46-lower46-parent-verdict.md),
+[s ≥ 48](../institute/runs/six-lane-2026-10-16/review/ame46-lower48-parent-verdict.md)).

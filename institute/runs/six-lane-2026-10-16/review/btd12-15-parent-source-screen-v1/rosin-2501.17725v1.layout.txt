@@ -1,0 +1,1174 @@
+                                                                  Using Code Generation to Solve Open Instances of
+                                                                          Combinatorial Design Problems
+
+                                                                                           Christopher D. Rosin
+                                                                                          https://constructive.codes
+                                                                                        christopher.rosin@gmail.com
+
+
+                                                                   Abstract
+
+
+
+
+arXiv:2501.17725v1 [cs.AI] 29 Jan 2025
+                                              The Handbook of Combinatorial Designs catalogs
+                                              many types of combinatorial designs, together with
+                                              lists of open instances for which existence has not
+                                              yet been determined. We develop a constructive
+                                              protocol CPro1, which uses Large Language Mod-
+                                              els (LLMs) to generate code that constructs com-
+                                              binatorial designs and resolves some of these open
+                                              instances. The protocol starts from a definition of
+                                              a particular type of design, and a verifier that reli-
+                                              ably confirms whether a proposed design is valid.
+                                              The LLM selects strategies and implements them
+                                              in code, and scaffolding provides automated hyper-
+                                              parameter tuning and execution feedback using the
+                                              verifier. Most generated code fails, but by generat-
+                                              ing many candidates, the protocol automates explo-
+                                              ration of a variety of standard methods (e.g. sim-
+                                              ulated annealing, genetic algorithms) and experi-
+                                              mentation with variations (e.g. cost functions) to
+                                              find successful approaches. Testing on 16 differ-
+                                              ent types of designs, CPro1 constructs solutions to
+                                              open instances for 6 of them: Symmetric and Skew
+                                              Weighing Matrices, Equidistant Permutation Ar-
+                                              rays, Packing Arrays, Balanced Ternary Designs,
+                                              and Florentine Rectangles.
+
+
+                                         1   Introduction
+                                         A Packing Array is one of many types of combinato-
+                                         rial designs cataloged in the Handbook of Combinatorial                       Figure 1: Constructive Protocol CPro1
+                                         Designs [Colbourn and Dinitz, 2006] (henceforth Hand-
+                                         book). A Packing Array is an N by k array of elements from
+                                         {0, 1, . . . , v − 1}, such that every pair of columns contains
+                                         each ordered pair of elements at most once (Fig. 2). Given
+                                         k and v, we want to know the largest N for which a Packing        construct the desired design. In this paper, we develop a pro-
+                                         Array exists (since we can always construct Packing Arrays        tocol CPro1 (Fig. 1) that uses LLMs to generate code for di-
+                                         with smaller N by removing rows). For k = 14 v = 9, the           verse candidate methods. The protocol automates an experi-
+                                         Handbook lists N = 18 as the best known. Later results            mental process to identify and optimize heuristic construction
+                                         using SAT solvers raised this to N = 20 [Noritake et al.,         strategies. It succeeds in constructing a Packing Array with
+                                         2014]. The upper bound is N ≤ 21 [Colbourn and Dinitz,            N = 21 for k = 14 v = 9, fully resolving this open question.
+                                         2006], so it is an open question whether N = 21 is possible.      The protocol also resolves open instances of other existence
+                                            One approach involves trying various heuristic methods,        problems from the Handbook. Tables 1 and 2 show the main
+                                         experimentally tuning each to determine whether they can          results.
+          Combinatorial design problem & definition                     Handbook’s smallest            Progress on these,        This
+                    (as used by CPro1)                                      open instances             from the literature       paper
+                                                                          Bounds on max N               [Stardom, 2001]
+                                                                                                     [Noritake et al., 2014]     CPro1
+                                                                             for each (k,v)
+                                                                         (5, 6): 34 ≥ N ≥ 30                N ≥ 31
+                                                                         (6, 6): 34 ≥ N ≥ 30                N ≥ 31
+                                                                         (7, 6): 34 ≥ N ≥ 16                N ≥ 23               N ≥ 24
+                                                                         (8, 6): 19 ≥ N ≥ 12                N ≥ 17               N ≥ 18
+Packing Array (PA): A ”Packing Array” PA(N,k,v) is an
+                                                                         (9, 6): 14 ≥ N ≥ 12                N = 14
+N x k array (N rows and k columns), with each entry from
+                                                                        (11, 7): 15 ≥ N ≥ 14                N = 15
+the v-set {0,1,...v-1}, so that every N x 2 subarray contains
+                                                                        (10, 8): 34 ≥ N ≥ 22                N ≥ 25               N ≥ 28
+every ordered pair of symbols at most once. Given (N,k,v),
+                                                                        (11, 8): 25 ≥ N ≥ 16                N ≥ 22               N ≥ 24
+we want to construct PA(N,k,v).
+                                                                        (12, 8): 19 ≥ N ≥ 16                N = 19
+                                                                        (13, 8): 17 ≥ N ≥ 16                N = 17
+                                                                        (11, 9): 45 ≥ N ≥ 27                N ≥ 29               N ≥ 32
+                                                                        (12, 9): 30 ≥ N ≥ 27                                     N ≥ 28
+                                                                        (14, 9): 21 ≥ N ≥ 18                 N ≥ 20              N = 21
+                                                                        (15, 9): 19 ≥ N ≥ 18                                     N = 19
+Skew Weighing Matrix (SkewW): A ”weighing matrix”                           Open instances
+                                                                                                                –                CPro1
+W(n,w) with parameters (n,w) is an n by n square matrix (n                        (n,w)
+rows and n columns) with entries in {0,1,-1} that satisfies                      (18,9)?                                         Exists
+W WˆT = wI. That is, W times its transpose is equal to the                      (30,25)?
+constant w times the identity matrix I. The weighing matrix
+will have w nonzero entries in each row and each column.
+And each pair of distinct rows is orthogonal (dot product
+zero). Given (n,w), we want to construct ”SkewW”, a skew
+weighing matrix W(n,w) that satisfies these properties and
+is also a skew matrix: that is, WˆT = -W.
+Balanced Ternary Design (BTD): A ”Balanced Ternary                          Open instances               [Greig, 2002]           CPro1
+Design” BTD(V,B;p1,p2,R;K,L) is an arrangement of V el-                   (V,B;p1,p2,R;K,L)
+ements into B multisets, or blocks, each of cardinality K                  (14,18;7,1,9;7,4)?
+(K<=V) satisfying: 1. Each element appears R=p1 + 2*p2                    (12,15;6,2,10;8,6)?
+times altogether, with multiplicity one in exactly p1 blocks              (12,20;4,3,10;6,4)?
+and multiplicity two in exactly p2 blocks. 2. Every pair                  (16,22;9,1,11;8,5)?
+of distinct elements appears L times; that is, if m {vb} is              (17,17;8,2,12;12,8)?                                    Exists
+the multiplicity of the v’th element in the b’th block, then              (14,21;6,3,12;8,6)?                                    Exists
+for every pair of distinct elements v and w, sum {b=1}ˆ{B}                (12,16;4,4,12;9,8)?                                    Exists
+m {vb} m {wb} = L. The BTD is represented by a V by B                     (12,26;3,5,13;6,5)?            Doesn’t Exist
+incidence matrix with elements in {0,1,2}. The matrix el-               (16,16;7,3,13;13,10)?                                    Exists
+ement m {vb} in the v’th row and b’th column is the mul-                  (12,21;4,5,14;8,8)?                                    Exists
+tiplicity of the v’th element in the b’th block. The sum of              (12,28;10,2,14;6,6)?                 Exists
+each row is R, and the sum of each column is K. Given                     (14,28;8,3,14;7,6)?
+(V,B,p1,p2,R,K,L) we want to find BTD(V,B;p1,p2,R;K,L).                 (18,18;2,6,14;14,10)?                 Exists
+Florentine Rectangle (FR):A ”Florentine Rectangle”                         Bounds on max r                      –                CPro1
+FR(r,n) is an r x n array (r rows and n columns), with                         for each n
+each row having a permutation of the set of symbols                      n = 13: 13 ≥ r ≥ 12
+S={0,1,2,...,n-1}, such that for any two distinct symbols a              n = 14: 14 ≥ r ≥ 7
+and b in S and each m in {1,2,3,...,n-1} there is at most one            n = 15: 15 ≥ r ≥ 7
+row in which b appears in the position which is m steps to               n = 20: 20 ≥ r ≥ 6                                      r≥7
+the right of a. A single row will have n-m pairs of symbols              n = 21: 21 ≥ r ≥ 7
+a,b with b being m steps to the right of a; so n-1 pairs with            n = 24: 24 ≥ r ≥ 6                                      r≥7
+b directly to the right of a, n-2 with b 2 steps to the right of         n = 25: 25 ≥ r ≥ 6                                      r≥7
+a, and only 1 pair with b n-1 steps to the right of a. Given             n = 26: 26 ≥ r ≥ 6                                      r≥7
+(r,n) we want to construct a FR(r,n).                                    n = 27: 27 ≥ r ≥ 6                                      r≥7
+
+Table 1: Open Instance Results. For each combinatorial design problem, the smallest open instances from the Handbook are listed, along
+with progress on these published elsewhere in the literature. The protocol CPro1 in Fig. 1 used the given definition as input to generate code,
+and this code then made further progress on the open instances, as indicated in the last column. The designs constructed by the code are
+shown in Appendix B.
+          Combinatorial design problem & definition                    Handbook’s smallest          Progress on these,    This
+                    (as used by CPro1)                                   open instances             from the literature   paper
+                                                                                                  [Georgiou et al., 2023]
+                                                                            Open (n,w)                [Dinitz, 2018]      CPro1
+Symmetric Weighing Matrix (SymmW): A ”weighing
+matrix” W(n,w) with parameters (n,w) is an n by n square                       (14,9)?                    Exists
+matrix (n rows and n columns) with entries in {0,1,-1} that                    (19,9)?                                    Exists
+satisfies W WˆT = wI. That is, W times its transpose is equal                  (21,9)?                                    Exists
+to the constant w times the identity matrix I. The weigh-                     (22,16)?
+ing matrix will have w nonzero entries in each row and                        (23,16)?                     Exists
+each column. And each pair of distinct rows is orthogo-                       (25,16)?
+nal (dot product zero). Given (n,w), we want to construct                     (27,16)?
+”SymmW”, a symmetric weighing matrix W(n,w) that sat-                         (29,16)?
+isfies these properties and is also a symmetric matrix.                       (28,25)?
+                                                                              (30,25)?                     Exists
+                                                                         Bound on max m                      –                CPro1
+Equidistant Permutation Array (EPA): An ”equidistant
+                                                                           for each (n,d)
+permutation array” (EPA) with parameters (n,d,m) can be
+                                                                         (10, 7): m ≥ 17
+represented as an m by n matrix (m rows and n columns),
+                                                                         (11, 7): m ≥ 17
+where each row is the permutation of the numbers 0 to n-1.
+                                                                          (9, 8): m ≥ 20
+Each pair of distinct rows must differ in exactly d positions.
+                                                                         (10, 8): m ≥ 20
+Given (n,d,m), we want to construct an equidistant permu-
+                                                                         (11, 8): m ≥ 20
+tation array (EPA) with these parameters.
+                                                                         (12, 8): m ≥ 20                                      m ≥ 21
+
+Table 2: Open Instance Results - Prototyping Set. This has the same format as Table 1, and the results in the last column were generated by
+the automated protocol CPro1. These instances were in the prototyping set, and so were initially solved in this paper via manually developed
+local search methods. The designs constructed by the CPro1-generated code are shown in Appendix B.
+
+
+                                                                        solutions.
+                       2   0   1   1   1   0                               LLMs have been applied to rewrite existing code to im-
+                       0   1   0   2   1   2                            prove its performance [Gong et al., 2025], including by sam-
+                       0   2   1   0   0   1                            pling and testing multiple optimization candidates from the
+                       1   0   2   0   2   2                            LLM [Qiu et al., 2024]. Our protocol includes a step that
+                                                                        attempts to improve performance by generating multiple op-
+      Figure 2: Packing Array example with N=4 k=6 v=3
+                                                                        timization candidates and measuring their performance.
+                                                                           Code generation with LLMs has been used to develop and
+                                                                        improve heuristics for combinatorial optimization problems
+2   Related Work                                                        [Liu et al., 2024a], including generating improved search op-
+Code generation is one of the primary applications of LLMs              erators for genetic algorithms [Ye et al., 2024]. In this paper,
+[Hou et al., 2024; Jiang et al., 2024]. LLMs have the po-               we use LLMs to propose and implement heuristic strategies in
+tential to translate natural language requirements to working           an open-ended way, and the successful strategies that emerge
+programs, even without being given the ability to fully test            include genetic algorithms [Mitchell, 1998] and simulated an-
+the code.                                                               nealing [Kirkpatrick et al., 1983].
+   For difficult problems, it can help generate multiple can-              LLaMEA-HOP [van Stein et al., 2024] uses automated hy-
+didate programs and test whether any succeed [Chen et al.,              perparameter tuning together with LLM-generated heuristics.
+2021]. Protocols that prompt the LLM for a natural-language             The authors motivate it by noting it is potentially very costly
+description before generating code can generate more diverse            to use the LLM for hyperparameter tuning, so they ask the
+and successful candidates [Wang et al., 2024], and we use               LLM to expose a hyperparameter configuration space, and
+such an approach here.                                                  then offload hyperparameter tuning to a separate specialized
+   In code generation benchmarks, LLM-generated code is                 system. We share this motivation, and use automated hyper-
+commonly tested on a small number of test cases. Particularly           parameter tuning for generated code that exposes hyperpa-
+when generating multiple candidate solutions, this can lead to          rameters.
+a situation where generated code is correct on the limited set             Efforts to apply LLMs to mathematics have focused on
+of test cases, but fails to generalize to other inputs [Liu et al.,     benchmarks with known solutions [Hendrycks et al., 2021;
+2024b]. Only a restricted set of problems, for which an ora-            He et al., 2024] and generation of step-by-step proofs that
+cle verifier can fully verify solutions, benefit from generating        could be verified with systems like Lean [Yang et al., 2024;
+arbitrarily large numbers of candidates [Stroebl et al., 2024].         Stroebl et al., 2024]. Here, we focus on problems that can
+In this paper, our problems have such oracle verifiers, so we           be resolved by constructing a combinatorial object that can
+can fully benefit from generating large numbers of candidate            be easily verified, rather than requiring a step-by-step proof.
+     Combinatorial Design                                      Handbook Chapter      Solved Open Instances      Prototyping Set
+     Equidistant Permutation Array (EPA)                            VI.44                    Yes                      Yes
+     Symmetric Weighing Matrix (SymmW, or SyW)                       V.2                     Yes                      Yes
+     Skew Weighing Matrix (SkewW, or SkW)                            V.2                     Yes
+     Packing Array (PA)                                             III.3                    Yes
+     Balanced Ternary Design (BTD)                                  VI.2                     Yes
+     Florentine Rectangle (FR)                                      VI.62                    Yes
+     Balanced Incomplete Block Design (BIBD)                         II.1
+     Bhaskar Rao Design                                              V.4
+     Supersimple Design                                             VI.57
+     Difference Triangle Set                                        VI.19
+     Costas Array                                                   VI.9
+     Tuscan-2 Square                                                VI.62
+     Circular Florentine Rectangle                                  VI.62
+     Coverings                                                      VI.11
+     Perfect Mendelsohn Design                                      VI.35
+     Orthogonal Array                                               III.6
+
+Table 3: Selected Combinatorial Designs Column Solved Open Instances indicates designs for which the automated protocol CPro1 suc-
+ceeded in solving at least one open instance. Column Prototyping Set indicates those for which the open instances were first solved via
+manually created local search.
+
+
+                                            SymmW        EPA           3     Method
+                                  num.        open       open
+ LLM          Ver. Date           cand.      (of 2)      (of 1)        3.1   Terminology
+ GPT-4o       2024-05-13           100         0         1             Combinatorial designs are systems of finite sets that satisfy a
+ GPT-4o       2024-05-13           300         1         0             set of constraints. The specific finite sets and constraints in-
+ GPT-4o       2024-05-13          1000         2         1             volved define the type of combinatorial design (e.g. Packing
+ Claude 3.5                                                            Arrays, or Balanced Incomplete Block Designs). The exis-
+              20241022            1000          2        0             tence problem (or combinatorial design problem) for a par-
+ Sonnet
+ Mistral                                                               ticular type of combinatorial design has a small number of
+              2407                1000          2        0             input parameters (e.g. size), and asks whether it is possible
+ Large
+ DeepSeek                                                              to construct a design that satisfies the constraints for these
+              2024/09/05          1000          0        0             parameters. An instance of the combinatorial design problem
+ v2.5
+ Qwen2.5-                                                              specifies particular numerical values for the parameters, and
+              11-2024             1000          0        0             a solution to the instance would exhibit a combinatorial ob-
+ 72B-Instruct
+                                                                       ject (the design) that meets the constraints instantiated with
+Table 4: Prototyping Results: For each Large Language Model and        these parameters (or a proof that none exists, but in this pa-
+total number of candidate programs, the table shows the number of      per we are limited to seeking solutions that construct the de-
+distinct open instances from the prototyping set that were solved by   sign). For example, one instance of the existence problem for
+the run.                                                               Packing Arrays would ask whether a design with N = 21
+                                                                       k = 14 v = 9 exists, and a solution could give an N by
+                                                                       k array that meets the constraints of the definition given in
+                                                                       Section 1. Note there may be more than one solution to a
+This has the potential to resolve open questions in mathemat-          particular instance of the existence problem.
+ics without the difficulty of generating lengthy step-by-step             A Large Language Model (LLM) takes a textual prompt as
+proofs.                                                                input and returns a textual response, which may include nat-
+                                                                       ural language and/or programming language code. LLMs are
+   FunSearch [Romera-Paredes et al., 2024] used LLMs as                trained via machine learning, but in this paper we are only
+part of an evolutionary algorithm that searched for greedy             using off-the-shelf pretrained LLMs. We use the term proto-
+functions to construct Cap Sets, and succeeded in construct-           col to refer to an algorithm or system which includes calls to
+ing a Cap Set of size 512 for dimension n = 8, a result which          an LLM, and the scaffolding consists of the elements of this
+addresses a recognized open question. Like combinatorial de-           protocol other than the LLM.
+signs, Cap Sets are combinatorial objects that can be read-
+ily tested by an oracle verifier. Compared to FunSearch, our           3.2   Selection of Combinatorial Designs
+work here generates far fewer candidate programs (thousands            From the Handbook, we select 16 types of combinatorial de-
+rather than millions), and allows open-ended strategies which          signs (Table 3) that have clearly defined open instances with
+can use much more compute during execution than greedy                 relatively small parameters that might be amenable to heuris-
+functions.                                                             tic search. For each of these, we review the literature to
+                         PA     SyW SkW BTD FR EPA                     local search methods select changes which minimize a cost
+ GPT-4o                  cSA    rSA cSA GA DFS cSA                     function, while sometimes accepting worsening moves to es-
+ - Reduce runtime        cSA    rSA cSA GA DFS                         cape local optima. Local search succeeded in resolving one
+ - No final dev test     cSA    rSA cSA GA DFS                         open instance for EPA and two for SymmW; these form our
+ - No optimization       cSA    SA cSA GA                              prototyping set for use while developing a protocol that can
+ - No hyper tuning       rSA    GA                                     also resolve these. The manually-developed local search al-
+ Mistral Large           cSA    cSA cSA                                gorithm for EPA is shown in Algorithm 1.
+ - Reduce runtime        cSA    cSA cSA
+                                                                       3.4   Protocol Development
+ - No final dev test     cSA    cSA cSA
+ - No optimization       cSA        cSA                                In our protocol, an LLM takes a combinatorial design’s defi-
+ - No hyper tuning       cSA                                           nition as input, selects diverse strategies, and generates code
+                                                                       for them. We provide scaffolding that compiles and executes
+Table 5: Experiment Results Each row is an experiment, each col-       the generated code on development instances, checks results
+umn a type of combinatorial design. Green cells show where the         with the verifier, and selects the most promising candidates
+experiment solved at least one open instance of that combinatorial     for use on open instances. We generate code in C to take
+design problem. The first set of rows use GPT-4o, and the “-” rows     advantage of its speed.
+stack up successive ablations: Reduce runtime reduces from 48             Experiments on the prototyping set used GPT-4o [Hurst et
+hours to 2 for open instances, No final dev test eliminates final 2    al., 2024] and Claude 3.5 Sonnet [Anthropic, 2024]. For
+hour testing on development instances (instead using original 50-      GPT-4o, the 2024-05-13 version gave better initial results
+second test results), No optimization eliminates the code optimiza-    than a later version, so we continued using the 2024-05-13
+tion step, and No hyper tuning eliminates hyperparameter tuning
+(instead using default hyperparameters given by the LLM). The sec-
+                                                                       version. Through experimentation on the prototyping set, we
+ond set of rows use Mistral Large. Each cell shows the strategy that   establish these observations and elements of the protocol:
+obtained success: DFS: backtracking depth-first search, GA: ge-        Prompting for Diversity Prompting for 20 strategies yields
+netic algorithm, SA: simulated annealing with a slow cooling sched-        more diverse approaches than asking for 10, or repeat-
+ule, rSA: simulated annealing with periodic resets, cSA: constant-         edly asking for 1.
+temperature simulated annealing.
+                                                                       Prompting for Details, then Code Prompting for a detailed
+                                                                           textual description of the approach, before prompting for
+identify which instances have remained open.                               the code, improves reliability of the generated code.
+   For each selected type of design, we provide:
+                                                                       Prompting to Prevent Early Termination We expect solu-
+Textual Definition Defines the design and mandates a spe-                  tions to run for minutes or hours before succeeding.
+    cific representation as an array of small integers.                    Generated code often terminates too quickly (millisec-
+Verifier in Python Determines whether a proposed design                    onds), which we partially mitigate by prompting for
+     in this representation is correct.                                    code that should “not terminate until a valid solution is
+                                                                           found.”
+Open Instances Parameters for which existence of this type
+   of design is not yet known. The ultimate goal is to con-            Multiple Random Seeds Testing development instances on
+   struct designs with these parameters.                                   multiple seeds encourages randomized strategies, which
+                                                                           have an increased chance of success when running mul-
+Development Instances (Dev Instances) Parameters          for              tiple seeds in parallel on open instances. We run a candi-
+    which designs of this type are known to exist, including               date program on all of the development instances, each
+    some of the smallest ones, as well as ones just slightly               with multiple seeds, in parallel (the rest of the protocol
+    smaller than the open instances. Candidate approaches                  is serial).
+    have their generated code executed on these, with results
+    checked by the Verifier, to identify the most promising            LLMs Fail to Generate Viable Local Search Our manu-
+    candidates.                                                            ally developed solutions to the prototyping instances
+                                                                           relied on local search. While the LLMs often pro-
+3.3   Prototyping Set                                                      pose strategies that the LLM describes as “Local
+Our goal is to develop an LLM-based protocol which could                   Search”, their actual implementations are consis-
+resolve open instances of combinatorial design existence                   tently naive: simple hill climbing which quickly gets
+problems. Since the existence of open instances is unknown,                stuck in local optima, or pure random search that
+it could be that they don’t exist and constructing them is im-             makes no progress. This is concerning, particularly
+possible – this makes it difficult to prototype protocols for              since local search methods which avoid local op-
+constructing these designs. To aid in prototyping, we first es-            tima are well-established [Hoos and Stützle, 2004;
+tablish a small prototyping set of open instances that actually            Cai et al., 2013].
+do exist and can be constructed. We manually experimented              Automated Hyperparameter Tuning The LLMs some-
+with local search methods for 5 of of the selected combi-                  times propose simulated annealing, which could
+natorial designs: Bhaskar Rao Designs, Difference Trian-                   potentially serve as a viable alternative to local search.
+gle Sets, Equidistant Permutation Arrays (EPA), Supersimple                But the LLMs usually propose naive annealing sched-
+Designs, and Symmetric Weighing Matrices (SymmW). The                      ules that very quickly ramp temperature down to the
+     point where it becomes simple hill climbing stuck           ecute. The 2 top-scoring candidates from this are then run for
+     in local optima. We partially mitigate this by asking       48 hours on the open instances.
+     the LLM to expose hyperparameters and provide                  This protocol, with the choices made here, successfully
+     ranges and defaults for them, and we then have the          solves the development instances using GPT-4o. For EPA,
+     scaffolding provide automated hyperparameter tuning.        it solves using a constant-temperature simulated annealing
+     We find extreme ends of the range are often important       that is somewhat similar to our manually implemented lo-
+     (e.g. simulated annealing cooling rate of 1.0, which        cal search (see Algorithm 2). For SymmW, CPro1’s solution
+     yields constant-temperature simulated annealing that        solves the instances with simulated annealing that periodi-
+     resembles local search), and we find that an adaptive       cally resets the temperature to avoid getting stuck. Claude
+     hyperparameter tuning method [Akiba et al., 2019]           3.5 Sonnet succeeds on SymmW but not EPA.
+     struggles to explore these extremes. We therefore              We also test several open-weights LLMs on the develop-
+     provide grid based hyperparameter tuning, that uses a       ment set (Table 4). Of these, Mistral Large is most successful,
+     coarse-grained linear grid across the middle of the range   so we also use it to provide additional results with improved
+     of each hyperparameter, and logarithmic/fine-grained        reproducibility using an open-weights model.
+     near the end points. Hypertuning begins with up to 1000
+     settings to the hyperparameters, and tests each of these    3.5    Experiment
+     settings for 0.5 seconds on the development instances       For each of the 16 types of combinatorial design, we run the
+     and seeds in parallel (for a total of 500 seconds elapsed   protocol once with GPT-4o and once with Mistral Large. We
+     wall clock time, excluding overhead). Then the next         also test ablated versions of the protocol on each type of com-
+     round takes up to 100 of the best settings and executes     binatorial design. Each ablation uses the same candidate pro-
+     for 5 seconds, and a final round takes up to 10 of the      grams generated by the original run.
+     best settings and executes for 50 seconds, returning the       When we succeed in solving least one open instance of a
+     best-scoring setting to the hyperparameters. This is able   combinatorial design problem, we extend by testing the gen-
+     to find successful hyperparameter settings for simulated    erated code on adjacent open instances, including all of the
+     annealing.                                                  smallest open instances from the Handbook shown in Ta-
+                                                                 bles 1 and 2.
+Prompting for Code Optimization Prompting for iterative             The experiments are run on a Linux machine with AMD
+    refinement to generated code has limited success. Open-      Ryzen 9 7950X3D CPU and 128GB of memory, and the ma-
+    ended refinements are likely to abandon what was al-         chine is fully dedicated to one experiment at a time. With the
+    ready successful. But more limited refinements that          chosen parameters shown in Algorithm 3, a full run on one
+    prompt only for optimizing speed are more successful -       type of combinatorial design takes approximately 7 days of
+    e.g. converting an expensive cost function implementa-       runtime. The majority of the runtime is used running candi-
+    tion into a faster incremental one. Our protocol samples     date programs on development instances and open instances.
+    50 optimization candidates from the LLM, and then if
+    there is substantial improvement it repeats the process
+    (up to 5 rounds).
+                                                                 4     Results
+                                                                 Tables 1 and 2 show the main results. The protocol CPro1
+Sandboxing Running the generated code in a protected             succeeds on open instances of the existence problem for 6
+    sandbox is essential. Otherwise, buggy C code can allo-      types of combinatorial designs, including 4 that were not in
+    cate excessive memory that results in crashing the whole     the prototyping set. The tables show that there has been some
+    protocol. We use firejail on Linux, which also blocks file   progress elsewhere in the literature on these open instances
+    system and network access, and can block problematic         from the Handbook, and the results from CPro1 add signifi-
+    programs without crashing the rest of the protocol.          cantly to this progress.
+Generate Many Candidates Most generated code fails, of-             For the other types of combinatorial designs in Table 3,
+   ten for simplistic reasons (see Section 4.3). But repeat-     code generated by CPro1 was able to solve instances in the
+   ing the process eventually obtains code that succeeds on      development set, but this code was unable to solve any of the
+   some development instances. Running the protocol at           open instances. Neither GPT-4o nor Mistral Large solved any
+   smaller scale with a total of 100 or 300 generated pro-       open instances for these, and none of the ablation runs solved
+   grams failed to solve the full set of 3 prototyping in-       any open instances for these.
+   stances (see Table 4), but 1000 candidates (50 repetitions       The successful results are constructed by programs that
+   of 20 strategies each) succeeded.                             range from 120-270 lines of C code.
+                                                                    Results for both GPT-4o and Mistral Large are shown in
+   Figure 1 outlines the final constructive protocol CPro1,      Table 5. CPro1 using Mistral Large solves a subset of the
+with further details in Algorithm 3. During initial testing,     open instances that are solved using GPT-4o. The full results
+each of the 1000 candidate programs is scored based on ex-       in Tables 1 and 2 and Appendix B were generated using GPT-
+ecuting it for 50 seconds using the tuned hyperparameters.       4o.
+The 5 top-scoring candidates are then selected for optimiza-
+tion, which also gives each candidate 50 seconds of execu-       4.1    Ablation
+tion. For final testing on the development instances, the same   Table 5 also shows ablation results. All of the considered
+5 top candidates (after optimization) are given 2 hours to ex-   elements of the protocol, including automated hyperparam-
+Algorithm 1 Manually created local search for EPA. It can          Algorithm 2 CPro1-generated simulated annealing for EPA.
+escape local optima by randomly selecting a row r in which         It can escape local optima by accepting a worsening move,
+all column swaps are worsening moves; it is forced to choose       with a probability controlled by a constant temperature se-
+one of these.                                                      lected by automated hyperparameter tuning.
+Input: N,k,d                                                       Input: N,k,d
+Output: Valid EPA with parameters (N,k,d)                          Output: Valid EPA with parameters (N,k,d)
+
+State: E has N rows, each a permutation of {0, 1, . . . , k − 1}   State: E has N rows, each a permutation of {0, 1, . . . , k − 1}
+
+  def δ(i, j):P
+              return #columns differing in rows i,j of E             def δ(i, j):P
+                                                                                 return #columns differing in rows i,j of E
+  def cost = rows i<j |δ(i, j) − d|                                  def cost = rows i<j |δ(i, j) − d|
+
+  Initialize E with random permutation in each row                   Initialize E with random permutation in each row
+  while cost > 0 do                                                  while cost > 0 do
+    r = random choice from {rows i : ∃j with δ(i, j) > 0}              r = random choice from {rows i}
+    c, d = distinct col. in r that, if swapped, minimize cost          c, d = randomly selected distinct columns in r
+    swap columns c and d in r                                          ∆ = (cost if c and d are swapped) - (current cost)
+  end while                                                            if ∆ < 0, or otherwise with probability e−∆/0.444444 :
+  return E                                                                 swap columns c and d in r
+                                                                     end while
+                                                                     return E
+eter tuning and optimization of the initial code, are needed
+to obtain the full results. Automated hyperparameter tun-
+ing was developed for simulated annealing during prototyp-         different methods of escaping local optima. CPro1’s solution
+ing (Sec. 3.4), but it was also needed to obtain positive re-      performs somewhat better: on the hardware used for these ex-
+sults from the genetic algorithm code generated for Balanced       periments, for open instance n=12 d=8 m=21, CPro1’s simu-
+Ternary Designs.                                                   lated annealing has a median solution time of 10 hours, com-
+4.2   Strategies Implemented by Generated Code                     pared to 21 hours for manually developed local search.
+                                                                      The genetic algorithm for Balanced Ternary Designs uses a
+Each run has a total of 1000 candidates, starting from 50 lists
+                                                                   rather small population of only 100, running for over a billion
+of 20 proposed strategies each. With both GPT-4o and Mis-
+                                                                   generations to construct some of the designs. This genetic al-
+tral Large, simulated annealing and genetic algorithms are
+                                                                   gorithm has no elitism, and a high mutation rate, which could
+frequently proposed – often close to 50 times (nearly every
+                                                                   maintain diversity during such extended runs.
+list of proposed strategies) or even more than 50 if alternate
+names are counted. Other frequently proposed strategies in-           Broadly speaking, the application of genetic algorithms
+clude depth-first search (under various names – e.g. “back-        and simulated annealing to generating combinatorial designs
+tracking”), greedy algorithms, tabu search, recursive con-         is well established (Handbook chapter VII.6). However, from
+structions, branch and bound, and more.                            reviewing the literature, the application of genetic algorithms
+   All of the successes in Table 5 were due to simulated an-       and simulated annealing (or local search) specifically to Sym-
+nealing or genetic algorithms, except for Florentine Rectan-       metric and Skew Weighing Matrices, Balanced Ternary De-
+gles which used depth-first search.                                signs, and Equidistant Permutation Arrays appears to be
+   As discussed in Sec. 3.4, simulated annealing runs the risk     novel. Genetic algorithms have been proposed for equidistant
+of rapid cooling schedules getting permanently stuck in local      permutation arrays, but with no results reported yet [Mariot
+optima, which destroys the productivity of the extended runs       et al., 2021].
+that are needed for many of these results. The code generated         For Packing Arrays, some of the previous results from the
+here mitigated this by using a constant temperature (which is      literature were obtained in 2001 via genetic algorithms and
+fine-tuned by automated hyperparameter tuning), or a peri-         simulated annealing [Stardom, 2001]. Unlike the constant-
+odic reset, or (in one ablation run) an extremely slow cooling     temperature simulated annealing generated here, this earlier
+schedule. The constant temperature implementations were            simulated annealing used a traditional cooling schedule that
+achieved by a mix of hyperparameter tuning setting cool-           ramps temperature down towards 0 rather quickly. Given in-
+ing rate to 1.0, and generated code which hardwired a con-         creases in computing power since 2001, simulated annealing
+stant temperature – however in both cases the LLM-generated        can now run for orders of magnitude more iterations, making
+strategy details do not explicitly address the value of a con-     constant temperature potentially more valuable.
+stant temperature; even when hardwired it seems more like             For Florentine Rectangles, the successful generated code
+an accidental feature that ends up performing well.                implements a depth-first search that randomly shuffles the
+   Algorithms 1 and 2 compare manually developed local             choices to be tried at each position in the array. This random-
+search (from the effort to build the prototyping set) with         ization enables effective use of the multiple random seeds that
+CPro1’s automatically generated constant-temperature simu-         run in parallel under CPro1. The code also achieves efficiency
+lated annealing for EPA. The approaches are similar, but have      by incrementally tracking the status of constraints. Even so,
+the code does not appear to be fully optimized (for exam-              value of |δ(i, j) − d|. Such variants are reasonable ex-
+ple, it does not leverage bit parallelism). A recent applica-          periments, but ultimately they have mediocre scores and
+tion of Florentine Rectangles to coding theory [Adhikary et            likely would not be viable for solving open instances.
+al., 2022] presented new systematic constructions for Floren-          The cost function in Algorithm 2, when combined with
+tine Rectangles that scale up to arbitrarily large n, but noted        other appropriate details (e.g. neighborhood) is able to
+that these constructions did not improve upon results from the         succeed in solving an open instance.
+Handbook for small n.
+   All of the successful strategies are randomized. This gives    5   Limitations
+the possibility of running them further with different random
+seeds, to generate additional examples of the generated de-       The positive results reported here arise from an automation
+signs with the same parameters.                                   of computational experimentation that could have been done
+                                                                  manually. The research community has only undertaken lim-
+4.3   Modes of Failure and Success                                ited effort on such computational experimentation for the de-
+                                                                  signs with positive results here; this may have left low hang-
+A majority of generated candidates fail completely and score
+                                                                  ing fruit for CPro1. Some of the designs with no positive
+0 on the development instances. Even for candidates which
+                                                                  results here have received greater attention from the research
+score more than 0, many are naive and have no hope of
+                                                                  community. For example, for Coverings, an online repository
+solving instances beyond the very smallest development in-
+                                                                  notes results from various contributors, who have used sim-
+stances. These failures happen for a variety of reasons de-
+                                                                  ulated annealing, local search, and other methods [Gordon,
+pending on the model. For example, considering simulated
+                                                                  2025]. In CPro1’s run on Coverings, generated code was suc-
+annealing candidates for Equidistant Permutation Arrays (see
+                                                                  cessful on development instances, but had no success on open
+Table 4):
+                                                                  instances.
+Claude 3.5 Sonnet’s failed run Here, 37 of the 50 sim-               The combinatorial design research community has greater
+    ulated annealing candidates have an off-by-one bug            focus on systematic mathematical constructions (e.g. using
+    when checking argc (the number of command-line ar-            algebraic methods), rather than direct computational search
+    guments), stopping execution and scoring 0. The gen-          for small designs. Systematic constructions may be scaled
+    erated code is required to take the instance-defining         up to much larger instances than the ones within reach of
+    parameters, a random seed, and any hyperparameters            direct search by heuristics. Even for small instances, some
+    as command-line arguments. In C, the number of                of the literature results in Tables 1 and 2 come from sys-
+    command-line arguments includes an extra one for the          tematic mathematical constructions [Greig, 2002; Georgiou
+    command itself; Claude 3.5 Sonnet’s off-by-one error          et al., 2023]. CPro1 doesn’t necessarily exclude systematic
+    fails to account for this.                                    constructions – for example, for Costas Arrays, some of the
+Mistral Large’s failed run A majority of simulated anneal-        generated code implements the Welch method of systematic
+    ing candidates either (a) have a bug that swaps between       construction [Golomb and Taylor, 1984], and this success-
+    rows, destroying the property that each row is a per-         fully solves larger development instances than are solved by
+    mutation, or (b) drive temperature rapidly to 0, becom-       direct search. However, CPro1 is never able to extend these
+    ing stuck in local optima with no possibility of escape       methods in a way that could succeed on open instances.
+    – these candidates can score more than 0, but never              The positive results result from applying standard methods,
+    solve more than a quarter of the development instances.       not inventing new methods. The protocol helps automate sub-
+    Only 3 of Mistral Large’s simulated annealing candi-          stantial experimentation in trying various standard methods,
+    dates avoid problems like these and solve over a quar-        and testing variants (e.g. cost function variants as noted in
+    ter of the development instances, but 3 candidates didn’t     Section 4.3) to optimize the method to the problem at hand –
+    provide enough experiments to optimize simulated an-          but it is not inventing new techniques.
+    nealing for the problem.                                         The results presented here are from two full runs of CPro1
+                                                                  on each type of combinatorial design – one with GPT4o and
+GPT-4o’s successful run A majority of its candidates which        one with Mistral Large. Repeated runs would yield different
+   solve less than a quarter of the development instances         results. Since the LLMs are inherently nondeterministic in
+   either (a) drive temperature rapidly to 0 as with Mis-         their responses, it isn’t possible to exactly the replicate the
+   tral Large, or else (b) have a syntax error that prevents      results of any one run.
+   the C code from compiling. But problems occur less                We did not test CPro1 at larger scale (e.g. 10,000 candi-
+   frequently than with Mistral Large, and GPT-4o has 12          dates per run rather than 1000), and it is possible this could
+   simulated annealing candidates that are viable exper-          give better results.
+   iments solving over a quarter of the development in-              A test run of CPro1 on the Cap Set problem failed to re-
+   stances; enough experimentation that GPT-4o is able to         produce FunSearch’s result [Romera-Paredes et al., 2024] of
+   succeed with a candidate that solves an open instance.         a size-512 cap set for dimension n = 8.
+   An example of such experimentation is with variations
+   in the cost function. Comparing to the eventual suc-
+   cessful approach in Algorithm 2, we see variants which         6   Code Availability
+   square the |δ(i, j) − d|, or which only count the rows         The Python code for CPro1, along with the solutions to open
+   in which |δ(i, j) − d| > 0 instead of using the actual         instances and the generated C code that constructed them, are
+available: https://github.com/Constructive-Codes/CPro1               Basios, Leslie Kanthan, and Zheng Wang. Language mod-
+                                                                     els for code optimization: Survey, challenges and future
+7   Conclusion                                                       directions, 2025. arXiv:2501.01277.
+The protocol CPro1 uses LLMs to generate code, and has suc-        [Gordon, 2025] Daniel      Gordon.              La     Jolla
+cessfully solved open instances of the existence problem for         Covering          Repository        Tables,         2025.
+6 types of combinatorial designs. The protocol can be run on         https://ljcr.dmgordon.org/cover/table.html.
+additional types of combinatorial designs, by supplying a tex-     [Greig, 2002] Malcom Greig. Constructions using balanced
+tual definition, a Python verifier, and small collections of de-     n-ary designs. In Designs, pages 227–274. Springer, 2002.
+velopment instances and open instances. The protocol could
+likely be applied in other domains that allow automated full       [He et al., 2024] Chaoqun He, Renjie Luo, Yuzhuo Bai,
+verification of solutions. The protocol can be readily used          Shengding Hu, Zhen Leng Thai, Junhao Shen, Jinyi
+with new LLMs as they become available (e.g. “reasoning              Hu, Xu Han, Yujie Huang, Yuxiang Zhang, Jie Liu,
+models” like OpenAI’s o1 [OpenAI, 2024]), which may be               Lei Qi, Zhiyuan Liu, and Maosong Sun. Olympiad-
+able to reduce failure modes and improve overall capabilities.       Bench: A challenging benchmark for promoting AGI with
+                                                                     Olympiad-level bilingual multimodal scientific problems,
+                                                                     2024. arXiv:2402.14008.
+Acknowledgements
+                                                                   [Hendrycks et al., 2021] Dan Hendrycks, Collin Burns,
+Thanks to Mark Land for discussions and comments.                    Saurav Kadavath, Akul Arora, Steven Basart, Eric Tang,
+                                                                     Dawn Song, and Jacob Steinhardt. Measuring mathemat-
+References                                                           ical problem solving with the MATH dataset. NeurIPS,
+[Adhikary et al., 2022] Avik Ranjan Adhikary, Yanghe                 2021.
+  Feng, Zhengchun Zhou, and Pingzhi Fan. Asymptotically            [Hoos and Stützle, 2004] Holger H. Hoos and Thomas
+  optimal and near-optimal aperiodic quasi-complementary             Stützle. Stochastic Local Search: Foundations & Appli-
+  sequence sets based on florentine rectangles. IEEE                 cations. Morgan Kaufmann, 2004.
+  Transactions on Communications, 70(3):1475–1485,                 [Hou et al., 2024] Xinyi Hou, Yanjie Zhao, Yue Liu, Zhou
+  2022.
+                                                                     Yang, Kailong Wang, Li Li, Xiapu Luo, David Lo, John
+[Akiba et al., 2019] Takuya Akiba, Shotaro Sano, Toshihiko           Grundy, and Haoyu Wang. Large language models for
+  Yanase, Takeru Ohta, and Masanori Koyama. Optuna: A                software engineering: A systematic literature review. ACM
+  next-generation hyperparameter optimization framework.             Trans. Softw. Eng. Methodol., 33(8), 2024.
+  In Proceedings of the 25th ACM SIGKDD International
+                                                                   [Hurst et al., 2024] Aaron Hurst, Adam Lerer, et al. GPT-4o
+  Conference on Knowledge Discovery and Data Mining,
+  2019.                                                              system card, 2024. arXiv:2410.21276.
+[Anthropic, 2024] Anthropic. Claude 3.5 Sonnet, 2024.              [Jiang et al., 2024] Juyong Jiang, Fan Wang, Jiasi Shen,
+  https://www.anthropic.com/claude/sonnet.                            Sungju Kim, and Sunghun Kim.           A survey on
+                                                                      large language models for code generation, 2024.
+[Cai et al., 2013] Shaowei Cai, Kaile Su, Chuan Luo, and              arXiv:2406.00515.
+  Abdul Sattar. NuMVC: An efficient local search algorithm
+  for minimum vertex cover. Journal of Artificial Intelli-         [Kirkpatrick et al., 1983] Scott Kirkpatrick, C Daniel
+  gence Research, 46:687–716, 2013.                                  Gelatt Jr, and Mario P Vecchi. Optimization by simulated
+                                                                     annealing. Science, 220(4598):671–680, 1983.
+[Chen et al., 2021] Mark Chen, Jerry Tworek, et al. Eval-
+  uating large language models trained on code, 2021.              [Liu et al., 2024a] Fei Liu, Xialiang Tong, Mingxuan Yuan,
+  arXiv:2107.03374.                                                   Xi Lin, Fu Luo, Zhenkun Wang, Zhichao Lu, and Qingfu
+                                                                      Zhang. Evolution of heuristics: towards efficient auto-
+[Colbourn and Dinitz, 2006] Charles J. Colbourn and Jef-              matic algorithm design using large language model. In
+  frey H. Dinitz. Handbook of combinatorial designs. Taylor           Proceedings of the 41st International Conference on Ma-
+  & Francis, 2006.                                                    chine Learning, ICML’24, 2024.
+[Dinitz, 2018] Jeff Dinitz. New results in Part V, 2018.           [Liu et al., 2024b] Jiawei Liu, Chunqiu Steven Xia, Yuyao
+  https://site.uvm.edu/jdinitz/?page id=404.                          Wang, and Lingming Zhang. Is your code generated by
+[Georgiou et al., 2023] Stelios D. Georgiou,          Stella          chatgpt really correct? Rigorous evaluation of large lan-
+  Stylianou, and Hleil Alrweili. On symmetric weigh-                  guage models for code generation. NeurIPS, 2024.
+  ing matrices. Mathematics, 11:2076, 2023.                        [Mariot et al., 2021] Luca Mariot, Stjepan Picek, Domagoj
+[Golomb and Taylor, 1984] S.W. Golomb and H. Taylor.                 Jakobovic, Marko Djurasevic, and Alberto Leporati.
+  Constructions and properties of costas arrays. Proceed-            On the difficulty of evolving permutation codes, 2021.
+  ings of the IEEE, 72(9):1143–1163, 1984.                           arXiv:2111.13252.
+[Gong et al., 2025] Jingzhi Gong, Vardan Voskanyan, Paul           [Mitchell, 1998] Melanie Mitchell. An introduction to ge-
+  Brookes, Fan Wu, Wei Jie, Jie Xu, Rafail Giavrimis, Mike           netic algorithms. MIT Press, 1998.
+[Noritake et al., 2014] Haruki Noritake, Mutsunori Banbara,
+   Takehide Soh, Naoyuki Tamura, and Katsumi Inoue. Con-
+   straint modeling and SAT encoding of the packing array
+   problem. Computer Software, 31:1 116–1 130, 2014.
+[OpenAI, 2024] OpenAI. OpenAI o1 system card, 2024.
+   arXiv:2412.16720.
+[Qiu et al., 2024] Ruizhong Qiu, Weiliang Will Zeng, Hang-
+   hang Tong, James Ezick, and Christopher Lott. How effi-
+   cient is LLM-generated code? A rigorous & high-standard
+   benchmark, 2024. arXiv:2406.06647.
+[Romera-Paredes et al., 2024] Bernardino Romera-Paredes,
+   Mohammadamin Barekatain, Alexander Novikov, Matej
+   Balog, M Pawan Kumar, Emilien Dupont, Francisco JR
+   Ruiz, Jordan S Ellenberg, Pengming Wang, Omar Fawzi,
+   et al. Mathematical discoveries from program search with
+   large language models. Nature, 625(7995):468–475, 2024.
+[Stardom, 2001] John Stardom. Metaheuristics and the
+   search for covering and packing arrays. Master’s thesis,
+   Simon Fraser University, 2001.
+[Stroebl et al., 2024] Benedikt Stroebl, Sayash Kapoor, and
+   Arvind Narayanan. Inference Scaling fLaws: The lim-
+   its of LLM resampling with imperfect verifiers, 2024.
+   arXiv:2411.17501.
+[van Stein et al., 2024] Niki van Stein, Diederick Vermetten,
+   and Thomas Bäck. In-the-loop hyper-parameter optimiza-
+   tion for LLM-based automated design of heuristics, 2024.
+   arXiv:2410.16309.
+[Wang et al., 2024] Evan Wang, Federico Cassano, Cather-
+   ine Wu, Yunfeng Bai, Will Song, Vaskar Nath, Ziwen Han,
+   Sean Hendryx, Summer Yue, and Hugh Zhang. Planning
+   in natural language improves LLM search for code gener-
+   ation, 2024. arXiv:2409.03733.
+[Yang et al., 2024] Kaiyu Yang, Aidan Swope, Alex Gu,
+   Rahul Chalamala, Peiyang Song, Shixing Yu, Saad Godil,
+   Ryan J Prenger, and Animashree Anandkumar. LeanDojo:
+   Theorem proving with retrieval-augmented language mod-
+   els. NeurIPS, 2024.
+[Ye et al., 2024] Haoran Ye, Jiarui Wang, Zhiguang Cao,
+   Federico Berto, Chuanbo Hua, Haeyeon Kim, Jinkyoo
+   Park, and Guojie Song. ReEvo: Large language models
+   as hyper-heuristics with reflective evolution. In NeurIPS,
+   2024.
+A     Protocol Pseudocode and Prompts
+The protocol CPro1 that is outlined in Fig. 1 is specified in
+more detail in Algorithm 3. The prompts that are used are
+shown in Figures 3 to 6. These are shown instantiated for the
+Packing Array (PA) combinatorial design problem; the text
+that can vary between problems is shown in italics and the
+rest of the prompt text is constant.
+
+
+
+
+A ”Packing Array” PA(N,k,v) is an N x k array (N rows and k               Now implement this approach in C, following in detail the
+columns), with each entry from the v-set {0,1,...v-1}, so that            plan described above. Provide the complete code. The code
+every N x 2 subarray contains every ordered pair of symbols               should only print out the final Packing Array once a valid
+at most once. Given (N,k,v), we want to construct PA(N,k,v).              solution is found.
+Please suggest 20 different approaches we could implement
+in C. For now, just describe the approaches. Then I will pick             I will be running the code from the Linux command
+one of the approaches, and you will write the C code to test it.          line. Please have the C code take command-line parameters:
+We will start testing on small parameters like N=4 k=6 v=3,               N k v seed (in that order), followed by additional param-
+and then once those work we will proceed to larger parame-                eters as needed which represent hyperparameters of your
+ters like N=32 k=5 v=6. Format your list items like this ex-              approach. The seed is the random seed (if no random seed is
+ample: ”12. **Strategy Name**: Sentences describing strat-                needed, still accept this parameter but ignore it).
+egy, all on one line...”
+                                                                          After giving the complete code, for each hyperparameter
+Figure 3: Strategies prompt to the LLM, instantiated (italicized text)    that is an extra command-line parameter, provide a specifi-
+for Packing Arrays.                                                       cation in JSON with fields ”name”,”min”,”max”,”default”
+                                                                          specifying the name, minimum value, maximum value,
+                                                                          and default value for the hyperparameter. For example:
+A ”Packing Array” PA(N,k,v) is an N x k array (N rows and k               ”name”:”gamma”, ”min”:0.0, ”max”:2.0, ”default”:0.5.
+columns), with each entry from the v-set {0,1,...v-1}, so that            If no hyperparameters are required then just state ”No
+every N x 2 subarray contains every ordered pair of symbols               Hyperparameters Required” after giving the complete code.
+at most once. Given (N,k,v), we want to construct PA(N,k,v).              I will be using Linux timeout to set a time limit on execution
+                                                                          of your program, and for challenging PA parameters this will
+We have selected the following approach:                                  be a long timeout (hours). So to maximize chances of finding
+Simulated Annealing: Use simulated annealing to slowly                    a solution your code should keep running indefinitely until it
+improve a randomly initialized array by making small                      finds a valid solution. Therefore, eliminate hyperparameters
+changes and accepting them based on a cooling schedule.                   that would control termination, since your program needn’t
+Do not terminate until a valid solution is found.                         terminate until it succeeds.
+
+Describe the elements of this approach to constructing                    We will start testing with small problem parameters
+a Packing Array. Do not yet write code; just describe the                 like N=4 k=6 v=3. Once those work, we can then test further
+details of the approach.                                                  refinements and move towards larger problem parameters
+                                                                          like N=32 k=5 v=6.
+Figure 4: Details prompt to the LLM, instantiated (italicized text) for
+                                                                          Figure 5: Code generation prompt to the LLM, instantiated (itali-
+Packing Arrays with a Simulated Annealing strategy resulting from
+                                                                          cized text) for Packing Arrays. Note this continues the chat follow-
+the prompt in Fig. 3. Note ”Do not terminate until a valid solution
+                                                                          ing on from the Details prompt in Fig. 4; so the Details prompt and
+is found” is not italicized and is a fixed part of the template that is
+                                                                          response are in context when the LLM responds to this prompt.
+always appended to the strategy description generated by the LLM.
+A ”Packing Array” PA(N,k,v) is an N x k array (N rows and k columns), with each entry from the v-set {0,1,...v-1}, so that
+every N x 2 subarray contains every ordered pair of symbols at most once. Given (N,k,v), we want to construct PA(N,k,v).
+
+We have selected the following approach:
+Simulated Annealing: Use simulated annealing to slowly improve a randomly initialized array by making small changes and
+accepting them based on a cooling schedule. Do not terminate until a valid solution is found.
+
+The C code below implements this approach. It takes command-line parameters: N k v seed (in that order) where seed
+is the random number generator seed, followed by additional parameters which represent hyperparameters of the approach.
+
+We are seeking to make one small change to significantly improve the performance of this code.
+
+#include <stdio.h>
+#include <stdlib.h>
+...
+
+With these hyperparameters chosen by hyperparameter tuning: T0=0.1575068233468584, cooling rate=1.0. This code
+solves N=4 k=6 v=3 in an average of 0.0026 seconds across 2 attempts, solves N=6 k=5 v=3 in an average of 0.0028 seconds
+across 2 attempts, solves N=9 k=6 v=4 in an average of 0.0686 seconds across 2 attempts, solves N=20 k=6 v=5 in an average
+of 0.0789 seconds across 2 attempts, solves N=25 k=6 v=5 in an average of 0.0306 seconds across 2 attempts, solves N=25
+k=5 v=6 in an average of 0.0139 seconds across 2 attempts, solves N=30 k=5 v=6 in an average of 0.9323 seconds across
+2 attempts, solves N=31 k=5 v=6 in 1 out of 2 attempts with a time limit of 50.0 seconds each, solves N=16 k=7 v=6 in an
+average of 0.011 seconds across 2 attempts, solves N=23 k=7 v=6 in 1 out of 2 attempts with a time limit of 50.0 seconds
+each, solves N=17 k=10 v=8 in an average of 0.014 seconds across 2 attempts, solves N=22 k=10 v=8 in an average of 0.1002
+seconds across 2 attempts, solves N=25 k=10 v=8 in an average of 6.9132 seconds across 2 attempts, solves N=14 k=11 v=8
+in an average of 0.0095 seconds across 2 attempts, solves N=19 k=11 v=8 in an average of 0.0396 seconds across 2 attempts,
+and solves N=22 k=11 v=8 in an average of 4.2044 seconds across 2 attempts. We want to make one small change to the
+code to significantly improve performance, without parallelizing or changing the algorithm or the hyperparameter handling.
+Describe your plan for making one small change to significantly improve performance. Then, implement your plan and provide
+the complete updated code.
+
+Figure 6: Optimization prompt to the LLM for generating candidate optimized code, instantiated (italicized text) for a Packing Arrays run
+with a Simulated Annealing strategy resulting from the prompt in Fig. 3, code (shown in abbreviated form) resulting from the prompt in
+Fig. 5, and results from automated hyperparameter tuning.
+Algorithm 3 Protocol CPro1. Note prompt(x) returns LLM result when prompted with x. See Figs. 3 to 6 for full prompts.
+Input: Definition (combinatorial design problem definition), Dev & Open (instance parameter lists), Verifier (Python code)
+Parameters for Code Generation: N = 20 strategies per rep, R = 50 reps
+Parameters for Execution: Devseeds & Openseeds (# rand seeds, set so #seeds * # instances = 32 threads to run in parallel),
+  Fulldevtime = 2 hours, Opentime = 48 hours (full run time limits)
+Parameters for Hyperparameter Tuning: Init gridsize = 1000 hyperparms, Init runtime = 0.5 seconds, Scale = 10
+Parameters for Optimization: Opt cand = 50, Opt rounds = 5, Opt delta = 0.1
+Parameters for Selection: Devcand = 5 (#candidates for opt. and final Dev testing), Opencand = 2 (#cand. for Open instances)
+Output: Verified designs for the Open instances (if found)
+
+// Parallel sandboxed execution of a candidate executable E:
+def exec(E,Hyperparms,Inst,Seeds,Maxtime): return output & runtime of E with Hyperparms for Maxtime, on #Seeds × Inst
+
+                                         P speed bonus in the range of [0, 1]:
+// Number of verified correct results, plus
+def scoring(Results,Maxtime): return r∈Results [1 + (r’s time/(Maxtime*|Results|))] if r passes Verifier check
+// Hyperparameter tuning functions:
+def one grid(Min,Max,Points): return coarse linear interpolation in middle, plus logarithmic/fine-grained ends to Min&Max
+def hyperparm grid(Ranges): // Ranges has Min,Max,Default for each hyperparameter.
+  // Allocate Init gridsize points equally across |Ranges| + 1 grids as follows:
+  Gbalanced = cross product of one grid’s for each hyperparameter
+  Gi = cross product of one grid for hyperparameter i with 3 values [Min,Max,Default] for each other hyperparameter
+  return union of Gbalanced and all Gi
+def run grid(E,Grid,Time): return [Parms & scoring(exec(E,Parms,Dev inst.,Devseeds,Time),Time) for Parms in Grid]
+def hyper tune(E,Grid,Time):
+  Results = run grid(E,Grid,Time)
+  if |Grid| ≤ Scale: return single best-scoring Parms in Results
+  else: return hyper tune(E, (|Grid|/Scale) best-scoring Parms in Results, Time*Scale) // recurse: smaller grid, more time
+  // Final tests in hyperparm tune always run for Init runtime*Scale(logScale Init gridsize)−1 = 50 seconds
+
+// Main protocol:
+   initialize Candidates to empty array
+   for R(=50) reps do
+      Strategies = prompt(Definition + ”Please suggest ” + N(=20) + ” different approaches we could implement in C...”)
+      for S in Strategies do
+         Details = prompt(Definition + ”We have selected...” + S + ”...Describe the elements of this approach...”)
+         Code,Hyperparm ranges = prompt(”Now implement this approach in C...”) // Continue chat, so Details are in context.
+         append Code,Hyperparm ranges to Candidates
+      end for
+   end for // We now have R*N=1000 candidates
+  for C in Candidates do
+    Compile C’s source code to Executable
+    Set C’s Hyperparm settings,Score = hyper tune(Executable,hyperparm grid(C’s Hyperparm ranges),Init runtime)
+  end for
+  truncate Candidates to the best Devcand according to their Score
+  for C in Candidates do
+    for i=1 to Opt rounds(=5) do
+       O = [prompt(”...make one small change to significantly improve the performance...” + C + ”...”) * Opt cand(=50) times]
+       C’ = highest-scoring single result of compiling, exec(), and scoring() each of the Opt cand candidates
+       if C’ scores better than C by at least Opt delta: replace C by C’, else: break out of optimization for this C
+    end for
+  end for
+  for C in Candidates do: Devscore = scoring(exec(C’s Executable,C’s Hyperparm settings,Dev inst,Devseeds,Fulldevtime))
+  truncate Candidates to the best Opencand according to their Devscore
+  for C in Candidates do
+    Results = exec(C’s Executable,C’s Hyperparm settings,Open instances,Openseeds,Opentime)
+    output each design in Results that passes Verifier check
+  end for
+B   Solutions to Open Instances of
+    Combinatorial Design Problems
+                                                                      3   4   2   3   4   4   0   5
+Figures 15 to 28 show the verified designs that resolve open          4   1   1   5   4   0   1   3
+instances of combinatorial design problems as noted in Ta-            3   1   4   0   1   3   4   1
+bles 1 and 2. Each of these was constructed by code that was          0   5   2   1   5   0   4   2
+generated by protocol CPro1.                                          4   4   5   1   3   3   5   0
+                                                                      4   2   3   4   5   5   0   1
+                                                                      2   0   1   2   5   3   2   5
+                  1   3   2   5   5   2   1                           3   3   3   2   3   2   3   3
+                  5   1   3   1   0   5   1                           1   3   5   5   0   5   4   5
+                  4   2   0   1   2   2   4                           2   3   2   4   1   1   1   0
+                  0   2   1   4   5   5   0                           1   0   3   3   1   0   5   4
+                  2   4   0   5   1   1   0                           1   1   0   4   3   4   2   2
+                  2   5   5   2   0   2   5                           5   5   1   0   3   1   0   4
+                  5   0   1   3   1   2   2                           2   2   4   1   0   4   3   4
+                  1   5   3   3   2   0   0                           0   2   5   3   2   1   2   3
+                  3   4   3   2   5   3   4                           5   4   4   2   2   5   1   2
+                  4   1   1   2   3   1   3                           2   5   0   5   2   2   5   1
+                  2   2   2   3   4   3   3                           0   0   0   0   4   5   3   0
+                  1   0   5   0   3   5   4
+                  4   4   2   0   0   0   2
+                  4   5   4   4   1   3   1                    Figure 8: Packing Array with N=18 k=8 v=6
+                  2   3   3   4   3   4   2
+                  1   4   1   1   4   4   5
+                  3   1   4   0   4   2   0
+                  3   3   5   1   1   0   3
+                  5   5   0   0   5   4   3                       2   5   0   2   2   1   0   0   1   5
+                  0   1   5   5   2   3   2                       3   3   0   7   6   7   1   4   2   3
+                  3   0   2   4   2   1   5                       5   4   2   1   0   7   3   0   7   2
+                  0   3   4   3   0   1   4                       0   4   5   2   5   6   2   4   0   7
+                  5   2   4   5   3   0   5                       6   3   5   0   2   0   7   5   3   2
+                  0   0   0   2   4   0   1                       6   4   0   6   4   3   4   6   6   6
+                                                                  7   6   1   3   2   7   5   1   0   6
+                                                                  3   7   3   0   5   4   5   6   1   0
+          Figure 7: Packing Array with N=24 k=7 v=6
+                                                                  5   6   3   7   7   2   7   2   6   7
+                                                                  0   3   2   4   1   2   6   3   1   6
+                                                                  5   2   6   5   1   1   5   4   3   1
+                                                                  4   0   4   7   1   5   0   6   0   2
+                                                                  0   2   1   0   6   3   0   2   7   4
+                                                                  1   1   0   3   1   0   2   2   5   0
+                                                                  4   2   2   6   2   6   1   7   4   0
+                                                                  7   5   5   5   6   5   3   3   6   0
+                                                                  4   1   1   5   4   4   6   0   2   7
+                                                                  6   2   3   2   3   5   6   1   5   3
+                                                                  4   5   6   3   5   2   4   5   7   3
+                                                                  7   3   4   2   0   4   4   2   4   1
+                                                                  6   6   4   4   5   1   3   7   2   4
+                                                                  7   1   7   4   3   6   7   6   7   5
+                                                                  2   7   4   3   3   3   1   3   3   7
+                                                                  1   6   7   1   4   5   1   5   1   1
+                                                                  0   7   6   7   4   0   3   1   4   5
+                                                                  3   0   7   6   0   2   2   1   3   4
+                                                                  2   0   6   1   6   4   7   7   5   6
+                                                                  1   0   5   4   7   3   5   0   4   3
+
+
+                                                               Figure 9: Packing Array with N=28 k=10 v=8
+                                                6   4   2   7   8   5   6   8   8   3   0
+                                                8   2   5   5   3   1   5   6   0   3   2
+                                                1   1   6   1   0   1   0   7   7   2   0
+                                                3   2   8   4   8   2   0   4   1   4   1
+  7   3   3   2   4   4   1   0   2   7   3     3   5   0   7   5   0   1   6   2   2   6
+  2   5   1   6   7   2   7   0   4   6   6     0   1   1   4   5   7   5   8   6   1   5
+  7   1   5   0   7   6   0   5   6   4   5     1   7   7   7   6   8   3   2   1   8   5
+  6   2   4   5   5   4   2   4   3   6   5     7   8   5   6   0   2   7   2   8   1   4
+  6   0   3   0   2   0   5   2   5   0   6     2   3   3   3   3   0   0   1   6   8   4
+  0   3   4   6   3   3   4   2   6   2   7     5   6   5   0   2   7   1   1   1   6   0
+  7   7   2   6   6   7   3   4   1   0   4     5   0   2   8   0   8   2   6   6   4   7
+  1   1   2   3   5   3   7   1   2   1   1     3   1   7   6   3   5   2   3   3   6   3
+  5   4   2   4   1   0   0   3   4   2   3     1   4   3   0   5   2   8   5   3   0   7
+  5   5   6   1   5   5   3   2   0   7   0     4   8   2   4   2   1   4   0   2   8   3
+  3   1   4   1   0   1   1   7   4   0   2     1   2   2   3   7   7   7   3   5   5   6
+  1   0   0   7   3   2   3   7   3   4   3     5   4   6   5   6   0   4   3   4   1   1
+  4   7   6   0   1   1   4   0   3   3   1     6   3   6   2   5   6   2   0   1   5   2
+  3   4   6   5   4   2   5   6   6   1   4     7   3   8   0   1   5   4   6   7   7   5
+  4   6   0   5   7   3   6   3   7   0   0     0   7   4   3   0   5   1   0   0   0   1
+  1   6   5   2   2   5   4   6   1   6   2     6   5   4   8   6   1   7   1   3   7   8
+  3   6   3   7   1   6   7   4   0   5   7     6   2   1   6   1   3   1   7   4   8   7
+  0   0   7   4   0   6   2   0   1   1   0     4   6   0   6   6   4   0   8   5   0   2
+  4   2   1   4   6   5   1   1   5   4   7     0   3   5   8   8   4   3   5   4   2   3
+  0   4   5   3   6   4   6   7   0   3   6     8   0   6   3   1   2   3   8   2   6   8
+  2   7   7   1   3   0   6   6   2   5   5     2   0   0   1   2   3   5   2   3   5   1
+  5   3   1   3   2   1   2   5   7   5   4     4   0   7   2   8   7   8   7   0   7   4
+  2   2   0   2   0   7   5   5   0   2   1     8   8   8   2   4   8   6   1   4   0   6
+  6   5   7   7   4   7   0   1   7   3   2     7   1   4   2   2   0   3   4   5   3   7
+                                                2   7   1   5   4   6   7   5   2   4   0
+                                                5   8   1   7   3   4   8   4   7   5   8
+Figure 10: Packing Array with N=24 k=11 v=8     7   6   7   5   7   3   6   0   6   2   8
+                                                0   5   3   1   7   8   4   4   8   6   2
+
+
+                                              Figure 11: Packing Array with N=32 k=11 v=9
+    3   2   4   8   1   8   8   1   0   8   5   0
+    3   1   2   7   0   3   5   8   1   2   2   7
+    1   6   5   7   5   7   4   1   8   5   7   8
+    2   7   8   0   7   5   7   5   0   5   0   2
+    7   3   8   3   5   1   6   0   2   7   5   7
+    3   0   8   1   4   6   4   2   3   0   6   3
+    2   5   6   4   0   0   0   0   5   6   6   0
+    8   2   7   0   3   0   3   7   1   0   7   6
+    6   8   2   5   3   8   2   5   4   7   6   4
+    0   5   3   0   4   4   8   3   8   7   2   5
+    0   0   1   4   6   2   6   1   1   1   0   4
+    7   7   4   4   3   7   1   6   3   2   1   5
+    0   2   6   3   2   6   1   8   4   5   3   1
+    5   3   5   5   4   5   0   6   1   8   8   1
+    4   6   4   2   2   5   3   0   6   4   2   4
+    7   8   0   7   7   0   8   4   6   1   4   1
+    4   8   6   6   1   7   7   3   7   0   8   7
+    0   6   0   8   8   3   7   2   2   6   1   6
+    2   1   5   3   6   8   3   2   7   3   4   5       8   4     1   2   2   5   5   0   5   8   3   7   0   4   7
+    1   3   7   1   2   4   2   4   7   2   0   0       3   8     6   1   4   6   6   2   7   3   8   8   5   6   7
+    6   5   7   6   6   1   4   8   6   8   1   2       5   8     2   5   5   1   4   5   4   0   4   5   0   1   2
+    5   7   2   6   8   6   6   7   8   4   4   0       3   5     4   5   3   4   3   3   3   1   1   7   2   2   3
+    6   4   1   2   5   6   5   4   0   6   8   5       0   3     8   7   4   7   7   0   6   2   5   3   2   1   5
+    8   8   8   8   6   4   5   6   5   4   3   8       7   0     3   4   3   7   5   5   2   3   6   6   1   0   1
+    8   4   4   7   8   1   0   3   4   3   0   3       8   6     3   3   5   3   2   1   3   4   7   3   5   8   4
+    1   1   0   2   1   2   0   7   3   7   3   2       7   1     8   6   1   5   3   6   7   4   2   1   6   5   2
+    4   4   3   1   0   2   1   5   2   8   4   8       5   4     4   7   8   0   1   6   1   7   8   0   7   8   1
+    5   0   3   2   7   7   2   8   5   3   5   6       1   7     8   2   0   1   8   8   0   5   8   2   1   2   4
+                                                        6   1     1   1   3   8   2   8   4   7   5   4   4   7   0
+                                                        4   3     0   4   6   4   4   1   0   6   3   8   7   5   0
+    Figure 12: Packing Array with N=28 k=12 v=9         2   3     6   3   0   2   0   3   8   8   2   0   4   0   6
+                                                        2   6     5   0   6   8   6   0   1   0   1   2   6   3   8
+                                                        1   1     0   8   8   3   7   7   8   1   4   6   8   3   7
+                                                        4   7     7   5   2   0   0   2   2   4   0   4   3   3   5
+4   8   1   1   3   1   7   6   8   8   6   8   1   7   8   5     5   8   1   6   8   4   6   6   6   5   3   7   6
+5   2   7   2   4   0   1   5   4   7   1   1   6   7   0   0     2   6   7   4   2   4   5   5   0   0   8   6   8
+6   1   2   5   5   1   0   7   5   3   3   6   6   2   6   2     7   0   7   2   1   7   7   2   7   5   1   4   3
+4   5   6   8   4   8   6   2   1   2   8   6   4   4
+1   4   5   0   6   0   6   4   8   5   3   5   0   0
+3   6   0   3   3   8   2   7   7   7   2   4   0   5           Figure 14: Packing Array with N=19 k=15 v=9
+1   0   2   1   8   3   5   8   6   6   1   4   2   4
+7   8   0   2   1   3   3   3   5   2   4   3   3   0
+7   5   7   7   7   6   8   8   7   4   3   8   5   3
+3   3   8   5   4   5   4   6   6   5   0   3   8   3
+4   4   2   4   0   4   8   3   2   7   7   2   8   6
+1   3   4   3   7   7   0   1   1   0   4   1   1   6
+0   6   5   5   8   4   1   1   3   1   8   8   3   8
+2   2   3   7   1   8   7   4   3   3   0   7   2   6
+8   0   0   0   5   7   4   2   0   1   7   7   5   7
+8   2   5   8   2   6   2   6   2   6   4   0   7   2
+6   4   6   6   8   7   7   0   4   4   2   3   7   1
+0   7   3   6   2   3   8   5   0   5   5   6   1   5
+5   1   1   7   6   2   2   2   6   0   5   2   3   1
+2   7   8   0   0   2   3   8   1   8   2   0   6   8
+5   7   4   4   1   5   5   0   7   1   6   5   4   2
+
+
+    Figure 13: Packing Array with N=21 k=14 v=9
+      0    0  0    0   −1     0    1  1  0  0             1    −1    0  1  1         0    1    1    0
+      0   −1 −1    1    0     0    0  0  1  1            −1     0    0  0  1        −1    0    0   −1
+      0   −1  0    0    1     0    0  1  0  1             1     1    0  1  0         1    0   −1    0
+      0    1  0    0   −1    −1    0  1  0  1             0     0    0 −1  0         1   −1    0   −1
+     −1    0  1   −1    0    −1    0 −1  1  1             0     0    0  0  1         0    0    0    1
+      0    0  0   −1   −1     0    0  1  1 −1             0     1   −1  0  0        −1    0   −1    0
+      1    0  0    0    0     0   −1  0  1 −1             0    −1    1  0  1         1    0   −1    0
+      1    0  1    1   −1     1    0  0  1  1             0     0    0  0 −1         0    0    0    1
+      0    1  0    0    1     1    1  1  0  0            −1     0    0  0  1         0   −1    0    1
+      0    1  1    1    1    −1   −1  1  0  0             0     0    0  0  0        −1    1    0    0
+      1   −1  1    0    0     0    0  0 −1  0             1     0    0 −1  1        −1   −1    0    0
+     −1    0  1    0    0     1   −1  0  0  0             0    −1   −1  1  0         0   −1    0   −1
+      0    0  0    0    0    −1    1  0  0  0             0    −1    1  1 −1        −1   −1   −1    0
+      1    0  1   −1    0     0    0  0  0  0            −1     1    1  1  0         0    0    1   −1
+      1    1  0    0    1     0    1 −1  1  0             1     0   −1  0  0         0    0    0   −1
+      0   −1  1    1    0    −1    1  0  0 −1            −1     0   −1  0  0         1    0    0    0
+      1    0  0   −1    0     0    0  0 −1  1            −1    −1   −1  0  0         0    1   −1    0
+      1    0 −1    0    0    −1   −1  0  0  0             0     0   −1  1  0         0   −1    1    1
+      0   −1  0   −1    1     0    0  1  1  0             0    −1    0 −1 −1         0    0    1    0
+
+
+                            Figure 15: Symmetric Weighing Matrix with n=19 w=9
+
+
+
+
+−1    0    0   −1  1    0  0  0          0     1  0 −1         −1    0  0         0  0   −1    1   −1    0
+ 0    0    1    1  0    0  0  1         −1     0 −1  0          0   −1  1         0  0    0    1    0   −1
+ 0    1   −1    0  0    0  0 −1          1     0  0  0         −1   −1  1         0  0    1    0    0   −1
+−1    1    0    0  0    1  0  1          0     0  0  1          0    0  0        −1 −1    0   −1   −1    0
+ 1    0    0    0  1    0  1  0          0     1  0  0          1    0  1         0  1    0   −1   −1    0
+ 0    0    0    1  0    1 −1  0          0     0  1  0          0   −1 −1         1  1    0    0   −1    0
+ 0    0    0    0  1   −1  1  1          0     0  0  1         −1    0 −1         1  0    1    0    0    0
+ 0    1   −1    1  0    0  1  1          0     0  1 −1          0    0  0         0  0   −1    0    1    0
+ 0   −1    1    0  0    0  0  0          0     1  1  0         −1   −1  0        −1  0    0   −1    1    0
+ 1    0    0    0  1    0  0  0          1    −1 −1  0          0   −1 −1        −1  0   −1    0    0    0
+ 0   −1    0    0  0    1  0  1          1    −1  0  0         −1    1  1         0  1    0    0    0    0
+−1    0    0    1  0    0  1 −1          0     0  0  1          0    0  0        −1  1    0    1    0    1
+−1    0   −1    0  1    0 −1  0         −1     0 −1  0          0    0  0         0  1    0   −1    1    0
+ 0   −1   −1    0  0   −1  0  0         −1    −1  1  0          0    0  0        −1  0    0    0   −1   −1
+ 0    1    1    0  1   −1 −1  0          0    −1  1  0          0    0  1         0  0    0    0    0    1
+ 0    0    0   −1  0    1  1  0         −1    −1  0 −1          0   −1  0         0  0    1    0    0    1
+ 0    0    0   −1  1    1  0  0          0     0  1  1          1    0  0         0  0    0    1    1   −1
+−1    0    1    0  0    0  1 −1          0    −1  0  0          0    0  0         1  0   −1   −1    0   −1
+ 1    1    0   −1 −1    0  0  0         −1     0  0  1         −1    0  0         0  1   −1    0    0    0
+−1    0    0   −1 −1   −1  0  1          1     0  0  0          1   −1  0         0  1    0    0    0    0
+ 0   −1   −1    0  0    0  0  0          0     0  0  1          0   −1  1         1 −1   −1    0    0    1
+
+
+                            Figure 16: Symmetric Weighing Matrix with n=21 w=9
+ 0    0   −1    0     0       −1   −1        0   −1        0    0        1  1       −1  1    1  0  0
+ 0    0    1   −1     0        1   −1        1    0        0    0        0  1        1  0    1  0 −1
+ 1   −1    0    0     0        0   −1        1    1       −1    0        0  0        0  1   −1  0  1
+ 0    1    0    0    −1        1    1        0    0       −1    0        1  1        0  0    0  1  1
+ 0    0    0    1     0        0    0        1   −1       −1    1       −1 −1        0  0    1  1  0
+ 1   −1    0   −1     0        0    1       −1    0       −1    1        0  0        0  0    1 −1  0
+ 1    1    1   −1     0       −1    0        0   −1        0   −1       −1  0        0  0    0  0  1
+ 0   −1   −1    0    −1        1    0        0    0        1   −1       −1  0        0  0    1  0  1
+ 1    0   −1    0     1        0    1        0    0        0   −1        0  0        1  1    0  1 −1
+ 0    0    1    1     1        1    0       −1    0        0    0       −1  1       −1  1    0  0  0
+ 0    0    0    0    −1       −1    1        1    1        0    0       −1  1       −1  0    0  0 −1
+−1    0    0   −1     1        0    1        1    0        1    1        0  0        0  1    0  0  1
+−1   −1    0   −1     1        0    0        0    0       −1   −1        0  0       −1 −1    0  1  0
+ 1   −1    0    0     0        0    0        0   −1        1    1        0  1        0 −1   −1  1  0
+−1    0   −1    0     0        0    0        0   −1       −1    0       −1  1        1  0   −1 −1  0
+−1   −1    1    0    −1       −1    0       −1    0        0    0        0  0        1  1    0  1  0
+ 0    0    0   −1    −1        1    0        0   −1        0    0        0 −1       −1  1   −1  0 −1
+ 0    1   −1   −1     0        0   −1       −1    1        0    1       −1  0        0  0    0  1  0
+
+
+                          Figure 17: Skew Weighing Matrix with n=18 w=9
+
+
+
+
+                 2   1    1    0   1    0    0   1    0    0   0    1   1   0   1   2   1
+                 0   2    1    1   0    0    1   0    1    1   1    1   0   0   2   1   0
+                 1   0    0    0   0    2    0   1    2    1   1    1   1   0   1   1   0
+                 1   1    1    0   0    0    1   2    1    0   2    1   0   1   0   0   1
+                 0   0    1    0   1    1    2   0    0    1   1    2   1   0   0   1   1
+                 0   1    2    0   1    1    1   1    1    0   0    0   2   1   1   0   0
+                 1   0    1    2   1    1    1   2    0    1   0    1   0   0   1   0   0
+                 0   1    0    1   1    1    1   1    1    0   0    1   0   2   0   2   0
+                 0   2    0    1   1    1    0   1    1    1   0    1   1   0   0   0   2
+                 1   1    2    1   0    2    0   0    0    1   1    0   0   1   0   1   1
+                 1   0    1    1   0    0    0   0    1    1   0    2   1   2   1   0   1
+                 1   0    1    2   1    0    1   0    2    0   1    0   1   0   0   1   1
+                 1   1    0    1   2    1    0   0    0    0   2    1   1   1   1   0   0
+                 1   1    0    1   0    0    1   1    0    2   1    0   2   1   0   1   0
+                 0   0    0    1   0    1    1   1    0    0   1    0   1   1   2   1   2
+                 2   1    0    0   1    1    2   0    1    1   0    0   0   1   1   0   1
+                 0   0    1    0   2    0    0   1    1    2   1    0   0   1   1   1   1
+
+
+               Figure 18: Balanced Ternary Design with parameters (17,17;8,2,12;12,8)
+1   2     1       0       1       2       0       2       1       0       0       0       0       0       0       1       0       1       0   0   0
+0   0     0       1       1       0       2       2       1       2       0       1       0       1       0       0       0       0       0   1   0
+0   0     2       0       2       1       0       0       0       1       0       1       0       0       2       0       0       0       1   1   1
+2   0     0       0       0       1       1       0       1       0       0       0       1       2       2       0       0       1       0   1   0
+2   0     1       0       0       0       0       1       0       1       0       2       2       0       0       1       1       0       1   0   0
+0   0     1       0       1       1       2       0       0       0       2       0       1       1       0       2       0       0       1   0   0
+1   0     0       2       0       2       1       0       0       1       0       0       0       0       0       0       1       1       2   0   1
+0   2     0       0       0       0       0       0       1       1       0       0       1       1       0       1       0       0       2   2   1
+1   0     0       0       1       0       0       1       0       1       2       0       1       0       0       0       0       2       0   1   2
+0   0     0       2       1       0       0       0       2       0       0       1       1       0       1       2       0       1       0   0   1
+0   0     0       0       0       1       0       1       2       0       2       1       0       0       1       0       2       0       1   1   0
+0   0     2       1       0       0       0       1       0       0       0       0       0       2       0       1       2       1       0   1   1
+0   2     0       0       1       0       2       0       0       0       0       1       1       0       1       0       2       1       0   0   1
+1   2     1       2       0       0       0       0       0       1       2       1       0       1       1       0       0       0       0   0   0
+
+
+        Figure 19: Balanced Ternary Design with parameters (14,21;6,3,12;8,6)
+
+
+
+
+              0       1       1       0       1       2       2       0       1       2       0       0       2       0       0       0
+              2       1       0       0       0       0       2       1       1       0       2       2       1       0       0       0
+              2       2       2       2       0       1       0       0       0       1       1       0       0       1       0       0
+              1       0       2       0       0       0       1       0       0       0       0       1       2       2       2       1
+              2       0       0       1       2       2       1       0       0       0       0       1       0       0       1       2
+              0       2       0       1       2       0       1       0       2       0       0       1       0       2       1       0
+              1       0       0       0       0       1       0       0       2       2       2       0       0       1       2       1
+              0       0       1       2       1       0       2       2       0       1       1       0       0       0       2       0
+              0       0       1       0       1       2       0       2       0       1       1       2       0       2       0       0
+              1       0       0       2       0       1       0       2       2       0       0       0       2       1       0       1
+              0       1       2       0       2       0       0       1       1       0       2       0       1       0       0       2
+              0       2       0       1       0       0       0       1       0       2       0       2       1       0       1       2
+
+
+        Figure 20: Balanced Ternary Design with parameters (12,16;4,4,12;9,8)
+
+
+
+
+              1       1       1       0       2       1       0       0       0       1       1       0       2       2       1       0
+              0       2       1       1       0       0       0       1       1       2       2       0       0       1       1       1
+              2       2       1       1       1       0       1       2       0       0       1       1       1       0       0       0
+              1       0       1       0       2       0       0       1       1       1       1       2       0       1       0       2
+              0       0       1       2       1       0       1       2       1       0       0       0       1       2       1       1
+              2       1       0       2       1       1       0       0       1       1       0       0       1       0       1       2
+              0       1       0       1       0       1       1       1       0       2       0       2       2       1       0       1
+              2       1       0       0       0       1       1       1       2       1       0       1       0       2       1       0
+              0       1       0       1       2       0       2       0       2       1       1       1       1       0       1       0
+              1       0       2       1       1       1       1       1       0       2       0       1       0       0       2       0
+              0       1       0       0       1       2       0       2       1       0       1       1       1       0       2       1
+              1       0       0       1       1       2       2       1       0       1       2       0       0       1       0       1
+              0       2       2       1       1       2       1       0       1       0       0       1       0       1       0       1
+              1       0       1       2       0       1       0       0       1       0       2       2       1       1       1       0
+              1       0       2       0       0       1       1       1       2       1       1       0       2       0       0       1
+              1       1       1       0       0       0       2       0       0       0       1       1       1       1       2       2
+
+
+    Figure 21: Balanced Ternary Design with parameters (16,16;7,3,13;13,10)
+        2   0     0     2   0     2    0       0       0    2   0     1    2    0   0     0    0    1   0   1   1
+        0   0     0     2   0     0    1       2       0    0   2     2    1    0   1     0    2    0   1   0   0
+        0   0     0     0   2     0    0       2       0    0   0     1    2    2   0     2    0    1   0   1   1
+        2   0     0     0   0     0    0       0       2    0   0     0    1    2   1     0    2    0   2   1   1
+        1   0     0     0   0     2    2       1       2    0   0     1    0    0   2     2    0    1   0   0   0
+        0   1     2     0   2     2    0       0       1    0   0     2    0    0   0     0    2    0   0   1   1
+        0   0     0     1   2     0    2       0       2    2   2     0    0    1   0     0    0    0   0   1   1
+        1   2     0     0   2     0    0       1       0    2   0     1    0    0   2     0    0    1   2   0   0
+        0   0     2     1   0     0    1       0       0    2   0     0    0    1   0     2    2    2   1   0   0
+        0   1     2     0   0     0    0       0       1    0   2     0    2    0   2     0    0    2   0   1   1
+        0   2     0     1   0     2    0       0       0    0   2     0    0    1   0     2    0    0   2   1   1
+        2   2     2     1   0     0    2       2       0    0   0     0    0    1   0     0    0    0   0   1   1
+
+
+                Figure 22: Balanced Ternary Design with parameters (12,21;4,5,14;8,8)
+
+
+
+
+                        6   5      7       9       1        4   11     2       10    8     0        3
+                        0   9      2       8       1        4   11     3       10    6     7        5
+                        4   5      7       8       1        0    6     3       10    2     9       11
+                        6   7      3       8       1        0   11     9       10    5     2        4
+                        6   5      0       8       9        7   11     3       10    1     4        2
+                        6   5      2       8       1        9    7    11       10    4     3        0
+                        4   5      3       0       1        9   11     7       10    6     8        2
+                        0   5      4       6       1        7   11     9       10    2     3        8
+                        7   5      1       8       4        0   11     2       10    6     3        9
+                        4   6      9       8       1        7   11     2       10    3     5        0
+                        0   5      7       8       6        9   11     4       10    3     2        1
+                        3   5      7       8       1       10   11     9        2    6     4        0
+                        7   5      8       4       1        6   11     3       10    9     2        0
+                        4   5      2       8       0        6   11     9       10    7     1        3
+                        9   5      3       8       7        4   11     1       10    2     6        0
+                        7   5      6       8       1        4    0     9       10    3    11        2
+                        0   5      3       8       1        6    9     2       10   11     4        7
+                        9   5      2       7       1        0   11     8       10    3     4        6
+                        9   5     11       8       1        7    4     0       10    6     2        3
+                        7   0      5       8       1        9   11     6       10    2     4        3
+                        9   4      7       8       1        6   11     5       10    0     3        2
+
+
+                      Figure 23: Equidistant Permutation Array with n=12 d=8 m=21
+
+
+
+
+ 8    2  9 16 15 18 19 10                               1 4           6 3 17              7 12 13 5 14 0 11
+11    3 19  1  2 18  8 7                               14 10         16 17 9             13 4 0 15 5 12 6
+13   11  4  3  2 16  9 0                                6 8           5 19 7             10 12 15 1 18 14 17
+19   13 12 16  2  8  1 5                               15 14          3 0 18             17 11 7 6 9 4 10
+ 8    6 17 14  5  9 12  0                               7 16          4 13 18             1 19 3 15 11 10 2
+12   11  0 13 10  7  1 15                              17 2           4 5 6              19 16 18 3 14 9 8
+18   10  3  5  0  4 15 13                               9 11         14 1 7               8 16 12 19 17 6 2
+
+
+                                Figure 24: Florentine Rectangle with r=7 n=20
+  6 13 17  3 20 10  5 16  8 15 21 22                         0 18 4 14 7 12 11 23 19 1 9 2
+ 14 2 20   6  0  4 21 23 11 17 8 3                          18 7 19 10 13 22 15 16 5 1 12 9
+ 14 5 3 19 20    1 11  7 10  0 6 23                         21 2 16 9 22 13 12 8 4 15 18 17
+ 16 15 2 1    3 21  0 17 13 10 19 9                         18 12 4 11 6 5 8 7 22 23 20 14
+  2 9 7 23 18 15 20 13 14 1 5 4                              3 8 22 12 6 21 11 19 0 16 10 17
+ 19 23 12 18  5 22 16  4  9 17 10 7                          3 1 2 0 20 15 8 6 11 14 13 21
+  8 0 13 11   9 15 22 19  5 17 23 2                          6 14 12 1 10 18 21 7 4 20 3 16
+
+
+                                    Figure 25: Florentine Rectangle with r=7 n=24
+
+
+
+
+16 10 6    19   14  3     17 13 24 15  7            21   20 9 1 5               8 22 18 23 0    11 2 4 12
+19 7 9     13   17 23      2  6  0  5 16            12   20 21 24 1             3 10 4 8 11     14 18 15 22
+ 2 12 18    8   15 19     16  5 14 23 7             20   11 3 6 22             21 1 13 4 17      0 9 10 24
+18 19 12   10    5  7     15  4  1 22 0             24   11 17 9 8              3 13 20 14 21   16 2 23 6
+ 1 20 18    2   17 21      4 22  9  3 23             5   12 13 15 8            14 7 11 6 10     19 24 0 16
+ 4 6 8     20   17 10     11 23  1  0  7            14    2 19 3 15            12 5 9 18 22     24 16 21 13
+11 0 13     3   16 23     22  7  4 24 21            15   14 19 18 12            2 1 10 17 5     20 8 6 9
+
+
+                                    Figure 26: Florentine Rectangle with r=7 n=25
+
+
+
+
+ 6 14 25 12  4 17 13  9 15               11     8 23 7 19 10 21 3 2 18                  22 16 24 20    5    0 1
+17 24 14 10  1  2 19 15 25               11    13 16 4 6 3 5 9 12 23                    20 0 18 8      7   22 21
+17 16 25  4 14 21 10 18  6               12     1 5 24 22 19 13 7 0 20                   2 15 3 23     8   11 9
+19 22 12 17 11  7 24  9  1               18    25 21 5 3 8 14 0 15 23                   10 6 4 16      2   13 20
+21 0 14 15   6 19  9  3 20                7    25 2 22 5 1 13 10 8 12                   24 16 11 17    4   18 23
+ 9 5 10   3 18  1  4 20 25               16    23 24 21 15 22 13 11 2 14                17 7 12 0     19    6 8
+ 7 20 22  8 16  5  2  6 24               17    23 15 18 3 19 0 10 4 9                   11 12 21 13   25   14 1
+
+
+                                    Figure 27: Florentine Rectangle with r=7 n=26
+
+
+
+
+12 0 21    26    1   23   18   16    4 24 25 14 11 2 6 17                      19 8 5 22 7 20 15 9          3 10 13
+ 5 20 9    13   22   14   12   18   10  8  6 21 2 3 16 25                       4 0 26 24 19 1 7 23        11 15 17
+ 3 4 7     11   25    1   14   21   19  0 12 9 6 18 8 13                       26 23 24 2 5 10 15 22       20 16 17
+11 23 12   26   18    4   14    3   17  8 7 10 20 13 24 0                      15 21 16 5 1 2 9 25          6 19 22
+ 9 19 12   17    0    1   22   10    3  2 26 20 7 15 6 25                      23 5 11 13 14 8 4 16        24 21 18
+ 5 6 1     21   24   15    8   23   14 19  7 22 16 2 13 4                      10 9 11 17 26 25 0 3        20 18 12
+17 16 18    2   11   19    5   13   25 15 1 24 26 4 22 6                       10 0 20 23 21 8 9 7          3 12 14
+
+
+                                    Figure 28: Florentine Rectangle with r=7 n=27
+

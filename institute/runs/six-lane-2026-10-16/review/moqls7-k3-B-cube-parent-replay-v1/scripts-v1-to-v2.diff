@@ -1,0 +1,810 @@
+--- scripts/replay_B_v1.py
++++ scripts/replay_B_v2.py
+@@ -1,11 +1,17 @@
+ #!/usr/bin/env python3
+-"""Parent replay driver for phys-2 K3 cube certificates, encoder B (review/moqls7-k3-B-cube-parent-replay-v1).
+-
+-Usage (from bash or launch_B_v1.py; never under an eval deadline):
+-  replay_B_v1.py regen ITEM               regenerate and hash only, no native launch -> receipts/regen-ITEM.json
+-  replay_B_v1.py selfcheck                three tiny transport self-checks + in-memory parser/logic cases
++"""Parent replay driver for phys-2 K3 cube certificates, encoder B (review/moqls7-k3-B-cube-parent-replay-v1), v2.
++
++v2 = replay_B_v1.py plus one change: the run mode takes an attempt LABEL (ITEM-<suffix>, never equal to ITEM) and
++derives every run receipt, log, FIFO and the expected supervisor record from LABEL instead of ITEM, so a new
++attempt never collides with an earlier attempt's exclusive files. Everything else (pins, limits, transport,
++verdict rule, regen and selfcheck modes) is unchanged.
++
++Usage (from bash or launch_B_v2.py; never under an eval deadline):
++  replay_B_v2.py regen ITEM               regenerate and hash only, no native launch -> receipts/regen-ITEM.json
++  replay_B_v2.py selfcheck                three tiny transport self-checks + in-memory parser/logic cases
+                                           -> receipts/selfcheck.pre.json, selfcheck-X*.json, selfcheck-summary.json
+-  replay_B_v1.py run ITEM --rss-stop N    one instance, only under supervise_r3.py (launch_B_v1.py)
+-                                          -> receipts/ITEM.pre.json, ITEM.launch.json, ITEM.driver.json
++  replay_B_v2.py run ITEM --label LABEL --rss-stop N
++                                          one instance, only under supervise_r3.py (launch_B_v2.py)
++                                          -> receipts/LABEL.pre.json, LABEL.launch.json, LABEL.driver.json
+ 
+ run: refuses unless started by the pinned supervise_r3.py (K3_SUPERVISOR_* environment, parent pid) and unless the
+@@ -20,4 +26,5 @@
+ """
+ import json
++import re
+ import os
+ import signal
+@@ -216,7 +223,7 @@
+ 
+ 
+-def supervised_by_pinned_supervisor(item):
++def supervised_by_pinned_supervisor(label):
+     env = {k: os.environ.get(k) for k in ("K3_SUPERVISOR_PID", "K3_SUPERVISOR_SCRIPT", "K3_SUPERVISOR_RECORD")}
+-    want_record = os.path.join(K.RECEIPTS, item + ".supervisor.json")
++    want_record = os.path.join(K.RECEIPTS, label + ".supervisor.json")
+     return {"env": env, "parent_pid": os.getppid(), "expected_record": want_record,
+             "ok": (env["K3_SUPERVISOR_PID"] == str(os.getppid()) and env["K3_SUPERVISOR_SCRIPT"] == K.SUPERVISOR
+@@ -246,6 +253,6 @@
+ 
+ 
+-def mode_run(item, rss_stop):
+-    sup = supervised_by_pinned_supervisor(item)
++def mode_run(item, label, rss_stop):
++    sup = supervised_by_pinned_supervisor(label)
+     if not sup["ok"]:
+         raise SystemExit("refusing to run unsupervised: %r" % sup)
+@@ -258,5 +265,5 @@
+         raise SystemExit("self-check summary is not all OK")
+     it = K.ITEMS[item]
+-    paths = {k: os.path.join(K.RECEIPTS, item + s) for k, s in
++    paths = {k: os.path.join(K.RECEIPTS, label + s) for k, s in
+              (("pre", ".pre.json"), ("launch", ".launch.json"), ("final", ".driver.json"))}
+     for p in paths.values():
+@@ -267,16 +274,16 @@
+     prod = K.producer_evidence(item)
+     pre = common("run")
+-    pre.update({"label": item, "item": item, "pins": pins, "pin_mismatch": bad, "producer": prod,
++    pre.update({"label": label, "item": item, "pins": pins, "pin_mismatch": bad, "producer": prod,
+                 "supervision": sup, "rss_stop": rss_stop, "selfcheck_summary_sha256": K.sha_file(summary_path),
+                 "expected_cnf_sha256": it["cnf_sha256"], "expected_base_cnf_sha256": it["base_cnf_sha256"],
+                 "planned": {"compose": [K.PY, "-I", "-B", os.path.join(K.SCRIPTS, "compose_B_v1.py"), it["cube"]],
+                             "solver": solver_prefix(SOLVER_SECONDS) + ["/dev/fd/<cnf-pipe>",
+-                                                                       "fifo/%s.drat.fifo" % item],
++                                                                       "fifo/%s.drat.fifo" % label],
+                             "checker": [K.DRAT, "/dev/fd/<cnf-pipe>", "-i", "-t", str(CHECKER_SECONDS),
+-                                        "<stdin: fifo/%s.drat.fifo>" % item],
++                                        "<stdin: fifo/%s.drat.fifo>" % label],
+                             "backstop_seconds": BACKSTOP_SECONDS}})
+     pre_sha = K.write_json_x(paths["pre"], pre)
+-    log("%s pre-execution receipt sha256=%s scripts=%s" % (item, pre_sha, json.dumps(pre["scripts_sha256"])))
+-    final = {"label": item, "item": item, "encoder": it["encoder"], "cube": it["cube"],
++    log("%s pre-execution receipt sha256=%s scripts=%s" % (label, pre_sha, json.dumps(pre["scripts_sha256"])))
++    final = {"label": label, "item": item, "encoder": it["encoder"], "cube": it["cube"],
+              "pre_receipt_sha256": pre_sha, "started_at": pre["at"], "expected_cnf_sha256": it["cnf_sha256"]}
+     rec, regen, launch_sha, cnf_len, bins_spawn = None, None, None, None, None
+@@ -295,5 +302,5 @@
+         hash_match = regen["cnf_hash_match"]
+         cnf_len = regen["cnf_bytes"]
+-        log("%s regenerated: sha256=%s match=%s bytes=%s seconds=%s" % (item, regen["cnf_sha256"], hash_match,
++        log("%s regenerated: sha256=%s match=%s bytes=%s seconds=%s" % (label, regen["cnf_sha256"], hash_match,
+                                                                        cnf_len, info["seconds"]))
+         if hash_match is not True:
+@@ -304,11 +311,11 @@
+         else:
+             bins_spawn = {"kissat": K.binary_record(K.KISSAT), "drat-trim": K.binary_record(K.DRAT)}
+-            launch = {"label": item, "at": K.now(), "regen": regen, "binaries_at_spawn": bins_spawn,
++            launch = {"label": label, "at": K.now(), "regen": regen, "binaries_at_spawn": bins_spawn,
+                       "gate_at_launch_receipt": K.gate("launch receipt")}
+             launch_sha = K.write_json_x(paths["launch"], launch)
+             log("%s launch receipt sha256=%s kissat=%s drat-trim=%s free=%d" % (
+-                item, launch_sha, bins_spawn["kissat"]["sha256"], bins_spawn["drat-trim"]["sha256"],
++                label, launch_sha, bins_spawn["kissat"]["sha256"], bins_spawn["drat-trim"]["sha256"],
+                 launch["gate_at_launch_receipt"]["free_bytes"]))
+-            rec = K.pipeline(item, cnf, solver_prefix(SOLVER_SECONDS), CHECKER_SECONDS, BACKSTOP_SECONDS, rss_stop)
++            rec = K.pipeline(label, cnf, solver_prefix(SOLVER_SECONDS), CHECKER_SECONDS, BACKSTOP_SECONDS, rss_stop)
+         del cnf
+     pins_end, bad_end = K.pin_status()
+@@ -341,5 +348,5 @@
+                             "or theorem verdict.")})
+     h = K.write_json_x(paths["final"], final)
+-    brief = {"label": item, "verdict": verdict, "failed_conditions": final["failed_conditions"],
++    brief = {"label": label, "verdict": verdict, "failed_conditions": final["failed_conditions"],
+              "observed_outcome": final["observed_outcome"], "cnf_hash_match": hash_match,
+              "solver_rc": (rec or {}).get("children", {}).get("solver", {}).get("rc"),
+@@ -358,5 +365,5 @@
+         raise SystemExit(__doc__)
+     mode, args = sys.argv[1], sys.argv[2:]
+-    rss_stop = None
++    rss_stop, label = None, None
+     if mode == "regen" and (len(args) != 1 or args[0] not in K.ITEMS):
+         raise SystemExit("regen takes one item among %s" % sorted(K.ITEMS))
+@@ -364,10 +371,13 @@
+         raise SystemExit("selfcheck takes no arguments")
+     if mode == "run":
+-        if len(args) != 3 or args[0] not in K.ITEMS or args[1] != "--rss-stop" or not args[2].isdigit():
+-            raise SystemExit("usage: run ITEM --rss-stop N")
+-        rss_stop = int(args[2])
++        if (len(args) != 5 or args[0] not in K.ITEMS or args[1] != "--label" or args[3] != "--rss-stop"
++                or not args[4].isdigit()):
++            raise SystemExit("usage: run ITEM --label LABEL --rss-stop N")
++        label, rss_stop = args[2], int(args[4])
++        if not (re.fullmatch(r"[A-Za-z0-9_.-]+", label) and label.startswith(args[0] + "-")):
++            raise SystemExit("LABEL must be ITEM-<suffix> of [A-Za-z0-9_.-]")
+     signal.signal(signal.SIGTERM, _on_term)
+     signal.signal(signal.SIGINT, _on_term)
+-    name = "driver-%s%s.log" % (mode, "-" + args[0] if args else "")
++    name = "driver-%s%s.log" % (mode, "-" + (label or args[0]) if args else "")
+     LOGFD["fd"] = K.open_append_x(os.path.join(K.LOGS, name))
+     log("driver pid %d ppid %d mode %s args %s" % (os.getpid(), os.getppid(), mode, args))
+@@ -379,5 +389,5 @@
+             rc = mode_selfcheck()
+         else:
+-            rc = mode_run(args[0], rss_stop)
++            rc = mode_run(args[0], label, rss_stop)
+     finally:
+         log("driver exit rc %d" % rc)
+--- scripts/launch_B_v1.py
++++ scripts/launch_B_v2.py
+@@ -1,23 +1,34 @@
+ #!/usr/bin/env python3
+-"""Capacity-gated launcher of the parent B-side K3 cube replay desk (review/moqls7-k3-B-cube-parent-replay-v1).
+-
+-Usage: launch_B_v1.py selfcheck
+-       launch_B_v1.py run ITEM
+-
+-Both modes wait, with bounded sleeps of 90 s (never spinning), until a fresh lane scan and a fresh free-space reading
+-admit a native launch under the parent's slot rule (bklib_v1.admission: <= 2 busy lane natives, lane RSS headroom
+-for the projected peak, a computable RSS cap >= 2.5 GiB, free bytes >= 12.2e9 + projected growth, before 15:30 PDT).
+-If no slot opens by then, nothing is launched and the gate receipt records it.
+-  selfcheck: runs replay_B_v1.py selfcheck as a child and reaps it (blocking wait, no timeout).
+-  run: requires receipts/regen-ITEM.json = MATCH and receipts/selfcheck-summary.json all_ok; takes this desk's RSS cap
+-       from the fresh scan (min(3.5 GiB, 8 GiB - reservations of every other lane process)); writes the gate receipt
+-       exclusively; runs the pinned lane supervisor supervise_r3.py (own session) around
+-       'replay_B_v1.py run ITEM --rss-stop CAP' with record and quarantine paths in this desk; reaps it and writes an
+-       outcome receipt. A SIGTERM to this launcher is forwarded to its supervisor child, which stops the group.
++"""Capacity-gated launcher of the parent B-side K3 cube replay desk (review/moqls7-k3-B-cube-parent-replay-v1), v2.
++
++v2 = launch_B_v1.py plus: (1) attempt labels: 'run ITEM --label LABEL' derives the gate receipt, outcome receipt,
++supervisor record, quarantine path, supervisor stdout log and launcher log from LABEL, runs replay_B_v2.py with the
++same LABEL, and refuses while any receipts/*.QUARANTINE.json exists; (2) Main's attempt-2 launch rule: in addition to
++bklib_v1.admission, the slot must have been freed by the end of PhysEpQutrit's B/C411 r7 (slot 2) or of route B
++C311 (slot 1); (3) a 'wait-start LABEL' watcher of this desk's own receipts, so the parent can be told when the
++natives start. Pins, limits, supervisor arguments and the RSS-cap rule are unchanged. The v1 'selfcheck' mode is
++dropped: attempt 2 reuses the attempt-1 self-check summary (same binaries, same bklib_v1 transport code).
++
++Usage: launch_B_v2.py run ITEM --label ITEM-<suffix>
++       launch_B_v2.py wait-start LABEL
++
++run waits, with bounded sleeps of 90 s (never spinning), until a fresh lane scan and a fresh free-space reading admit a
++native launch: <= 2 busy lane natives, lane RSS headroom for the projected peak, a computable RSS cap >= 2.5 GiB, free
++bytes >= 12.2e9 + projected growth, before 15:30 PDT, and the slot condition above ('ended' = no live process of that
++run now, and either seen live by this launcher or a new end record that appeared after this launcher started). If no
++slot opens by 15:30 PDT, nothing is launched and the gate receipt records it. Then it requires receipts/regen-ITEM.json
++= MATCH and receipts/selfcheck-summary.json all_ok, takes this desk's RSS cap from the fresh scan, writes the gate
++receipt exclusively, runs the pinned supervise_r3.py (own session) around
++'replay_B_v2.py run ITEM --label LABEL --rss-stop CAP', reaps it and writes an outcome receipt. A SIGTERM to this
++launcher is forwarded to its supervisor child, which stops the group.
++wait-start sleeps 60 s at a time until receipts/LABEL.launch.json or LABEL.driver.json exists, or LABEL.gate.json
++records 'not_launched', then prints a summary; it never scans the lane and never touches lane files.
+ No SIGKILL, no Popen.kill, no subprocess timeouts.
+ """
+ import datetime
++import glob
+ import json
+ import os
++import re
+ import signal
+ import subprocess
+@@ -33,9 +44,14 @@
+ SUP_WALL = 10200
+ SUP_GRACE = 180
+-SLOT_RULE = ("Main message received about 04:20 PDT 2026-10-18: this desk owns phys-2 lane slot 2; launch the B/C321 "
+-             "native replay as soon as regeneration and self-checks PASS, using a fresh gate >= 12.2e9 B plus growth "
+-             "and a fresh lane scan showing <= 2 busy processes; a floor or other stop is UNKNOWN, no retry without "
+-             "parent GO. Unchanged: lane total RSS <= 8 GiB, <= 4 busy lane natives, floor 12e9, 15:30/17:00 PDT.")
+-STATE = {"child": None, "forwarded": []}
++ATTEMPT_RULE = ("Main message received about 05:00 PDT 2026-10-18: B/C321 attempt 1 UNKNOWN (external floor stop) "
++                "accepted; prepare attempt 2 with new exclusive receipt/log/supervisor names and the same scripts, pins "
++                "and limits (script changes as new versioned files). Slot 2 goes to PhysEpQutrit's B/C411 r7. Launch "
++                "when a fresh lane scan shows <= 2 busy and that run has ended, or earlier if route B in slot 1 ends "
++                "first and the lane shows <= 2 busy, with a fresh >= 12.2e9 gate plus growth. Unchanged: lane total RSS "
++                "<= 8 GiB, <= 4 busy lane natives, floor 12e9, 15:30/17:00 PDT, a stop is UNKNOWN.")
++B411_R7 = re.compile(r"B_C411|k3_direct_B_r\d+\.py C411")
++END_FILES = {"b411_r7": os.path.join(K.K3DIR, "cert_B_r7", "B_C411.json"),
++             "routeB": os.path.join(K.K3DIR, "C311cuts_B_r*.supervisor.json")}
++STATE = {"child": None, "forwarded": [], "seen_live": {"b411_r7": False, "routeB": False}, "initial_end_files": None}
+ 
+ 
+@@ -57,15 +73,44 @@
+ 
+ 
++def end_files():
++    return {k: sorted(p for p in glob.glob(g) if os.path.isfile(p)) for k, g in END_FILES.items()}
++
++
++def slot_condition(scan):
++    """Main's attempt-2 rule: B/C411 r7 (slot 2) has ended, or route B C311 (slot 1) has ended."""
++    procs = scan.get("lane_natives", []) + scan.get("lane_processes", [])
++    live = {"b411_r7": any(B411_R7.search(p.get("args", "")) for p in procs),
++            "routeB": bool(scan.get("route_B_pids"))}
++    files = end_files()
++    if STATE["initial_end_files"] is None:
++        STATE["initial_end_files"] = files
++    new = {k: sorted(set(files[k]) - set(STATE["initial_end_files"][k])) for k in files}
++    for k in live:
++        STATE["seen_live"][k] = STATE["seen_live"][k] or live[k]
++    ended = {k: (not live[k]) and (STATE["seen_live"][k] or bool(new[k])) for k in live}
++    return {"live": live, "seen_live": dict(STATE["seen_live"]), "initial_end_files": STATE["initial_end_files"],
++            "new_end_files": new, "ended": ended, "ok": ended["b411_r7"] or ended["routeB"]}
++
++
++def admission_v2(scan, fb):
++    adm = K.admission(scan, fb, deadline_ok())
++    slot = slot_condition(scan)
++    if "conditions" not in adm:
++        return {"ok": False, "why": adm["why"], "slot": slot}
++    cond = dict(adm["conditions"], slot_freed_by_b411_r7_or_routeB_end=slot["ok"])
++    return {"ok": all(cond.values()), "conditions": cond, "why": [k for k, v in cond.items() if not v], "slot": slot}
++
++
+ def wait_for_admission(logfd, purpose):
+     while True:
+         scan = K.lane_scan(own_root=os.getpid())
+         fb = K.free_bytes()
+-        adm = K.admission(scan, fb, deadline_ok())
++        adm = admission_v2(scan, fb)
+         line = {"at": scan.get("at"), "purpose": purpose, "ok": adm["ok"], "why": adm["why"], "free_bytes": fb,
+                 "busy": scan.get("lane_native_busy"),
+                 "natives": [[n["pid"], os.path.basename(n["comm"])] for n in scan.get("lane_natives", [])],
+                 "lane_rss": scan.get("lane_rss_bytes"), "reserved": scan.get("reserved_bytes"),
+-                "cap": scan.get("computable_cap"), "route_A_running": scan.get("route_A_running"),
+-                "route_B_started": scan.get("route_B_started")}
++                "cap": scan.get("computable_cap"), "live": adm["slot"]["live"], "ended": adm["slot"]["ended"],
++                "new_end_files": adm["slot"]["new_end_files"]}
+         os.write(logfd, (json.dumps(line) + "\n").encode())
+         if adm["ok"] or not deadline_ok() or STATE["forwarded"]:
+@@ -80,29 +125,5 @@
+ 
+ 
+-def mode_selfcheck():
+-    logfd = K.open_append_x(os.path.join(K.LOGS, "launch-selfcheck.log"))
+-    scan, fb, adm = wait_for_admission(logfd, "selfcheck")
+-    rec = {"purpose": "selfcheck", "launcher_pid": os.getpid(), "at": K.now(), "slot_rule": SLOT_RULE,
+-           "scan": scan, "free_bytes": fb, "admission": adm, "scripts_sha256": K.script_hashes()}
+-    path = os.path.join(K.RECEIPTS, "selfcheck.gate.json")
+-    if not adm["ok"]:
+-        rec["not_launched"] = "admission failed: %s" % adm["why"]
+-        print(json.dumps({"selfcheck_gate_sha256": K.write_json_x(path, rec), "launched": False,
+-                          "why": adm["why"]}), flush=True)
+-        os.close(logfd)
+-        return 2
+-    print(json.dumps({"selfcheck_gate_sha256": K.write_json_x(path, rec), "launched": True}), flush=True)
+-    p = subprocess.Popen([K.PY, "-I", "-B", os.path.join(K.SCRIPTS, "replay_B_v1.py"), "selfcheck"],
+-                         stdin=subprocess.DEVNULL, cwd=K.TMP, env=K.ENV)
+-    STATE["child"] = p.pid
+-    out = reap(p)
+-    STATE["child"] = None
+-    os.write(logfd, (json.dumps({"at": K.now(), "selfcheck_child": out}) + "\n").encode())
+-    os.close(logfd)
+-    print(json.dumps({"selfcheck_child": out}), flush=True)
+-    return out["rc"]
+-
+-
+-def mode_run(item):
++def mode_run(item, label):
+     regen_path = os.path.join(K.RECEIPTS, "regen-%s.json" % item)
+     summary_path = os.path.join(K.RECEIPTS, "selfcheck-summary.json")
+@@ -114,21 +135,31 @@
+         raise SystemExit("prerequisites not met: regen %r, selfcheck all_ok %r" % (regen.get("result"),
+                                                                                   summary.get("all_ok")))
+-    gate_path = os.path.join(K.RECEIPTS, item + ".gate.json")
+-    outcome_path = os.path.join(K.RECEIPTS, item + ".launch-outcome.json")
+-    record = os.path.join(K.RECEIPTS, item + ".supervisor.json")
+-    quarantine = os.path.join(K.RECEIPTS, item + ".QUARANTINE.json")
+-    stdout_log = os.path.join(K.LOGS, item + ".supervisor-stdout.log")
++    held = sorted(glob.glob(os.path.join(K.RECEIPTS, "*.QUARANTINE.json")))
++    if held:
++        raise SystemExit("quarantine record(s) present, admission refused: %s" % held)
++    gate_path = os.path.join(K.RECEIPTS, label + ".gate.json")
++    outcome_path = os.path.join(K.RECEIPTS, label + ".launch-outcome.json")
++    record = os.path.join(K.RECEIPTS, label + ".supervisor.json")
++    quarantine = os.path.join(K.RECEIPTS, label + ".QUARANTINE.json")
++    stdout_log = os.path.join(K.LOGS, label + ".supervisor-stdout.log")
+     for pth in (gate_path, outcome_path, record, quarantine, stdout_log):
+         if os.path.lexists(pth):
+             raise SystemExit("exists: " + pth)
+-    logfd = K.open_append_x(os.path.join(K.LOGS, "launch-run-%s.log" % item))
+-    scan, fb, adm = wait_for_admission(logfd, "run " + item)
++    prev_path = os.path.join(K.RECEIPTS, item + ".json")
++    prev = json.loads(K.read_regular(prev_path)) if os.path.isfile(prev_path) else {}
++    previous = {"label": item, "item_receipt": "receipts/%s.json" % item,
++                "sha256": K.sha_file(prev_path) if os.path.isfile(prev_path) else None,
++                "status": prev.get("status"), "stop_reason": (prev.get("stop") or {}).get("reason")}
++    logfd = K.open_append_x(os.path.join(K.LOGS, "launch-run-%s.log" % label))
++    scan, fb, adm = wait_for_admission(logfd, "run " + label)
+     cap = scan.get("computable_cap")
+-    argv = [K.PY, "-I", "-B", K.SUPERVISOR, "--name", item + "-parent-replay-v1", "--wall", str(SUP_WALL),
++    argv = [K.PY, "-I", "-B", K.SUPERVISOR, "--name", label + "-parent-replay", "--wall", str(SUP_WALL),
+             "--rss-cap", str(cap), "--floor", str(K.FLOOR), "--lane", K.DESK, "--record", record,
+             "--quarantine", quarantine, "--grace", str(SUP_GRACE), "--",
+-            K.PY, "-I", "-B", os.path.join(K.SCRIPTS, "replay_B_v1.py"), "run", item, "--rss-stop", str(cap)]
++            K.PY, "-I", "-B", os.path.join(K.SCRIPTS, "replay_B_v2.py"), "run", item, "--label", label,
++            "--rss-stop", str(cap)]
+     sup_sha = K.sha_file(K.SUPERVISOR)
+-    rec = {"purpose": "run " + item, "launcher_pid": os.getpid(), "at": K.now(), "slot_rule": SLOT_RULE,
++    rec = {"purpose": "run " + label, "item": item, "label": label, "previous_attempt": previous,
++           "launcher_pid": os.getpid(), "at": K.now(), "attempt_rule": ATTEMPT_RULE,
+            "scan": scan, "free_bytes": fb, "admission": adm,
+            "rss_cap": {"value": cap, "rule": "min(CAP_MAX, LANE_RSS_LIMIT - reserved - SAFETY_MARGIN)",
+@@ -161,5 +192,5 @@
+     STATE["child"] = None
+     os.close(out_fd)
+-    outcome = {"item": item, "gate_receipt_sha256": gate_sha, "supervisor_started_at": started,
++    outcome = {"item": item, "label": label, "gate_receipt_sha256": gate_sha, "supervisor_started_at": started,
+                "supervisor_finished_at": K.now(), "seconds": round(time.monotonic() - t0, 3), "supervisor": res,
+                "launcher_signals": STATE["forwarded"],
+@@ -177,15 +208,57 @@
+ 
+ 
++def read_json_settled(path):
++    """Parse one of this desk's own JSON receipts; tolerate a write still in progress (bounded retries)."""
++    for _ in range(6):
++        try:
++            return json.loads(K.read_regular(path))
++        except ValueError:
++            time.sleep(5)
++    return json.loads(K.read_regular(path))
++
++
++def mode_wait_start(label):
++    paths = {k: os.path.join(K.RECEIPTS, label + s) for k, s in
++             (("gate", ".gate.json"), ("launch", ".launch.json"), ("driver", ".driver.json"))}
++    while True:
++        if os.path.lexists(paths["launch"]) or os.path.lexists(paths["driver"]):
++            break
++        if os.path.lexists(paths["gate"]) and "not_launched" in read_json_settled(paths["gate"]):
++            break
++        if datetime.datetime.now().astimezone() > NO_LAUNCH_AFTER:
++            print(json.dumps({"label": label, "note": "nothing started by 17:00 PDT"}), flush=True)
++            return 2
++        time.sleep(60)
++    out = {"label": label, "observed_at": K.now()}
++    for k, p in paths.items():
++        if os.path.lexists(p):
++            d = read_json_settled(p)
++            out[k] = {"path": os.path.relpath(p, K.DESK), "sha256": K.sha_file(p), "at": d.get("at")}
++            if k == "gate":
++                out[k].update({"not_launched": d.get("not_launched"), "free_bytes": d.get("free_bytes"),
++                               "busy": (d.get("scan") or {}).get("lane_native_busy"),
++                               "natives": [[n.get("pid"), os.path.basename(n.get("comm", ""))]
++                                           for n in (d.get("scan") or {}).get("lane_natives", [])],
++                               "rss_cap": (d.get("rss_cap") or {}).get("value"),
++                               "ended": ((d.get("admission") or {}).get("slot") or {}).get("ended")})
++            if k == "launch":
++                out[k].update({"cnf_sha256": (d.get("regen") or {}).get("cnf_sha256"),
++                               "binaries_at_spawn": {b: v.get("sha256")
++                                                     for b, v in (d.get("binaries_at_spawn") or {}).items()},
++                               "free_bytes": (d.get("gate_at_launch_receipt") or {}).get("free_bytes")})
++    print(json.dumps(out), flush=True)
++    return 0
++
++
+ def main():
+-    if len(sys.argv) < 2 or sys.argv[1] not in ("selfcheck", "run"):
+-        raise SystemExit(__doc__)
+-    if sys.argv[1] == "run" and (len(sys.argv) != 3 or sys.argv[2] not in K.ITEMS):
+-        raise SystemExit("usage: launch_B_v1.py run ITEM")
+-    signal.signal(signal.SIGTERM, on_term)
+-    signal.signal(signal.SIGINT, on_term)
+-    rc = mode_selfcheck() if sys.argv[1] == "selfcheck" else mode_run(sys.argv[2])
+-    sys.exit(rc)
+-
+-
+-if __name__ == "__main__":
+-    main()
++    a = sys.argv[1:]
++    if a and a[0] == "run":
++        if (len(a) != 4 or a[1] not in K.ITEMS or a[2] != "--label"
++                or not (re.fullmatch(r"[A-Za-z0-9_.-]+", a[3]) and a[3].startswith(a[1] + "-"))):
++            raise SystemExit("usage: launch_B_v2.py run ITEM --label ITEM-<suffix>")
++        signal.signal(signal.SIGTERM, on_term)
++        signal.signal(signal.SIGINT, on_term)
++        sys.exit(mode_run(a[1], a[3]))
++    if a and a[0] == "wait-start" and len(a) == 2 and re.fullmatch(r"[A-Za-z0-9_.-]+", a[1]):
++        sys.exit(mode_wait_start(a[1]))
++    raise SystemExit(__doc__)
+--- scripts/assemble_B_v1.py
++++ scripts/assemble_B_v2.py
+@@ -1,12 +1,15 @@
+ #!/usr/bin/env python3
+-"""Assemble the item receipt, deviations, RESULT.json and REPORT.md of the parent B-side K3 cube replay desk
+-(review/moqls7-k3-B-cube-parent-replay-v1). Written after the B/C321 run.
+-
+-Usage: assemble_B_v1.py ITEM          (ITEM: B_C321)
++"""Assemble the attempt receipt, deviations, RESULT.v2.json and REPORT.v2.md of a labelled replay attempt of the
++parent B-side K3 cube replay desk (review/moqls7-k3-B-cube-parent-replay-v1), v2.
++
++v2 = assemble_B_v1.py with attempt labels: it reads the LABEL receipts and logs written by launch_B_v2.py and
++replay_B_v2.py, and writes receipts/LABEL.json, deviations-v2.json, RESULT.v2.json and REPORT.v2.md, each created
++exclusively. Attempt 1 (label ITEM, files from v1) is summarised by its existing receipts, never rewritten.
++
++Usage: assemble_B_v2.py ITEM LABEL          (e.g. B_C321 B_C321-a2)
+ 
+ Reads the desk's receipts and logs (never modifies them), re-hashes every referenced file, checks the hash bindings
+-recorded at run time, re-hashes the read-only lane inputs and both binaries, and writes receipts/ITEM.json,
+-deviations-v1.json, RESULT.json and REPORT.md, each created exclusively. No native or other subprocess launch.
+-Item status: PASS only if every driver condition and every supervisor/binding condition holds; otherwise UNKNOWN.
++recorded at run time, and re-hashes the read-only lane inputs and both binaries. No native or other subprocess launch.
++Attempt status: PASS only if every driver condition and every supervisor/binding condition holds; otherwise UNKNOWN.
+ """
+ import json
+@@ -19,82 +22,35 @@
+ 
+ DEVIATIONS = [
+-    {"id": "D1-wrapper-make-not-run",
+-     "what": "k3_cubes.make() was not executed: it calls os.makedirs(<lane>/explore/scratch), runs encoder B as a "
+-             "subprocess writing explore/scratch/k3_cube_B_base.cnf, and writes OUT.cnf/OUT.json as files, all "
+-             "forbidden here. scripts/compose_B_v1.py executes the hash-verified bytes of gram_enc.py, k3_cubes.py "
+-             "and gram_encB.py as modules and calls the pinned coverage(), variable_map(), cube_clauses() and "
+-             "gram_encB.main() unchanged; only make's encoder-B composition (header 'p cnf <nv> <nc+len(extra)>', "
+-             "base body, extra clauses) is restated. The producer's regeneration code k3_cube_certify_r3.py "
+-             "(da9c210e...ac78) and its drivers were not imported or run.",
+-     "evidence": "regenerated SHA-256 8b7b8124...12c6 equals the pin; base CNF 42a5f304...0aac equals the pin; support "
+-                 "sets, 18 cube units, same-ray identity and 88 extra clauses equal the producer metadata."},
+-    {"id": "D2-encoder-B-in-process",
+-     "what": "gram_encB.main() ran in the compose process with argv '--squares 3 --heavy --sym --out /dev/fd/<W>' "
+-             "(W: write end of an in-process anonymous pipe read into memory by a thread); its closing 'vars N "
+-             "clauses M' print went to an in-memory buffer and was checked against the header. make() runs the "
+-             "encoder as a subprocess writing a scratch file; the producer's r3 regeneration used --out /dev/stdout."},
+-    {"id": "D3-interpreter",
+-     "what": "CommandLineTools python3 3.9.6 (-I -B; realpath sha256 4c0dd940...6a60), environment reset to PATH="
+-             "/usr/bin:/bin:/usr/sbin:/sbin, TMPDIR=HOME=desk tmp/, LC_ALL=C, PYTHONDONTWRITEBYTECODE=1, cwd desk "
+-             "tmp/ (plus the supervisor's K3_SUPERVISOR_* variables for the run)."},
+-    {"id": "D4-native-limits",
+-     "what": "kissat -q -f --time=5400 and drat-trim -i -t 9000 per the brief; the producer r6 used --time=3600 and "
+-             "-t 7200. Driver wall backstop 9300 s; supervisor wall 10200 s, grace 180 s. None was reached."},
+-    {"id": "D5-transport",
+-     "what": "The CNF bytes stayed in driver memory and reached kissat and drat-trim through two anonymous pipes "
+-             "(/dev/fd/N), each written by a measured writer (bytes and SHA-256 of exactly what os.write accepted); "
+-             "the producer gave both programs the lane CNF file path. The binary DRAT proof went kissat -> desk FIFO "
+-             "-> drat-trim stdin (-i) with a driver-held keepalive write end. Proofs were neither retained nor "
+-             "hashed; zero-length FIFO nodes remain in fifo/."},
+-    {"id": "D6-checker-binary",
+-     "what": "The parent-built drat-trim (a46c0c71...8e37) was used per the brief, not the producer's lane build "
+-             "(111b0405...d5e4). No lrat-check."},
+-    {"id": "D7-capacity-rule-changes",
+-     "what": "The brief's launch condition (a) was replaced by Main twice: about 04:05 PDT (route-A-running or "
+-             "route-B-started rule) and about 04:20 PDT (this desk owns lane slot 2; launch once regeneration and "
+-             "self-checks pass, with a fresh free-space gate >= 12.2e9 + growth and a fresh scan showing <= 2 busy "
+-             "lane processes). launch_B_v1.py implements the slot-2 rule (<= 2 busy lane natives, lane RSS + 2 GiB "
+-             "projected peak <= 8 GiB, computable cap >= 2.5 GiB, free >= 12,201,048,576 B, before 15:30 PDT); route "
+-             "flags are recorded for information only. The self-checks passed the same gate (selfcheck.gate.json)."},
+-    {"id": "D8-rss-cap",
+-     "what": "Supervisor --rss-cap and driver --rss-stop 3,758,096,384 B = min(3.5 GiB, 8 GiB - reservations - "
+-             "128 MiB); reservations = declared --rss-cap of other supervised lane runs (route A C311: 3.5 GiB) + "
+-             "3.5 GiB per unsupervised lane native group (none) + current RSS of other lane processes + 256 MiB. "
+-             "With both runs inside their caps the lane total stays <= 7.5 GiB plus small uncapped processes."},
+-    {"id": "D9-selfcheck-limits",
+-     "what": "Self-checks used the same binaries and transport code with kissat --time=60, drat-trim -t 60, a 180 s "
+-             "backstop and a 1 GiB RSS stop, under the driver's own guards, not under the supervisor. They test this "
+-             "desk's plumbing and verdict code only."},
+-    {"id": "D10-strict-pass-rule",
+-     "what": "PASS needs: CNF SHA-256 = pin; supervised by the pinned supervise_r3.py; pins and binaries equal at "
+-             "start, spawn and end; solver rc 20 and status lines exactly ['s UNSATISFIABLE']; checker rc 0 and "
+-             "exactly ['s VERIFIED'] (only CR removed); 'NOT VERIFIED' and 'TIMEOUT' absent from both logs; both "
+-             "measured feeds complete with length and SHA-256 = pin; no deferral, no stop, no SIGTERM, no driver "
+-             "signal; all children reaped; supervisor completed cleanly with no trip and no quarantine. Otherwise "
+-             "UNKNOWN."},
+-    {"id": "D11-bmap-oracle-cited",
+-     "what": "The B-map oracle receipt evidence/k3cubes/bmap_oracle_r1.json (6e2bd95e...952c, status PASS, encoder "
+-             "pins equal) is cited, not rerun. This desk did not re-derive encoder B's variable map; the K3 cube "
+-             "clauses use k3_cubes.variable_map()."},
+-    {"id": "D12-incident-stale-fifo-open",
+-     "what": "Before the desk existed (about 04:03-04:09 PDT), a read-only 'shasum -a 256 cert_B_r6/*' glob opened "
+-             "the stale producer FIFO cert_B_r6/B_C321.drat.fifo (no writer; that run had ended 03:58) and blocked "
+-             "until the tool's 300 s deadline ended it. It had hashed only B_C321.checker.log and "
+-             "B_C321.checkpoints.jsonl and never reached the live B_C411.drat.fifo; no FIFO data was read. Since "
+-             "then every lane read in this desk is guarded by lstat S_ISREG."},
+-    {"id": "D13-floor-stop",
+-     "what": "The native run was stopped by the supervisor's free-space floor trip (free 11,972,313,088 < "
+-             "12,000,000,000 B) at 04:53:03 PDT, 1839.8 s into the pipeline: killpg SIGTERM to the driver's group, "
+-             "kissat and drat-trim exited by signal 15, no survivors, no quarantine. Status UNKNOWN. Not retried "
+-             "(Main: no retry without parent GO). This desk retained about 0.2 MB in total, and no CNF or proof went "
+-             "to disk. Observed after the stop (04:53:41 PDT, outside the receipts): vm.swapusage reported 160.94M "
+-             "used of 1024.00M; tmutil listed local snapshots 2026-10-18-005459, -015506, -025516, -035521 and "
+-             "-040955; df then showed 12,097,780 KiB available. The cause of the drop was not established."},
+-    {"id": "D14-lane-cnf-copy-hashed",
+-     "what": "The lane CNF copy explore/k3cubes/B_C321.cnf was hashed read-only (= pin) for the record only; it was "
+-             "never given to the solver or the checker."},
+-    {"id": "D15-assembler-after-run",
+-     "what": "scripts/assemble_B_v1.py was created after the run (the four run scripts were unchanged from the "
+-             "regeneration check to the end of the run); REPORT.md is generated from the same data as RESULT.json."},
++    {"id": "D16-v2-scripts",
++     "what": "New versioned scripts, diff in scripts-v1-to-v2.diff. replay_B_v2.py adds only the attempt label, from "
++             "which every run receipt, log, FIFO and the expected supervisor record are named. launch_B_v2.py adds "
++             "the label, Main's attempt-2 launch rule, a refusal while any receipts/*.QUARANTINE.json exists, and "
++             "the wait-start watcher; it drops the selfcheck mode. assemble_B_v2.py adds label-based inputs and "
++             "outputs. bklib_v1.py and compose_B_v1.py are unchanged. Pins, native limits (kissat --time=5400, "
++             "drat-trim -t 9000), supervisor arguments (wall 10200 s, grace 180 s, floor 12e9) and the RSS-cap rule "
++             "are unchanged."},
++    {"id": "D17-selfcheck-and-precheck-reused",
++     "what": "Attempt 2 reran neither the self-checks nor the regeneration-only precheck. It reuses "
++             "receipts/selfcheck-summary.json (ec246769...739b, all_ok) and receipts/regen-B_C321.json "
++             "(12a07694...66f8, MATCH): same binaries, same bklib_v1 transport code. The attempt-2 run regenerated "
++             "the CNF again and checked its SHA-256 before any native launch."},
++    {"id": "D18-attempt-2-launch-rule",
++     "what": "Admission = bklib_v1.admission (<= 2 busy lane natives, lane RSS + 2 GiB <= 8 GiB, cap >= 2.5 GiB, "
++             "free >= 12,201,048,576 B, before 15:30 PDT) AND the slot was freed by the end of B/C411 r7 or of "
++             "route B C311. A run counts as ended when it has no live lane process now and either this launcher saw "
++             "it live or a new end record appeared after the launcher started. B/C411 r7 processes match "
++             "'B_C411|k3_direct_B_r\\d+\\.py C411'; route B is bklib_v1.lane_scan's route-B match. End records: "
++             "cert_B_r7/B_C411.json and C311cuts_B_r*.supervisor.json. Scans run every 90 s."},
++    {"id": "D19-v1-deviations-carried",
++     "what": "D1-D12 and D14 of deviations-v1.json (1ec0309c...4afb) apply unchanged to attempt 2. D13 (the attempt-1 "
++             "floor stop) and D15 (attempt-1 assembler timing) are attempt-1 specific."},
++    {"id": "D20-disk-cause-unestablished",
++     "what": "Per Main's correction (about 05:05 PDT), observed floor crossings, snapshot-list changes and later "
++             "free-space recovery do not establish which process caused a decline or a reclaim, nor any thinning "
++             "trigger. Cause and recurrence period are UNESTABLISHED. The observations in deviation D13 of attempt 1 "
++             "are not causal attributions."},
++    {"id": "D21-assembler-before-run",
++     "what": "assemble_B_v2.py was created before attempt 2 started; its SHA-256 is part of every attempt-2 script "
++             "recording."},
+ ]
+ 
+@@ -134,12 +90,12 @@
+ 
+ 
+-def item_receipt(item):
++def item_receipt(item, label):
+     it = K.ITEMS[item]
+-    pre, pre_sha = load("receipts/%s.pre.json" % item)
+-    launch, launch_sha = load("receipts/%s.launch.json" % item)
+-    drv, drv_sha = load("receipts/%s.driver.json" % item)
+-    sup, sup_sha = load("receipts/%s.supervisor.json" % item)
+-    gate, gate_sha = load("receipts/%s.gate.json" % item)
+-    outc, outc_sha = load("receipts/%s.launch-outcome.json" % item)
++    pre, pre_sha = load("receipts/%s.pre.json" % label)
++    launch, launch_sha = load("receipts/%s.launch.json" % label)
++    drv, drv_sha = load("receipts/%s.driver.json" % label)
++    sup, sup_sha = load("receipts/%s.supervisor.json" % label)
++    gate, gate_sha = load("receipts/%s.gate.json" % label)
++    outc, outc_sha = load("receipts/%s.launch-outcome.json" % label)
+     regen_r, regen_sha = load("receipts/regen-%s.json" % item)
+     summ, summ_sha = load("receipts/selfcheck-summary.json")
+@@ -152,8 +108,8 @@
+                                                              else "checkpoints_sha256")
+         logs[key] = e
+-    for rel in ("logs/driver-run-%s.log" % item, "logs/%s.supervisor-stdout.log" % item,
+-                "logs/launch-run-%s.log" % item):
++    for rel in ("logs/driver-run-%s.log" % label, "logs/%s.supervisor-stdout.log" % label,
++                "logs/launch-run-%s.log" % label):
+         logs[os.path.basename(rel)] = file_entry(rel)
+-    quarantine = os.path.join(K.RECEIPTS, item + ".QUARANTINE.json")
++    quarantine = os.path.join(K.RECEIPTS, label + ".QUARANTINE.json")
+     bins_now = {"kissat": K.binary_record(K.KISSAT), "drat-trim": K.binary_record(K.DRAT)}
+     sc = {
+@@ -193,12 +149,12 @@
+                                 "driver_safety_stop_reason": rec.get("safety_stop_reason"),
+                                 "driver_sigterm_sent": rec.get("sigterm_sent"),
+-                                "note": ("the driver received the group SIGTERM; both children had already exited "
+-                                         "by signal 15 at its next sample, so it sent no SIGTERM of its own and "
+-                                         "reaped both")},
++                                "note": "driver signal %r; driver-sent SIGTERMs %d; children rc %s" % (
++                                    rec.get("driver_signal"), len(rec.get("sigterm_sent") or []),
++                                    {k: v.get("rc") for k, v in ch.items()})},
+                 "quarantine": sup.get("quarantine_record"), "survivors": (sup.get("stop") or {}).get("survivors")}
+     prod = pre["producer"]["receipt_fields"]
+     return {
+-        "item": item, "encoder": it["encoder"], "cube": it["cube"], "status": status,
+-        "status_rule": "PASS only if every condition below holds; otherwise UNKNOWN (deviations D10, D13)",
++        "item": item, "label": label, "encoder": it["encoder"], "cube": it["cube"], "status": status,
++        "status_rule": "PASS only if every condition below holds; otherwise UNKNOWN (deviations-v1 D10)",
+         "failed_conditions": [k for k, v in conditions.items() if not v],
+         "observed_outcome": drv.get("observed_outcome"), "stop": stop,
+@@ -224,13 +180,15 @@
+             "checker_stdin": rec.get("checker_stdin")},
+         "conditions": conditions,
+-        "receipts": {"pre": {"path": "receipts/%s.pre.json" % item, "sha256": pre_sha},
+-                     "launch": {"path": "receipts/%s.launch.json" % item, "sha256": launch_sha},
+-                     "driver": {"path": "receipts/%s.driver.json" % item, "sha256": drv_sha},
+-                     "supervisor": {"path": "receipts/%s.supervisor.json" % item, "sha256": sup_sha},
+-                     "gate": {"path": "receipts/%s.gate.json" % item, "sha256": gate_sha},
+-                     "launch_outcome": {"path": "receipts/%s.launch-outcome.json" % item, "sha256": outc_sha},
++        "receipts": {"pre": {"path": "receipts/%s.pre.json" % label, "sha256": pre_sha},
++                     "launch": {"path": "receipts/%s.launch.json" % label, "sha256": launch_sha},
++                     "driver": {"path": "receipts/%s.driver.json" % label, "sha256": drv_sha},
++                     "supervisor": {"path": "receipts/%s.supervisor.json" % label, "sha256": sup_sha},
++                     "gate": {"path": "receipts/%s.gate.json" % label, "sha256": gate_sha},
++                     "launch_outcome": {"path": "receipts/%s.launch-outcome.json" % label, "sha256": outc_sha},
+                      "regen_precheck": {"path": "receipts/regen-%s.json" % item, "sha256": regen_sha},
+                      "selfcheck_summary": {"path": "receipts/selfcheck-summary.json", "sha256": summ_sha}},
+         "logs": logs,
++        "checker_log_vs_producer": compare_with_producer(rec, it),
++        "admission_slot": (gate.get("admission") or {}).get("slot"),
+         "times": {"driver_started_at": drv.get("started_at"), "pipeline_started_at": rec.get("started_at"),
+                   "pipeline_finished_at": rec.get("finished_at"), "pipeline_seconds": rec.get("pipeline_seconds"),
+@@ -274,7 +232,8 @@
+                                                                  "checker_log_sha256",
+                                                                  "peak_sampled_aggregate_rss_bytes")}},
+-        "scope": ("Instance-level replay record for the exact B/C321 CNF only (SHA-256 8b7b8124...12c6). Status "
+-                  "UNKNOWN means this desk neither confirms nor refutes the producer's certificate. No K3, M(7), "
+-                  "coverage, bridge or theorem verdict."),
++        "scope": ("Attempt-level replay record (label %s) for the exact B/C321 CNF only (SHA-256 8b7b8124...12c6). "
++                  "PASS means this CNF is UNSAT by a freshly streamed kissat binary DRAT proof accepted by the parent "
++                  "drat-trim; UNKNOWN means this attempt neither confirms nor refutes the producer's certificate. No "
++                  "K3, M(7), coverage, bridge or theorem verdict." % label),
+     }
+ 
+@@ -289,7 +248,10 @@
+     t = r["times"]
+     lines = [
+-        "# Parent replay of the phys-2 K3 cube certificate B/C321 (MOQLS(7), encoder B)", "",
+-        "Desk: `review/moqls7-k3-B-cube-parent-replay-v1/`, 2026-10-18 PDT. RESULT.json sha256 `%s`." % result_sha,
+-        "Generated by `scripts/assemble_B_v1.py` from the same data as RESULT.json.", "",
++        "# Parent replay of the phys-2 K3 cube certificate B/C321 (MOQLS(7), encoder B), attempt %s" % r["label"], "",
++        "Desk: `review/moqls7-k3-B-cube-parent-replay-v1/`, 2026-10-18 PDT. RESULT.v2.json sha256 `%s`." % result_sha,
++        "Generated by `scripts/assemble_B_v2.py` from the same data as RESULT.v2.json. Attempt 1 (label B_C321): "
++        "%s, item receipt `%s`, RESULT.json `%s`." % (result["attempt_1"]["status"],
++                                                       result["attempt_1"]["item_receipt_sha256"],
++                                                       result["attempt_1"]["result_json_sha256"]), "",
+         "## Verdict", "",
+         "| item | status | regenerated CNF sha256 = pin | solver rc / status lines | checker rc / status lines | stop |",
+@@ -299,5 +261,7 @@
+             sf["solver_status_lines"], sf["checker_rc"], sf["checker_status_lines"],
+             (r["stop"] or {}).get("reason", "none")), "",
+-        "Item receipt `receipts/B_C321.json` sha256 `%s`." % item_sha, "",
++        "Attempt receipt `receipts/%s.json` sha256 `%s`." % (r["label"], item_sha), "",
++        "Checker log vs producer log (lines other than 'verification time'): %s." % (
++            r["checker_log_vs_producer"]["summary"]),
+         "Failed conditions: %s." % (", ".join("`%s`" % c for c in r["failed_conditions"]) or "none"),
+         "Observed outcome: %s." % r["observed_outcome"], "",
+@@ -343,5 +307,5 @@
+             r["producer_receipt"]["fields"]["checker_rc"], r["producer_receipt"]["fields"]["checker_status_lines"],
+             fmt(r["producer_receipt"]["fields"]["peak_sampled_aggregate_rss_bytes"])), "",
+-        "## Checks before the native run", "",
++        "## Checks reused from attempt 1 (deviation D17)", "",
+         "- Regeneration-only precheck: %s (`receipts/regen-B_C321.json` `%s`)." % (
+             result["regeneration_precheck"]["result"], result["regeneration_precheck"]["sha256"]),
+@@ -368,7 +332,9 @@
+     for n, h in result["scripts_sha256_now"].items():
+         lines.append("- `scripts/%s` `%s`" % (n, h))
+-    lines.append("- The four run scripts were recorded at %s; all recordings equal: %s; equal now: %s." % (
+-        ", ".join(result["run_scripts"]["recording_points"]), result["run_scripts"]["all_recordings_equal"],
+-        result["run_scripts"]["equal_now_excluding_assembler"]))
++    lines.append("- Run scripts recorded at %s; all recordings equal: %s; equal now: %s; v1 run scripts unchanged "
++                 "since attempt 1: %s." % (", ".join(result["run_scripts"]["recording_points"]),
++                                           result["run_scripts"]["all_recordings_equal"],
++                                           result["run_scripts"]["equal_now"],
++                                           result["run_scripts"]["v1_run_scripts_unchanged_since_attempt_1"]))
+     lines += ["", "## Receipts and logs of the item (sha256)", ""]
+     for k, v in r["receipts"].items():
+@@ -376,14 +342,15 @@
+     for k, v in r["logs"].items():
+         lines.append("- %s `%s` %s B `%s`" % (k, v["path"], fmt(v["bytes"]), v["sha256"]))
+-    lines += ["", "## Deviations (full text: `deviations-v1.json`)", ""]
+-    for d in DEVIATIONS:
++    lines += ["", "## Deviations of attempt 2 (full text: `deviations-v2.json`; D1-D12, D14 of `deviations-v1.json` "
++                  "carried)", ""]
++    for d in result["deviations"]["items"]:
+         lines.append("- %s: %s" % (d["id"], d["what"]))
+     lines += ["", "## Integrity", "",
+-              "Receipts, logs, RESULT.json, REPORT.md and deviations-v1.json were created exclusively (mode 'x' / "
+-              "O_EXCL). The scripts were created with the editor before their first use. bklib_v1.py was edited "
+-              "once, before any script hash was recorded, to apply Main's slot-2 admission rule. From the first "
+-              "recorded hash on, nothing in the desk was modified, deleted or renamed. No lane file was written. "
+-              "There were no /tmp writes and no Git, network or model CLI. __pycache__ present: %s. Desk regular "
+-              "files before RESULT.json: %d, %s bytes in total. FIFO nodes, never opened outside the pipeline: %s." % (
++              "Receipts, logs, RESULT.v2.json, REPORT.v2.md and deviations-v2.json were created exclusively (mode "
++              "'x' / O_EXCL). The v2 scripts were copied with cp -n from v1 and edited before their first use; their "
++              "diff is scripts-v1-to-v2.diff. Nothing from attempt 1 was modified, deleted or renamed. No lane file "
++              "was written. There were no /tmp writes and no Git, network or model CLI. __pycache__ present: %s. "
++              "Desk regular files before RESULT.v2.json: %d, %s bytes in total. FIFO nodes, never opened outside the "
++              "pipeline: %s." % (
+                   result["pycache_present"], len(result["desk_files_before_result"]),
+                   fmt(result["desk_bytes_before_result"]), ", ".join(result["fifo_nodes"])), ""]
+@@ -394,16 +361,36 @@
+ 
+ 
++def compare_with_producer(rec, it):
++    """Line-by-line comparison of this attempt's checker log with the producer's lane checker log (read-only)."""
++    if not rec.get("checker_log"):
++        return {"summary": "no checker log"}
++    mine = K.read_regular(os.path.join(K.DESK, rec["checker_log"])).split(b"\n")
++    prod = K.read_regular(it["producer_checker_log"]).split(b"\n")
++    diff = [{"line": i + 1, "parent": a.decode("ascii", "replace"), "producer": b.decode("ascii", "replace")}
++            for i, (a, b) in enumerate(zip(mine, prod)) if a != b]
++    other = [d for d in diff if b"verification time" not in d["parent"].encode()
++             or b"verification time" not in d["producer"].encode()]
++    return {"producer_log": it["producer_checker_log"], "line_counts": [len(mine), len(prod)],
++            "differing_lines": diff,
++            "summary": "%d lines vs %d; %d differing line(s) other than 'verification time'" % (
++                len(mine), len(prod), len(other) + abs(len(mine) - len(prod)))}
++
++
+ def main():
+-    if len(sys.argv) != 2 or sys.argv[1] not in K.ITEMS:
++    if len(sys.argv) != 3 or sys.argv[1] not in K.ITEMS or not sys.argv[2].startswith(sys.argv[1] + "-"):
+         raise SystemExit(__doc__)
+-    item = sys.argv[1]
+-    paths = {"item": os.path.join(K.RECEIPTS, item + ".json"), "dev": os.path.join(K.DESK, "deviations-v1.json"),
+-             "result": os.path.join(K.DESK, "RESULT.json"), "report": os.path.join(K.DESK, "REPORT.md")}
++    item, label = sys.argv[1], sys.argv[2]
++    paths = {"item": os.path.join(K.RECEIPTS, label + ".json"), "dev": os.path.join(K.DESK, "deviations-v2.json"),
++             "result": os.path.join(K.DESK, "RESULT.v2.json"), "report": os.path.join(K.DESK, "REPORT.v2.md")}
+     for p in paths.values():
+         if os.path.lexists(p):
+             raise SystemExit("exists: " + p)
+-    row = item_receipt(item)
++    row = item_receipt(item, label)
+     item_sha = K.write_json_x(paths["item"], row)
+-    dev_sha = K.write_json_x(paths["dev"], DEVIATIONS)
++    dev = DEVIATIONS + ([{"id": "D22-attempt-2-stop", "what": "Attempt 2 was stopped: %s (supervisor record %s). "
++                          "Status UNKNOWN; not retried without parent GO." % (row["stop"]["reason"],
++                                                                               row["receipts"]["supervisor"]["sha256"])}]
++                        if row["stop"] else [])
++    dev_sha = K.write_json_x(paths["dev"], dev)
+     regen_r, regen_sha = load("receipts/regen-%s.json" % item)
+     summ, summ_sha = load("receipts/selfcheck-summary.json")
+@@ -412,25 +399,30 @@
+     ro += [K.ITEMS[item]["producer_receipt"], K.ITEMS[item]["meta"], K.ORACLE_RECEIPT,
+            K.ITEMS[item]["producer_checker_log"], K.ITEMS[item]["producer_solver_log"], K.ITEMS[item]["lane_cnf"]]
+-    files, fifos, total = desk_listing(exclude=("RESULT.json", "REPORT.md"))
+-    seen = {"regen.pre": regen_r.get("scripts_sha256"), "regen.end": regen_r.get("scripts_sha256_end"),
+-            "selfcheck.gate": sgate.get("scripts_sha256"),
+-            "selfcheck.pre": load("receipts/selfcheck.pre.json")[0].get("scripts_sha256"),
+-            "selfcheck.end": summ.get("scripts_sha256_end"),
+-            "run.gate": load("receipts/%s.gate.json" % item)[0].get("scripts_sha256"),
+-            "run.pre": load("receipts/%s.pre.json" % item)[0].get("scripts_sha256"),
+-            "run.end": load("receipts/%s.driver.json" % item)[0].get("scripts_sha256_end")}
+-    now_run = {n: h for n, h in K.script_hashes().items() if n != "assemble_B_v1.py"}
+-    run_scripts = {"recorded": seen["regen.pre"], "all_recordings_equal": all(v == seen["regen.pre"]
+-                                                                                for v in seen.values()),
+-                   "equal_now_excluding_assembler": now_run == seen["regen.pre"],
++    files, fifos, total = desk_listing(exclude=("RESULT.v2.json", "REPORT.v2.md"))
++    seen = {"run.gate": load("receipts/%s.gate.json" % label)[0].get("scripts_sha256"),
++            "run.pre": load("receipts/%s.pre.json" % label)[0].get("scripts_sha256"),
++            "run.end": load("receipts/%s.driver.json" % label)[0].get("scripts_sha256_end")}
++    a1 = load("receipts/%s.pre.json" % item)[0].get("scripts_sha256")
++    run_scripts = {"recorded": seen["run.pre"],
++                   "all_recordings_equal": all(v == seen["run.pre"] for v in seen.values()),
++                   "equal_now": K.script_hashes() == seen["run.pre"],
++                   "v1_run_scripts_unchanged_since_attempt_1": all((seen["run.pre"] or {}).get(n) == h
++                                                                   for n, h in a1.items()),
+                    "recording_points": sorted(seen)}
++    a1_item, a1_item_sha = load("receipts/%s.json" % item)
+     result = {
+         "desk": "review/moqls7-k3-B-cube-parent-replay-v1",
+         "scope": row["scope"],
+-        "verdicts": {item: row["status"]},
+-        "items": {item: {"receipt": "receipts/%s.json" % item, "receipt_sha256": item_sha, "status": row["status"],
+-                         "failed_conditions": row["failed_conditions"], "observed_outcome": row["observed_outcome"],
+-                         "stop": row["stop"], "strict_fields": row["strict_fields"], "times": row["times"],
+-                         "rss": row["rss"], "free_bytes": row["free_bytes"]}},
++        "verdicts": {label: row["status"]},
++        "attempt_1": {"label": item, "status": a1_item.get("status"), "item_receipt": "receipts/%s.json" % item,
++                      "item_receipt_sha256": a1_item_sha, "stop_reason": (a1_item.get("stop") or {}).get("reason"),
++                      "result_json_sha256": file_entry("RESULT.json")["sha256"],
++                      "deviations_v1_sha256": file_entry("deviations-v1.json")["sha256"]},
++        "scripts_diff": file_entry("scripts-v1-to-v2.diff"),
++        "items": {label: {"receipt": "receipts/%s.json" % label, "receipt_sha256": item_sha, "status": row["status"],
++                          "failed_conditions": row["failed_conditions"], "observed_outcome": row["observed_outcome"],
++                          "stop": row["stop"], "strict_fields": row["strict_fields"], "times": row["times"],
++                          "rss": row["rss"], "free_bytes": row["free_bytes"],
++                          "checker_log_vs_producer": row["checker_log_vs_producer"]}},
+         "regeneration_precheck": {"receipt": "receipts/regen-%s.json" % item, "sha256": regen_sha,
+                                   "result": regen_r.get("result"),
+@@ -450,5 +442,6 @@
+                                     file_entry("receipts/%s.json" % x["label"])["sha256"] == x["receipt_sha256"]
+                                     for x in summ.get("rows", []))},
+-        "deviations": {"path": "deviations-v1.json", "sha256": dev_sha, "count": len(DEVIATIONS)},
++        "deviations": {"path": "deviations-v2.json", "sha256": dev_sha, "count": len(dev),
++                       "carried_from": "deviations-v1.json D1-D12, D14", "items": dev},
+         "binaries_at_assembly": {"kissat": K.binary_record(K.KISSAT), "drat-trim": K.binary_record(K.DRAT),
+                                  "python3": K.binary_record(K.PY)},
+@@ -463,6 +456,6 @@
+     with open(paths["report"], "x") as f:
+         f.write(text)
+-    print(json.dumps({"item_receipt_sha256": item_sha, "status": row["status"], "deviations_sha256": dev_sha,
+-                      "RESULT.json": result_sha, "REPORT.md": K.sha_file(paths["report"]),
++    print(json.dumps({"attempt_receipt_sha256": item_sha, "status": row["status"], "deviations_v2_sha256": dev_sha,
++                      "RESULT.v2.json": result_sha, "REPORT.v2.md": K.sha_file(paths["report"]),
+                       "failed_conditions": row["failed_conditions"]}))
+ 

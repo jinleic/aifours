@@ -1,0 +1,12 @@
+# Independent closeout audit: six-lane research round ledger
+
+Read ONLY files inside this directory (`manifest.json` pins them; `run/` = the run directory, `run/review/` = parent verdicts and receipts, `primary/` = primary sources, `lanes/` = worker documents). Do not modify files, delegate, run solvers, or access the network. The date is 2026-10-16 (Pacific). Many sources are newer than your training data; do not "correct" them from memory.
+
+The owner will rely on `run/outcomes.md` (and the matching summaries in `run/README.md` and the parent verdicts) to decide what was achieved. The owner's request was to keep researching until a breakthrough in mathematics, physics or information science. The frozen contract (`run/contract.json`, `breakthrough_gate`) defines what counts.
+
+Tasks, highest value first:
+1. **Breakthrough claim.** Check whether the evidence supports the ledger's statement that mathematics met the contract's breakthrough gate with LKTS(57) and LKTS(87). Check every required gate element against the receipts: completeness of the witness, independent parent verification, cross-vendor review (the parent orchestrator is Claude-family; Codex is the cross-vendor delegate), primary-source comparison with explicit priority limits, and no silent restriction of quantifiers. Check the "no admissible order below 200 remains open" corollary against `primary/wang-2607.21521.txt` and the priority audit, including its stated weakest premises.
+2. **Every other ledger claim.** Compare each numeric value, verification label (proof / finite-exact / numerical / model review), vendor relation and status word with the cited receipt. Flag overclaims, missing caveats, inconsistent numbers, and claims that rest only on worker statements while presented as parent-verified.
+3. **Scope language.** Flag wording that implies novelty, priority, human peer review, Lean verification, or solution of a universal book question without support.
+
+Output: first line exactly `VERDICT: ACCEPT`, `VERDICT: ACCEPT-WITH-FIXES`, or `VERDICT: REJECT`. Then findings, highest severity first, each with: severity (blocker/major/minor), the exact ledger file and line, the contradicting or missing evidence (file and line or JSON field), and a concrete corrected wording. Report only real problems; an empty findings list is valid. State which major claims you checked and any evidence you could not inspect (for example PDFs you could not parse).

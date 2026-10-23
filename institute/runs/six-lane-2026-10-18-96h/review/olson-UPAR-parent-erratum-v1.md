@@ -1,0 +1,15 @@
+# UPAR — mandatory parent erratum v1
+
+Recorded 2026-10-21T05:48:28-0700 (`/bin/date`). Governs unchangedproof-UPAR-v1.md SHA256f75d55674586b714c12f8ffeb6e57ef0fee9ffc4615e96c7b0def522501cbcef anditsreview-package. Nomathematicalsourceoverwritten. ThisdisposesClaude's4proof/importMINORs and2processMINORs withoutpromotingitsuncertifiedextensionremark.
+
+1. **Exact T_PAR and overlap (m1,P2).** WithinfullT, kappa<=4d is5kappa<=2(p+1). T_PAR outside thatregionisEXACTLYthetwoexistinglistedfamilycells(10,23),(13,31): variablefamilykappa=3d+4,p=8d+7 isalreadyinsidekappa<=4d ford>=4; d2/3give23/31. Epsilon1boundaryisinsideford>=3andd2hasnonprime21. Theorem8 atd2 RE-PROVES(10,23), alreadyacceptedbyFC1023. Sameauthor/methodexposureisdisclosedandthisisNOTindependentcorroborationorasecondnewcell. NoFC1023internallemmaisusedaspremise.
+
+2. **No empty tail (m2).** AtproofLF257/318,andallresidualsummaries, thismeans EXACTLY `no run of S'\P_(S') is empty`, notanewnonempty-runassumption. FullT/extra-pair/empty-runquantifiersunchanged.
+
+3. **Coarse residual ranges (m3).** Section7's `allowed predecessor r` and any`exactremaining`gloss refer ONLYtoCOARSENECESSARYSUPERSETSfromtheexitinequality. Relabelthetableheader `coarse necessary predecessor range; all other constraints still required`. EveryLemma5(QQ-1)/(QQ-mixed) inequalityatthatpredecessorremainsvalidandmustnotbediscarded; noassertionthateveryintegerinthetableactuallysurvivesthem. ThecompleteR_PARnecessityreductionisunchanged; allmixedwindowsandmass/ENV/UBtestsstillapply. Claude'sfurthernumericalreductionsanditsoptionaluniform6d−4remarkareNOTpromotedbythiserratum, eveniftheyfollowfromsimpleadditionalwork. Theyareleadsforaseparatefrozenfollowon. Noresidualexistence/converseclaim.
+
+4. **Literal interface table (m4,P1).** AddUMRLF266–274,300–302,315–324toLF331andtheimportlistwhereUB/Lemma20areused; addLF137–139,161–165,201–209explicitlyaswell. Theworkeroriginalmanifestomittedsixprimaryranges; itscompletenessclaimiscorrected, nothistoricallyvalidated. Full-primaryClaudepacketactuallyincludedthem. SeparateCodexliteral-bindingreviewverifiedthem, withonecutoffbindingminorclosedbythenextgate. OriginalCodexderivation'sreference toLF202doesNOTestablishitreadtheomittedprimarysource.
+
+5. **T0/T1 and congruence.** Read [olson-UPAR-cutoff-binding-and-notation-v1.md](/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/review/olson-UPAR-cutoff-binding-and-notation-v1.md). T0cutoffsareliteralUFC; T1isUPAR-definedandnotanimportedUFCtheorem. Theta_i congruenttosigma_i=sumc_l congruentto|L_i|mod2 isnotintegerTheta_i=sigma_i. ThefocusedcutoffreviewdoesnotclaimtoreadUMRLF320–321notinitspacket; thosewereactuallyprovidedinthepreviousbinding/full-primarypackets.
+
+6. **Verification/process limit.** Source/checkpointconsistencyreviewdoesnotcertifycreationchronology,exclusivewrites,machineactivityorallhashes. Scope'spriorunwrittenobservationandpre-creationchangesremain; allreportedUPARcheckpointintervalsunder1200secondsareattributedtotherecords, notwholecampaigncompliance. FullT,PAR-COVER,bothunboundedresidualtypes,fullorderedOlson,otherk,novelty/human/Lean/runtimegatesremainopen.

@@ -1,0 +1,9 @@
+# K7(a2) Unit 2 — parent erratum v2 (corrects erratum v1 item 2)
+
+Recorded 2026-10-19T17:16:04-0700 (`/bin/date`). Supersedes ONLY item 2 of `/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/review/sun7-K7-A2-unit2-parent-erratum-v1.md` SHA256 `b6a2a8cc915482485311466a1e6e4530472615c8d12df9fb695f447001859f0b`; items 1 and 3–7 stand. Applies to `/Users/jinleic/repos/aifours/mathematics/evidence/six-lane-20261018-96h/sun-coset7/continuations/k7-a2-closure/K7-A2-UNIT-2-v1.md` SHA256 `1bef6d8ca1b0b62c15dbb703e96cc73c26b8c3295ebd5953965d205075a2942b`.
+
+Erratum v1 item 2 wrongly identified the Unit 2 exports `G_z/G_t` (:146) with the FG-zf gcd *equalities*. The governing definition is that of Unit 1 (:35–38) and Unit 3 (:33–34): `G_z(u,x)` is the conjunction of (L_z) and (V_z) at u in family x, and `G_t(u,x)` replaces z by t. Unit 2 :146 calls them "omitted-marker **bounds**", which matches. In Unit 2 these bounds are the consequences stated at :44–47. They are proved from the FG-zf gcd equalities (:36–43) through the light lemma (:27–32) and the VFC form (:33–34). Corrected item 2:
+
+2. **m2 (:40, :146).** The running intersection at :40 is renamed `H_m`, since it is not the vertex set W. The exports `G_z/G_t` at :146 mean, at each u ∈ W and in each orientation x, (L_z)∧(V_z) and (L_t)∧(V_t) as stated at :45–47 (Unit 1 :35–38; Unit 3 :33–34). The FG-zf gcd equalities at :36–37 are their premises, not the exports.
+
+Consequence for the join: Unit 1 finding m2 notes that the remark "subset gcd 6 supplies L_z/L_t and V_z/V_t" (Unit 1 :39–40) is unproved there. Unit 1 uses G_z/G_t only as hypotheses. In the normalised (a2-zt5) setting their proof is Unit 2 :27–34 and :44–47, re-derived in Unit 2 and reviewed by both families (Codex v2 0/0/0; Claude v2 0F/0M, mathematics PASS at :27–34 and :44–47). The parent checked that Unit 3 obtains G_z/G_t from the Unit 2 exports (Unit 3 :22, :42, :84) and not from the Unit 1 remark.

@@ -1,0 +1,2650 @@
+Reading additional input from stdin...
+OpenAI Codex v0.163.0
+--------
+workdir: /Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-16/review/colour-codex-checker-v1
+model: gpt-6.1-sol
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: max
+reasoning summaries: none
+session id: 01a148f4-e6f7-7f33-8343-9d7c85d89820
+--------
+user
+You are an independent cross-vendor verifier. Write ONE self-contained Python 3.13 program, `checker_c.py`, that rigorously re-checks branch-and-bound certificates for an inequality on a 4-dimensional polytope. You are writing it from the mathematical specification below ONLY.
+
+INDEPENDENCE RULES (mandatory): Do NOT open, read, grep or list anything under
+  /Users/jinleic/repos/aifours/physics/evidence/six-lane-20261016/random5reg-colour/code/
+  /Users/jinleic/repos/aifours/physics/evidence/six-lane-20261016/random5reg-colour/outer/code/
+  /Users/jinleic/repos/aifours/physics/evidence/six-lane-20261016/random5reg-colour/checkerB*  (any checker B directory)
+and do not read any *.py file in that lane. You MAY read the certificate JSON files and the lane README.md files for context. Do not modify any file (read-only sandbox). Do not delegate. Testing by running your draft program with the interpreter below is allowed and encouraged (pass your source via `python - <<'EOF'` or `-c`, since you cannot write files).
+
+Interpreter with libraries: /Users/jinleic/repos/aifours/physics/evidence/six-lane-20261016/random5reg-colour/.venv/bin/python (CPython 3.13.9, python-flint 0.9.0, mpmath 1.3.0, numpy). Use rigorous outward-rounded arithmetic (python-flint arb ball arithmetic at >= 128 bits, or mpmath.iv); all inputs are exact rationals; never decide an inequality from floating point.
+
+=== Mathematical specification ===
+Points p = (n1,n2,n3,n4) in Q^4. Nine affine "class values" n^u, u = 0..8 (u = 3i+j for (i,j) in {0,1,2}^2):
+  n^0=n1, n^1=n2, n^2=1/3-n1-n2, n^3=n3, n^4=n4, n^5=1/3-n3-n4, n^6=1/3-n1-n3, n^7=1/3-n2-n4, n^8=n1+n2+n3+n4-1/3.
+Delta = {p : all n^u >= 0}. n* = (1/9,1/9,1/9,1/9).
+Entries k = 0..3 correspond to (r,t) = (-1,-1), (-1,1), (1,-1), (1,1).
+Edges: iterate u = 0..8 (u=3i+j) and k = 0..3 with (r,t) as above; partner class v = 3*((i+r) mod 3) + ((j+t) mod 3), partner entry kv = the index of (-r,-t). If (u,k) has not been used yet, append edge e = (u,k,v,kv) and mark both (u,k) and (v,kv) used. This yields exactly 18 edges, indexed e = 0..17 in creation order.
+For y in Q^18 and class u: z^u in Q^4 with z^u_k = sum over edges e=(u,k,*,*) of y_e  minus  sum over edges e=(*,*,u,k) of y_e.
+Spectra S: all (a,b,c,d) in Z_{>=0}^4 (entry order k=0..3) with a+b+c+d = 5, a+b >= 1, c+d >= 1, a+c >= 1, b+d >= 1. |S| = 36. Weight w_s = 120/(a! b! c! d!).
+For mu in Q_{>0}^4: Phi(mu) = sum_{s in S} w_s prod_k mu_k^{s_k};  m0 = (sum_s w_s (prod_k mu_k^{s_k}) s) / Phi(mu) in R^4;
+  psi0 = (1/2) sum_k m0_k ln m0_k + ln Phi(mu) - sum_k m0_k ln mu_k;
+  g_k = (1/2) ln m0_k - ln mu_k + z_k;
+  a(z,mu) = psi0 + sum_k z_k m0_k + max_{s in S} sum_k g_k (s_k - m0_k).
+For a dual leaf with data (y, mu^0..mu^8): a_u = a(z^u, mu^u). For a point p in Delta:
+  U(p) = sum over u with n^u > 0 of [ n^u a_u + (3/2) n^u ln n^u ]   (terms with n^u = 0 contribute 0; n^u < 0 is an error).
+Target constant L* = (5/2) ln 5 + ln(25/24).
+
+=== Certificate format (JSON) ===
+Top-level object with keys: "facet": [fi, fj] (integers in 0..2), "r0": a string "P/Q" (must equal 1/10000 exactly; fail otherwise), "tree": a list of nodes in PREORDER, plus other keys you may ignore.
+Root simplex (5 vertices, in this order): vertex 0 = n*; then, for each permutation sigma of (0,1,2) in Python itertools.permutations(range(3)) order with sigma[fi] != fj (exactly 4 of them), the vertex (1/3)*([sigma[0]==0], [sigma[0]==1], [sigma[1]==0], [sigma[1]==1]).
+Node kinds:
+  ["S", i, j]: split. mid = (V_i + V_j)/2 exactly. First child = current vertex list with V_i replaced by mid; second child = current list with V_j replaced by mid. Preorder: the split node, then the whole first-child subtree, then the whole second-child subtree.
+  ["C"]: central leaf. Accept iff every one of its 5 vertices has |p_k - 1/9| <= r0 for all k = 1..4.
+  ["D", y, mus]: dual leaf. y = list of 18 strings, mus = list of 9 lists of 4 strings; each string is a Python float.hex() literal (e.g. "-0x1.41846c57a4545p-11") and denotes that EXACT binary rational. Accept iff every mu entry is > 0 and U(V) < L* holds rigorously at each of the 5 vertices V of the leaf (compute the a_u once per leaf).
+The certificate is valid iff the replay consumes the tree exactly (no truncation, no trailing nodes), every node is well formed, and every leaf is accepted.
+
+=== Required program behaviour ===
+  python checker_c.py CERT.json [--expect-facet FI FJ] [--prec BITS]   (default prec 200, reject < 128)
+Print one JSON object: {"cert": path, "cert_sha256": ..., "facet": [...], "r0": "...", "verdict": "PASS"|"FAIL", "nodes": N, "splits": .., "dual_leaves": .., "central_leaves": .., "failed_leaves": .., "first_failures": [up to 10 (preorder index, kind, reason)], "min_margin_lower_bound": (rigorous lower bound of min over dual-leaf vertices of L* - U, as a decimal string), "prec": .., "started": .., "finished": ..}. Exit code 0 iff PASS. Use an explicit stack (trees are ~67k nodes, depth <= 60). It must be reasonably fast: ~30k dual leaves per certificate; target well under 30 minutes per certificate on one core (precompute spectra/weights; reuse per-leaf a_u across the 5 vertices).
+Also include a `--selftest` mode that checks: |S| = 36; 18 edges each entry used once; with y = 0 and every mu^u = (1,1,1,1), U(n*) equals L* (so its margin is not > 0 and a 'D' leaf whose cell contains n* must be REJECTED); the exact identity a = (5/2) ln(5/4) + ln 900 in that case; and that a(z,mu) is invariant under mu -> 2 mu.
+
+=== Test data you may read (do not modify) ===
+  /Users/jinleic/repos/aifours/physics/evidence/six-lane-20261016/random5reg-colour/outer/evidence/mutations/base_cone00_r1_1over20.json  (a small certificate with r0 = 1/20; use --allow-r0 1/20 testing flag ONLY for this test; the real runs must require 1/10000)
+  /Users/jinleic/repos/aifours/physics/evidence/six-lane-20261016/random5reg-colour/outer/evidence/cone00.json  (real, ~41 MB)
+Add the testing-only option `--allow-r0 P/Q` that replaces the required r0 (must be printed in the output JSON when used).
+
+=== Output format of YOUR final message ===
+First a short report: what you tested and the observed results (exact numbers you saw), including runtime on base_cone00_r1_1over20.json and, if you had time, on cone00.json. Then the complete program between the exact marker lines
+BEGIN_CHECKER_C
+<full python source>
+END_CHECKER_C
+codex
+I’ll write the verifier from the specification, test it through the supplied Python interpreter, and leave all files unchanged. I’ll keep the implementation independent and won’t delegate.
+exec
+/bin/zsh -lc pwd in /Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-16/review/colour-codex-checker-v1
+ succeeded in 0ms:
+/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-16/review/colour-codex-checker-v1
+
+exec
+/bin/zsh -lc 'for d in /Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-16/review/colour-codex-checker-v1 /Users/jinleic/repos/aifours; do if [ -f "$d/README.md" ]; then /bin/cat "$d/README.md"; fi; done' in /Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-16/review/colour-codex-checker-v1
+ succeeded in 0ms:
+# aifours — AI-assisted attacks on open problems
+
+Research dossiers on precisely stated problems from three volumes of 《10000个科学难题》
+(10000 Selected Problems in Sciences, Science Press). The work started on 2026-10-14 in
+`/Users/jinleic/jinleic-workspace/ai4s` and moved here the same day
+([relocation record](maintenance/relocation-2026-10-14/README.md)).
+
+## Layout
+
+| Path | Contents |
+|---|---|
+| [`information-science/`](information-science/README.md) | Information-science volume (2011): 12 dossiers, screening notes and round evidence |
+| [`mathematics/`](mathematics/README.md) | Mathematics volume (2009): 11 dossiers, HMZ + Lean rounds and round evidence |
+| [`physics/`](physics/README.md) | Physics volume (2009): 13 dossiers, the [reselection index](physics/PHYSICS_RESELECTION.md) and round evidence |
+| [`institute/`](institute/README.md) | Bounded research-institute visits: parallel launcher, frozen selections, append-only records, replay and referee evidence |
+| [`books/`](books/README.md) | Source volumes: local PDFs, SHA-256 identities and page offsets |
+| [`maintenance/`](maintenance/relocation-2026-10-14/README.md) | Relocation map, preservation inventories and receipts |
+
+Each dossier, `<domain>/<slug>/`, owns its book statement, status verdict, sources, proofs, code
+and evidence. Domain READMEs only route and summarize; when they disagree with a dossier, the
+dossier wins. Round-level selection, screening, parent replays and review dispositions live in
+`<domain>/evidence/`.
+
+## Outcomes
+
+| Domain | Status on 2026-10-14 |
+|---|---|
+| Information science | No previously open broad book problem fully solved. Two precise claims were settled negatively: universal optimizer existence for expected-average POMDPs, and sufficiency of separate IF/GD feasibility tests for nonnegative time–frequency distributions (certified counterexample). Two exact readings were already answered by classical work; the other eight dossiers are partial or open. |
+| Mathematics | One candidate full answer: semifilter Questions 2–3, HMZ-accepted, with novelty unresolved. Already settled by prior work: the dendriform trialgebra basis and the studied inverse-optimization case. Refuted: the broad no-moment M-estimator formulation. Artin Question 3 is answered for a fixed deg-lex reading. Kirkman, Kac–Moody, semigroup embedding, Olson and Shor remain open with partial results. Seymour is claimed by the openai/math corpus, not re-verified here. |
+| Physics | Five reselection packages are Certification results with uncertified priority. The SO(5) candidate was already solved. The earlier five narrowed proofs did not pass the openness gate. Two first-pass dossiers, cone spirals and small quantum codes, are retained but screened out. |
+
+Labels follow the dossiers. Written proofs are not kernel-checked unless a Lean/Comparator
+receipt says so. Model referees are not human peer review, and no novelty is claimed without a
+primary-source comparison.
+
+## Difficult-problem visits and continuation (2026-10-15–16)
+
+Batch 01 started at 04:03 PT. Mathematics produced an **unverified** attack: its referee could not
+replay the production computation because large logs were omitted from the snapshot. Information
+science and physics timed out during 10-minute identification and never reached attack. With owner
+approval, all three restarted at 12:02 PT with fresh six-hour ceilings; identification now has 30
+minutes, and the previous logs are supplied as hash-checked compressed inputs. Batch 02 and its
+same-budget continuation, batch 03 (14:23–17:36 PT), both closed all three as **unverified** after
+referee accept-with-fixes. In batch 03 no claim was judged wrong or unsupported. Referees asked only for
+wording or control changes, but that still stopped every visit before its novelty stage. Those
+are the completed engine visits' verdicts, not a verdict on the later continuation findings below.
+No book problem is fully solved. See the [batch outcome ledger](institute/review/hard-2026-10-15-outcomes.md).
+
+| Volume | Selected target | Book pages | Selection and budget |
+|---|---|---|---|
+| Mathematics | Flag-transitive projective planes: extend the finite exclusion range beyond the published n < 2×10¹¹, with the book's inconsistent graph wording disclosed | 39–40 | [Catalog](mathematics/evidence/mathematics-hard-20261015/catalog.md) |
+| Information science | A balanced nine-variable Boolean function with nonlinearity ≥242; local/class exclusions remain partial | 403–405 | [Catalog](information-science/evidence/information-science-hard-20261015/catalog.md) |
+| Physics | Certified random 4-SAT/5-SAT upper bounds from the statistical-physics chapter; numerical inequalities require their analytic bridge | 422–427 | [Catalog](physics/evidence/physics-hard-20261015/catalog.md) |
+
+[Run entry](institute/runs/hard-2026-10-15/README.md) ·
+[Frozen selection](institute/runs/hard-2026-10-15/selection.json) ·
+[Terminal supervisor receipt](institute/runs/hard-2026-10-15/run.json) ·
+Batch receipts [01](institute/runs/hard-2026-10-15/batches/01/receipt.json),
+[02](institute/runs/hard-2026-10-15/batches/02/receipt.json),
+[03](institute/runs/hard-2026-10-15/batches/03/receipt.json).
+The generated run records own the completed engine visits' outcomes; later parent research does not rewrite them.
+
+The owner then authorized continued scientifically reasonable research without the previous total
+time/token limit. The [continuation ledger](institute/review/continuation-20261015/outcomes.md)
+separates its checked findings from the unchanged engine verdicts:
+
+| Problem | Checked continuation result | Evidence |
+|---|---|---|
+| Flag-transitive planes | Conditional exact finite exclusion extended to **n < 2,582,236,504,064**, including a fresh replay of the old low range | [Package](mathematics/evidence/hard-continuation-20261015/README.md) |
+| Balanced nine-variable NL242 | All **252** remaining restricted fixed-half classes closed; universal residue distance **>=112**; the entire **(rank4,weight128)** residue type excluded by a model-reviewed written proof. **Seven types remain.** | [Structural proof](information-science/evidence/hard-continuation-20261015/quadratic-distance/zero-geometry/README.md) |
+| Random SAT | Rigorous numerical densities **4.26679 / 9.9325 / 21.1175** for k=3/4/5; separate kernel-checked endpoints **4.26718 / 9.934 / 21.123** | [Numerical certificates](physics/evidence/hard-continuation-20261015/README.md) · [Lean](physics/evidence/hard-continuation-20261015/formal/README.md) |
+
+These are scoped contributions, not exact thresholds or a demonstrated breakthrough. The methods
+have substantial prior art; priority of the specific results remains unresolved. Written/model-reviewed
+proofs are not human peer review or Lean verification. No batch 04 or automatic research scheduler ran.
+
+## Six concurrent research lanes (2026-10-16–18)
+
+The owner authorized a new 48-hour research round with **two problems per domain, six concurrent
+slots**, and replacement of concretely blocked or already-solved targets. The
+[run entry and frozen contract](institute/runs/six-lane-2026-10-16/README.md) specify the exact
+targets, deadline, independent-verification gate and worker ownership.
+
+**Mathematics met that contract's breakthrough gate.** Large sets of Kirkman triple systems of
+orders **57 and 87** were constructed explicitly. Each certificate passed three independently written
+verifiers, mutation controls and a byte-exact regeneration from a compact seed. Both finite existence
+statements also have reviewed Lean 4.34.1 proofs, replayed by a fresh process of the same kernel. Wang's
+2026 survey had named these as the only admissible orders below 200 still open, so none now remains
+(inheriting that survey's premises). The book's all-orders question remains open; priority is unresolved,
+and there is no human peer review.
+
+**Information science also met the contract's finite-target gate.** Explicit
+cyclic `(v,5,1)` difference families for **v = 321, 501, 621, 681, 801 and 901** passed three
+independently written verifiers. These are exactly the six possible exceptions of Abel–Costa–Finizio
+2004, still listed in 2026 primary sources; with that published theorem, a cyclic `(v,5,1)` family now
+exists for every v ≡ 1 (mod 20) with 21 ≤ v ≤ 1001. Modest specialist significance; the bounded priority audit
+located no earlier construction but does not establish "first".
+All six finite existence theorems also passed parent fresh Lean-kernel replay; the other orders in
+the complete-spectrum corollary still import the published theorem and were not re-verified here.
+Complete-claim Claude review: ACCEPT-WITH-FIXES, correctness and Lean semantics accepted; minor
+reporting/provenance fixes are documented in the [outcome ledger](institute/runs/six-lane-2026-10-16/outcomes.md).
+
+Other slots produced scoped results: a positive answer to AMH Open Problem 1 (moment feasibility
+only), three-qubit depolarizing-output majorization for all physical p, and a computer-assisted
+finite-block depolarizing-capacity certificate at total-error p=1/5, with its numerical trust base
+stated. The capacity point improves the certified finite-witness benchmark, not the stronger claimed
+asymptotic threshold. See the [outcome ledger](institute/runs/six-lane-2026-10-16/outcomes.md).
+Prior engine verdicts and continuation findings above remain unchanged.
+
+
+
+## Reproduction
+
+Historical dossier commands name the resources below. The shared workspace `scratch/` disappeared during
+the 2026-10-15 screen; those Python/Lean caches were not restored and their old receipts are not fresh
+reproduction evidence. The current institute run uses `~/.local/state/research-explorer/venv/bin/python`.
+
+- Python environments: `/Users/jinleic/jinleic-workspace/scratch/ai4s-*`. Scratch is machine-local
+  and not synchronized.
+- Lean toolchains and Comparator caches: `/Users/jinleic/jinleic-workspace/scratch/rh-quasi-lean-2026-10-07/`
+  and `/Users/jinleic/jinleic-workspace/scratch/ai4s-math-hmz-20261014/verification/`.
+- HMZ wrapper and pairing: `/Users/jinleic/jinleic-workspace/scripts/hmz-run.sh`,
+  `/Users/jinleic/jinleic-workspace/scripts/hmz-tiers.json`.
+- Delegate-model registry for referee scripts:
+  `/Users/jinleic/jinleic-workspace/docs/knowledge-system/DELEGATE_MODELS.json`.
+
+Logs, prompts, receipts and review outputs are preserved byte-for-byte, so they still cite
+`/Users/jinleic/jinleic-workspace/ai4s/...`. Translate those paths with the
+[path map](maintenance/relocation-2026-10-14/path-map.json).
+
+## Publication
+
+`origin` is `https://github.com/jinleic/aifours` (public). This research round creates no commits or pushes.
+`.gitignore` keeps all PDFs local: the source books and downloaded papers are third-party
+documents. The tree still contains rendered book pages and extracted paper text under
+`*/sources/` and `*/source/`; review them before the first push.
+
+codex
+I’ll use the `llm-coding-discipline` skill to guide implementation and testing. The formula simplifies exactly to \(a(z,\mu)=\log\Phi(\mu)+\max_s g\cdot s\); I’ll use that identity to reduce computation and interval overestimation.
+exec
+/bin/zsh -lc '/bin/cat /Users/jinleic/jinleic-workspace/dotfiles/codex/skills/llm-coding-discipline/SKILL.md' in /Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-16/review/colour-codex-checker-v1
+ succeeded in 0ms:
+---
+name: llm-coding-discipline
+description: Use for non-trivial code edits, bug fixes, refactors, dependency changes, tests, reviews, or any coding task where Codex should apply disciplined read-first, goal-driven, surgical-change, verification-centered engineering behavior. Also use when the user references Karpathy-style Claude.md rules, coding discipline, read before write, minimal diffs, failure modes such as kitchen sink or runaway refactor, or asks to integrate these rules into Codex workflow.
+---
+
+# LLM Coding Discipline
+
+## Core Loop
+
+Apply this skill as a process guardrail, not as a replacement for repository-specific instructions.
+
+1. Define completion before editing.
+   - Restate the concrete success criteria when the task is non-trivial, ambiguous, risky, or multi-step.
+   - Convert vague asks into verifiable behavior. For example, "add validation" becomes the exact inputs rejected, user-visible result, and tests or smoke checks that prove it.
+   - Ask only when the missing answer cannot be discovered locally and a reasonable assumption would be risky.
+2. Read before writing.
+   - Inspect the files, tests, imports, config, and nearby patterns that the change will touch.
+   - Reuse existing project style, helper APIs, and dependency choices.
+   - Search for similar implementations before adding new structure.
+3. Plan only as much as the task needs.
+   - For multi-step work, make an inspectable plan with evidence expectations.
+   - For small clear fixes, proceed directly after reading enough context.
+   - Keep explicit non-goals for risky, broad, or tempting cleanup work.
+4. Make the smallest useful change.
+   - Keep diffs proportional to the request.
+   - Do not reformat, rename, reorganize, or upgrade unrelated code while passing through.
+   - Be able to tie every changed line to the user request, a failing test, or a necessary local contract.
+5. Verify with behavior.
+   - Prefer reproducing a bug before fixing it.
+   - Add or run tests that cover user-visible behavior, not just field assignments or happy-path construction.
+   - If a behavior cannot be tested cheaply, run the strongest available smoke or static check and state the residual risk.
+6. Review before reporting done.
+   - Inspect the final diff for accidental broadening, style drift, dependency creep, secrets, and missing evidence.
+   - Compare the result against the original success criteria.
+   - Report what changed, why, what verified it, and any remaining risk.
+
+## Debugging Rules
+
+- Investigate instead of guessing.
+- Read the complete error, stack trace, logs, request, response, and reproduction path before changing code.
+- Change one causal thing at a time when isolating a failure.
+- Do not hide unexpected nulls, missing fields, 500s, flakes, or race conditions with broad fallbacks until the cause is understood.
+- When repeated fixes fail, stop and re-check the premise rather than layering more patches.
+
+## Dependency Rules
+
+- Treat each new dependency as permanent code outside local control.
+- Before adding one, check whether the standard library, existing project dependencies, or local helpers already solve the problem.
+- If a dependency is still warranted, make the reason visible in the implementation notes or final response.
+- Verify lockfile or package-manager changes when dependency manifests are touched.
+
+## Common Failure Modes
+
+Stop and narrow the work if one of these appears:
+
+- Kitchen Sink: a small task starts restructuring unrelated areas.
+- Wrong Abstraction: abstraction appears before repeated real use or before the codebase pattern supports it.
+- Optimistic Path: only happy-path behavior works while user input, network, server, empty-state, and permission failures are ignored.
+- Runaway Refactor: one fix cascades through files without a clear requirement.
+- Knowledge Hallucination: code uses an API, parameter, CLI flag, or library behavior not verified from local source or current docs.
+- Format Fog: formatting churn makes the meaningful diff hard to review.
+
+## Interaction With Other Local Workflow
+
+- Follow higher-priority system, developer, workspace, and repo instructions first.
+- Use the existing `humanize-workflow` skill for long-running, implementation-heavy, or review-sensitive work that needs explicit freeze-plan-iterate-audit loops.
+- Use `$consult` only when the user asks for an external model or when a genuinely independent second opinion would materially reduce risk.
+- Do not install hooks, run autonomous background loops, or change global Codex config as part of this skill.
+- For live infra, production, cluster, GPU, or credential-sensitive work, keep this skill subordinate to the workspace ops routing and approval rules.
+
+## Source Reference
+
+The local source artifact that motivated this skill is saved at:
+
+- `/Users/jinleic/jinleic-workspace/data/outputs/karpathy-claude-md/CLAUDE.md`
+- `/Users/jinleic/jinleic-workspace/data/outputs/karpathy-claude-md/SOURCE.md`
+
+Treat that artifact as an online-circulated reference, not verified internal provenance.
+
+exec
+/bin/zsh -lc "/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261016/random5reg-colour/.venv/bin/python -B -c 'import sys, flint
+from flint import arb, fmpq, ctx
+ctx.prec=200
+print(sys.version)
+print(\"flint\",flint.__version__)
+a=arb(fmpq(1,3)); b=a.log()
+print(\"a\",a,\"b\",b,\"lower\",b.lower(),\"upper\",b.upper())
+print(\"lower docs\",arb.lower.__doc__)
+print(\"str docs\",arb.str.__doc__)
+print(\"methods\",[m for m in dir(arb) if any(x in m for x in (\"max\",\"min\",\"man\",\"mid\",\"floor\",\"unique\",\"contains\"))])
+print(\"max doc\",getattr(arb,\"max\",None).__doc__)
+print(\"man_exp doc\",getattr(arb,\"man_exp\",None).__doc__)
+print(\"cmp\",arb(0)>0,arb(1)>0, b.is_finite())
+'" in /Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-16/review/colour-codex-checker-v1
+ succeeded in 0ms:
+3.13.9 (main, Oct 14 2025, 13:52:31) [Clang 17.0.0 (clang-1700.3.19.1)]
+flint 0.9.0
+a [0.33333333333333333333333333333333333333333333333333333333333 +/- 3.44e-60] b [-1.0986122886681096913952452369225257046474905578227494517347 +/- 7.60e-60] lower [-1.0986122886681096913952452369225257046474905578227494517347 +/- 2.93e-60] upper [-1.0986122886681096913952452369225257046474905578227494517347 +/- 7.91e-60]
+lower docs arb.lower(self)
+
+Lower bound for *self* (towards `-\infty`).
+The output is an *arb* holding an exact floating-point number
+that has been rounded down to the current precision.
+
+    >>> print(arb("-5 +/- 2").lower().str(5, radius=False))
+    -7.0000
+str docs arb.str(self, long n=0, bool radius=True, bool more=False, long condense=0)
+
+Produces a human-readable decimal representation of self, with
+up to *n* printed digits (which defaults to the current precision)
+for the midpoint. The output can be parsed by the *arb* constructor.
+
+Since the internal representation is binary, conversion
+to decimal (and back from decimal) is generally inexact.
+Binary-decimal-binary roundtrips may result in significantly
+larger intervals, and should therefore be done sparingly.
+
+    >>> from flint import arb, ctx
+    >>> ctx.prec = 53
+    >>> print(arb.pi().str())
+    [3.14159265358979 +/- 3.34e-15]
+    >>> print(arb.pi().str(5))
+    [3.1416 +/- 7.35e-6]
+    >>> print(arb.pi().str(5, radius=False))
+    3.1416
+
+By default, the output is truncated so that all displayed digits
+are guaranteed to be correct, up to adding or subtracting 1 in the
+last displayed digit (as a special case, if the output ends with a
+string of 0s, the correct decimal expansion to infinite precision
+could have a string of 9s).
+
+    >>> print((arb(1) - arb("1e-10")).str(5))
+    [1.0000 +/- 4e-10]
+    >>> print((arb(1) - arb("1e-10")).str(10))
+    [0.9999999999 +/- 3e-15]
+
+To force more digits, set *more* to *True*.
+
+    >>> print(arb("0.1").str(30)) # doctest: +SKIP
+    [0.100000000000000 +/- 2.23e-17]
+    >>> print(arb("0.1").str(30, more=True)) # doctest: +SKIP
+    [0.0999999999999999916733273153113 +/- 1.39e-17]
+
+Note that setting *more* to *True* results in a smaller printed radius,
+since there is less error from the conversion back to decimal.
+
+    >>> x = arb.pi().sin()
+    >>> print(x.str())
+    [+/- 3.46e-16]
+    >>> print(x.str(more=True))
+    [1.22460635382238e-16 +/- 2.23e-16]
+
+The error indicated in the output may be much larger than the actual
+error in the internal representation of *self*. For example, if *self*
+is accurate to 1000 digits and printing is done at 10-digit precision,
+the output might only appear as being accurate to 10 digits. It is
+even possible for *self* to be exact and have an inexact decimal
+representation.
+
+The *condense* option can be passed to show only leading and trailing
+digits of the fractional, integer and exponent parts of the output.
+
+    >>> ctx.dps = 1000
+    >>> print(arb.pi().str(condense=10))
+    [3.1415926535{...979 digits...}9216420199 +/- 9.28e-1001]
+    >>> print(arb.fac_ui(300).str(condense=10))
+    3060575122{...595 digits...}0000000000.0000000000{...365 digits...}0000000000
+    >>> print(arb(10**100).exp().str(condense=5))
+    [1.53837{...989 digits...}96534e+43429{...90 digits...}17483 +/- 4.84e+43429{...90 digits...}16483]
+    >>> ctx.default()
+methods ['__contains__', '__floordiv__', '__rfloordiv__', '_floordiv_', '_rfloordiv_', 'contains', 'contains_integer', 'contains_interior', 'floor', 'man_exp', 'max', 'mid', 'mid_rad_10exp', 'min', 'unique_fmpz']
+max doc arb.max(s, t)
+
+Maximum value of *s* and *t*.
+
+    >>> arb(2).max(arb("3 +/- 1.1"))
+    [+/- 4.11]
+    >>> arb(4).max(arb("3 +/- 1.1"))
+    [4e+0 +/- 0.101]
+man_exp doc arb.man_exp(self)
+
+Decomposes *self* into an integer mantissa and an exponent,
+returning an *fmpz* pair. Requires that *self* is exact
+and finite.
+
+    >>> from flint import arb, ctx
+    >>> ctx.prec = 53
+    >>> arb("1.1").mid().man_exp() # doctest: +SKIP
+    (4953959590107545, -52)
+    >>> arb("1.1").rad().man_exp() # doctest: +SKIP
+    (1, -52)
+    >>> arb(0).man_exp()
+    (0, 0)
+    >>> arb("1.1").man_exp()
+    Traceback (most recent call last):
+      ...
+    ValueError: man_exp requires an exact, finite value
+    >>> arb("+inf").man_exp()
+    Traceback (most recent call last):
+      ...
+    ValueError: man_exp requires an exact, finite value
+cmp False True True
+
+exec
+/bin/zsh -lc "/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261016/random5reg-colour/.venv/bin/python -B -c 'import json,hashlib
+from collections import Counter
+from pathlib import Path
+for name in (\"mutations/base_cone00_r1_1over20.json\",\"cone00.json\"):
+ p=Path(\"/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261016/random5reg-colour/outer/evidence\")/name
+ b=p.read_bytes(); d=json.loads(b)
+ print(name,\"bytes\",len(b),\"sha256\",hashlib.sha256(b).hexdigest(),\"facet\",d.get(\"facet\"),\"r0\",d.get(\"r0\"),\"nodes\",len(d[\"tree\"]),\"kinds\",dict(Counter(n[0] for n in d[\"tree\"])))
+ print(\"first nodes\",repr(d[\"tree\"][:3])[:600])
+ print(\"first dual\",repr(next(n for n in d[\"tree\"] if n[0]==\"D\"))[:2000])
+'" in /Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-16/review/colour-codex-checker-v1
+ succeeded in 371ms:
+mutations/base_cone00_r1_1over20.json bytes 11771741 sha256 50ce362e190e7dde1c036929a878a9c725564ee0a6b2079914ce611071260d62 facet [0, 0] r0 1/20 nodes 19383 kinds {'S': 9691, 'D': 9122, 'C': 570}
+first nodes [['S', 2, 3], ['S', 1, 4], ['S', 3, 4]]
+first dual ['D', ['0x1.9113aeb2079a8p-2', '0x1.d702d9e558ecfp-3', '0x1.0396429843e77p-10', '0x1.3e1bbd3d47044p+1', '0x1.3845f3ef902bbp+1', '-0x1.41846c57a5aacp-11', '0x1.5c915304a8966p-3', '-0x1.901e9fa92e1d2p-2', '-0x1.1fe6b940e2746p+1', '0x1.1bd7340338a60p-9', '0x1.1cce94ad0d3bep-9', '-0x1.1c3880d5c20b2p+1', '-0x1.5ddc67b9b1772p-3', '-0x1.bdf7dd89e8cbap-3', '-0x1.eec38d8ee7da1p-18', '-0x1.38643be307adfp+1', '0x1.d4fe00670c3e3p-3', '0x1.3dfabfe1a292fp+1'], [['0x1.5407c5202e735p+0', '0x1.ead2455618543p-3', '0x1.4579b8013e738p-3', '0x1.3c4593b14e7e1p+4'], ['0x1.597a7b6a9ad90p+4', '0x1.d885c2dd32531p-3', '0x1.355f317a42511p-2', '0x1.542b705d7771ep-1'], ['0x1.9b30a059a5abap-4', '0x1.35c76d8915116p+3', '0x1.35c858b566a54p+3', '0x1.b3613f190f9b7p-4'], ['0x1.5903adb39955ap+4', '0x1.b8e7ebf156621p-3', '0x1.b86d6224a6ca7p-3', '0x1.006d1fab532c1p+0'], ['0x1.43121c888db4cp-4', '0x1.83643533c474cp+3', '0x1.84b6cee7c28f5p+3', '0x1.6122cc7daef83p-4'], ['0x1.543ab40e1d405p+0', '0x1.450028c903ef9p-3', '0x1.eb000ec6af3a3p-3', '0x1.3c6eefcab9640p+4'], ['0x1.4368107dd9a2ep-4', '0x1.84584ac7d6e2dp+3', '0x1.8304dd9747706p+3', '0x1.6171ca24ad3d4p-4'], ['0x1.95033059fab91p+0', '0x1.5b21c7ae33fd0p-3', '0x1.5a809859eb211p-3', '0x1.60a7d25cb9bcbp+4'], ['0x1.5986df379ae02p+4', '0x1.357782e3e3707p-2', '0x1.d929fe2656022p-3', '0x1.538e7f2bf3663p-1']]]
+cone00.json bytes 42784603 sha256 5b194f11353b8a8bb5cf424569240822ae60658a35349278b8a023933ef7412a facet [0, 0] r0 1/10000 nodes 67079 kinds {'S': 33539, 'D': 33032, 'C': 508}
+first nodes [['S', 2, 3], ['S', 1, 4], ['S', 3, 4]]
+first dual ['D', ['0x1.9113aeb2079ccp-2', '0x1.d702d9e558f8ap-3', '0x1.0396429842f71p-10', '0x1.3e1bbd3d4701cp+1', '0x1.3845f3ef90291p+1', '-0x1.41846c57a4545p-11', '0x1.5c915304a89d5p-3', '-0x1.901e9fa92e227p-2', '-0x1.1fe6b940e270ep+1', '0x1.1bd734033898ap-9', '0x1.1cce94ad0d6bbp-9', '-0x1.1c3880d5c2078p+1', '-0x1.5ddc67b9b17fbp-3', '-0x1.bdf7dd89e8cf9p-3', '-0x1.eec38d8f5bc93p-18', '-0x1.38643be307ab3p+1', '0x1.d4fe00670c4b5p-3', '0x1.3dfabfe1a2907p+1'], [['0x1.5407c5202e719p+0', '0x1.ead24556185f7p-3', '0x1.4579b8013e771p-3', '0x1.3c4593b14e74fp+4'], ['0x1.597a7b6a9ace6p+4', '0x1.d885c2dd325d3p-3', '0x1.355f317a42588p-2', '0x1.542b705d776cfp-1'], ['0x1.9b30a059a5b61p-4', '0x1.35c76d8915091p+3', '0x1.35c858b5669d4p+3', '0x1.b3613f190fa75p-4'], ['0x1.5903adb3994a3p+4', '0x1.b8e7ebf1566abp-3', '0x1.b86d6224a6d2fp-3', '0x1.006d1fab532abp+0'], ['0x1.43121c888dbaep-4', '0x1.83643533c46c7p+3', '0x1.84b6cee7c2875p+3', '0x1.6122cc7daf004p-4'], ['0x1.543ab40e1d3f1p+0', '0x1.450028c903f36p-3', '0x1.eb000ec6af455p-3', '0x1.3c6eefcab95a2p+4'], ['0x1.4368107dd9a95p-4', '0x1.84584ac7d6da8p+3', '0x1.8304dd9747681p+3', '0x1.6171ca24ad453p-4'], ['0x1.95033059fab9ep+0', '0x1.5b21c7ae34012p-3', '0x1.5a809859eb26bp-3', '0x1.60a7d25cb9b20p+4'], ['0x1.5986df379ad4dp+4', '0x1.357782e3e3786p-2', '0x1.d929fe26560b8p-3', '0x1.538e7f2bf361ep-1']]]
+
+exec
+/bin/zsh -lc "/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261016/random5reg-colour/.venv/bin/python -B -c '#"'!/usr/bin/env python3
+"""Independent, fail-closed certificate replay; requires python-flint.
+
+All geometric and hexadecimal input arithmetic is exact fmpq arithmetic.
+All logarithms, extrema and inequality decisions use Arb at --prec bits.
+Preorder indices in diagnostics are zero based. A null margin means that
+there were no dual vertices, or that not all dual margins could be computed.
+"""
+import argparse
+from collections import Counter
+from datetime import datetime, timezone
+from decimal import Decimal, ROUND_FLOOR, localcontext
+from functools import lru_cache
+import hashlib
+from itertools import permutations
+import json
+from math import factorial
+from pathlib import Path
+import re
+import sys
+
+from flint import arb, ctx, fmpq
+
+Q = fmpq
+THIRD = Q(1, 3)
+CENTER = (Q(1, 9),) * 4
+REQUIRED_R0 = Q(1, 10000)
+DIRECTIONS = ((-1, -1), (-1, 1), (1, -1), (1, 1))
+HEX = re.compile(
+    r"([+-]?)0[xX]([0-9a-fA-F]+)'"\\.([0-9a-fA-F]+)[pP]([+-]?[0-9]+)\\Z\"
+)
+RATIONAL = re.compile(r\"([+-]?[0-9]+)/([0-9]+)\\Z\")
+
+
+class Invalid(ValueError):
+    pass
+
+
+def spectra():
+    result = []
+    for a in range(6):
+        for b in range(6 - a):
+            for c in range(6 - a - b):
+                d = 5 - a - b - c
+                if min(a + b, c + d, a + c, b + d) >= 1:
+                    s = (a, b, c, d)
+                    denominator = 1
+                    for k in s:
+                        denominator *= factorial(k)
+                    result.append((s, 120 // denominator))
+    return tuple(result)
+
+
+def edges():
+    used, result = set(), []
+    for u in range(9):
+        i, j = divmod(u, 3)
+        for k, (r, t) in enumerate(DIRECTIONS):
+            if (u, k) in used:
+                continue
+            v = 3 * ((i + r) % 3) + (j + t) % 3
+            kv = DIRECTIONS.index((-r, -t))
+            if (v, kv) in used:
+                raise Invalid(\"edge construction reused an entry\")
+            result.append((u, k, v, kv))
+            used.update(((u, k), (v, kv)))
+    return tuple(result)
+
+
+SPECTRA = spectra()
+EDGES = edges()
+
+
+def rational(text):
+    if not isinstance(text, str):
+        raise Invalid(\"r0 must be a P/Q string\")
+    m = RATIONAL.fullmatch(text)
+    if m is None or int(m[2]) == 0:
+        raise Invalid(\"invalid P/Q rational\")
+    return Q(int(m[1]), int(m[2]))
+
+
+def hex_rational(text):
+    \"\"\"Parse the written binary rational, with no float conversion.\"\"\"
+    if not isinstance(text, str):
+        raise Invalid(\"hexadecimal entry must be a string\")
+    m = HEX.fullmatch(text)
+    if m is None:
+        raise Invalid(\"invalid finite hexadecimal literal: \" + repr(text)[:100])
+    numerator = int(m[2] + m[3], 16)
+    if m[1] == \"-\":
+        numerator = -numerator
+    exponent = int(m[4]) - 4 * len(m[3])
+    if exponent >= 0:
+        return Q(numerator << exponent)
+    return Q(numerator, 1 << -exponent)
+
+
+def facet_pair(value):
+    if (not isinstance(value, list) or len(value) "'!= 2
+            or any(type(i) is not int or not 0 <= i < 3 for i in value)):
+        raise Invalid("facet must be two integers in 0..2")
+    return tuple(value)
+
+
+def root_simplex(facet):
+    fi, fj = facet
+    vertices = [CENTER]
+    for sigma in permutations(range(3)):
+        if sigma[fi] != fj:
+            vertices.append(tuple(
+                THIRD * int(truth) for truth in (
+                    sigma[0] == 0, sigma[0] == 1,
+                    sigma[1] == 0, sigma[1] == 1
+                )
+            ))
+    if len(vertices) != 5:
+        raise Invalid("root construction did not produce five vertices")
+    return tuple(vertices)
+
+
+def class_values(p):
+    x1, x2, x3, x4 = p
+    return (
+        x1, x2, THIRD - x1 - x2,
+        x3, x4, THIRD - x3 - x4,
+        THIRD - x1 - x3, THIRD - x2 - x4,
+        x1 + x2 + x3 + x4 - THIRD
+    )
+
+
+def lower_decimal(value):
+    """Round an exact dyadic lower endpoint DOWN when printing decimal."""
+    value = value.lower()
+    if not value.is_finite():
+        return None
+    m, e = (int(t) for t in value.man_exp())
+    if e >= 0:
+        return str(m << e)
+    with localcontext() as dc:
+        dc.prec = max(30, ctx.prec * 30103 // 100000)
+        dc.rounding = ROUND_FLOOR
+        return str(Decimal(m) / Decimal(1 << -e))
+
+
+def a_bound(z, mu):
+    """Enclose the specified a(z,mu), including the entire finite maximum."""
+    powers = []
+    for q in mu:
+        row = [arb(1), arb(q)]
+        for unused in range(2, 6):
+            row.append(row[-1] * row[1])
+        powers.append(row)
+    phi = arb(0)
+    moments = [arb(0) for unused in range(4)]
+    for s, w in SPECTRA:
+        term = arb(w)
+        for k in range(4):
+            if s[k]:
+                term *= powers[k][s[k]]
+        phi += term
+        for k in range(4):
+            if s[k]:
+                moments[k] += s[k] * term
+    if not (phi.is_finite() and phi > 0):
+        raise Invalid("Phi is not certified finite and positive")
+    means = [v / phi for v in moments]
+    if any(not (v.is_finite() and v > 0) for v in means):
+        raise Invalid("a moment is not certified finite and positive")
+    g = [means[k].log() / 2 - arb(mu[k]).log() + z[k]
+         for k in range(4)]
+    # psi0 + z.m0 - g.m0 = log(Phi) exactly. No approximation
+    # or assumed maximizer is used in this algebraic cancellation.
+    maximum = None
+    for s, unused in SPECTRA:
+        score = arb(0)
+        for k in range(4):
+            if s[k]:
+                score += s[k] * g[k]
+        maximum = score if maximum is None else maximum.max(score)
+    answer = phi.log() + maximum
+    if not answer.is_finite():
+        raise Invalid("nonfinite a(z,mu) enclosure")
+    return answer
+
+
+class Replay:
+    def __init__(self, prec):
+        self.prec = prec
+        self.target = arb(5).log() * 5 / 2 + arb(Q(25, 24)).log()
+        self.minimum = None
+        self.complete_margins = True
+
+        # Per-replay caches: never reuse balls computed at another precision.
+        @lru_cache(maxsize=65536)
+        def entropy_term(n):
+            b = arb(n)
+            return b * b.log() * 3 / 2
+
+        @lru_cache(maxsize=65536)
+        def vertex_data(p):
+            active, entropy = [], arb(0)
+            for u, n in enumerate(class_values(p)):
+                if n < 0:
+                    raise Invalid("vertex outside Delta: negative class " + str(u))
+                if n > 0:
+                    active.append((u, arb(n)))
+                    entropy += entropy_term(n)
+            return tuple(active), entropy
+
+        self.vertex_data = vertex_data
+
+    def dual_coefficients(self, node):
+        if len(node) != 3:
+            raise Invalid("D node must have exactly three fields")
+        y, mus = node[1], node[2]
+        if not isinstance(y, list) or len(y) != 18:
+            raise Invalid("y must be a list of 18 hexadecimal strings")
+        if (not isinstance(mus, list) or len(mus) != 9
+                or any(not isinstance(row, list) or len(row) != 4
+                       for row in mus)):
+            raise Invalid("mus must be a 9 by 4 list")
+        ys = [hex_rational(t) for t in y]
+        qs = [[hex_rational(t) for t in row] for row in mus]
+        if any(q <= 0 for row in qs for q in row):
+            raise Invalid("every mu entry must be strictly positive")
+        z = [[arb(0) for unused in range(4)] for unused in range(9)]
+        for q, (u, k, v, kv) in zip(ys, EDGES):
+            b = arb(q)
+            z[u][k] += b
+            z[v][kv] -= b
+        return tuple(a_bound(z[u], qs[u]) for u in range(9))
+
+    def margin(self, p, coefficients):
+        active, total = self.vertex_data(p)
+        for u, n in active:
+            total += n * coefficients[u]
+        margin = self.target - total
+        if not margin.is_finite():
+            raise Invalid("nonfinite vertex margin")
+        lo = margin.lower()
+        if self.minimum is None or lo < self.minimum:
+            self.minimum = lo
+        return margin
+
+    def verify(self, document, required_r0=REQUIRED_R0, expect=None):
+        stats = {
+            "facet": None, "r0": None, "verdict": "FAIL",
+            "nodes": 0, "splits": 0, "dual_leaves": 0,
+            "central_leaves": 0, "failed_leaves": 0,
+            "first_failures": [], "min_margin_lower_bound": None
+        }
+        bad = False
+
+        def fail(index, kind, reason):
+            nonlocal bad
+            bad = True
+            if len(stats["first_failures"]) < 10:
+                stats["first_failures"].append([index, kind, reason])
+
+        try:
+            if not isinstance(document, dict):
+                raise Invalid("top-level JSON must be an object")
+            stats["facet"] = document.get("facet")
+            stats["r0"] = document.get("r0")
+            facet = facet_pair(document.get("facet"))
+            if expect is not None and facet != tuple(expect):
+                raise Invalid("facet does not match --expect-facet")
+            r0 = rational(document.get("r0"))
+            if r0 != required_r0:
+                raise Invalid("r0 must equal " + str(required_r0) + " exactly")
+            tree = document.get("tree")
+            if not isinstance(tree, list):
+                raise Invalid("tree must be a list")
+            stats["nodes"] = len(tree)
+            stack = [root_simplex(facet)]
+            index = 0
+            structural_failure = False
+            while stack:
+                if index == len(tree):
+                    fail(index, "tree", "truncated preorder: unfilled child slots")
+                    structural_failure = True
+                    break
+                cell = stack.pop()
+                node = tree[index]
+                here = index
+                index += 1
+                if (not isinstance(node, list) or not node
+                        or not isinstance(node[0], str)):
+                    fail(here, "node", "node must be a nonempty list with a string kind")
+                    structural_failure = True
+                    break
+                kind = node[0]
+                if kind == "S":
+                    if (len(node) != 3 or type(node[1]) is not int
+                            or type(node[2]) is not int
+                            or not 0 <= node[1] < 5
+                            or not 0 <= node[2] < 5 or node[1] == node[2]):
+                        fail(here, kind, "split requires distinct integer indices in 0..4")
+                        structural_failure = True
+                        break
+                    stats["splits"] += 1
+                    i, j = node[1:]
+                    mid = tuple((a + b) / 2 for a, b in zip(cell[i], cell[j]))
+                    first, second = list(cell), list(cell)
+                    first[i], second[j] = mid, mid
+                    # LIFO: first child must be visited before second child.
+                    stack.append(tuple(second))
+                    stack.append(tuple(first))
+                elif kind == "C":
+                    stats["central_leaves"] += 1
+                    if len(node) != 1:
+                        stats["failed_leaves"] += 1
+                        fail(here, kind, "C node must have exactly one field")
+                    elif any(abs(x - CENTER[k]) > r0
+                             for p in cell for k, x in enumerate(p)):
+                        stats["failed_leaves"] += 1
+                        fail(here, kind, "a vertex is outside the closed central box")
+                elif kind == "D":
+                    stats["dual_leaves"] += 1
+                    reasons = []
+                    try:
+                        coefficients = self.dual_coefficients(node)
+                        for vi, p in enumerate(cell):
+                            margin = self.margin(p, coefficients)
+                            if not margin > 0:
+                                reasons.append(
+                                    "vertex " + str(vi)
+                                    + ": L*-U is not rigorously positive"
+                                    + " (lower bound " + lower_decimal(margin) + ")"
+                                )
+                    except (Invalid, ValueError, ArithmeticError, TypeError) as exc:
+                        self.complete_margins = False
+                        reasons.append(str(exc))
+                    if reasons:
+                        stats["failed_leaves"] += 1
+                        fail(here, kind, "; ".join(reasons))
+                else:
+                    fail(here, kind, "unknown node kind")
+                    structural_failure = True
+                    break
+            if structural_failure:
+                self.complete_margins = False
+            elif index != len(tree):
+                fail(index, "tree", "trailing nodes after the root subtree")
+                self.complete_margins = False
+        except (Invalid, ValueError, ArithmeticError, TypeError) as exc:
+            fail(-1, "metadata", str(exc))
+            self.complete_margins = False
+        if self.complete_margins and self.minimum is not None:
+            stats["min_margin_lower_bound"] = lower_decimal(self.minimum)
+        stats["verdict"] = "FAIL" if bad else "PASS"
+        return stats
+
+
+def unique_object(pairs):
+    obj = {}
+    for key, value in pairs:
+        if key in obj:
+            raise Invalid("duplicate JSON key: " + key)
+        obj[key] = value
+    return obj
+
+
+def reject_constant(value):
+    raise Invalid("nonstandard JSON constant: " + value)
+
+
+def exact_phi_moments(mu):
+    """Only used by selftest: an independent exact polynomial evaluation."""
+    phi, moments = Q(0), [Q(0)] * 4
+    for s, w in SPECTRA:
+        term = Q(w)
+        for k in range(4):
+            term *= mu[k] ** s[k]
+        phi += term
+        for k in range(4):
+            moments[k] += term * s[k]
+    return phi, tuple(v / phi for v in moments)
+
+
+def selftest(prec):
+    checks = []
+
+    def require(condition, name):
+        if not condition:
+            raise Invalid("selftest failed: " + name)
+        checks.append(name)
+
+    def close_zero(value):
+        return value.contains(0) and abs(value) < arb(Q(1, 1 << (prec // 2)))
+
+    require(len(SPECTRA) == 36, "36 spectra")
+    entries = Counter((u, k) for e in EDGES
+                      for u, k in ((e[0], e[1]), (e[2], e[3])))
+    require(len(EDGES) == 18 and len(entries) == 36
+            and set(entries) == {(u, k) for u in range(9) for k in range(4)}
+            and all(v == 1 for v in entries.values()),
+            "18 edges; every class entry used exactly once")
+    one = (Q(1),) * 4
+    phi, means = exact_phi_moments(one)
+    require(phi == 900 and means == (Q(5, 4),) * 4,
+            "exact Phi(1)=900 and all moments=5/4")
+    require(all(sum(s) == 5 for s, unused in SPECTRA),
+            "exact degree-five homogeneity")
+    zeros = (arb(0),) * 4
+    a = a_bound(zeros, one)
+    expected_a = arb(Q(5, 4)).log() * 5 / 2 + arb(900).log()
+    require(close_zero(a - expected_a),
+            "a=(5/2)log(5/4)+log(900)")
+    # These rational identities, equal moments and degree five give the
+    # symbolic uniform-case equality, alongside the interval regressions.
+    require(Q(900, 32 * 27) == Q(25, 24),
+            "exact rational factor in U(center)=L*")
+    replay = Replay(prec)
+    margin = replay.margin(CENTER, (a,) * 9)
+    require(close_zero(margin) and not margin > 0,
+            "U(center)=L*; strict margin is rejected")
+    uniform = ["D", ["0x0.0p+0"] * 18, [["0x1.0000000000000p+0"] * 4
+                                     for unused in range(9)]]
+    result = Replay(prec).verify(
+        {"facet": [0, 0], "r0": "1/10000", "tree": [uniform]}
+    )
+    require(result["verdict"] == "FAIL" and result["failed_leaves"] == 1
+            and "vertex 0:" in result["first_failures"][0][2],
+            "dual root containing center is rejected")
+    mu = (Q(3, 2), Q(5, 7), Q(11, 13), Q(17, 19))
+    doubled = tuple(2 * q for q in mu)
+    phi1, means1 = exact_phi_moments(mu)
+    phi2, means2 = exact_phi_moments(doubled)
+    require(phi2 == 32 * phi1 and means2 == means1,
+            "exact Phi(2mu)=32Phi(mu), invariant moments")
+    z = tuple(arb(q) for q in (Q(1, 7), Q(-2, 9), Q(3, 11), Q(-5, 13)))
+    require(close_zero(a_bound(z, mu) - a_bound(z, doubled)),
+            "a(z,2mu)=a(z,mu)")
+    # Cross-check the cancellation against the unsimplified specification.
+    m = tuple(arb(q) for q in means1)
+    lm = tuple(arb(q).log() for q in mu)
+    g = tuple(m[k].log() / 2 - lm[k] + z[k] for k in range(4))
+    psi = arb(phi1).log()
+    for k in range(4):
+        psi += m[k] * m[k].log() / 2 - m[k] * lm[k]
+    base = psi + sum((z[k] * m[k] for k in range(4)), arb(0))
+    maximum = None
+    for s, unused in SPECTRA:
+        score = sum((g[k] * (s[k] - m[k]) for k in range(4)), arb(0))
+        maximum = score if maximum is None else maximum.max(score)
+    require(close_zero(a_bound(z, mu) - (base + maximum)),
+            "simplified a agrees with the stated unsimplified formula")
+    return {"verdict": "PASS", "selftest": True, "prec": prec,
+            "checks": checks, "a_uniform": a.str(),
+            "center_margin": margin.str()}
+
+
+class Parser(argparse.ArgumentParser):
+    def error(self, message):
+        raise Invalid(message)
+
+
+def utc_now():
+    return datetime.now(timezone.utc).isoformat()
+
+
+def main(argv=None):
+    started = utc_now()
+    result = {
+        "cert": None, "cert_sha256": None, "facet": None, "r0": None,
+        "verdict": "FAIL", "nodes": 0, "splits": 0, "dual_leaves": 0,
+        "central_leaves": 0, "failed_leaves": 0, "first_failures": [],
+        "min_margin_lower_bound": None, "prec": 200, "started": started
+    }
+    try:
+        parser = Parser(description=__doc__)
+        parser.add_argument("cert", nargs="?")
+        parser.add_argument("--expect-facet", nargs=2, type=int, metavar=("FI", "FJ"))
+        parser.add_argument("--prec", type=int, default=200, metavar="BITS")
+        parser.add_argument("--allow-r0", metavar="P/Q",
+                            help="TEST ONLY: replace the required radius")
+        parser.add_argument("--selftest", action="store_true")
+        args = parser.parse_args(argv)
+        result["cert"], result["prec"] = args.cert, args.prec
+        if args.allow_r0 is not None:
+            result["allow_r0"] = args.allow_r0
+        if args.prec < 128:
+            raise Invalid("--prec must be at least 128")
+        ctx.prec = args.prec
+        ctx.threads = 1
+        if args.expect_facet is not None:
+            facet_pair(args.expect_facet)
+        required = REQUIRED_R0 if args.allow_r0 is None else rational(args.allow_r0)
+        if required <= 0:
+            raise Invalid("required radius must be positive")
+        if args.selftest:
+            if args.cert is not None or args.allow_r0 is not None or args.expect_facet:
+                raise Invalid("--selftest cannot be combined with certificate options")
+            result.update(selftest(args.prec))
+        else:
+            if args.cert is None:
+                raise Invalid("a certificate path is required, or use --selftest")
+            raw = Path(args.cert).read_bytes()
+            result["cert_sha256"] = hashlib.sha256(raw).hexdigest()
+            document = json.loads(raw, parse_float=Decimal,
+                                  parse_constant=reject_constant,
+                                  object_pairs_hook=unique_object)
+            result.update(Replay(args.prec).verify(document, required, args.expect_facet))
+    except Exception as exc:
+        result["verdict"] = "FAIL"
+        result["min_margin_lower_bound"] = None
+        if len(result["first_failures"]) < 10:
+            result["first_failures"].append([-1, "input", type(exc).__name__ + ": " + str(exc)])
+    result["finished"] = utc_now()
+    print(json.dumps(result, ensure_ascii=True, allow_nan=False))
+    return 0 if result["verdict"] == "PASS" else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+'"' --selftest" in /Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-16/review/colour-codex-checker-v1
+ succeeded in 0ms:
+{"cert": null, "cert_sha256": null, "facet": null, "r0": null, "verdict": "PASS", "nodes": 0, "splits": 0, "dual_leaves": 0, "central_leaves": 0, "failed_leaves": 0, "first_failures": [], "min_margin_lower_bound": null, "prec": 200, "started": "2026-10-17T08:26:22.648509+00:00", "selftest": true, "checks": ["36 spectra", "18 edges; every class entry used exactly once", "exact Phi(1)=900 and all moments=5/4", "exact degree-five homogeneity", "a=(5/2)log(5/4)+log(900)", "exact rational factor in U(center)=L*", "U(center)=L*; strict margin is rejected", "dual root containing center is rejected", "exact Phi(2mu)=32Phi(mu), invariant moments", "a(z,2mu)=a(z,mu)", "simplified a agrees with the stated unsimplified formula"], "a_uniform": "[7.3602536416098351402422111089883660829336868067730628897143 +/- 5.10e-59]", "center_margin": "[+/- 1.08e-58]", "finished": "2026-10-17T08:26:22.656602+00:00"}
+
+codex
+All 11 self-tests pass at 200 bits, including rejection of the uniform dual cell containing \(n^*\), the stated identity for \(a\), and scale invariance. The certificate JSON contains 19,383 nodes in the small test and 67,079 in `cone00.json`. I’ll replay the small certificate next.
+exec
+/bin/zsh -lc "/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261016/random5reg-colour/.venv/bin/python -B -c '#"'!/usr/bin/env python3
+"""Independent, fail-closed certificate replay; requires python-flint.
+
+All geometric and hexadecimal input arithmetic is exact fmpq arithmetic.
+All logarithms, extrema and inequality decisions use Arb at --prec bits.
+Preorder indices in diagnostics are zero based. A null margin means that
+there were no dual vertices, or that not all dual margins could be computed.
+"""
+import argparse
+from collections import Counter
+from datetime import datetime, timezone
+from decimal import Decimal, ROUND_FLOOR, localcontext
+from functools import lru_cache
+import hashlib
+from itertools import permutations
+import json
+from math import factorial
+from pathlib import Path
+import re
+import sys
+
+from flint import arb, ctx, fmpq
+
+Q = fmpq
+THIRD = Q(1, 3)
+CENTER = (Q(1, 9),) * 4
+REQUIRED_R0 = Q(1, 10000)
+DIRECTIONS = ((-1, -1), (-1, 1), (1, -1), (1, 1))
+HEX = re.compile(
+    r"([+-]?)0[xX]([0-9a-fA-F]+)'"\\.([0-9a-fA-F]+)[pP]([+-]?[0-9]+)\\Z\"
+)
+RATIONAL = re.compile(r\"([+-]?[0-9]+)/([0-9]+)\\Z\")
+
+
+class Invalid(ValueError):
+    pass
+
+
+def spectra():
+    result = []
+    for a in range(6):
+        for b in range(6 - a):
+            for c in range(6 - a - b):
+                d = 5 - a - b - c
+                if min(a + b, c + d, a + c, b + d) >= 1:
+                    s = (a, b, c, d)
+                    denominator = 1
+                    for k in s:
+                        denominator *= factorial(k)
+                    result.append((s, 120 // denominator))
+    return tuple(result)
+
+
+def edges():
+    used, result = set(), []
+    for u in range(9):
+        i, j = divmod(u, 3)
+        for k, (r, t) in enumerate(DIRECTIONS):
+            if (u, k) in used:
+                continue
+            v = 3 * ((i + r) % 3) + (j + t) % 3
+            kv = DIRECTIONS.index((-r, -t))
+            if (v, kv) in used:
+                raise Invalid(\"edge construction reused an entry\")
+            result.append((u, k, v, kv))
+            used.update(((u, k), (v, kv)))
+    return tuple(result)
+
+
+SPECTRA = spectra()
+EDGES = edges()
+
+
+def rational(text):
+    if not isinstance(text, str):
+        raise Invalid(\"r0 must be a P/Q string\")
+    m = RATIONAL.fullmatch(text)
+    if m is None or int(m[2]) == 0:
+        raise Invalid(\"invalid P/Q rational\")
+    return Q(int(m[1]), int(m[2]))
+
+
+def hex_rational(text):
+    \"\"\"Parse the written binary rational, with no float conversion.\"\"\"
+    if not isinstance(text, str):
+        raise Invalid(\"hexadecimal entry must be a string\")
+    m = HEX.fullmatch(text)
+    if m is None:
+        raise Invalid(\"invalid finite hexadecimal literal: \" + repr(text)[:100])
+    numerator = int(m[2] + m[3], 16)
+    if m[1] == \"-\":
+        numerator = -numerator
+    exponent = int(m[4]) - 4 * len(m[3])
+    if exponent >= 0:
+        return Q(numerator << exponent)
+    return Q(numerator, 1 << -exponent)
+
+
+def facet_pair(value):
+    if (not isinstance(value, list) or len(value) "'!= 2
+            or any(type(i) is not int or not 0 <= i < 3 for i in value)):
+        raise Invalid("facet must be two integers in 0..2")
+    return tuple(value)
+
+
+def root_simplex(facet):
+    fi, fj = facet
+    vertices = [CENTER]
+    for sigma in permutations(range(3)):
+        if sigma[fi] != fj:
+            vertices.append(tuple(
+                THIRD * int(truth) for truth in (
+                    sigma[0] == 0, sigma[0] == 1,
+                    sigma[1] == 0, sigma[1] == 1
+                )
+            ))
+    if len(vertices) != 5:
+        raise Invalid("root construction did not produce five vertices")
+    return tuple(vertices)
+
+
+def class_values(p):
+    x1, x2, x3, x4 = p
+    return (
+        x1, x2, THIRD - x1 - x2,
+        x3, x4, THIRD - x3 - x4,
+        THIRD - x1 - x3, THIRD - x2 - x4,
+        x1 + x2 + x3 + x4 - THIRD
+    )
+
+
+def lower_decimal(value):
+    """Round an exact dyadic lower endpoint DOWN when printing decimal."""
+    value = value.lower()
+    if not value.is_finite():
+        return None
+    m, e = (int(t) for t in value.man_exp())
+    if e >= 0:
+        return str(m << e)
+    with localcontext() as dc:
+        dc.prec = max(30, ctx.prec * 30103 // 100000)
+        dc.rounding = ROUND_FLOOR
+        return str(Decimal(m) / Decimal(1 << -e))
+
+
+def a_bound(z, mu):
+    """Enclose the specified a(z,mu), including the entire finite maximum."""
+    powers = []
+    for q in mu:
+        row = [arb(1), arb(q)]
+        for unused in range(2, 6):
+            row.append(row[-1] * row[1])
+        powers.append(row)
+    phi = arb(0)
+    moments = [arb(0) for unused in range(4)]
+    for s, w in SPECTRA:
+        term = arb(w)
+        for k in range(4):
+            if s[k]:
+                term *= powers[k][s[k]]
+        phi += term
+        for k in range(4):
+            if s[k]:
+                moments[k] += s[k] * term
+    if not (phi.is_finite() and phi > 0):
+        raise Invalid("Phi is not certified finite and positive")
+    means = [v / phi for v in moments]
+    if any(not (v.is_finite() and v > 0) for v in means):
+        raise Invalid("a moment is not certified finite and positive")
+    g = [means[k].log() / 2 - arb(mu[k]).log() + z[k]
+         for k in range(4)]
+    # psi0 + z.m0 - g.m0 = log(Phi) exactly. No approximation
+    # or assumed maximizer is used in this algebraic cancellation.
+    maximum = None
+    for s, unused in SPECTRA:
+        score = arb(0)
+        for k in range(4):
+            if s[k]:
+                score += s[k] * g[k]
+        maximum = score if maximum is None else maximum.max(score)
+    answer = phi.log() + maximum
+    if not answer.is_finite():
+        raise Invalid("nonfinite a(z,mu) enclosure")
+    return answer
+
+
+class Replay:
+    def __init__(self, prec):
+        self.prec = prec
+        self.target = arb(5).log() * 5 / 2 + arb(Q(25, 24)).log()
+        self.minimum = None
+        self.complete_margins = True
+
+        # Per-replay caches: never reuse balls computed at another precision.
+        @lru_cache(maxsize=65536)
+        def entropy_term(n):
+            b = arb(n)
+            return b * b.log() * 3 / 2
+
+        @lru_cache(maxsize=65536)
+        def vertex_data(p):
+            active, entropy = [], arb(0)
+            for u, n in enumerate(class_values(p)):
+                if n < 0:
+                    raise Invalid("vertex outside Delta: negative class " + str(u))
+                if n > 0:
+                    active.append((u, arb(n)))
+                    entropy += entropy_term(n)
+            return tuple(active), entropy
+
+        self.vertex_data = vertex_data
+
+    def dual_coefficients(self, node):
+        if len(node) != 3:
+            raise Invalid("D node must have exactly three fields")
+        y, mus = node[1], node[2]
+        if not isinstance(y, list) or len(y) != 18:
+            raise Invalid("y must be a list of 18 hexadecimal strings")
+        if (not isinstance(mus, list) or len(mus) != 9
+                or any(not isinstance(row, list) or len(row) != 4
+                       for row in mus)):
+            raise Invalid("mus must be a 9 by 4 list")
+        ys = [hex_rational(t) for t in y]
+        qs = [[hex_rational(t) for t in row] for row in mus]
+        if any(q <= 0 for row in qs for q in row):
+            raise Invalid("every mu entry must be strictly positive")
+        z = [[arb(0) for unused in range(4)] for unused in range(9)]
+        for q, (u, k, v, kv) in zip(ys, EDGES):
+            b = arb(q)
+            z[u][k] += b
+            z[v][kv] -= b
+        return tuple(a_bound(z[u], qs[u]) for u in range(9))
+
+    def margin(self, p, coefficients):
+        active, total = self.vertex_data(p)
+        for u, n in active:
+            total += n * coefficients[u]
+        margin = self.target - total
+        if not margin.is_finite():
+            raise Invalid("nonfinite vertex margin")
+        lo = margin.lower()
+        if self.minimum is None or lo < self.minimum:
+            self.minimum = lo
+        return margin
+
+    def verify(self, document, required_r0=REQUIRED_R0, expect=None):
+        stats = {
+            "facet": None, "r0": None, "verdict": "FAIL",
+            "nodes": 0, "splits": 0, "dual_leaves": 0,
+            "central_leaves": 0, "failed_leaves": 0,
+            "first_failures": [], "min_margin_lower_bound": None
+        }
+        bad = False
+
+        def fail(index, kind, reason):
+            nonlocal bad
+            bad = True
+            if len(stats["first_failures"]) < 10:
+                stats["first_failures"].append([index, kind, reason])
+
+        try:
+            if not isinstance(document, dict):
+                raise Invalid("top-level JSON must be an object")
+            stats["facet"] = document.get("facet")
+            stats["r0"] = document.get("r0")
+            facet = facet_pair(document.get("facet"))
+            if expect is not None and facet != tuple(expect):
+                raise Invalid("facet does not match --expect-facet")
+            r0 = rational(document.get("r0"))
+            if r0 != required_r0:
+                raise Invalid("r0 must equal " + str(required_r0) + " exactly")
+            tree = document.get("tree")
+            if not isinstance(tree, list):
+                raise Invalid("tree must be a list")
+            stats["nodes"] = len(tree)
+            stack = [root_simplex(facet)]
+            index = 0
+            structural_failure = False
+            while stack:
+                if index == len(tree):
+                    fail(index, "tree", "truncated preorder: unfilled child slots")
+                    structural_failure = True
+                    break
+                cell = stack.pop()
+                node = tree[index]
+                here = index
+                index += 1
+                if (not isinstance(node, list) or not node
+                        or not isinstance(node[0], str)):
+                    fail(here, "node", "node must be a nonempty list with a string kind")
+                    structural_failure = True
+                    break
+                kind = node[0]
+                if kind == "S":
+                    if (len(node) != 3 or type(node[1]) is not int
+                            or type(node[2]) is not int
+                            or not 0 <= node[1] < 5
+                            or not 0 <= node[2] < 5 or node[1] == node[2]):
+                        fail(here, kind, "split requires distinct integer indices in 0..4")
+                        structural_failure = True
+                        break
+                    stats["splits"] += 1
+                    i, j = node[1:]
+                    mid = tuple((a + b) / 2 for a, b in zip(cell[i], cell[j]))
+                    first, second = list(cell), list(cell)
+                    first[i], second[j] = mid, mid
+                    # LIFO: first child must be visited before second child.
+                    stack.append(tuple(second))
+                    stack.append(tuple(first))
+                elif kind == "C":
+                    stats["central_leaves"] += 1
+                    if len(node) != 1:
+                        stats["failed_leaves"] += 1
+                        fail(here, kind, "C node must have exactly one field")
+                    elif any(abs(x - CENTER[k]) > r0
+                             for p in cell for k, x in enumerate(p)):
+                        stats["failed_leaves"] += 1
+                        fail(here, kind, "a vertex is outside the closed central box")
+                elif kind == "D":
+                    stats["dual_leaves"] += 1
+                    reasons = []
+                    try:
+                        coefficients = self.dual_coefficients(node)
+                        for vi, p in enumerate(cell):
+                            margin = self.margin(p, coefficients)
+                            if not margin > 0:
+                                reasons.append(
+                                    "vertex " + str(vi)
+                                    + ": L*-U is not rigorously positive"
+                                    + " (lower bound " + lower_decimal(margin) + ")"
+                                )
+                    except (Invalid, ValueError, ArithmeticError, TypeError) as exc:
+                        self.complete_margins = False
+                        reasons.append(str(exc))
+                    if reasons:
+                        stats["failed_leaves"] += 1
+                        fail(here, kind, "; ".join(reasons))
+                else:
+                    fail(here, kind, "unknown node kind")
+                    structural_failure = True
+                    break
+            if structural_failure:
+                self.complete_margins = False
+            elif index != len(tree):
+                fail(index, "tree", "trailing nodes after the root subtree")
+                self.complete_margins = False
+        except (Invalid, ValueError, ArithmeticError, TypeError) as exc:
+            fail(-1, "metadata", str(exc))
+            self.complete_margins = False
+        if self.complete_margins and self.minimum is not None:
+            stats["min_margin_lower_bound"] = lower_decimal(self.minimum)
+        stats["verdict"] = "FAIL" if bad else "PASS"
+        return stats
+
+
+def unique_object(pairs):
+    obj = {}
+    for key, value in pairs:
+        if key in obj:
+            raise Invalid("duplicate JSON key: " + key)
+        obj[key] = value
+    return obj
+
+
+def reject_constant(value):
+    raise Invalid("nonstandard JSON constant: " + value)
+
+
+def exact_phi_moments(mu):
+    """Only used by selftest: an independent exact polynomial evaluation."""
+    phi, moments = Q(0), [Q(0)] * 4
+    for s, w in SPECTRA:
+        term = Q(w)
+        for k in range(4):
+            term *= mu[k] ** s[k]
+        phi += term
+        for k in range(4):
+            moments[k] += term * s[k]
+    return phi, tuple(v / phi for v in moments)
+
+
+def selftest(prec):
+    checks = []
+
+    def require(condition, name):
+        if not condition:
+            raise Invalid("selftest failed: " + name)
+        checks.append(name)
+
+    def close_zero(value):
+        return value.contains(0) and abs(value) < arb(Q(1, 1 << (prec // 2)))
+
+    require(len(SPECTRA) == 36, "36 spectra")
+    entries = Counter((u, k) for e in EDGES
+                      for u, k in ((e[0], e[1]), (e[2], e[3])))
+    require(len(EDGES) == 18 and len(entries) == 36
+            and set(entries) == {(u, k) for u in range(9) for k in range(4)}
+            and all(v == 1 for v in entries.values()),
+            "18 edges; every class entry used exactly once")
+    one = (Q(1),) * 4
+    phi, means = exact_phi_moments(one)
+    require(phi == 900 and means == (Q(5, 4),) * 4,
+            "exact Phi(1)=900 and all moments=5/4")
+    require(all(sum(s) == 5 for s, unused in SPECTRA),
+            "exact degree-five homogeneity")
+    zeros = (arb(0),) * 4
+    a = a_bound(zeros, one)
+    expected_a = arb(Q(5, 4)).log() * 5 / 2 + arb(900).log()
+    require(close_zero(a - expected_a),
+            "a=(5/2)log(5/4)+log(900)")
+    # These rational identities, equal moments and degree five give the
+    # symbolic uniform-case equality, alongside the interval regressions.
+    require(Q(900, 32 * 27) == Q(25, 24),
+            "exact rational factor in U(center)=L*")
+    replay = Replay(prec)
+    margin = replay.margin(CENTER, (a,) * 9)
+    require(close_zero(margin) and not margin > 0,
+            "U(center)=L*; strict margin is rejected")
+    uniform = ["D", ["0x0.0p+0"] * 18, [["0x1.0000000000000p+0"] * 4
+                                     for unused in range(9)]]
+    result = Replay(prec).verify(
+        {"facet": [0, 0], "r0": "1/10000", "tree": [uniform]}
+    )
+    require(result["verdict"] == "FAIL" and result["failed_leaves"] == 1
+            and "vertex 0:" in result["first_failures"][0][2],
+            "dual root containing center is rejected")
+    mu = (Q(3, 2), Q(5, 7), Q(11, 13), Q(17, 19))
+    doubled = tuple(2 * q for q in mu)
+    phi1, means1 = exact_phi_moments(mu)
+    phi2, means2 = exact_phi_moments(doubled)
+    require(phi2 == 32 * phi1 and means2 == means1,
+            "exact Phi(2mu)=32Phi(mu), invariant moments")
+    z = tuple(arb(q) for q in (Q(1, 7), Q(-2, 9), Q(3, 11), Q(-5, 13)))
+    require(close_zero(a_bound(z, mu) - a_bound(z, doubled)),
+            "a(z,2mu)=a(z,mu)")
+    # Cross-check the cancellation against the unsimplified specification.
+    m = tuple(arb(q) for q in means1)
+    lm = tuple(arb(q).log() for q in mu)
+    g = tuple(m[k].log() / 2 - lm[k] + z[k] for k in range(4))
+    psi = arb(phi1).log()
+    for k in range(4):
+        psi += m[k] * m[k].log() / 2 - m[k] * lm[k]
+    base = psi + sum((z[k] * m[k] for k in range(4)), arb(0))
+    maximum = None
+    for s, unused in SPECTRA:
+        score = sum((g[k] * (s[k] - m[k]) for k in range(4)), arb(0))
+        maximum = score if maximum is None else maximum.max(score)
+    require(close_zero(a_bound(z, mu) - (base + maximum)),
+            "simplified a agrees with the stated unsimplified formula")
+    return {"verdict": "PASS", "selftest": True, "prec": prec,
+            "checks": checks, "a_uniform": a.str(),
+            "center_margin": margin.str()}
+
+
+class Parser(argparse.ArgumentParser):
+    def error(self, message):
+        raise Invalid(message)
+
+
+def utc_now():
+    return datetime.now(timezone.utc).isoformat()
+
+
+def main(argv=None):
+    started = utc_now()
+    result = {
+        "cert": None, "cert_sha256": None, "facet": None, "r0": None,
+        "verdict": "FAIL", "nodes": 0, "splits": 0, "dual_leaves": 0,
+        "central_leaves": 0, "failed_leaves": 0, "first_failures": [],
+        "min_margin_lower_bound": None, "prec": 200, "started": started
+    }
+    try:
+        parser = Parser(description=__doc__)
+        parser.add_argument("cert", nargs="?")
+        parser.add_argument("--expect-facet", nargs=2, type=int, metavar=("FI", "FJ"))
+        parser.add_argument("--prec", type=int, default=200, metavar="BITS")
+        parser.add_argument("--allow-r0", metavar="P/Q",
+                            help="TEST ONLY: replace the required radius")
+        parser.add_argument("--selftest", action="store_true")
+        args = parser.parse_args(argv)
+        result["cert"], result["prec"] = args.cert, args.prec
+        if args.allow_r0 is not None:
+            result["allow_r0"] = args.allow_r0
+        if args.prec < 128:
+            raise Invalid("--prec must be at least 128")
+        ctx.prec = args.prec
+        ctx.threads = 1
+        if args.expect_facet is not None:
+            facet_pair(args.expect_facet)
+        required = REQUIRED_R0 if args.allow_r0 is None else rational(args.allow_r0)
+        if required <= 0:
+            raise Invalid("required radius must be positive")
+        if args.selftest:
+            if args.cert is not None or args.allow_r0 is not None or args.expect_facet:
+                raise Invalid("--selftest cannot be combined with certificate options")
+            result.update(selftest(args.prec))
+        else:
+            if args.cert is None:
+                raise Invalid("a certificate path is required, or use --selftest")
+            raw = Path(args.cert).read_bytes()
+            result["cert_sha256"] = hashlib.sha256(raw).hexdigest()
+            document = json.loads(raw, parse_float=Decimal,
+                                  parse_constant=reject_constant,
+                                  object_pairs_hook=unique_object)
+            result.update(Replay(args.prec).verify(document, required, args.expect_facet))
+    except Exception as exc:
+        result["verdict"] = "FAIL"
+        result["min_margin_lower_bound"] = None
+        if len(result["first_failures"]) < 10:
+            result["first_failures"].append([-1, "input", type(exc).__name__ + ": " + str(exc)])
+    result["finished"] = utc_now()
+    print(json.dumps(result, ensure_ascii=True, allow_nan=False))
+    return 0 if result["verdict"] == "PASS" else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+'"' /Users/jinleic/repos/aifours/physics/evidence/six-lane-20261016/random5reg-colour/outer/evidence/mutations/base_cone00_r1_1over20.json --allow-r0 1/20 --expect-facet 0 0" in /Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-16/review/colour-codex-checker-v1
+ succeeded in 6526ms:
+{"cert": "/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261016/random5reg-colour/outer/evidence/mutations/base_cone00_r1_1over20.json", "cert_sha256": "50ce362e190e7dde1c036929a878a9c725564ee0a6b2079914ce611071260d62", "facet": [0, 0], "r0": "1/20", "verdict": "PASS", "nodes": 19383, "splits": 9691, "dual_leaves": 9122, "central_leaves": 570, "failed_leaves": 0, "first_failures": [], "min_margin_lower_bound": "4.95259938059884678689092295522697720195837060082272860183311E-8", "prec": 200, "started": "2026-10-17T08:26:35.215712+00:00", "allow_r0": "1/20", "finished": "2026-10-17T08:26:41.805553+00:00"}
+
+exec
+/bin/zsh -lc "/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261016/random5reg-colour/.venv/bin/python -B -c 'from flint import arb, fmpq; print(\"arb iadd\",hasattr(arb,\"__iadd__\"),\"q iadd\",hasattr(fmpq,\"__iadd__\"))'" in /Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-16/review/colour-codex-checker-v1
+ succeeded in 0ms:
+arb iadd False q iadd False
+
+exec
+/bin/zsh -lc "/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261016/random5reg-colour/.venv/bin/python -B -c '#"'!/usr/bin/env python3
+"""Independent, fail-closed certificate replay; requires python-flint.
+
+All geometric and hexadecimal input arithmetic is exact fmpq arithmetic.
+All logarithms, extrema and inequality decisions use Arb at --prec bits.
+Preorder indices in diagnostics are zero based. A null margin means that
+there were no dual vertices, or that not all dual margins could be computed.
+"""
+import argparse
+from collections import Counter
+from datetime import datetime, timezone
+from decimal import Decimal, ROUND_FLOOR, localcontext
+from functools import lru_cache
+import hashlib
+from itertools import permutations
+import json
+from math import factorial
+from pathlib import Path
+import re
+import sys
+
+from flint import arb, ctx, fmpq
+
+Q = fmpq
+THIRD = Q(1, 3)
+CENTER = (Q(1, 9),) * 4
+REQUIRED_R0 = Q(1, 10000)
+DIRECTIONS = ((-1, -1), (-1, 1), (1, -1), (1, 1))
+HEX = re.compile(
+    r"([+-]?)0[xX]([0-9a-fA-F]+)'"\\.([0-9a-fA-F]+)[pP]([+-]?[0-9]+)\\Z\"
+)
+RATIONAL = re.compile(r\"([+-]?[0-9]+)/([0-9]+)\\Z\")
+
+
+class Invalid(ValueError):
+    pass
+
+
+def spectra():
+    result = []
+    for a in range(6):
+        for b in range(6 - a):
+            for c in range(6 - a - b):
+                d = 5 - a - b - c
+                if min(a + b, c + d, a + c, b + d) >= 1:
+                    s = (a, b, c, d)
+                    denominator = 1
+                    for k in s:
+                        denominator *= factorial(k)
+                    result.append((s, 120 // denominator))
+    return tuple(result)
+
+
+def edges():
+    used, result = set(), []
+    for u in range(9):
+        i, j = divmod(u, 3)
+        for k, (r, t) in enumerate(DIRECTIONS):
+            if (u, k) in used:
+                continue
+            v = 3 * ((i + r) % 3) + (j + t) % 3
+            kv = DIRECTIONS.index((-r, -t))
+            if (v, kv) in used:
+                raise Invalid(\"edge construction reused an entry\")
+            result.append((u, k, v, kv))
+            used.update(((u, k), (v, kv)))
+    return tuple(result)
+
+
+SPECTRA = spectra()
+EDGES = edges()
+
+
+def rational(text):
+    if not isinstance(text, str):
+        raise Invalid(\"r0 must be a P/Q string\")
+    m = RATIONAL.fullmatch(text)
+    if m is None or int(m[2]) == 0:
+        raise Invalid(\"invalid P/Q rational\")
+    return Q(int(m[1]), int(m[2]))
+
+
+def hex_rational(text):
+    \"\"\"Parse the written binary rational, with no float conversion.\"\"\"
+    if not isinstance(text, str):
+        raise Invalid(\"hexadecimal entry must be a string\")
+    m = HEX.fullmatch(text)
+    if m is None:
+        raise Invalid(\"invalid finite hexadecimal literal: \" + repr(text)[:100])
+    numerator = int(m[2] + m[3], 16)
+    if m[1] == \"-\":
+        numerator = -numerator
+    exponent = int(m[4]) - 4 * len(m[3])
+    if exponent >= 0:
+        return Q(numerator << exponent)
+    return Q(numerator, 1 << -exponent)
+
+
+def facet_pair(value):
+    if (not isinstance(value, list) or len(value) "'!= 2
+            or any(type(i) is not int or not 0 <= i < 3 for i in value)):
+        raise Invalid("facet must be two integers in 0..2")
+    return tuple(value)
+
+
+def root_simplex(facet):
+    fi, fj = facet
+    vertices = [CENTER]
+    for sigma in permutations(range(3)):
+        if sigma[fi] != fj:
+            vertices.append(tuple(
+                THIRD * int(truth) for truth in (
+                    sigma[0] == 0, sigma[0] == 1,
+                    sigma[1] == 0, sigma[1] == 1
+                )
+            ))
+    if len(vertices) != 5:
+        raise Invalid("root construction did not produce five vertices")
+    return tuple(vertices)
+
+
+def class_values(p):
+    x1, x2, x3, x4 = p
+    return (
+        x1, x2, THIRD - x1 - x2,
+        x3, x4, THIRD - x3 - x4,
+        THIRD - x1 - x3, THIRD - x2 - x4,
+        x1 + x2 + x3 + x4 - THIRD
+    )
+
+
+def lower_decimal(value):
+    """Round an exact dyadic lower endpoint DOWN when printing decimal."""
+    value = value.lower()
+    if not value.is_finite():
+        return None
+    m, e = (int(t) for t in value.man_exp())
+    if e >= 0:
+        return str(m << e)
+    with localcontext() as dc:
+        dc.prec = max(30, ctx.prec * 30103 // 100000)
+        dc.rounding = ROUND_FLOOR
+        return str(Decimal(m) / Decimal(1 << -e))
+
+
+def a_bound(z, mu):
+    """Enclose the specified a(z,mu), including the entire finite maximum."""
+    powers = []
+    for q in mu:
+        row = [arb(1), arb(q)]
+        for unused in range(2, 6):
+            row.append(row[-1] * row[1])
+        powers.append(row)
+    phi = arb(0)
+    moments = [arb(0) for unused in range(4)]
+    for s, w in SPECTRA:
+        term = arb(w)
+        for k in range(4):
+            if s[k]:
+                term *= powers[k][s[k]]
+        phi += term
+        for k in range(4):
+            if s[k]:
+                moments[k] += s[k] * term
+    if not (phi.is_finite() and phi > 0):
+        raise Invalid("Phi is not certified finite and positive")
+    means = [v / phi for v in moments]
+    if any(not (v.is_finite() and v > 0) for v in means):
+        raise Invalid("a moment is not certified finite and positive")
+    g = [means[k].log() / 2 - arb(mu[k]).log() + z[k]
+         for k in range(4)]
+    # psi0 + z.m0 - g.m0 = log(Phi) exactly. No approximation
+    # or assumed maximizer is used in this algebraic cancellation.
+    maximum = None
+    for s, unused in SPECTRA:
+        score = arb(0)
+        for k in range(4):
+            if s[k]:
+                score += s[k] * g[k]
+        maximum = score if maximum is None else maximum.max(score)
+    answer = phi.log() + maximum
+    if not answer.is_finite():
+        raise Invalid("nonfinite a(z,mu) enclosure")
+    return answer
+
+
+class Replay:
+    def __init__(self, prec):
+        self.prec = prec
+        self.target = arb(5).log() * 5 / 2 + arb(Q(25, 24)).log()
+        self.minimum = None
+        self.complete_margins = True
+
+        # Per-replay caches: never reuse balls computed at another precision.
+        @lru_cache(maxsize=65536)
+        def entropy_term(n):
+            b = arb(n)
+            return b * b.log() * 3 / 2
+
+        @lru_cache(maxsize=65536)
+        def vertex_data(p):
+            active, entropy = [], arb(0)
+            for u, n in enumerate(class_values(p)):
+                if n < 0:
+                    raise Invalid("vertex outside Delta: negative class " + str(u))
+                if n > 0:
+                    active.append((u, arb(n)))
+                    entropy += entropy_term(n)
+            return tuple(active), entropy
+
+        self.vertex_data = vertex_data
+
+    def dual_coefficients(self, node):
+        if len(node) != 3:
+            raise Invalid("D node must have exactly three fields")
+        y, mus = node[1], node[2]
+        if not isinstance(y, list) or len(y) != 18:
+            raise Invalid("y must be a list of 18 hexadecimal strings")
+        if (not isinstance(mus, list) or len(mus) != 9
+                or any(not isinstance(row, list) or len(row) != 4
+                       for row in mus)):
+            raise Invalid("mus must be a 9 by 4 list")
+        ys = [hex_rational(t) for t in y]
+        qs = [[hex_rational(t) for t in row] for row in mus]
+        if any(q <= 0 for row in qs for q in row):
+            raise Invalid("every mu entry must be strictly positive")
+        z = [[arb(0) for unused in range(4)] for unused in range(9)]
+        for q, (u, k, v, kv) in zip(ys, EDGES):
+            b = arb(q)
+            z[u][k] += b
+            z[v][kv] -= b
+        return tuple(a_bound(z[u], qs[u]) for u in range(9))
+
+    def margin(self, p, coefficients):
+        active, total = self.vertex_data(p)
+        for u, n in active:
+            total += n * coefficients[u]
+        margin = self.target - total
+        if not margin.is_finite():
+            raise Invalid("nonfinite vertex margin")
+        lo = margin.lower()
+        if self.minimum is None or lo < self.minimum:
+            self.minimum = lo
+        return margin
+
+    def verify(self, document, required_r0=REQUIRED_R0, expect=None):
+        stats = {
+            "facet": None, "r0": None, "verdict": "FAIL",
+            "nodes": 0, "splits": 0, "dual_leaves": 0,
+            "central_leaves": 0, "failed_leaves": 0,
+            "first_failures": [], "min_margin_lower_bound": None
+        }
+        bad = False
+
+        def fail(index, kind, reason):
+            nonlocal bad
+            bad = True
+            if len(stats["first_failures"]) < 10:
+                stats["first_failures"].append([index, kind, reason])
+
+        try:
+            if not isinstance(document, dict):
+                raise Invalid("top-level JSON must be an object")
+            raw_r0 = document.get("r0")
+            stats["r0"] = raw_r0 if isinstance(raw_r0, str) else None
+            facet = facet_pair(document.get("facet"))
+            stats["facet"] = list(facet)
+            if expect is not None and facet != tuple(expect):
+                raise Invalid("facet does not match --expect-facet")
+            r0 = rational(document.get("r0"))
+            if r0 != required_r0:
+                raise Invalid("r0 must equal " + str(required_r0) + " exactly")
+            tree = document.get("tree")
+            if not isinstance(tree, list):
+                raise Invalid("tree must be a list")
+            stats["nodes"] = len(tree)
+            stack = [root_simplex(facet)]
+            index = 0
+            structural_failure = False
+            while stack:
+                if index == len(tree):
+                    fail(index, "tree", "truncated preorder: unfilled child slots")
+                    structural_failure = True
+                    break
+                cell = stack.pop()
+                node = tree[index]
+                here = index
+                index += 1
+                if (not isinstance(node, list) or not node
+                        or not isinstance(node[0], str)):
+                    fail(here, "node", "node must be a nonempty list with a string kind")
+                    structural_failure = True
+                    break
+                kind = node[0]
+                if kind == "S":
+                    if (len(node) != 3 or type(node[1]) is not int
+                            or type(node[2]) is not int
+                            or not 0 <= node[1] < 5
+                            or not 0 <= node[2] < 5):
+                        fail(here, kind, "split requires integer indices in 0..4")
+                        structural_failure = True
+                        break
+                    stats["splits"] += 1
+                    i, j = node[1:]
+                    mid = tuple((a + b) / 2 for a, b in zip(cell[i], cell[j]))
+                    first, second = list(cell), list(cell)
+                    first[i], second[j] = mid, mid
+                    # LIFO: first child must be visited before second child.
+                    stack.append(tuple(second))
+                    stack.append(tuple(first))
+                elif kind == "C":
+                    stats["central_leaves"] += 1
+                    if len(node) != 1:
+                        stats["failed_leaves"] += 1
+                        fail(here, kind, "C node must have exactly one field")
+                    elif any(abs(x - CENTER[k]) > r0
+                             for p in cell for k, x in enumerate(p)):
+                        stats["failed_leaves"] += 1
+                        fail(here, kind, "a vertex is outside the closed central box")
+                elif kind == "D":
+                    stats["dual_leaves"] += 1
+                    reasons = []
+                    try:
+                        coefficients = self.dual_coefficients(node)
+                        for vi, p in enumerate(cell):
+                            margin = self.margin(p, coefficients)
+                            if not margin > 0:
+                                reasons.append(
+                                    "vertex " + str(vi)
+                                    + ": L*-U is not rigorously positive"
+                                    + " (lower bound " + lower_decimal(margin) + ")"
+                                )
+                    except (Invalid, ValueError, ArithmeticError, TypeError) as exc:
+                        self.complete_margins = False
+                        reasons.append(str(exc))
+                    if reasons:
+                        stats["failed_leaves"] += 1
+                        fail(here, kind, "; ".join(reasons))
+                else:
+                    fail(here, kind, "unknown node kind")
+                    structural_failure = True
+                    break
+            if structural_failure:
+                self.complete_margins = False
+            elif index != len(tree):
+                fail(index, "tree", "trailing nodes after the root subtree")
+                self.complete_margins = False
+        except (Invalid, ValueError, ArithmeticError, TypeError) as exc:
+            fail(-1, "metadata", str(exc))
+            self.complete_margins = False
+        if self.complete_margins and self.minimum is not None:
+            stats["min_margin_lower_bound"] = lower_decimal(self.minimum)
+        stats["verdict"] = "FAIL" if bad else "PASS"
+        return stats
+
+
+def unique_object(pairs):
+    obj = {}
+    for key, value in pairs:
+        if key in obj:
+            raise Invalid("duplicate JSON key: " + key)
+        obj[key] = value
+    return obj
+
+
+def reject_constant(value):
+    raise Invalid("nonstandard JSON constant: " + value)
+
+
+def exact_phi_moments(mu):
+    """Only used by selftest: an independent exact polynomial evaluation."""
+    phi, moments = Q(0), [Q(0)] * 4
+    for s, w in SPECTRA:
+        term = Q(w)
+        for k in range(4):
+            term *= mu[k] ** s[k]
+        phi += term
+        for k in range(4):
+            moments[k] += term * s[k]
+    return phi, tuple(v / phi for v in moments)
+
+
+def selftest(prec):
+    checks = []
+
+    def require(condition, name):
+        if not condition:
+            raise Invalid("selftest failed: " + name)
+        checks.append(name)
+
+    def close_zero(value):
+        return value.contains(0) and abs(value) < arb(Q(1, 1 << (prec // 2)))
+
+    require(len(SPECTRA) == 36, "36 spectra")
+    entries = Counter((u, k) for e in EDGES
+                      for u, k in ((e[0], e[1]), (e[2], e[3])))
+    require(len(EDGES) == 18 and len(entries) == 36
+            and set(entries) == {(u, k) for u in range(9) for k in range(4)}
+            and all(v == 1 for v in entries.values()),
+            "18 edges; every class entry used exactly once")
+    one = (Q(1),) * 4
+    phi, means = exact_phi_moments(one)
+    require(phi == 900 and means == (Q(5, 4),) * 4,
+            "exact Phi(1)=900 and all moments=5/4")
+    require(all(sum(s) == 5 for s, unused in SPECTRA),
+            "exact degree-five homogeneity")
+    zeros = (arb(0),) * 4
+    a = a_bound(zeros, one)
+    expected_a = arb(Q(5, 4)).log() * 5 / 2 + arb(900).log()
+    require(close_zero(a - expected_a),
+            "a=(5/2)log(5/4)+log(900)")
+    # These rational identities, equal moments and degree five give the
+    # symbolic uniform-case equality, alongside the interval regressions.
+    require(Q(900, 32 * 27) == Q(25, 24),
+            "exact rational factor in U(center)=L*")
+    replay = Replay(prec)
+    margin = replay.margin(CENTER, (a,) * 9)
+    require(close_zero(margin) and not margin > 0,
+            "U(center)=L*; strict margin is rejected")
+    uniform = ["D", ["0x0.0p+0"] * 18, [["0x1.0000000000000p+0"] * 4
+                                     for unused in range(9)]]
+    result = Replay(prec).verify(
+        {"facet": [0, 0], "r0": "1/10000", "tree": [uniform]}
+    )
+    require(result["verdict"] == "FAIL" and result["failed_leaves"] == 1
+            and "vertex 0:" in result["first_failures"][0][2],
+            "dual root containing center is rejected")
+    mu = (Q(3, 2), Q(5, 7), Q(11, 13), Q(17, 19))
+    doubled = tuple(2 * q for q in mu)
+    phi1, means1 = exact_phi_moments(mu)
+    phi2, means2 = exact_phi_moments(doubled)
+    require(phi2 == 32 * phi1 and means2 == means1,
+            "exact Phi(2mu)=32Phi(mu), invariant moments")
+    z = tuple(arb(q) for q in (Q(1, 7), Q(-2, 9), Q(3, 11), Q(-5, 13)))
+    require(close_zero(a_bound(z, mu) - a_bound(z, doubled)),
+            "a(z,2mu)=a(z,mu)")
+    # Cross-check the cancellation against the unsimplified specification.
+    m = tuple(arb(q) for q in means1)
+    lm = tuple(arb(q).log() for q in mu)
+    g = tuple(m[k].log() / 2 - lm[k] + z[k] for k in range(4))
+    psi = arb(phi1).log()
+    for k in range(4):
+        psi += m[k] * m[k].log() / 2 - m[k] * lm[k]
+    base = psi + sum((z[k] * m[k] for k in range(4)), arb(0))
+    maximum = None
+    for s, unused in SPECTRA:
+        score = sum((g[k] * (s[k] - m[k]) for k in range(4)), arb(0))
+        maximum = score if maximum is None else maximum.max(score)
+    require(close_zero(a_bound(z, mu) - (base + maximum)),
+            "simplified a agrees with the stated unsimplified formula")
+    return {"verdict": "PASS", "selftest": True, "prec": prec,
+            "checks": checks, "a_uniform": a.str(),
+            "center_margin": margin.str()}
+
+
+class Parser(argparse.ArgumentParser):
+    def error(self, message):
+        raise Invalid(message)
+
+
+def utc_now():
+    return datetime.now(timezone.utc).isoformat()
+
+
+def main(argv=None):
+    started = utc_now()
+    result = {
+        "cert": None, "cert_sha256": None, "facet": None, "r0": None,
+        "verdict": "FAIL", "nodes": 0, "splits": 0, "dual_leaves": 0,
+        "central_leaves": 0, "failed_leaves": 0, "first_failures": [],
+        "min_margin_lower_bound": None, "prec": 200, "started": started
+    }
+    try:
+        parser = Parser(description=__doc__)
+        parser.add_argument("cert", nargs="?")
+        parser.add_argument("--expect-facet", nargs=2, type=int, metavar=("FI", "FJ"))
+        parser.add_argument("--prec", type=int, default=200, metavar="BITS")
+        parser.add_argument("--allow-r0", metavar="P/Q",
+                            help="TEST ONLY: replace the required radius")
+        parser.add_argument("--selftest", action="store_true")
+        args = parser.parse_args(argv)
+        result["cert"], result["prec"] = args.cert, args.prec
+        if args.allow_r0 is not None:
+            result["allow_r0"] = args.allow_r0
+        if args.prec < 128:
+            raise Invalid("--prec must be at least 128")
+        ctx.prec = args.prec
+        ctx.threads = 1
+        if args.expect_facet is not None:
+            facet_pair(args.expect_facet)
+        required = REQUIRED_R0 if args.allow_r0 is None else rational(args.allow_r0)
+        if required <= 0:
+            raise Invalid("required radius must be positive")
+        if args.selftest:
+            if args.cert is not None or args.allow_r0 is not None or args.expect_facet:
+                raise Invalid("--selftest cannot be combined with certificate options")
+            result.update(selftest(args.prec))
+        else:
+            if args.cert is None:
+                raise Invalid("a certificate path is required, or use --selftest")
+            raw = Path(args.cert).read_bytes()
+            result["cert_sha256"] = hashlib.sha256(raw).hexdigest()
+            document = json.loads(raw, parse_float=Decimal,
+                                  parse_constant=reject_constant,
+                                  object_pairs_hook=unique_object)
+            result.update(Replay(args.prec).verify(document, required, args.expect_facet))
+    except Exception as exc:
+        result["verdict"] = "FAIL"
+        result["min_margin_lower_bound"] = None
+        if len(result["first_failures"]) < 10:
+            result["first_failures"].append([-1, "input", type(exc).__name__ + ": " + str(exc)])
+    result["finished"] = utc_now()
+    print(json.dumps(result, ensure_ascii=True, allow_nan=False))
+    return 0 if result["verdict"] == "PASS" else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+'"' /Users/jinleic/repos/aifours/physics/evidence/six-lane-20261016/random5reg-colour/outer/evidence/cone00.json --expect-facet 0 0" in /Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-16/review/colour-codex-checker-v1
+codex
+The small certificate passes: 19,383 nodes, 9,691 splits, 9,122 dual leaves, 570 central leaves, and zero failed leaves. Its rigorous minimum-margin lower bound is \(4.95259938059884678689\times10^{-8}\), with 6.589841 seconds elapsed. The full `cone00.json` replay is running at 200 bits with the required radius `1/10000`.
+ succeeded in 23896ms:
+{"cert": "/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261016/random5reg-colour/outer/evidence/cone00.json", "cert_sha256": "5b194f11353b8a8bb5cf424569240822ae60658a35349278b8a023933ef7412a", "facet": [0, 0], "r0": "1/10000", "verdict": "PASS", "nodes": 67079, "splits": 33539, "dual_leaves": 33032, "central_leaves": 508, "failed_leaves": 0, "first_failures": [], "min_margin_lower_bound": "1.72726858038650554297889643120399591920260765422683018961756E-11", "prec": 200, "started": "2026-10-17T08:27:30.949829+00:00", "finished": "2026-10-17T08:27:54.890527+00:00"}
+
+exec
+/bin/zsh -lc "/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261016/random5reg-colour/.venv/bin/python -B -c '
+import copy, io, contextlib
+from fractions import Fraction
+ns = {\"__name__\": \"checker_c\"}
+exec(compile(\"#"'!/usr/bin/env python3'"\\n\\\"\\\"\\\"Independent, fail-closed certificate replay; requires python-flint.\\n\\nAll geometric and hexadecimal input arithmetic is exact fmpq arithmetic.\\nAll logarithms, extrema and inequality decisions use Arb at --prec bits.\\nPreorder indices in diagnostics are zero based. A null margin means that\\nthere were no dual vertices, or that not all dual margins could be computed.\\n\\\"\\\"\\\"\\nimport argparse\\nfrom collections import Counter\\nfrom datetime import datetime, timezone\\nfrom decimal import Decimal, ROUND_FLOOR, localcontext\\nfrom functools import lru_cache\\nimport hashlib\\nfrom itertools import permutations\\nimport json\\nfrom math import factorial\\nfrom pathlib import Path\\nimport re\\nimport sys\\n\\nfrom flint import arb, ctx, fmpq\\n\\nQ = fmpq\\nTHIRD = Q(1, 3)\\nCENTER = (Q(1, 9),) * 4\\nREQUIRED_R0 = Q(1, 10000)\\nDIRECTIONS = ((-1, -1), (-1, 1), (1, -1), (1, 1))\\nHEX = re.compile(\\n    r\\\"([+-]?)0[xX]([0-9a-fA-F]+)\\\\.([0-9a-fA-F]+)[pP]([+-]?[0-9]+)\\\\Z\\\"\\n)\\nRATIONAL = re.compile(r\\\"([+-]?[0-9]+)/([+-]?[0-9]+)\\\\Z\\\")\\n\\n\\nclass Invalid(ValueError):\\n    pass\\n\\n\\ndef spectra():\\n    result = []\\n    for a in range(6):\\n        for b in range(6 - a):\\n            for c in range(6 - a - b):\\n                d = 5 - a - b - c\\n                if min(a + b, c + d, a + c, b + d) >= 1:\\n                    s = (a, b, c, d)\\n                    denominator = 1\\n                    for k in s:\\n                        denominator *= factorial(k)\\n                    result.append((s, 120 // denominator))\\n    return tuple(result)\\n\\n\\ndef edges():\\n    used, result = set(), []\\n    for u in range(9):\\n        i, j = divmod(u, 3)\\n        for k, (r, t) in enumerate(DIRECTIONS):\\n            if (u, k) in used:\\n                continue\\n            v = 3 * ((i + r) % 3) + (j + t) % 3\\n            kv = DIRECTIONS.index((-r, -t))\\n            if (v, kv) in used:\\n                raise Invalid(\\\"edge construction reused an entry\\\")\\n            result.append((u, k, v, kv))\\n            used.update(((u, k), (v, kv)))\\n    return tuple(result)\\n\\n\\nSPECTRA = spectra()\\nEDGES = edges()\\n\\n\\ndef rational(text):\\n    if not isinstance(text, str):\\n        raise Invalid(\\\"r0 must be a P/Q string\\\")\\n    m = RATIONAL.fullmatch(text)\\n    if m is None or int(m[2]) == 0:\\n        raise Invalid(\\\"invalid P/Q rational\\\")\\n    return Q(int(m[1]), int(m[2]))\\n\\n\\ndef hex_rational(text):\\n    \\\"\\\"\\\"Parse the written binary rational, with no float conversion.\\\"\\\"\\\"\\n    if not isinstance(text, str):\\n        raise Invalid(\\\"hexadecimal entry must be a string\\\")\\n    m = HEX.fullmatch(text)\\n    if m is None:\\n        raise Invalid(\\\"invalid finite hexadecimal literal: \\\" + repr(text)[:100])\\n    numerator = int(m[2] + m[3], 16)\\n    if m[1] == \\\"-\\\":\\n        numerator = -numerator\\n    exponent = int(m[4]) - 4 * len(m[3])\\n    if exponent >= 0:\\n        return Q(numerator << exponent)\\n    return Q(numerator, 1 << -exponent)\\n\\n\\ndef facet_pair(value):\\n    if (not isinstance(value, list) or len(value) "'!= 2'"\\n            or any(type(i) is not int or not 0 <= i < 3 for i in value)):\\n        raise Invalid(\\\"facet must be two integers in 0..2\\\")\\n    return tuple(value)\\n\\n\\ndef root_simplex(facet):\\n    fi, fj = facet\\n    vertices = [CENTER]\\n    for sigma in permutations(range(3)):\\n        if sigma[fi] "'!= fj:'"\\n            vertices.append(tuple(\\n                THIRD * int(truth) for truth in (\\n                    sigma[0] == 0, sigma[0] == 1,\\n                    sigma[1] == 0, sigma[1] == 1\\n                )\\n            ))\\n    if len(vertices) "'!= 5:'"\\n        raise Invalid(\\\"root construction did not produce five vertices\\\")\\n    return tuple(vertices)\\n\\n\\ndef class_values(p):\\n    x1, x2, x3, x4 = p\\n    return (\\n        x1, x2, THIRD - x1 - x2,\\n        x3, x4, THIRD - x3 - x4,\\n        THIRD - x1 - x3, THIRD - x2 - x4,\\n        x1 + x2 + x3 + x4 - THIRD\\n    )\\n\\n\\ndef lower_decimal(value):\\n    \\\"\\\"\\\"Round an exact dyadic lower endpoint DOWN when printing decimal.\\\"\\\"\\\"\\n    value = value.lower()\\n    if not value.is_finite():\\n        return None\\n    m, e = (int(t) for t in value.man_exp())\\n    if e >= 0:\\n        return str(m << e)\\n    with localcontext() as dc:\\n        dc.prec = max(30, ctx.prec * 30103 // 100000)\\n        dc.rounding = ROUND_FLOOR\\n        return str(Decimal(m) / Decimal(1 << -e))\\n\\n\\ndef a_bound(z, mu):\\n    \\\"\\\"\\\"Enclose the specified a(z,mu), including the entire finite maximum.\\\"\\\"\\\"\\n    powers = []\\n    for q in mu:\\n        row = [arb(1), arb(q)]\\n        for unused in range(2, 6):\\n            row.append(row[-1] * row[1])\\n        powers.append(row)\\n    phi = arb(0)\\n    moments = [arb(0) for unused in range(4)]\\n    for s, w in SPECTRA:\\n        term = arb(w)\\n        for k in range(4):\\n            if s[k]:\\n                term *= powers[k][s[k]]\\n        phi += term\\n        for k in range(4):\\n            if s[k]:\\n                moments[k] += s[k] * term\\n    if not (phi.is_finite() and phi > 0):\\n        raise Invalid(\\\"Phi is not certified finite and positive\\\")\\n    means = [v / phi for v in moments]\\n    if any(not (v.is_finite() and v > 0) for v in means):\\n        raise Invalid(\\\"a moment is not certified finite and positive\\\")\\n    g = [means[k].log() / 2 - arb(mu[k]).log() + z[k]\\n         for k in range(4)]\\n    # psi0 + z.m0 - g.m0 = log(Phi) exactly. No approximation\\n    # or assumed maximizer is used in this algebraic cancellation.\\n    maximum = None\\n    for s, unused in SPECTRA:\\n        score = arb(0)\\n        for k in range(4):\\n            if s[k]:\\n                score += s[k] * g[k]\\n        maximum = score if maximum is None else maximum.max(score)\\n    answer = phi.log() + maximum\\n    if not answer.is_finite():\\n        raise Invalid(\\\"nonfinite a(z,mu) enclosure\\\")\\n    return answer\\n\\n\\nclass Replay:\\n    def __init__(self, prec):\\n        self.prec = prec\\n        self.target = arb(5).log() * 5 / 2 + arb(Q(25, 24)).log()\\n        self.minimum = None\\n        self.complete_margins = True\\n\\n        # Per-replay caches: never reuse balls computed at another precision.\\n        @lru_cache(maxsize=65536)\\n        def entropy_term(n):\\n            b = arb(n)\\n            return b * b.log() * 3 / 2\\n\\n        @lru_cache(maxsize=65536)\\n        def vertex_data(p):\\n            active, entropy = [], arb(0)\\n            for u, n in enumerate(class_values(p)):\\n                if n < 0:\\n                    raise Invalid(\\\"vertex outside Delta: negative class \\\" + str(u))\\n                if n > 0:\\n                    active.append((u, arb(n)))\\n                    entropy += entropy_term(n)\\n            return tuple(active), entropy\\n\\n        self.vertex_data = vertex_data\\n\\n    def dual_coefficients(self, node):\\n        if len(node) "'!= 3:'"\\n            raise Invalid(\\\"D node must have exactly three fields\\\")\\n        y, mus = node[1], node[2]\\n        if not isinstance(y, list) or len(y) "'!= 18:'"\\n            raise Invalid(\\\"y must be a list of 18 hexadecimal strings\\\")\\n        if (not isinstance(mus, list) or len(mus) "'!= 9'"\\n                or any(not isinstance(row, list) or len(row) "'!= 4'"\\n                       for row in mus)):\\n            raise Invalid(\\\"mus must be a 9 by 4 list\\\")\\n        ys = [hex_rational(t) for t in y]\\n        qs = [[hex_rational(t) for t in row] for row in mus]\\n        if any(q <= 0 for row in qs for q in row):\\n            raise Invalid(\\\"every mu entry must be strictly positive\\\")\\n        z = [[arb(0) for unused in range(4)] for unused in range(9)]\\n        for q, (u, k, v, kv) in zip(ys, EDGES):\\n            b = arb(q)\\n            z[u][k] += b\\n            z[v][kv] -= b\\n        return tuple(a_bound(z[u], qs[u]) for u in range(9))\\n\\n    def margin(self, p, coefficients):\\n        active, total = self.vertex_data(p)\\n        for u, n in active:\\n            total += n * coefficients[u]\\n        margin = self.target - total\\n        if not margin.is_finite():\\n            raise Invalid(\\\"nonfinite vertex margin\\\")\\n        lo = margin.lower()\\n        if self.minimum is None or lo < self.minimum:\\n            self.minimum = lo\\n        return margin\\n\\n    def verify(self, document, required_r0=REQUIRED_R0, expect=None):\\n        stats = {\\n            \\\"facet\\\": None, \\\"r0\\\": None, \\\"verdict\\\": \\\"FAIL\\\",\\n            \\\"nodes\\\": 0, \\\"splits\\\": 0, \\\"dual_leaves\\\": 0,\\n            \\\"central_leaves\\\": 0, \\\"failed_leaves\\\": 0,\\n            \\\"first_failures\\\": [], \\\"min_margin_lower_bound\\\": None\\n        }\\n        bad = False\\n\\n        def fail(index, kind, reason):\\n            nonlocal bad\\n            bad = True\\n            if len(stats[\\\"first_failures\\\"]) < 10:\\n                stats[\\\"first_failures\\\"].append([index, kind, reason])\\n\\n        try:\\n            if not isinstance(document, dict):\\n                raise Invalid(\\\"top-level JSON must be an object\\\")\\n            raw_r0 = document.get(\\\"r0\\\")\\n            stats[\\\"r0\\\"] = raw_r0 if isinstance(raw_r0, str) else None\\n            facet = facet_pair(document.get(\\\"facet\\\"))\\n            stats[\\\"facet\\\"] = list(facet)\\n            if expect is not None and facet "'!= tuple(expect):'"\\n                raise Invalid(\\\"facet does not match --expect-facet\\\")\\n            r0 = rational(document.get(\\\"r0\\\"))\\n            if r0 "'!= required_r0:'"\\n                raise Invalid(\\\"r0 must equal \\\" + str(required_r0) + \\\" exactly\\\")\\n            tree = document.get(\\\"tree\\\")\\n            if not isinstance(tree, list):\\n                raise Invalid(\\\"tree must be a list\\\")\\n            stats[\\\"nodes\\\"] = len(tree)\\n            stack = [root_simplex(facet)]\\n            index = 0\\n            structural_failure = False\\n            while stack:\\n                if index == len(tree):\\n                    fail(index, \\\"tree\\\", \\\"truncated preorder: unfilled child slots\\\")\\n                    structural_failure = True\\n                    break\\n                cell = stack.pop()\\n                node = tree[index]\\n                here = index\\n                index += 1\\n                if (not isinstance(node, list) or not node\\n                        or not isinstance(node[0], str)):\\n                    fail(here, \\\"node\\\", \\\"node must be a nonempty list with a string kind\\\")\\n                    structural_failure = True\\n                    break\\n                kind = node[0]\\n                if kind == \\\"S\\\":\\n                    if (len(node) "'!= 3 or type(node[1]) is not int'"\\n                            or type(node[2]) is not int\\n                            or not 0 <= node[1] < 5\\n                            or not 0 <= node[2] < 5):\\n                        fail(here, kind, \\\"split requires integer indices in 0..4\\\")\\n                        structural_failure = True\\n                        break\\n                    stats[\\\"splits\\\"] += 1\\n                    i, j = node[1:]\\n                    mid = tuple((a + b) / 2 for a, b in zip(cell[i], cell[j]))\\n                    first, second = list(cell), list(cell)\\n                    first[i], second[j] = mid, mid\\n                    # LIFO: first child must be visited before second child.\\n                    stack.append(tuple(second))\\n                    stack.append(tuple(first))\\n                elif kind == \\\"C\\\":\\n                    stats[\\\"central_leaves\\\"] += 1\\n                    if len(node) "'!= 1:'"\\n                        stats[\\\"failed_leaves\\\"] += 1\\n                        fail(here, kind, \\\"C node must have exactly one field\\\")\\n                    elif any(abs(x - CENTER[k]) > r0\\n                             for p in cell for k, x in enumerate(p)):\\n                        stats[\\\"failed_leaves\\\"] += 1\\n                        fail(here, kind, \\\"a vertex is outside the closed central box\\\")\\n                elif kind == \\\"D\\\":\\n                    stats[\\\"dual_leaves\\\"] += 1\\n                    reasons = []\\n                    try:\\n                        coefficients = self.dual_coefficients(node)\\n                        for vi, p in enumerate(cell):\\n                            margin = self.margin(p, coefficients)\\n                            if not margin > 0:\\n                                reasons.append(\\n                                    \\\"vertex \\\" + str(vi)\\n                                    + \\\": L*-U is not rigorously positive\\\"\\n                                    + \\\" (lower bound \\\" + lower_decimal(margin) + \\\")\\\"\\n                                )\\n                    except (Invalid, ValueError, ArithmeticError, TypeError) as exc:\\n                        self.complete_margins = False\\n                        reasons.append(str(exc))\\n                    if reasons:\\n                        stats[\\\"failed_leaves\\\"] += 1\\n                        fail(here, kind, \\\"; \\\".join(reasons))\\n                else:\\n                    fail(here, kind, \\\"unknown node kind\\\")\\n                    structural_failure = True\\n                    break\\n            if structural_failure:\\n                self.complete_margins = False\\n            elif index "'!= len(tree):'"\\n                fail(index, \\\"tree\\\", \\\"trailing nodes after the root subtree\\\")\\n                self.complete_margins = False\\n        except (Invalid, ValueError, ArithmeticError, TypeError) as exc:\\n            fail(-1, \\\"metadata\\\", str(exc))\\n            self.complete_margins = False\\n        if self.complete_margins and self.minimum is not None:\\n            stats[\\\"min_margin_lower_bound\\\"] = lower_decimal(self.minimum)\\n        stats[\\\"verdict\\\"] = \\\"FAIL\\\" if bad else \\\"PASS\\\"\\n        return stats\\n\\n\\ndef unique_object(pairs):\\n    obj = {}\\n    for key, value in pairs:\\n        if key in obj:\\n            raise Invalid(\\\"duplicate JSON key: \\\" + key)\\n        obj[key] = value\\n    return obj\\n\\n\\ndef reject_constant(value):\\n    raise Invalid(\\\"nonstandard JSON constant: \\\" + value)\\n\\n\\ndef exact_phi_moments(mu):\\n    \\\"\\\"\\\"Only used by selftest: an independent exact polynomial evaluation.\\\"\\\"\\\"\\n    phi, moments = Q(0), [Q(0)] * 4\\n    for s, w in SPECTRA:\\n        term = Q(w)\\n        for k in range(4):\\n            term *= mu[k] ** s[k]\\n        phi += term\\n        for k in range(4):\\n            moments[k] += term * s[k]\\n    return phi, tuple(v / phi for v in moments)\\n\\n\\ndef selftest(prec):\\n    checks = []\\n\\n    def require(condition, name):\\n        if not condition:\\n            raise Invalid(\\\"selftest failed: \\\" + name)\\n        checks.append(name)\\n\\n    def close_zero(value):\\n        return value.contains(0) and abs(value) < arb(Q(1, 1 << (prec // 2)))\\n\\n    require(len(SPECTRA) == 36, \\\"36 spectra\\\")\\n    entries = Counter((u, k) for e in EDGES\\n                      for u, k in ((e[0], e[1]), (e[2], e[3])))\\n    require(len(EDGES) == 18 and len(entries) == 36\\n            and set(entries) == {(u, k) for u in range(9) for k in range(4)}\\n            and all(v == 1 for v in entries.values()),\\n            \\\"18 edges; every class entry used exactly once\\\")\\n    one = (Q(1),) * 4\\n    phi, means = exact_phi_moments(one)\\n    require(phi == 900 and means == (Q(5, 4),) * 4,\\n            \\\"exact Phi(1)=900 and all moments=5/4\\\")\\n    require(all(sum(s) == 5 for s, unused in SPECTRA),\\n            \\\"exact degree-five homogeneity\\\")\\n    zeros = (arb(0),) * 4\\n    a = a_bound(zeros, one)\\n    expected_a = arb(Q(5, 4)).log() * 5 / 2 + arb(900).log()\\n    require(close_zero(a - expected_a),\\n            \\\"a=(5/2)log(5/4)+log(900)\\\")\\n    # These rational identities, equal moments and degree five give the\\n    # symbolic uniform-case equality, alongside the interval regressions.\\n    require(Q(900, 32 * 27) == Q(25, 24),\\n            \\\"exact rational factor in U(center)=L*\\\")\\n    replay = Replay(prec)\\n    margin = replay.margin(CENTER, (a,) * 9)\\n    require(close_zero(margin) and not margin > 0,\\n            \\\"U(center)=L*; strict margin is rejected\\\")\\n    uniform = [\\\"D\\\", [\\\"0x0.0p+0\\\"] * 18, [[\\\"0x1.0000000000000p+0\\\"] * 4\\n                                     for unused in range(9)]]\\n    result = Replay(prec).verify(\\n        {\\\"facet\\\": [0, 0], \\\"r0\\\": \\\"1/10000\\\", \\\"tree\\\": [uniform]}\\n    )\\n    require(result[\\\"verdict\\\"] == \\\"FAIL\\\" and result[\\\"failed_leaves\\\"] == 1\\n            and \\\"vertex 0:\\\" in result[\\\"first_failures\\\"][0][2],\\n            \\\"dual root containing center is rejected\\\")\\n    mu = (Q(3, 2), Q(5, 7), Q(11, 13), Q(17, 19))\\n    doubled = tuple(2 * q for q in mu)\\n    phi1, means1 = exact_phi_moments(mu)\\n    phi2, means2 = exact_phi_moments(doubled)\\n    require(phi2 == 32 * phi1 and means2 == means1,\\n            \\\"exact Phi(2mu)=32Phi(mu), invariant moments\\\")\\n    z = tuple(arb(q) for q in (Q(1, 7), Q(-2, 9), Q(3, 11), Q(-5, 13)))\\n    require(close_zero(a_bound(z, mu) - a_bound(z, doubled)),\\n            \\\"a(z,2mu)=a(z,mu)\\\")\\n    # Cross-check the cancellation against the unsimplified specification.\\n    m = tuple(arb(q) for q in means1)\\n    lm = tuple(arb(q).log() for q in mu)\\n    g = tuple(m[k].log() / 2 - lm[k] + z[k] for k in range(4))\\n    psi = arb(phi1).log()\\n    for k in range(4):\\n        psi += m[k] * m[k].log() / 2 - m[k] * lm[k]\\n    base = psi + sum((z[k] * m[k] for k in range(4)), arb(0))\\n    maximum = None\\n    for s, unused in SPECTRA:\\n        score = sum((g[k] * (s[k] - m[k]) for k in range(4)), arb(0))\\n        maximum = score if maximum is None else maximum.max(score)\\n    require(close_zero(a_bound(z, mu) - (base + maximum)),\\n            \\\"simplified a agrees with the stated unsimplified formula\\\")\\n    return {\\\"verdict\\\": \\\"PASS\\\", \\\"selftest\\\": True, \\\"prec\\\": prec,\\n            \\\"checks\\\": checks, \\\"a_uniform\\\": a.str(),\\n            \\\"center_margin\\\": margin.str()}\\n\\n\\nclass Parser(argparse.ArgumentParser):\\n    def error(self, message):\\n        raise Invalid(message)\\n\\n\\ndef utc_now():\\n    return datetime.now(timezone.utc).isoformat()\\n\\n\\ndef main(argv=None):\\n    started = utc_now()\\n    result = {\\n        \\\"cert\\\": None, \\\"cert_sha256\\\": None, \\\"facet\\\": None, \\\"r0\\\": None,\\n        \\\"verdict\\\": \\\"FAIL\\\", \\\"nodes\\\": 0, \\\"splits\\\": 0, \\\"dual_leaves\\\": 0,\\n        \\\"central_leaves\\\": 0, \\\"failed_leaves\\\": 0, \\\"first_failures\\\": [],\\n        \\\"min_margin_lower_bound\\\": None, \\\"prec\\\": 200, \\\"started\\\": started\\n    }\\n    try:\\n        parser = Parser(description=__doc__)\\n        parser.add_argument(\\\"cert\\\", nargs=\\\"?\\\")\\n        parser.add_argument(\\\"--expect-facet\\\", nargs=2, type=int, metavar=(\\\"FI\\\", \\\"FJ\\\"))\\n        parser.add_argument(\\\"--prec\\\", type=int, default=200, metavar=\\\"BITS\\\")\\n        parser.add_argument(\\\"--allow-r0\\\", metavar=\\\"P/Q\\\",\\n                            help=\\\"TEST ONLY: replace the required radius\\\")\\n        parser.add_argument(\\\"--selftest\\\", action=\\\"store_true\\\")\\n        args = parser.parse_args(argv)\\n        result[\\\"cert\\\"], result[\\\"prec\\\"] = args.cert, args.prec\\n        if args.allow_r0 is not None:\\n            result[\\\"allow_r0\\\"] = args.allow_r0\\n        if args.prec < 128:\\n            raise Invalid(\\\"--prec must be at least 128\\\")\\n        ctx.prec = args.prec\\n        ctx.threads = 1\\n        if args.expect_facet is not None:\\n            facet_pair(args.expect_facet)\\n        required = REQUIRED_R0 if args.allow_r0 is None else rational(args.allow_r0)\\n        if required <= 0:\\n            raise Invalid(\\\"required radius must be positive\\\")\\n        if args.selftest:\\n            if args.cert is not None or args.allow_r0 is not None or args.expect_facet:\\n                raise Invalid(\\\"--selftest cannot be combined with certificate options\\\")\\n            result.update(selftest(args.prec))\\n        else:\\n            if args.cert is None:\\n                raise Invalid(\\\"a certificate path is required, or use --selftest\\\")\\n            raw = Path(args.cert).read_bytes()\\n            result[\\\"cert_sha256\\\"] = hashlib.sha256(raw).hexdigest()\\n            document = json.loads(raw, parse_float=Decimal,\\n                                  parse_constant=reject_constant,\\n                                  object_pairs_hook=unique_object)\\n            result.update(Replay(args.prec).verify(document, required, args.expect_facet))\\n    except Exception as exc:\\n        result[\\\"verdict\\\"] = \\\"FAIL\\\"\\n        result[\\\"min_margin_lower_bound\\\"] = None\\n        if len(result[\\\"first_failures\\\"]) < 10:\\n            result[\\\"first_failures\\\"].append([-1, \\\"input\\\", type(exc).__name__ + \\\": \\\" + str(exc)])\\n    result[\\\"finished\\\"] = utc_now()\\n    print(json.dumps(result, ensure_ascii=True, allow_nan=False))\\n    return 0 if result[\\\"verdict\\\"] == \\\"PASS\\\" else 1\\n\\n\\nif __name__ == \\\"__main__\\\":\\n    sys.exit(main())\\n\", \"checker_c.py\", \"exec\"), ns)
+Q, arb, ctx = ns[\"Q\"], ns[\"arb\"], ns[\"ctx\"]
+ctx.prec = 200
+Replay = ns[\"Replay\"]
+passed = []
+def check(name, condition):
+    if not condition:
+        raise AssertionError(name)
+    passed.append(name)
+def replay(tree, r0=\"1/3\", **extra):
+    d = {\"facet\": [0,0], \"r0\":r0, \"tree\":tree}
+    d.update(extra)
+    return Replay(200).verify(d, ns[\"rational\"](r0))
+def expect_fail(name, tree, **extra):
+    result = replay(tree, **extra)
+    check(name, result[\"verdict\"]==\"FAIL\" and bool(result[\"first_failures\"]))
+check(\"central root accepted at exact boundary\", replay([[\"C\"]], r0=\"2/9\")[\"verdict\"]==\"PASS\")
+small=Q(2,9)-Q(1,10**60)
+check(\"central root fails immediately below exact boundary\",
+      replay([[\"C\"]],r0=str(small))[\"failed_leaves\"]==1)
+check(\"same-index split replays the specified two children\",
+      replay([[\"S\",1,1],[\"C\"],[\"C\"]])[\"verdict\"]==\"PASS\")
+expect_fail(\"truncated empty tree\", [])
+expect_fail(\"truncated split\", [[\"S\",0,1],[\"C\"]])
+expect_fail(\"trailing nodes\", [[\"C\"],[\"C\"]])
+expect_fail(\"boolean split index\", [[\"S\",True,1],[\"C\"],[\"C\"]])
+expect_fail(\"negative split index\", [[\"S\",-1,1],[\"C\"],[\"C\"]])
+expect_fail(\"out of range split index\", [[\"S\",0,5],[\"C\"],[\"C\"]])
+expect_fail(\"unknown node\", [[\"X\"]])
+expect_fail(\"nonlist node\", [{\"kind\":\"C\"}])
+expect_fail(\"empty node\", [[]])
+expect_fail(\"central extra data\", [[\"C\",0]])
+expect_fail(\"bad facet type\", [[\"C\"]], facet=[False,0])
+expect_fail(\"bad facet range\", [[\"C\"]], facet=[0,3])
+base = [\"D\",[\"0x0.0p+0\"]*18,[[\"0x1.0000000000000p+0\"]*4 for _ in range(9)]]
+expect_fail(\"strict uniform dual rejection\", [base])
+for name, mutate in (
+    (\"zero mu\", lambda n:n[2][0].__setitem__(0,\"0x0.0p+0\")),
+    (\"negative mu\", lambda n:n[2][0].__setitem__(0,\"-0x1.0p+0\")),
+    (\"nonhex mu\", lambda n:n[2][0].__setitem__(0,\"1.0\")),
+    (\"NaN mu\", lambda n:n[2][0].__setitem__(0,\"nan\")),
+    (\"short y\", lambda n:n[1].pop()),
+    (\"nonstring y\", lambda n:n[1].__setitem__(0,0)),
+    (\"short mu row\", lambda n:n[2][0].pop()),
+    (\"short mus\", lambda n:n[2].pop()),
+    (\"dual extra data\", lambda n:n.append(0)),
+):
+    n=copy.deepcopy(base); mutate(n); expect_fail(name,[n])
+for text,want in (
+    (\"0x1.0p-3\",Q(1,8)),
+    (\"-0x1.8p+2\",Q(-6)),
+    (\"-0x0.0p+0\",Q(0)),
+    (\"0x0.0000000000001p-1022\",Q(1,1<<1074)),
+    (\"0x1.fffffffffffffp+1023\",Q(((1<<53)-1)<<971)),
+):
+    check(\"exact hex \"+text,ns[\"hex_rational\"](text)==want)
+check(\"equivalent signed rational accepted\",ns[\"rational\"](\"-1/-10000\")==Q(1,10000))
+for q in (Q(1,3), Q(-1,3), Q(1,1<<2000), Q(-1,1<<2000), Q(7), Q(0)):
+    value=arb(q)
+    printed=Fraction(ns[\"lower_decimal\"](value))
+    m,e=map(int,value.lower().man_exp())
+    dyadic=Fraction(m<<e) if e>=0 else Fraction(m,1<<-e)
+    check(\"decimal endpoint rounds down \"+str(q),printed<=dyadic)
+def cli(args):
+    out=io.StringIO()
+    with contextlib.redirect_stdout(out):
+        rc=ns[\"main\"](args)
+    return rc,json.loads(out.getvalue())
+import json
+path=\"/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261016/random5reg-colour/outer/evidence/mutations/base_cone00_r1_1over20.json\"
+rc,out=cli([path])
+check(\"base radius rejected without testing override\",rc==1 and out[\"verdict\"]==\"FAIL\" and out[\"allow_r0\"] if \"allow_r0\" in out else rc==1 and out[\"verdict\"]==\"FAIL\")
+rc,out=cli([path,\"--allow-r0\",\"1/20\",\"--expect-facet\",\"0\",\"1\"])
+check(\"wrong expected facet rejected\",rc==1 and \"facet\" in out[\"first_failures\"][0][2])
+rc,out=cli([path,\"--prec\",\"127\"])
+check(\"precision below 128 rejected\",rc==1 and out[\"prec\"]==127)
+rc,out=cli([\"--selftest\",\"--prec\",\"128\"])
+check(\"all selftests at 128 bits\",rc==0 and len(out[\"checks\"])==11)
+rc,out=cli([\"--selftest\",\"--prec\",\"200\"])
+check(\"all selftests at 200 bits\",rc==0 and len(out[\"checks\"])==11)
+for raw in ('\\''{\"facet\": [0,0], \"facet\":[0,1]}'\\'','\\''{\"extra\":NaN}'\\''):
+    try:
+        json.loads(raw, object_pairs_hook=ns[\"unique_object\"],
+                   parse_constant=ns[\"reject_constant\"])
+    except ns[\"Invalid\"]:
+        passed.append(\"strict JSON rejection \"+raw)
+    else:
+        raise AssertionError(raw)
+# Ensure invalid Decimal-valued metadata still yields serializable diagnostics.
+from decimal import Decimal
+check(\"invalid numeric metadata fails cleanly\",
+      Replay(200).verify({\"facet\":Decimal(\"0.5\"),\"r0\":Decimal(\"0.1\"),\"tree\":[]})[\"verdict\"]==\"FAIL\")
+print(json.dumps({\"harness_checks_passed\":len(passed),\"checks\":passed}))
+'" in /Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-16/review/colour-codex-checker-v1
+ succeeded in 56ms:
+{"harness_checks_passed": 45, "checks": ["central root accepted at exact boundary", "central root fails immediately below exact boundary", "same-index split replays the specified two children", "truncated empty tree", "truncated split", "trailing nodes", "boolean split index", "negative split index", "out of range split index", "unknown node", "nonlist node", "empty node", "central extra data", "bad facet type", "bad facet range", "strict uniform dual rejection", "zero mu", "negative mu", "nonhex mu", "NaN mu", "short y", "nonstring y", "short mu row", "short mus", "dual extra data", "exact hex 0x1.0p-3", "exact hex -0x1.8p+2", "exact hex -0x0.0p+0", "exact hex 0x0.0000000000001p-1022", "exact hex 0x1.fffffffffffffp+1023", "equivalent signed rational accepted", "decimal endpoint rounds down 1/3", "decimal endpoint rounds down -1/3", "decimal endpoint rounds down 1/114813069527425452423283320117768198402231770208869520047764273682576626139237031385665948631650626991844596463898746277344711896086305533142593135616665318539129989145312280000688779148240044871428926990063486244781615463646388363947317026040466353970904996558162398808944629605623311649536164221970332681344168908984458505602379484807914058900934776500429002716706625830522008132236281291761267883317206598995396418127021779858404042159853183251540889433902091920554957783589672039160081957216630582755380425583726015528348786419432054508915275783882625175435528800822842770817965453762184851149029376", "decimal endpoint rounds down -1/114813069527425452423283320117768198402231770208869520047764273682576626139237031385665948631650626991844596463898746277344711896086305533142593135616665318539129989145312280000688779148240044871428926990063486244781615463646388363947317026040466353970904996558162398808944629605623311649536164221970332681344168908984458505602379484807914058900934776500429002716706625830522008132236281291761267883317206598995396418127021779858404042159853183251540889433902091920554957783589672039160081957216630582755380425583726015528348786419432054508915275783882625175435528800822842770817965453762184851149029376", "decimal endpoint rounds down 7", "decimal endpoint rounds down 0", "base radius rejected without testing override", "wrong expected facet rejected", "precision below 128 rejected", "all selftests at 128 bits", "all selftests at 200 bits", "strict JSON rejection {\"facet\": [0,0], \"facet\":[0,1]}", "strict JSON rejection {\"extra\":NaN}", "invalid numeric metadata fails cleanly"]}
+
+codex
+`cone00.json` passes: 67,079 nodes, 33,539 splits, 33,032 dual leaves, 508 central leaves, and zero failures. Its rigorous minimum-margin lower bound is \(1.72726858038650554298\times10^{-11}\), with 23.940698 seconds elapsed. The separate harness passed 45 checks covering malformed inputs, exact boundary handling, tree consumption, hexadecimal parsing, and rejection paths.
+codex
+Self-tests passed at 128 and 200 bits; the separate validation harness passed 45 checks.
+
+At 200 bits, both certificates passed with zero failed leaves:
+
+- `base_cone00_r1_1over20.json`, using `--allow-r0 1/20`: **19,383 nodes**, 9,691 splits, 9,122 dual leaves, 570 central leaves; **6.589841 seconds**. Minimum-margin lower bound: `4.95259938059884678689092295522697720195837060082272860183311E-8`.
+- `cone00.json`, requiring `r0=1/10000`: **67,079 nodes**, 33,539 splits, 33,032 dual leaves, 508 central leaves; **23.940698 seconds**. Minimum-margin lower bound: `1.72726858038650554297889643120399591920260765422683018961756E-11`.
+
+No files were modified, no prohibited implementations were inspected, and no work was delegated.
+
+BEGIN_CHECKER_C
+#!/usr/bin/env python3
+"""Independent, fail-closed certificate replay; requires python-flint.
+
+All geometric and hexadecimal input arithmetic is exact fmpq arithmetic.
+All logarithms, extrema and inequality decisions use Arb at --prec bits.
+Preorder indices in diagnostics are zero based. A null margin means that
+there were no dual vertices, or that not all dual margins could be computed.
+"""
+import argparse
+from collections import Counter
+from datetime import datetime, timezone
+from decimal import Decimal, ROUND_FLOOR, localcontext
+from functools import lru_cache
+import hashlib
+from itertools import permutations
+import json
+from math import factorial
+from pathlib import Path
+import re
+import sys
+
+from flint import arb, ctx, fmpq
+
+Q = fmpq
+THIRD = Q(1, 3)
+CENTER = (Q(1, 9),) * 4
+REQUIRED_R0 = Q(1, 10000)
+DIRECTIONS = ((-1, -1), (-1, 1), (1, -1), (1, 1))
+HEX = re.compile(
+    r"([+-]?)0[xX]([0-9a-fA-F]+)\.([0-9a-fA-F]+)[pP]([+-]?[0-9]+)\Z"
+)
+RATIONAL = re.compile(r"([+-]?[0-9]+)/([+-]?[0-9]+)\Z")
+
+
+class Invalid(ValueError):
+    pass
+
+
+def spectra():
+    result = []
+    for a in range(6):
+        for b in range(6 - a):
+            for c in range(6 - a - b):
+                d = 5 - a - b - c
+                if min(a + b, c + d, a + c, b + d) >= 1:
+                    s = (a, b, c, d)
+                    denominator = 1
+                    for k in s:
+                        denominator *= factorial(k)
+                    result.append((s, 120 // denominator))
+    return tuple(result)
+
+
+def edges():
+    used, result = set(), []
+    for u in range(9):
+        i, j = divmod(u, 3)
+        for k, (r, t) in enumerate(DIRECTIONS):
+            if (u, k) in used:
+                continue
+            v = 3 * ((i + r) % 3) + (j + t) % 3
+            kv = DIRECTIONS.index((-r, -t))
+            if (v, kv) in used:
+                raise Invalid("edge construction reused an entry")
+            result.append((u, k, v, kv))
+            used.update(((u, k), (v, kv)))
+    return tuple(result)
+
+
+SPECTRA = spectra()
+EDGES = edges()
+
+
+def rational(text):
+    if not isinstance(text, str):
+        raise Invalid("r0 must be a P/Q string")
+    m = RATIONAL.fullmatch(text)
+    if m is None or int(m[2]) == 0:
+        raise Invalid("invalid P/Q rational")
+    return Q(int(m[1]), int(m[2]))
+
+
+def hex_rational(text):
+    """Parse the written binary rational, with no float conversion."""
+    if not isinstance(text, str):
+        raise Invalid("hexadecimal entry must be a string")
+    m = HEX.fullmatch(text)
+    if m is None:
+        raise Invalid("invalid finite hexadecimal literal: " + repr(text)[:100])
+    numerator = int(m[2] + m[3], 16)
+    if m[1] == "-":
+        numerator = -numerator
+    exponent = int(m[4]) - 4 * len(m[3])
+    if exponent >= 0:
+        return Q(numerator << exponent)
+    return Q(numerator, 1 << -exponent)
+
+
+def facet_pair(value):
+    if (not isinstance(value, list) or len(value) != 2
+            or any(type(i) is not int or not 0 <= i < 3 for i in value)):
+        raise Invalid("facet must be two integers in 0..2")
+    return tuple(value)
+
+
+def root_simplex(facet):
+    fi, fj = facet
+    vertices = [CENTER]
+    for sigma in permutations(range(3)):
+        if sigma[fi] != fj:
+            vertices.append(tuple(
+                THIRD * int(truth) for truth in (
+                    sigma[0] == 0, sigma[0] == 1,
+                    sigma[1] == 0, sigma[1] == 1
+                )
+            ))
+    if len(vertices) != 5:
+        raise Invalid("root construction did not produce five vertices")
+    return tuple(vertices)
+
+
+def class_values(p):
+    x1, x2, x3, x4 = p
+    return (
+        x1, x2, THIRD - x1 - x2,
+        x3, x4, THIRD - x3 - x4,
+        THIRD - x1 - x3, THIRD - x2 - x4,
+        x1 + x2 + x3 + x4 - THIRD
+    )
+
+
+def lower_decimal(value):
+    """Round an exact dyadic lower endpoint DOWN when printing decimal."""
+    value = value.lower()
+    if not value.is_finite():
+        return None
+    m, e = (int(t) for t in value.man_exp())
+    if e >= 0:
+        return str(m << e)
+    with localcontext() as dc:
+        dc.prec = max(30, ctx.prec * 30103 // 100000)
+        dc.rounding = ROUND_FLOOR
+        return str(Decimal(m) / Decimal(1 << -e))
+
+
+def a_bound(z, mu):
+    """Enclose the specified a(z,mu), including the entire finite maximum."""
+    powers = []
+    for q in mu:
+        row = [arb(1), arb(q)]
+        for unused in range(2, 6):
+            row.append(row[-1] * row[1])
+        powers.append(row)
+    phi = arb(0)
+    moments = [arb(0) for unused in range(4)]
+    for s, w in SPECTRA:
+        term = arb(w)
+        for k in range(4):
+            if s[k]:
+                term *= powers[k][s[k]]
+        phi += term
+        for k in range(4):
+            if s[k]:
+                moments[k] += s[k] * term
+    if not (phi.is_finite() and phi > 0):
+        raise Invalid("Phi is not certified finite and positive")
+    means = [v / phi for v in moments]
+    if any(not (v.is_finite() and v > 0) for v in means):
+        raise Invalid("a moment is not certified finite and positive")
+    g = [means[k].log() / 2 - arb(mu[k]).log() + z[k]
+         for k in range(4)]
+    # psi0 + z.m0 - g.m0 = log(Phi) exactly. No approximation
+    # or assumed maximizer is used in this algebraic cancellation.
+    maximum = None
+    for s, unused in SPECTRA:
+        score = arb(0)
+        for k in range(4):
+            if s[k]:
+                score += s[k] * g[k]
+        maximum = score if maximum is None else maximum.max(score)
+    answer = phi.log() + maximum
+    if not answer.is_finite():
+        raise Invalid("nonfinite a(z,mu) enclosure")
+    return answer
+
+
+class Replay:
+    def __init__(self, prec):
+        self.prec = prec
+        self.target = arb(5).log() * 5 / 2 + arb(Q(25, 24)).log()
+        self.minimum = None
+        self.complete_margins = True
+
+        # Per-replay caches: never reuse balls computed at another precision.
+        @lru_cache(maxsize=65536)
+        def entropy_term(n):
+            b = arb(n)
+            return b * b.log() * 3 / 2
+
+        @lru_cache(maxsize=65536)
+        def vertex_data(p):
+            active, entropy = [], arb(0)
+            for u, n in enumerate(class_values(p)):
+                if n < 0:
+                    raise Invalid("vertex outside Delta: negative class " + str(u))
+                if n > 0:
+                    active.append((u, arb(n)))
+                    entropy += entropy_term(n)
+            return tuple(active), entropy
+
+        self.vertex_data = vertex_data
+
+    def dual_coefficients(self, node):
+        if len(node) != 3:
+            raise Invalid("D node must have exactly three fields")
+        y, mus = node[1], node[2]
+        if not isinstance(y, list) or len(y) != 18:
+            raise Invalid("y must be a list of 18 hexadecimal strings")
+        if (not isinstance(mus, list) or len(mus) != 9
+                or any(not isinstance(row, list) or len(row) != 4
+                       for row in mus)):
+            raise Invalid("mus must be a 9 by 4 list")
+        ys = [hex_rational(t) for t in y]
+        qs = [[hex_rational(t) for t in row] for row in mus]
+        if any(q <= 0 for row in qs for q in row):
+            raise Invalid("every mu entry must be strictly positive")
+        z = [[arb(0) for unused in range(4)] for unused in range(9)]
+        for q, (u, k, v, kv) in zip(ys, EDGES):
+            b = arb(q)
+            z[u][k] += b
+            z[v][kv] -= b
+        return tuple(a_bound(z[u], qs[u]) for u in range(9))
+
+    def margin(self, p, coefficients):
+        active, total = self.vertex_data(p)
+        for u, n in active:
+            total += n * coefficients[u]
+        margin = self.target - total
+        if not margin.is_finite():
+            raise Invalid("nonfinite vertex margin")
+        lo = margin.lower()
+        if self.minimum is None or lo < self.minimum:
+            self.minimum = lo
+        return margin
+
+    def verify(self, document, required_r0=REQUIRED_R0, expect=None):
+        stats = {
+            "facet": None, "r0": None, "verdict": "FAIL",
+            "nodes": 0, "splits": 0, "dual_leaves": 0,
+            "central_leaves": 0, "failed_leaves": 0,
+            "first_failures": [], "min_margin_lower_bound": None
+        }
+        bad = False
+
+        def fail(index, kind, reason):
+            nonlocal bad
+            bad = True
+            if len(stats["first_failures"]) < 10:
+                stats["first_failures"].append([index, kind, reason])
+
+        try:
+            if not isinstance(document, dict):
+                raise Invalid("top-level JSON must be an object")
+            raw_r0 = document.get("r0")
+            stats["r0"] = raw_r0 if isinstance(raw_r0, str) else None
+            facet = facet_pair(document.get("facet"))
+            stats["facet"] = list(facet)
+            if expect is not None and facet != tuple(expect):
+                raise Invalid("facet does not match --expect-facet")
+            r0 = rational(document.get("r0"))
+            if r0 != required_r0:
+                raise Invalid("r0 must equal " + str(required_r0) + " exactly")
+            tree = document.get("tree")
+            if not isinstance(tree, list):
+                raise Invalid("tree must be a list")
+            stats["nodes"] = len(tree)
+            stack = [root_simplex(facet)]
+            index = 0
+            structural_failure = False
+            while stack:
+                if index == len(tree):
+                    fail(index, "tree", "truncated preorder: unfilled child slots")
+                    structural_failure = True
+                    break
+                cell = stack.pop()
+                node = tree[index]
+                here = index
+                index += 1
+                if (not isinstance(node, list) or not node
+                        or not isinstance(node[0], str)):
+                    fail(here, "node", "node must be a nonempty list with a string kind")
+                    structural_failure = True
+                    break
+                kind = node[0]
+                if kind == "S":
+                    if (len(node) != 3 or type(node[1]) is not int
+                            or type(node[2]) is not int
+                            or not 0 <= node[1] < 5
+                            or not 0 <= node[2] < 5):
+                        fail(here, kind, "split requires integer indices in 0..4")
+                        structural_failure = True
+                        break
+                    stats["splits"] += 1
+                    i, j = node[1:]
+                    mid = tuple((a + b) / 2 for a, b in zip(cell[i], cell[j]))
+                    first, second = list(cell), list(cell)
+                    first[i], second[j] = mid, mid
+                    # LIFO: first child must be visited before second child.
+                    stack.append(tuple(second))
+                    stack.append(tuple(first))
+                elif kind == "C":
+                    stats["central_leaves"] += 1
+                    if len(node) != 1:
+                        stats["failed_leaves"] += 1
+                        fail(here, kind, "C node must have exactly one field")
+                    elif any(abs(x - CENTER[k]) > r0
+                             for p in cell for k, x in enumerate(p)):
+                        stats["failed_leaves"] += 1
+                        fail(here, kind, "a vertex is outside the closed central box")
+                elif kind == "D":
+                    stats["dual_leaves"] += 1
+                    reasons = []
+                    try:
+                        coefficients = self.dual_coefficients(node)
+                        for vi, p in enumerate(cell):
+                            margin = self.margin(p, coefficients)
+                            if not margin > 0:
+                                reasons.append(
+                                    "vertex " + str(vi)
+                                    + ": L*-U is not rigorously positive"
+                                    + " (lower bound " + lower_decimal(margin) + ")"
+                                )
+                    except (Invalid, ValueError, ArithmeticError, TypeError) as exc:
+                        self.complete_margins = False
+                        reasons.append(str(exc))
+                    if reasons:
+                        stats["failed_leaves"] += 1
+                        fail(here, kind, "; ".join(reasons))
+                else:
+                    fail(here, kind, "unknown node kind")
+                    structural_failure = True
+                    break
+            if structural_failure:
+                self.complete_margins = False
+            elif index != len(tree):
+                fail(index, "tree", "trailing nodes after the root subtree")
+                self.complete_margins = False
+        except (Invalid, ValueError, ArithmeticError, TypeError) as exc:
+            fail(-1, "metadata", str(exc))
+            self.complete_margins = False
+        if self.complete_margins and self.minimum is not None:
+            stats["min_margin_lower_bound"] = lower_decimal(self.minimum)
+        stats["verdict"] = "FAIL" if bad else "PASS"
+        return stats
+
+
+def unique_object(pairs):
+    obj = {}
+    for key, value in pairs:
+        if key in obj:
+            raise Invalid("duplicate JSON key: " + key)
+        obj[key] = value
+    return obj
+
+
+def reject_constant(value):
+    raise Invalid("nonstandard JSON constant: " + value)
+
+
+def exact_phi_moments(mu):
+    """Only used by selftest: an independent exact polynomial evaluation."""
+    phi, moments = Q(0), [Q(0)] * 4
+    for s, w in SPECTRA:
+        term = Q(w)
+        for k in range(4):
+            term *= mu[k] ** s[k]
+        phi += term
+        for k in range(4):
+            moments[k] += term * s[k]
+    return phi, tuple(v / phi for v in moments)
+
+
+def selftest(prec):
+    checks = []
+
+    def require(condition, name):
+        if not condition:
+            raise Invalid("selftest failed: " + name)
+        checks.append(name)
+
+    def close_zero(value):
+        return value.contains(0) and abs(value) < arb(Q(1, 1 << (prec // 2)))
+
+    require(len(SPECTRA) == 36, "36 spectra")
+    entries = Counter((u, k) for e in EDGES
+                      for u, k in ((e[0], e[1]), (e[2], e[3])))
+    require(len(EDGES) == 18 and len(entries) == 36
+            and set(entries) == {(u, k) for u in range(9) for k in range(4)}
+            and all(v == 1 for v in entries.values()),
+            "18 edges; every class entry used exactly once")
+    one = (Q(1),) * 4
+    phi, means = exact_phi_moments(one)
+    require(phi == 900 and means == (Q(5, 4),) * 4,
+            "exact Phi(1)=900 and all moments=5/4")
+    require(all(sum(s) == 5 for s, unused in SPECTRA),
+            "exact degree-five homogeneity")
+    zeros = (arb(0),) * 4
+    a = a_bound(zeros, one)
+    expected_a = arb(Q(5, 4)).log() * 5 / 2 + arb(900).log()
+    require(close_zero(a - expected_a),
+            "a=(5/2)log(5/4)+log(900)")
+    # These rational identities, equal moments and degree five give the
+    # symbolic uniform-case equality, alongside the interval regressions.
+    require(Q(900, 32 * 27) == Q(25, 24),
+            "exact rational factor in U(center)=L*")
+    replay = Replay(prec)
+    margin = replay.margin(CENTER, (a,) * 9)
+    require(close_zero(margin) and not margin > 0,
+            "U(center)=L*; strict margin is rejected")
+    uniform = ["D", ["0x0.0p+0"] * 18, [["0x1.0000000000000p+0"] * 4
+                                     for unused in range(9)]]
+    result = Replay(prec).verify(
+        {"facet": [0, 0], "r0": "1/10000", "tree": [uniform]}
+    )
+    require(result["verdict"] == "FAIL" and result["failed_leaves"] == 1
+            and "vertex 0:" in result["first_failures"][0][2],
+            "dual root containing center is rejected")
+    mu = (Q(3, 2), Q(5, 7), Q(11, 13), Q(17, 19))
+    doubled = tuple(2 * q for q in mu)
+    phi1, means1 = exact_phi_moments(mu)
+    phi2, means2 = exact_phi_moments(doubled)
+    require(phi2 == 32 * phi1 and means2 == means1,
+            "exact Phi(2mu)=32Phi(mu), invariant moments")
+    z = tuple(arb(q) for q in (Q(1, 7), Q(-2, 9), Q(3, 11), Q(-5, 13)))
+    require(close_zero(a_bound(z, mu) - a_bound(z, doubled)),
+            "a(z,2mu)=a(z,mu)")
+    # Cross-check the cancellation against the unsimplified specification.
+    m = tuple(arb(q) for q in means1)
+    lm = tuple(arb(q).log() for q in mu)
+    g = tuple(m[k].log() / 2 - lm[k] + z[k] for k in range(4))
+    psi = arb(phi1).log()
+    for k in range(4):
+        psi += m[k] * m[k].log() / 2 - m[k] * lm[k]
+    base = psi + sum((z[k] * m[k] for k in range(4)), arb(0))
+    maximum = None
+    for s, unused in SPECTRA:
+        score = sum((g[k] * (s[k] - m[k]) for k in range(4)), arb(0))
+        maximum = score if maximum is None else maximum.max(score)
+    require(close_zero(a_bound(z, mu) - (base + maximum)),
+            "simplified a agrees with the stated unsimplified formula")
+    return {"verdict": "PASS", "selftest": True, "prec": prec,
+            "checks": checks, "a_uniform": a.str(),
+            "center_margin": margin.str()}
+
+
+class Parser(argparse.ArgumentParser):
+    def error(self, message):
+        raise Invalid(message)
+
+
+def utc_now():
+    return datetime.now(timezone.utc).isoformat()
+
+
+def main(argv=None):
+    started = utc_now()
+    result = {
+        "cert": None, "cert_sha256": None, "facet": None, "r0": None,
+        "verdict": "FAIL", "nodes": 0, "splits": 0, "dual_leaves": 0,
+        "central_leaves": 0, "failed_leaves": 0, "first_failures": [],
+        "min_margin_lower_bound": None, "prec": 200, "started": started
+    }
+    try:
+        parser = Parser(description=__doc__)
+        parser.add_argument("cert", nargs="?")
+        parser.add_argument("--expect-facet", nargs=2, type=int, metavar=("FI", "FJ"))
+        parser.add_argument("--prec", type=int, default=200, metavar="BITS")
+        parser.add_argument("--allow-r0", metavar="P/Q",
+                            help="TEST ONLY: replace the required radius")
+        parser.add_argument("--selftest", action="store_true")
+        args = parser.parse_args(argv)
+        result["cert"], result["prec"] = args.cert, args.prec
+        if args.allow_r0 is not None:
+            result["allow_r0"] = args.allow_r0
+        if args.prec < 128:
+            raise Invalid("--prec must be at least 128")
+        ctx.prec = args.prec
+        ctx.threads = 1
+        if args.expect_facet is not None:
+            facet_pair(args.expect_facet)
+        required = REQUIRED_R0 if args.allow_r0 is None else rational(args.allow_r0)
+        if required <= 0:
+            raise Invalid("required radius must be positive")
+        if args.selftest:
+            if args.cert is not None or args.allow_r0 is not None or args.expect_facet:
+                raise Invalid("--selftest cannot be combined with certificate options")
+            result.update(selftest(args.prec))
+        else:
+            if args.cert is None:
+                raise Invalid("a certificate path is required, or use --selftest")
+            raw = Path(args.cert).read_bytes()
+            result["cert_sha256"] = hashlib.sha256(raw).hexdigest()
+            document = json.loads(raw, parse_float=Decimal,
+                                  parse_constant=reject_constant,
+                                  object_pairs_hook=unique_object)
+            result.update(Replay(args.prec).verify(document, required, args.expect_facet))
+    except Exception as exc:
+        result["verdict"] = "FAIL"
+        result["min_margin_lower_bound"] = None
+        if len(result["first_failures"]) < 10:
+            result["first_failures"].append([-1, "input", type(exc).__name__ + ": " + str(exc)])
+    result["finished"] = utc_now()
+    print(json.dumps(result, ensure_ascii=True, allow_nan=False))
+    return 0 if result["verdict"] == "PASS" else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+END_CHECKER_C
+tokens used
+85,640

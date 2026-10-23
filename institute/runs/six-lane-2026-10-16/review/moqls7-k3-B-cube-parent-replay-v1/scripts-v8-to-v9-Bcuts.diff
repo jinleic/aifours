@@ -1,0 +1,499 @@
+--- scripts/bklib_v2.py
++++ scripts/bklib_v3.py
+@@ -1,5 +1,15 @@
+ #!/usr/bin/env python3
+-"""Library of the parent B-side K3 cube replay desk review/moqls7-k3-B-cube-parent-replay-v1, v2. Imports no lane code.
++"""Library of the parent B-side K3 cube replay desk review/moqls7-k3-B-cube-parent-replay-v1, v3. Imports no lane code.
++
++v3 = bklib_v2.py plus the B/C311+cuts item "B_C311cuts" (kind "cuts"). It is pinned from PhysEpQutrit's route-B r6
++receipt evidence/k3cubes/C311cuts_B_r6/C311cuts_B.json (1f003634...c535): strengthened CNF ae3b8309...783a, input
++explore/k3cubes/B_C311.cnf b3ec0108...c077 (metadata bfa298ee...a056), cut block 05f31da4...e6dd with 238,140
++clauses. Three item-kind branches are needed for it:
++  * regenerate() runs the item's composition script (compose_Bcuts_v1.py for cuts; compose_B_v1.py otherwise);
++  * producer_evidence() checks a cuts receipt's own fields and flattens them into the cube-receipt field names used by
++    the driver and the assembler;
++  * check_regen() adds the input, block and output pin checks.
++CODE_PINS also cover k3_lex.py and k3_cuts_r1.py. Items B_C321 and B_C411 are unchanged.
+ 
+ v2 = bklib_v1.py plus one change: ITEMS gains B_C411, pinned from PhysEpQutrit's r7 producer receipt
+ evidence/k3cubes/cert_B_r7/B_C411.json (644b5b23...6f75): CNF 01acf464...8bf8, base 42a5f304...0aac, metadata
+@@ -82,6 +92,8 @@
+     os.path.join(CODE, "k3_cubes.py"): "70c79c624dd4c4ad0929a41790b7674eaa7343f3fcb5802c5e0c1abdbfb30550",
+     os.path.join(CODE, "gram_encB.py"): "c7583efe838816d39fe33456af09897cc2a1f5633d1e57e1ee63b3e5238e2b45",
+     SUPERVISOR: SUPERVISOR_SHA256,
++    os.path.join(CODE, "k3_lex.py"): "2b721e85812cd7b3438771868f63da1e10f3fbeed6551f7888f74a399e159b10",
++    os.path.join(CODE, "k3_cuts_r1.py"): "0ec92c861024a728aa38d238fda2d7f5f056fae12cb0f474a15db0335b6e1b0a",
+ }
+ BIN_PINS = {KISSAT: "05d6f3e9c402a1fe8853b0746e384e1b3d1c4a550e255f11daa2461d279aa848",
+             DRAT: "a46c0c717f702206a7fe345de5bcdc0b10112bca6bdbf04dd42cd9848ff08e37"}
+@@ -111,6 +123,20 @@
+                "encoder_sha256": "c7583efe838816d39fe33456af09897cc2a1f5633d1e57e1ee63b3e5238e2b45",
+                "regen_code_sha256_prefix_suffix": ["da9c210e", "ac78"],
+                "lane_cnf": os.path.join(EXPLORE, "B_C411.cnf")},
++    "B_C311cuts": {"kind": "cuts", "encoder": "B", "cube": "C311", "compose": "compose_Bcuts_v1.py",
++                   "producer_receipt": os.path.join(K3DIR, "C311cuts_B_r6", "C311cuts_B.json"),
++                   "producer_receipt_sha256": "1f00363467d3ed30787cd1b3e4c2e695b8b4d7249623fc6e3994130f4be6c535",
++                   "producer_checker_log": os.path.join(K3DIR, "C311cuts_B_r6", "C311cuts_B.checker.log"),
++                   "producer_solver_log": os.path.join(K3DIR, "C311cuts_B_r6", "C311cuts_B.solver.log"),
++                   "cnf_sha256": "ae3b8309601d115e2258782ae3cb793f4dc4b5950064b9536b1eca61521f783a",
++                   "input_sha256": "b3ec010855ad4abd75ffd6eb57aaa3ff158bc8447625ee2097f5a6057594c077",
++                   "block_sha256": "05f31da497315877347f7d780e0e6f4c9c4799c8becee3bdb192a8420ff6e6dd",
++                   "block_clauses": 238140,
++                   "base_cnf_sha256": "42a5f30453bba3eb423e78b99b1a8fe6039e1c91c32b6ff1dd72f498fa8e0aac",
++                   "meta": os.path.join(EXPLORE, "B_C311.meta.json"),
++                   "meta_sha256": "bfa298eea4a6b102a16e15663d42c2cdf86ab7ab093f86bdecb7d8bf8d28a056",
++                   "encoder_sha256": "c7583efe838816d39fe33456af09897cc2a1f5633d1e57e1ee63b3e5238e2b45",
++                   "lane_cnf": os.path.join(EXPLORE, "B_C311.cnf")},
+ }
+ STOP = {"requested": None}            # set by the driver's SIGTERM handler
+ 
+@@ -189,6 +215,8 @@
+ def producer_evidence(item):
+     """Producer receipt, cube metadata and the B-map oracle receipt (read-only, regular files only), hashed, parsed
+     and cross-checked against the brief's pins. The lane CNF copy is hashed for the record only, never used."""
++    if ITEMS[item].get("kind") == "cuts":
++        return producer_evidence_cuts(item)
+     it = ITEMS[item]
+     rb = read_regular(it["producer_receipt"])
+     mb = read_regular(it["meta"])
+@@ -252,6 +280,72 @@
+     return out
+ 
+ 
++def producer_evidence_cuts(item):
++    """Cuts-kind producer evidence: the route-B C311+cuts receipt, the B_C311 input metadata, the B-map oracle and the
++    lane input-CNF copy (hashed only). Receipt fields are flattened into the cube-receipt names."""
++    it = ITEMS[item]
++    rb, mb, ob = read_regular(it["producer_receipt"]), read_regular(it["meta"]), read_regular(ORACLE_RECEIPT)
++    r, m, o = json.loads(rb), json.loads(mb), json.loads(ob)
++    res, prep, bind = r.get("result") or {}, r.get("prepared") or {}, r.get("bindings") or {}
++    regen, mods = prep.get("regeneration") or {}, (r.get("environment") or {}).get("modules") or {}
++    cnf_sha, cnf_len = sha_regular(it["lane_cnf"])
++    plog = {}
++    for key in ("producer_checker_log", "producer_solver_log"):
++        h, n = sha_regular(it[key])
++        plog[key] = {"path": it[key], "sha256": h, "bytes": n}
++    fields = {k: res.get(k) for k in ("seconds", "solver_command", "checker_command", "solver_rc", "checker_rc",
++                                       "checker_status_lines", "peak_sampled_aggregate_rss_bytes",
++                                       "safety_stop_reason", "solver_binary_sha256", "checker_binary_sha256",
++                                       "checker_source_sha256", "solver_log_sha256", "checker_log_sha256",
++                                       "native_limits_seconds")}
++    fields.update({"started_at": r.get("started_at"), "finished_at": r.get("finished_at"),
++                   "verified_unsat": r.get("verified_unsat"), "status": r.get("status"), "route": r.get("route"),
++                   "cnf_sha256": prep.get("strengthened_sha256"), "encoder": "B", "cube": "C311+cuts",
++                   "prepared": prep, "bindings": bind})
++    out = {"receipt": {"path": it["producer_receipt"], "sha256": sha_bytes(rb), "bytes": len(rb)},
++           "meta": {"path": it["meta"], "sha256": sha_bytes(mb), "bytes": len(mb)},
++           "oracle_receipt": {"path": ORACLE_RECEIPT, "sha256": sha_bytes(ob), "bytes": len(ob)},
++           "lane_cnf_copy": {"path": it["lane_cnf"], "sha256": cnf_sha, "bytes": cnf_len,
++                             "use": "input CNF; hashed read-only for the record; never given to the solver or checker"},
++           "producer_logs": plog, "receipt_fields": fields, "meta_fields": m,
++           "oracle_fields": {k: o.get(k) for k in ("status", "failures", "decoded_identity_mismatches",
++                                                   "oracle_sha256", "encoder_A_sha256", "encoder_B_sha256",
++                                                   "cube_wrapper_sha256", "A_map_equals_wrapper_map", "B_base",
++                                                   "finished_at", "claim")}}
++    checks = {
++        "receipt_sha256_equals_pin": out["receipt"]["sha256"] == it["producer_receipt_sha256"],
++        "receipt_route_B": r.get("route") == "B",
++        "receipt_strengthened_equals_pin": (prep.get("strengthened_sha256") == it["cnf_sha256"]
++                                            and bind.get("expected_strengthened_sha256") == it["cnf_sha256"]),
++        "receipt_input_equals_pin": prep.get("input_sha256") == it["input_sha256"],
++        "receipt_block_equals_pin": (prep.get("block_sha256") == it["block_sha256"]
++                                     and prep.get("block_clauses") == it["block_clauses"]),
++        "receipt_base_equals_pin": regen.get("base_sha256") == it["base_cnf_sha256"],
++        "receipt_meta_equals_pin": regen.get("B_C311_metadata_sha256") == it["meta_sha256"],
++        "receipt_solver_binary_equals_pin": res.get("solver_binary_sha256") == BIN_PINS[KISSAT],
++        "receipt_oracle_receipt_sha_equals_file": bind.get("oracle_receipt_sha256") == out["oracle_receipt"]["sha256"],
++        "receipt_module_pins_equal": all((mods.get(n) or {}).get("sha256") == CODE_PINS[os.path.join(CODE, n + ".py")]
++                                         for n in ("gram_enc", "k3_cubes", "k3_lex", "k3_cuts_r1")),
++        "meta_sha256_equals_pin": out["meta"]["sha256"] == it["meta_sha256"],
++        "meta_cnf_equals_input_pin": m.get("cnf_sha256") == it["input_sha256"],
++        "meta_base_equals_pin": m.get("base_cnf_sha256") == it["base_cnf_sha256"],
++        "meta_wrapper_equals_pin": m.get("wrapper_sha256") == CODE_PINS[os.path.join(CODE, "k3_cubes.py")],
++        "meta_encoder_equals_pin": m.get("base_encoder_sha256") == it["encoder_sha256"],
++        "meta_encoder_cube": m.get("encoder") == "B" and m.get("cube") == "C311",
++        "oracle_status_pass": o.get("status") == "PASS" and o.get("decoded_identity_mismatches") == 0,
++        "oracle_pins_equal": (o.get("encoder_B_sha256") == it["encoder_sha256"]
++                              and o.get("encoder_A_sha256") == CODE_PINS[os.path.join(CODE, "gram_enc.py")]
++                              and o.get("cube_wrapper_sha256") == CODE_PINS[os.path.join(CODE, "k3_cubes.py")]
++                              and (o.get("B_base") or {}).get("sha256") == it["base_cnf_sha256"]),
++        "producer_logs_equal_receipt": (plog["producer_checker_log"]["sha256"] == res.get("checker_log_sha256")
++                                        and plog["producer_solver_log"]["sha256"] == res.get("solver_log_sha256")),
++        "lane_input_copy_equals_input_pin": cnf_sha == it["input_sha256"],
++    }
++    out["checks"] = checks
++    out["consistent"] = all(checks.values())
++    return out
++
++
+ def run_capture(argv):
+     """Popen with captured stdout/stderr (reader threads), reaped with a blocking os.wait4; no timeout."""
+     t0 = time.monotonic()
+@@ -280,8 +374,10 @@
+ 
+ 
+ def regenerate(item):
+-    """compose_B_v1.py CUBE in a subprocess (cwd and TMPDIR = desk tmp); the CNF arrives on a pipe, stays in memory."""
+-    info, out, err = run_capture([PY, "-I", "-B", os.path.join(SCRIPTS, "compose_B_v1.py"), ITEMS[item]["cube"]])
++    """The item's composition script (compose_B_v1.py, or compose_Bcuts_v1.py for kind cuts) in a subprocess (cwd and
++    TMPDIR = desk tmp); the CNF arrives on a pipe and stays in memory."""
++    script = ITEMS[item].get("compose", "compose_B_v1.py")
++    info, out, err = run_capture([PY, "-I", "-B", os.path.join(SCRIPTS, script), ITEMS[item]["cube"]])
+     info["stdout_bytes"] = len(out)
+     info["stderr_tail"] = err.decode(errors="replace")[-4000:]
+     info["compose_info"] = None
+@@ -298,16 +394,22 @@
+     got = sha_bytes(cnf) if cnf is not None else None
+     ci = info.get("compose_info") or {}
+     head = cnf[:cnf.index(b"\n")].decode("ascii", "replace") if cnf else None
+-    return {"item": item, "cnf_sha256": got, "expected_cnf_sha256": it["cnf_sha256"],
+-            "cnf_hash_match": (got == it["cnf_sha256"]) if got is not None else None,
+-            "cnf_bytes": len(cnf) if cnf is not None else None, "cnf_header": head,
+-            "compose_reported_sha_equals_stdout": ci.get("out_sha256") == got if got else None,
+-            "base_cnf_sha256": ci.get("base_cnf_sha256"),
+-            "base_cnf_equals_pin": ci.get("base_cnf_sha256") == it["base_cnf_sha256"],
+-            "base_empty_clause_lines": ci.get("base_empty_clause_lines"),
+-            "meta_agreement": {k: ci.get(k) == meta.get(k) for k in (
+-                "base_cnf_sha256", "support_sets", "cube_unit_clauses", "same_ray_identities", "extra_clauses")},
+-            "regen_run": info}
++    rec = {"item": item, "cnf_sha256": got, "expected_cnf_sha256": it["cnf_sha256"],
++           "cnf_hash_match": (got == it["cnf_sha256"]) if got is not None else None,
++           "cnf_bytes": len(cnf) if cnf is not None else None, "cnf_header": head,
++           "compose_reported_sha_equals_stdout": ci.get("out_sha256") == got if got else None,
++           "base_cnf_sha256": ci.get("base_cnf_sha256"),
++           "base_cnf_equals_pin": ci.get("base_cnf_sha256") == it["base_cnf_sha256"],
++           "base_empty_clause_lines": ci.get("base_empty_clause_lines"),
++           "meta_agreement": {k: ci.get(k) == meta.get(k) for k in (
++               "base_cnf_sha256", "support_sets", "cube_unit_clauses", "same_ray_identities", "extra_clauses")},
++           "regen_run": info}
++    if it.get("kind") == "cuts":
++        rec["cuts"] = {"input_sha256_equals_pin": ci.get("input_sha256") == it["input_sha256"],
++                       "block_sha256_equals_pin": ci.get("block_sha256") == it["block_sha256"],
++                       "block_clauses_equal_pin": ci.get("block_clauses") == it["block_clauses"],
++                       "input_header": ci.get("input_header"), "out_header": ci.get("out_header")}
++    return rec
+ 
+ 
+ # --- RSS through libproc (macOS sys/proc_info.h: PROC_PIDTASKINFO = 4, struct proc_taskinfo is 96 bytes,
+--- scripts/replay_B_v3.py
++++ scripts/replay_B_v4.py
+@@ -1,5 +1,7 @@
+ #!/usr/bin/env python3
+-"""Parent replay driver for phys-2 K3 cube certificates, encoder B (review/moqls7-k3-B-cube-parent-replay-v1), v3.
++"""Parent replay driver for phys-2 K3 cube certificates, encoder B (review/moqls7-k3-B-cube-parent-replay-v1), v4.
++
++v4 = replay_B_v3.py with one change, the import: bklib_v3 (adds the B_C311cuts item and its composition script).
+ 
+ v3 = replay_B_v2.py with the import bumped to bklib_v2 (adds the B_C411 item pin) and one addition: the regen mode
+ takes an optional '--tag TAG' and then writes receipts/regen-ITEM-TAG.json and logs/driver-regen-ITEM-TAG.log. This is
+@@ -38,7 +40,7 @@
+ import time
+ 
+ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+-import bklib_v2 as K  # noqa: E402
++import bklib_v3 as K  # noqa: E402
+ 
+ SOLVER_SECONDS = 5400
+ CHECKER_SECONDS = 9000
+--- scripts/launch_B_v8.py
++++ scripts/launch_B_v9.py
+@@ -1,5 +1,8 @@
+ #!/usr/bin/env python3
+-"""Capacity-gated launcher of the parent B-side K3 cube replay desk (review/moqls7-k3-B-cube-parent-replay-v1), v8.
++"""Capacity-gated launcher of the parent B-side K3 cube replay desk (review/moqls7-k3-B-cube-parent-replay-v1), v9.
++
++v9 = launch_B_v8.py with an import-only bump for B/C311+cuts: bklib_v3 (B_C311cuts item) instead of bklib_v2, and the
++driver replay_B_v4.py (the same import bump of replay_B_v3.py). Everything else is byte-identical to v8.
+ 
+ v8 = launch_B_v7.py with one change, Main's long-job stability rule (07:16 PDT) in the admission. Between the first
+ admitting scan and the second fresh scan (immediately before launch), the 62 s pause becomes a stability window. For
+@@ -68,7 +71,7 @@
+ import time
+ 
+ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+-import bklib_v2 as K  # noqa: E402
++import bklib_v3 as K  # noqa: E402
+ 
+ DEADLINE = datetime.datetime.fromisoformat("2026-10-18T17:30:00-07:00")
+ NO_LAUNCH_AFTER = datetime.datetime.fromisoformat("2026-10-18T17:30:00-07:00")
+@@ -401,7 +404,7 @@
+     argv = [K.PY, "-I", "-B", K.SUPERVISOR, "--name", label + "-parent-replay", "--wall", str(SUP_WALL),
+             "--rss-cap", str(cap), "--floor", str(K.FLOOR), "--lane", K.DESK, "--record", record,
+             "--quarantine", quarantine, "--grace", str(SUP_GRACE), "--",
+-            K.PY, "-I", "-B", os.path.join(K.SCRIPTS, "replay_B_v3.py"), "run", item, "--label", label,
++            K.PY, "-I", "-B", os.path.join(K.SCRIPTS, "replay_B_v4.py"), "run", item, "--label", label,
+             "--rss-stop", str(cap)]
+     sup_sha = K.sha_file(K.SUPERVISOR)
+     rec = {"purpose": "run " + label, "item": item, "label": label, "previous_attempt": previous,
+@@ -571,7 +574,7 @@
+         tagged = len(a) == 6 and a[4] == "--regen-tag" and re.fullmatch(r"[A-Za-z0-9]+", a[5])
+         if ((len(a) != 4 and not tagged) or a[1] not in K.ITEMS or a[2] != "--label"
+                 or not (re.fullmatch(r"[A-Za-z0-9_.-]+", a[3]) and a[3].startswith(a[1] + "-"))):
+-            raise SystemExit("usage: launch_B_v8.py run ITEM --label ITEM-<suffix> [--regen-tag TAG]")
++            raise SystemExit("usage: launch_B_v9.py run ITEM --label ITEM-<suffix> [--regen-tag TAG]")
+         signal.signal(signal.SIGTERM, on_term)
+         signal.signal(signal.SIGINT, on_term)
+         sys.exit(mode_run(a[1], a[3], a[5] if tagged else None))
+--- scripts/assemble_B_v8.py
++++ scripts/assemble_B_v9.py
+@@ -1,6 +1,9 @@
+ #!/usr/bin/env python3
+ """Assemble the attempt receipt, deviations, RESULT and REPORT of a labelled replay attempt of the parent B-side K3
+-cube replay desk (review/moqls7-k3-B-cube-parent-replay-v1), v8.
++cube replay desk (review/moqls7-k3-B-cube-parent-replay-v1), v9.
++
++v9 = assemble_B_v8.py with the import bumped to bklib_v3 (B_C311cuts item), the scope naming the cuts kind, the
++B_C311cuts item deviations and the v8-to-v9 diff in the result. Nothing else changes.
+ 
+ v8 = assemble_B_v7.py with the deviation texts updated for launch_B_v8.py (stability rule; one launcher for both
+ items). Nothing else changes.
+@@ -25,20 +28,21 @@
+ import sys
+ 
+ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+-import bklib_v2 as K  # noqa: E402
++import bklib_v3 as K  # noqa: E402
+ 
+ REGEN = {"rel": None}                           # set from argv in main(); see the module docstring
+ 
+ DEVIATIONS = [
+     {"id": "D16-versioned-scripts",
+-     "what": "Both B_C321 attempt a3 and B/C411 are launched by launch_B_v8.py (bklib_v2, driver replay_B_v3.py; "
+-             "bklib_v2 pins B_C321 exactly as bklib_v1 and adds B_C411). History: v2 attempt labels "
++     "what": "B_C321 attempt a3 and B/C411 are launched by launch_B_v8.py (bklib_v2, driver replay_B_v3.py; bklib_v2 "
++             "pins B_C321 exactly as bklib_v1 and adds B_C411); B/C311+cuts by launch_B_v9.py (the import-only bump to "
++             "bklib_v3 and replay_B_v4.py, with compose_Bcuts_v1.py). History: v2 attempt labels "
+              "(scripts-v1-to-v2.r2.diff); v3 slot-2-only rule (scripts-v2-to-v3.diff); v4 flag-only signal handling "
+              "and owned-child loop (scripts-v3-to-v4.diff); v5 cleanup obligation (scripts-v4-to-v5.diff); v6 "
+              "ancestry gate (scripts-v5-to-v6.diff); v7 import bumps and --regen-tag (scripts-v6-to-v7-B_C411.diff); "
+-             "v8 long-job stability rule (scripts-v7-to-v8.diff). compose_B_v1.py and supervise_r3.py are unchanged; "
+-             "native limits (kissat --time=5400, drat-trim -t 9000) and supervisor arguments (wall 10200 s, grace "
+-             "180 s, floor 12e9) are unchanged."},
++             "v8 long-job stability rule (scripts-v7-to-v8.diff); v9 B/C311+cuts item (scripts-v8-to-v9-Bcuts.diff). "
++             "compose_B_v1.py and supervise_r3.py are unchanged; native limits (kissat --time=5400, drat-trim "
++             "-t 9000) and supervisor arguments (wall 10200 s, grace 180 s, floor 12e9) are unchanged."},
+     {"id": "D17-selfcheck-reused-and-regen-precheck",
+      "what": "Self-checks were not rerun: every attempt reuses receipts/selfcheck-summary.json (ec246769...739b, "
+              "all_ok; same binaries, same bklib transport code). The regeneration-only precheck is "
+@@ -60,8 +64,8 @@
+              "which process caused a decline or a reclaim; cause and recurrence period are UNESTABLISHED. Every "
+              "floor-stopped attempt is UNKNOWN and never relabelled."},
+     {"id": "D21-assembler-before-run",
+-     "what": "assemble_B_v8.py was created before the attempts it assembles were launched; its SHA-256 is part of "
+-             "every recording made by those runs."},
++     "what": "assemble_B_v8.py and assemble_B_v9.py were created before the attempts they assemble were launched; "
++             "their SHA-256s are part of every recording made by those runs."},
+     {"id": "D25-armed-after-go",
+      "what": "Each launcher was armed only after Main's explicit GO; the arming time is the first line of "
+              "logs/launch-run-<LABEL>.log."},
+@@ -86,7 +90,17 @@
+                         "was deferred by the driver's free-space gate at 07:12:31 (12,012,662,784 < 12,201,048,576 B) "
+                         "with all producer pin checks consistent and no compose run. The precheck was repeated "
+                         "under replay_B_v3.py 'regen B_C411 --tag TAG'; launch_B_v8.py and assemble_B_v8.py read that "
+-                        "tagged receipt (--regen-tag)."}]}
++                        "tagged receipt (--regen-tag)."}],
++    "B_C311cuts": [{"id": "D32-B_C311cuts-pins-and-composition",
++                    "what": "B/C311+cuts pins (bklib_v3) come from PhysEpQutrit's route-B r6 receipt "
++                            "C311cuts_B_r6/C311cuts_B.json (1f003634...c535; VERIFIED_UNSAT_CASE with the lane drat-trim "
++                            "build): strengthened CNF ae3b8309...783a (38,353,647 B, p cnf 461370 1867942), input "
++                            "explore/k3cubes/B_C311.cnf b3ec0108...c077 (metadata bfa298ee...a056), cut block "
++                            "05f31da4...e6dd (238,140 clauses), base 42a5f304...0aac. compose_Bcuts_v1.py executes the "
++                            "hash-verified gram_enc, k3_cubes, k3_lex, k3_cuts_r1 and gram_encB bytes and restates "
++                            "only k3_cubes.make's encoder-B composition and k3_cuts_certify_r6.prepare's route-B "
++                            "append. The producer's driver and generator are not run. Slot 2 after B/C411-p1, on "
++                            "Main's explicit GO."}]}
+ 
+ 
+ def load(rel):
+@@ -273,7 +287,8 @@
+         "scope": ("Attempt-level replay record (label %s) for the exact B/%s CNF only (SHA-256 %s). PASS means this CNF "
+                   "is UNSAT by a freshly streamed kissat binary DRAT proof accepted by the parent drat-trim; UNKNOWN "
+                   "means this attempt neither confirms nor refutes the producer's certificate. No K3, M(7), coverage, "
+-                  "bridge or theorem verdict." % (label, it["cube"], it["cnf_sha256"])),
++                  "bridge or theorem verdict." % (label, it["cube"] + (" + AMENDMENT-4 cuts" if it.get("kind") == "cuts"
++                                                                         else ""), it["cnf_sha256"])),
+     }
+ 
+ 
+@@ -480,6 +495,7 @@
+         "scripts_diff_v5_to_v6": file_entry("scripts-v5-to-v6.diff"),
+         "scripts_diff_v6_to_v7_B_C411": file_entry("scripts-v6-to-v7-B_C411.diff"),
+         "scripts_diff_v7_to_v8": file_entry("scripts-v7-to-v8.diff"),
++        "scripts_diff_v8_to_v9_Bcuts": file_entry("scripts-v8-to-v9-Bcuts.diff"),
+         "signal_smoke": dict(file_entry("receipts/smoke-v4-signal.smoke.json"),
+                              all_ok=json.loads(K.read_regular(os.path.join(
+                                  K.RECEIPTS, "smoke-v4-signal.smoke.json"))).get("all_ok")),
+--- /dev/null
++++ scripts/compose_Bcuts_v1.py
+@@ -0,0 +1,171 @@
++#!/usr/bin/env python3
++"""B/C311 + AMENDMENT-4 cuts CNF regeneration (encoder B), for the parent desk review/moqls7-k3-B-cube-parent-replay-v1.
++
++Usage: compose_Bcuts_v1.py C311
++
++This is the desk's own composition driver; the producer's driver (k3_cuts_certify_r6.py) and generator receipts are
++not imported or run. Like compose_B_v1.py, it reads the pinned lane sources gram_enc.py, k3_cubes.py, k3_lex.py,
++k3_cuts_r1.py and gram_encB.py as bytes, SHA-256 checks them against the pins below, then compiles and executes
++exactly those bytes as modules named after their files (never as __main__; no import-system lookup; no bytecode).
++The modules are registered in sys.modules in dependency order, so k3_lex's and k3_cuts_r1's imports bind the
++verified modules.
++
++Pinned functions run unchanged:
++  * gram_encB.main() with argv '--squares 3 --heavy --sym --out /dev/fd/W'. As in compose_B_v1.py, W is an in-process
++    pipe read into memory, and the closing stats print is captured and checked against the header;
++  * k3_cubes.coverage(), k3_cubes.variable_map(), k3_cubes.cube_clauses(vmap, 'C311');
++  * k3_cuts_r1.emit(k3_cubes.variable_map()), the AMENDMENT-4 cut block.
++Only the composition is restated:
++  input  = 'p cnf <nv> <nc + len(cube)>' + base body + cube clauses. This is k3_cubes.make's encoder-B composition,
++           and its SHA-256 must equal the pinned explore/k3cubes/B_C311.cnf;
++  output = 'p cnf <nv> <nc_input + len(block)>' + input body + block. This is k3_cuts_certify_r6.prepare's route-B
++           composition (header, body, block; each clause written as ' '.join(map(str, lits)) + ' 0').
++The pins for the input, the block and the output are asserted. Output: the CNF bytes on stdout and one JSON line on
++stderr. Nothing is written to any file.
++"""
++import contextlib
++import hashlib
++import io
++import json
++import os
++import resource
++import sys
++import threading
++import time
++import types
++
++LANE_CODE = "/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261016/moqls7-maximum/code"
++PINS = {"gram_enc": ("gram_enc.py", "b2c206d8bf4896868fb4e45cd87c633a6cfbb0d62c8fdb62b146ac84a7d38833"),
++        "k3_cubes": ("k3_cubes.py", "70c79c624dd4c4ad0929a41790b7674eaa7343f3fcb5802c5e0c1abdbfb30550"),
++        "k3_lex": ("k3_lex.py", "2b721e85812cd7b3438771868f63da1e10f3fbeed6551f7888f74a399e159b10"),
++        "k3_cuts_r1": ("k3_cuts_r1.py", "0ec92c861024a728aa38d238fda2d7f5f056fae12cb0f474a15db0335b6e1b0a"),
++        "gram_encB": ("gram_encB.py", "c7583efe838816d39fe33456af09897cc2a1f5633d1e57e1ee63b3e5238e2b45")}
++ENC_B_ARGS = ["--squares", "3", "--heavy", "--sym"]
++INPUT_SHA256 = "b3ec010855ad4abd75ffd6eb57aaa3ff158bc8447625ee2097f5a6057594c077"      # explore/k3cubes/B_C311.cnf
++BLOCK_SHA256 = "05f31da497315877347f7d780e0e6f4c9c4799c8becee3bdb192a8420ff6e6dd"
++BLOCK_CLAUSES = 238140
++OUTPUT_SHA256 = "ae3b8309601d115e2258782ae3cb793f4dc4b5950064b9536b1eca61521f783a"
++INPUT_HEADER, OUTPUT_HEADER = (461370, 1629802), (461370, 1867942)
++
++
++def load(name):
++    fname, pin = PINS[name]
++    path = LANE_CODE + "/" + fname
++    with open(path, "rb") as f:
++        src = f.read()
++    got = hashlib.sha256(src).hexdigest()
++    if got != pin:
++        raise SystemExit("pin mismatch for %s: %s != %s" % (path, got, pin))
++    mod = types.ModuleType(name)
++    mod.__file__ = path
++    code = compile(src, path, "exec", dont_inherit=True)
++    sys.modules[name] = mod
++    exec(code, mod.__dict__)
++    return mod, got, len(src)
++
++
++def run_encoder_b(enc_b):
++    """Run the verified gram_encB.main() with the production arguments; return (dumped bytes, captured stdout)."""
++    rfd, wfd = os.pipe()
++    chunks, err = [], {}
++
++    def reader():
++        try:
++            while True:
++                b = os.read(rfd, 1 << 20)
++                if not b:
++                    break
++                chunks.append(b)
++        except OSError as e:
++            err["reader"] = repr(e)
++
++    t = threading.Thread(target=reader, daemon=True)
++    t.start()
++    saved = sys.argv
++    sys.argv = [enc_b.__file__] + ENC_B_ARGS + ["--out", "/dev/fd/%d" % wfd]
++    captured = io.StringIO()
++    try:
++        with contextlib.redirect_stdout(captured):
++            enc_b.main()
++    finally:
++        sys.argv = saved
++        os.close(wfd)
++    t.join()
++    os.close(rfd)
++    if err:
++        raise SystemExit("encoder B pipe reader failed: %r" % err)
++    return b"".join(chunks), captured.getvalue()
++
++
++def lines(clauses):
++    return "".join(" ".join(map(str, cl)) + " 0\n" for cl in clauses).encode("ascii")
++
++
++def main():
++    t0 = time.monotonic()
++    if len(sys.argv) != 2 or sys.argv[1] != "C311":
++        raise SystemExit(__doc__)
++    mods = {}
++    for name in ("gram_enc", "k3_cubes", "k3_lex", "k3_cuts_r1", "gram_encB"):
++        mods[name] = load(name)
++    k3, lex, cuts = mods["k3_cubes"][0], mods["k3_lex"][0], mods["k3_cuts_r1"][0]
++    if not (k3.gram_enc is mods["gram_enc"][0] and lex.k3_cubes is k3 and cuts.k3_cubes is k3
++            and cuts.k3_lex is lex and cuts.gram_enc is mods["gram_enc"][0]):
++        raise SystemExit("a lane module bound an unverified dependency")
++    cov = k3.coverage()
++    vmap = k3.variable_map()
++    t_enc = time.monotonic()
++    base, stats = run_encoder_b(mods["gram_encB"][0])
++    enc_seconds = round(time.monotonic() - t_enc, 3)
++    header, body = base.split(b"\n", 1)
++    tag, form, nv, nc = header.split()
++    if not ((tag, form) == (b"p", b"cnf") and int(nv) >= len(vmap)):
++        raise SystemExit("unexpected base header %r" % header)
++    if stats != "vars %d clauses %d\n" % (int(nv), int(nc)):
++        raise SystemExit("encoder B stats line %r does not match its header %r" % (stats, header))
++    if not body.endswith(b"\n") or body.count(b"\n") != int(nc):
++        raise SystemExit("encoder B body is not exactly nc newline-terminated clause lines")
++    empty_clause_lines = sum(1 for ln in body.split(b"\n")[:-1] if ln.split() == [b"0"])
++    cube, units, twins = k3.cube_clauses(vmap, "C311")
++    extra = lines(cube)
++    nc_in = int(nc) + len(cube)
++    input_bytes = b"p cnf %s %d\n" % (nv, nc_in) + body + extra
++    input_sha = hashlib.sha256(input_bytes).hexdigest()
++    if input_sha != INPUT_SHA256 or (int(nv), nc_in) != INPUT_HEADER:
++        raise SystemExit("regenerated B_C311 input %s %r differs from the pin" % (input_sha, (int(nv), nc_in)))
++    del input_bytes
++    block_clauses = cuts.emit(k3.variable_map())
++    block = lines(block_clauses)
++    block_sha = hashlib.sha256(block).hexdigest()
++    if block_sha != BLOCK_SHA256 or len(block_clauses) != BLOCK_CLAUSES:
++        raise SystemExit("cut block %s (%d clauses) differs from the pin" % (block_sha, len(block_clauses)))
++    out = b"p cnf %d %d\n" % (int(nv), nc_in + len(block_clauses)) + body + extra + block
++    out_sha = hashlib.sha256(out).hexdigest()
++    if out_sha != OUTPUT_SHA256 or (int(nv), nc_in + len(block_clauses)) != OUTPUT_HEADER:
++        raise SystemExit("strengthened output %s differs from the pin" % out_sha)
++    info = {"cube": "C311", "encoder": "B", "kind": "C311 + AMENDMENT-4 cuts",
++            "modules": {n: {"path": LANE_CODE + "/" + PINS[n][0], "sha256": m[1], "bytes": m[2]}
++                        for n, m in mods.items()},
++            "gram_encB": {"argv": ENC_B_ARGS + ["--out", "/dev/fd/<in-process pipe>"], "seconds": enc_seconds,
++                          "stats_line": stats.strip()},
++            "coverage": {"status": cov["status"], "n_valid": cov["n_valid"],
++                         "complete_disjoint_cover": cov["complete_disjoint_cover"]},
++            "vmap_entries": len(vmap),
++            "base_cnf_sha256": hashlib.sha256(base).hexdigest(), "base_bytes": len(base),
++            "base_header": [int(nv), int(nc)], "base_empty_clause_lines": empty_clause_lines,
++            "support_sets": [sorted(S) for S in k3.CUBES["C311"]], "cube_unit_clauses": units,
++            "same_ray_identities": json.loads(json.dumps(twins)), "extra_clauses": len(cube),
++            "input_sha256": input_sha, "input_header": [int(nv), nc_in],
++            "block_sha256": block_sha, "block_clauses": len(block_clauses), "block_bytes": len(block),
++            "out_header": [int(nv), nc_in + len(block_clauses)], "out_bytes": len(out), "out_sha256": out_sha,
++            "python": sys.version.split()[0], "python_executable": sys.executable,
++            "ru_maxrss_bytes": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
++            "seconds": round(time.monotonic() - t0, 3)}
++    sys.stdout.buffer.write(out)
++    sys.stdout.buffer.flush()
++    sys.stderr.write(json.dumps(info, sort_keys=True) + "\n")
++    sys.stderr.flush()
++
++
++if __name__ == "__main__":
++    main()

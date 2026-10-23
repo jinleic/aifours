@@ -1,0 +1,128 @@
+--- src/m2_supervised_runtime_v6_1.py
++++ src/m2_supervised_runtime_v6_2.py [v6_2->v6_1 normalized]
+@@ -1,8 +1,11 @@
+ #!/usr/bin/env python3
+ """PA19 v6_1 admission/ownership. Single normal3.5GiB sampled group threshold, COUNT<=2; NO automatic retries.
+-v6_1 = v6 with ONE change: SUP_PATH/SUP_SHA pin supervise_pa19_v4.py (the v3 adapter plus the bounded re-poll).
++v6_1 = v6 with: SUP_PATH/SUP_SHA pin supervise_pa19_v5.py (v3 plus the safety-checked delayed reap); every full_gate
++refuses at/after the lease's frozen policy admission cutoff (missing cutoff refuses); Capacity.supervise refuses
++a group whose 2400 s budget does not fit before the chunk deadline (frozen native end minus cleanup); a signal
++observed by the supervisor sets the owner cancel flag.
+ Every admission gate and inventory share one persistent-veto registry (old m2k1 plus new m2k3 markers).
+-Local supervise_pa19_v4 copies the reviewed r3 with one ownership callback only; the exact Popen remains retained
++Local supervise_pa19_v5 copies the reviewed r3 with one ownership callback only; the exact Popen remains retained
+ until explicit wait/reaping AND group quiescence. Native groups contain no /bin/ps/setuid helper.
+ Accounting amendment: immutable exact census age<=600s, refreshed at chunk start/expiry/waits>600s; reserve all
+ planned remaining outputs plus256MiB. Residual: the bound covers this route's writes and assumes no other lane
+@@ -15,6 +18,7 @@
+ import hashlib
+ import importlib.util
+ import json
++import math
+ import os
+ import signal
+ import struct
+@@ -22,8 +26,8 @@
+ from pathlib import Path
+ 
+ LANE = Path(__file__).resolve().parent.parent
+-SUP_PATH = LANE/'src'/'supervise_pa19_v4.py'
+-SUP_SHA = '3b5c1808813a1f0627a4ebb721f197294659ddd66fcc7ecc09213b972c4b9f17'
++SUP_PATH = LANE/'src'/'supervise_pa19_v5.py'
++SUP_SHA = 'a7540cded7c485491d30e364afd09663b5d02b315232ec38d8f50f3d82a6bbf5'
+ BASE_GATE = 12200000000
+ FLOOR = 12000000000
+ LANE_CAP = 8*1024**3
+@@ -250,6 +254,10 @@
+         required = BASE_GATE+growth
+         free = p['free']() if 'free' in p else (lambda s:s.f_bavail*s.f_frsize)(os.statvfs(lane))
+         if type(free) is not int or free < required: errors.append('fresh statvfs growth/floor gate')
++        cut = lease.get('admission_cutoff_epoch')  # v6_1 frozen policy clock, independent of STOP markers
++        wallclock = p['wallclock']() if 'wallclock' in p else time.time()
++        if type(cut) not in (int,float) or not math.isfinite(cut): errors.append('frozen policy admission cutoff missing')
++        elif wallclock >= cut: errors.append('admission closed by frozen policy clock')
+         now = p['clock']() if 'clock' in p else time.monotonic()
+         allowance = 1450 if phase == 'checker' else 2200
+         if now+allowance > lease['chunk_deadline_monotonic'] or now+allowance > lease['item_deadline_monotonic']: errors.append('deadline allowance')
+@@ -259,7 +267,7 @@
+             if accounting['age_seconds'] > CENSUS_TTL: errors.append('census expired before admission')
+     except (OSError,ValueError,KeyError,TypeError,RuntimeError,AssertionError) as exc:
+         errors.append('gate measurement/authority error: '+repr(exc))
+-    return {'phase':phase,'at_monotonic':time.monotonic(),'count':count,'free_bytes':free,'required_free_bytes':required,
++    return {'phase':phase,'at_monotonic':time.monotonic(),'at_epoch':time.time(),'admission_cutoff_epoch':lease.get('admission_cutoff_epoch'),'count':count,'free_bytes':free,'required_free_bytes':required,
+         'rss':rss,'binary_observations':binaries,'census':accounting,'whole_plan_remaining_bound_bytes':lease.get('whole_plan_remaining_bound_bytes'),
+         'other_writer_margin_bytes':OTHER_WRITER_MARGIN,'additional_data_cap_bytes':DATA_CAP,'group_rss_cap_bytes':GROUP_RSS_CAP,
+         'busy_units':2,'lane_busy_ceiling':4,'projected_growth_bytes':lease.get('projected_growth_bytes'),
+@@ -301,12 +309,15 @@
+         s = supervisor()
+         lease['force_census_refresh'] = bool(lease.get('force_census_refresh') or self.wait_seconds > CENSUS_TTL)
+         gate = full_gate(lease,'worker',self.lane)
++        if gate['admitted'] and self.deadline-time.monotonic() < 2400:  # v6_1: budget must fit the frozen native end
++            gate['errors'].append('group budget 2400 s does not fit before the chunk deadline'); gate['admitted'] = False
+         if not gate['admitted']: return None,gate
+         self.safe = False
+         try:
+             rec = s.supervise(command,name,2400,GROUP_RSS_CAP,FLOOR,str(self.lane),str(record),str(quarantine),
+                               grace=60,owner_child=self.children)
+             self.record = rec
++            if rec.get('observed_signal'): _CANCEL[0] = True  # v6_1: never swallow an outer cancellation
+             self._settle(rec)
+             return rec,gate
+         except BaseException:
+--- src/m2_item_owner_v6_1.py
++++ src/m2_item_owner_v6_2.py [v6_2->v6_1 normalized]
+@@ -15,6 +15,10 @@
+ 
+ L = C.LANE
+ WORKER = L/'src/m2_native_staged_v6_1.py'
++
++
++class BindingRefusal(Exception):
++    """v6_1: the constructor's bound-input check failed BEFORE any pin/job/group; an unattempted refusal, never a veto."""
+ 
+ 
+ def bounded_publish(path,value,stage,limit):
+@@ -92,14 +96,20 @@
+                 'census_reference':admission['census_reference'],'whole_plan_remaining_bound_bytes':admission['whole_plan_remaining_bound_bytes'],
+                 'force_census_refresh':capacity.wait_seconds > R.CENSUS_TTL,'binary_authority':authority,
+                 'group_rss_cap_bytes':R.GROUP_RSS_CAP,'busy_units':2,'lane_busy_ceiling':4,
+-                'chunk_deadline_monotonic':deadline,'item_deadline_monotonic':now+2400}
++                'chunk_deadline_monotonic':deadline,'item_deadline_monotonic':now+2400,
++                'admission_cutoff_epoch':admission.get('admission_cutoff_epoch')}
+             pre = R.full_gate(lease,'construct')
+             result['owner_preconstruction_gate'] = pre
+             if not pre['admitted']:
+                 # refusal rule1: before any pin/job; unattempted, no record and no persistent HALT.
+                 result.update(resource_refusal=pre['errors'],unattempted='before-pin',halt_production=False,chunk_stop=True)
+                 return result
+-            raw = constructor()
++            try:
++                raw = constructor()
++            except BindingRefusal as exc:
++                # v6_1: explicit pre-pin binding refusal; no pin/job/group exists; unattempted, chunk ends, no veto.
++                result.update(binding_refusal=str(exc),unattempted='before-pin',halt_production=False,chunk_stop=True)
++                return result
+             h,nbytes = hashlib.sha256(raw).hexdigest(),len(raw)
+             result.update(cnf_sha256=h,cnf_bytes=nbytes)
+             pin = {'schema':'PA19-K1-CNF-PIN-v6_1','host_clock':time.strftime('%Y-%m-%dT%H:%M:%S%z'),
+--- src/m2_ms09_contract_v6_1.py
++++ src/m2_ms09_contract_v6_2.py [v6_2->v6_1 normalized]
+@@ -28,7 +28,7 @@
+                 'src/m2_ms09_contract_v6_1.py','src/freeze_m2_ms09_k1_v6_1.py','src/run_m2_ms09_k1_v6_1.py','src/final_m2_ms09_inventory_v6_1.py',
+                 'src/m2_supervised_runtime_v6_1.py','src/m2_native_staged_v6_1.py','src/m2_item_owner_v6_1.py','src/m2_supervised_evidence_v6_1.py',
+                 'src/lane_new_data_accounting.py','src/structural_b3_acceptance.py','src/run_m2_ms06_direct_v6_1.py','src/check_m2_ms09_k1_v6_1.py',
+-                'src/supervise_pa19_v4.py')
++                'src/supervise_pa19_v5.py')
+ 
+ 
+ def key(bi,lo,hi):
+--- src/check_m2_ms09_k1_v6_1.py
++++ src/check_m2_ms09_k1_v6_2.py [v6_2->v6_1 normalized]
+@@ -1,5 +1,6 @@
+ #!/usr/bin/env python3
+-"""check_m2_ms09_k1_v6_1.py = check_m2_ms09_k1_v8.py (sha256 74194dde16e10d47ff84f545cb4b3904511e6ac8cad56a6932300e553afd86ce) with the v6->v6_1 module rename and its two
++"""check_m2_ms09_k1_v6_1.py = check_m2_ms09_k1_v6_1.py renamed v6_1->v6_1 (gates now need a policy cutoff; NOT run, not used by M2H).
++check_m2_ms09_k1_v6_1.py = check_m2_ms09_k1_v8.py (sha256 74194dde16e10d47ff84f545cb4b3904511e6ac8cad56a6932300e553afd86ce) with the v6->v6_1 module rename and its two
+ receipt labels renamed v8->v6_1; nothing else changed. Not used by M2H production.
+ v8 control harness (production v6_1 sources/contracts unchanged; v7 path-classification bug fixed). PRIVATE controls; excluded from scientific coverage and executed only after parent GO.
+ Uses one real lane token, <=2 compute processes, frozen binary authorities, local reviewed r3 adapter and absolute

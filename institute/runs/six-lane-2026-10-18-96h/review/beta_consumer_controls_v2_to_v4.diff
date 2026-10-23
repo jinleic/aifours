@@ -1,0 +1,313 @@
+--- control/beta_consumer_controls_v2.py
++++ control/beta_consumer_controls_v4.py
+@@ -4,2 +4,2 @@
+-Oracle: beta-consumer-controls-plan-v3.json, frozen before this source. V1 source
+-and plans v1/v2 remain immutable, unexecuted historical records. SC19 is retired,
++Oracle: beta-consumer-controls-plan-v4.json, frozen before this source. V1/V2 source
++and plans v1-v3 remain immutable, unexecuted historical records. SC19 is retired,
+@@ -25,2 +25,2 @@
+-PLAN_PATH = RUN + '/control/beta-consumer-controls-plan-v3.json'
+-PLAN_SHA = 'd0bed613c1e169ef4b984e0101908ef3d7f23907de3eeacebc725586e2be3c54'
++PLAN_PATH = RUN + '/control/beta-consumer-controls-plan-v4.json'
++PLAN_SHA = '73e32d6c9d1f86bcf46241195c5bba0c679fde5322aabb6df4d4f3d4780f15ac'
+@@ -229,0 +230,11 @@
++def _escalates(error, primary):
++    """A cleanup failure never replaces an in-flight non-Exception BaseException primary.
++
++    With no primary every cleanup failure may propagate; with an ordinary-Exception
++    primary only a newly arising non-Exception BaseException escalates over it.
++    """
++    if primary is None:
++        return True
++    return isinstance(primary, Exception) and not isinstance(error, Exception)
++
++
+@@ -233,3 +244,5 @@
+-    Cleanup records all failures without replacing an already propagating module
+-    BaseException. Every cleanup error latches final failure; ambiguity is never
+-    labelled closure. Failed close numbers remain retained, never blindly retried.
++    Every cleanup outcome is latched before any propagation; ambiguity is never
++    labelled closure and failed close numbers are never blindly retried. Cleanup
++    under an in-flight primary never replaces it except as _escalates allows;
++    cleanup without one propagates a newly arising non-Exception BaseException only
++    after every remaining row has had its single attempt. Errors latch nonzero exit.
+@@ -246 +259 @@
+-    def close(self, row):
++    def close(self, row, primary=None):
+@@ -248 +261 @@
+-            return
++            return None
+@@ -255,3 +268,5 @@
+-            raise
+-        else:
+-            row['closed'] = True
++            if _escalates(exc, primary):
++                raise
++            return exc
++        row['closed'] = True
++        return None
+@@ -259,2 +274,2 @@
+-    def close_since(self, index, keep=None):
+-        first = None
++    def close_since(self, index, keep=None, primary=None):
++        first = arising = None
+@@ -265 +280 @@
+-                self.close(row)
++                error = self.close(row, primary)
+@@ -267,2 +282,7 @@
+-                if first is None:
+-                    first = exc
++                error = exc
++            if error is not None:
++                first = error if first is None else first
++                if arising is None and not isinstance(error, Exception) and _escalates(error, primary):
++                    arising = error
++        if arising is not None:
++            raise arising
+@@ -273 +293 @@
+-    mark, selected = len(owned.rows), None
++    mark = len(owned.rows)
+@@ -279,4 +299,5 @@
+-        selected = row
+-        return row
+-    finally:
+-        owned.close_since(mark, keep=selected)
++    except BaseException as primary:
++        owned.close_since(mark, primary=primary)
++        raise
++    owned.close_since(mark, keep=row)
++    return row
+@@ -310,3 +331,6 @@
+-        return b''.join(chunks)
+-    finally:
+-        owned.close_since(mark)
++        data = b''.join(chunks)
++    except BaseException as primary:
++        owned.close_since(mark, primary=primary)
++        raise
++    owned.close_since(mark)
++    return data
+@@ -326 +350 @@
+-        self.real_deadline, self.real_hook_ran = None, False
++        self.real_deadline, self.real_entry_expired, self.real_crossing_witnessed = None, False, False
+@@ -458 +482,2 @@
+-    def clear_orphans(self):
++    def clear_orphans(self, primary=None):
++        arising = None
+@@ -476 +501 @@
+-            except Exception as exc:
++            except BaseException as exc:
+@@ -477,0 +503,2 @@
++                if arising is None and not isinstance(exc, Exception) and _escalates(exc, primary):
++                    arising = exc
+@@ -480,0 +508,2 @@
++        if arising is not None:
++            raise arising
+@@ -502,0 +532,14 @@
++class _Cleanup:
++    """Finalizer receiving the in-flight exception, so cleanup never replaces a primary."""
++    def __init__(self, action):
++        self.action = action
++
++    def __enter__(self):
++        return self
++
++    def __exit__(self, kind, value, traceback):
++        if self.action is not None:
++            self.action(value)
++        return False
++
++
+@@ -540,2 +583,5 @@
+-        finally:
+-            self.ctx.owned.close(rec)
++        except BaseException as primary:
++            self.ctx.owned.close(rec, primary)
++            raise
++        self.ctx.owned.close(rec)
++        self.ctx.check()  # A returned blocking write/close cannot outlive the original deadline unobserved.
+@@ -564,2 +610,5 @@
+-        finally:
+-            self.ctx.owned.close(rec)
++        except BaseException as primary:
++            self.ctx.owned.close(rec, primary)
++            raise
++        self.ctx.owned.close(rec)
++        self.ctx.check()
+@@ -772,0 +822,3 @@
++                if time.monotonic() > clock.real_deadline:
++                    clock.real_entry_expired = True  # Expired before hook entry: no crossing can be witnessed.
++                    return
+@@ -776 +828 @@
+-                clock.real_hook_ran = True
++                clock.real_crossing_witnessed = True  # Unexpired at entry, expired at exit: witnessed transition.
+@@ -779 +831 @@
+-        try:
++        with _Cleanup(proxy.clear_orphans):
+@@ -784,2 +836,2 @@
+-            if case_id == 'RD05E' and not clock.real_hook_ran:
+-                raise InconclusivePrecondition('real deadline crossed before native-return hook')
++            if case_id == 'RD05E' and (clock.real_entry_expired or not clock.real_crossing_witnessed):
++                raise InconclusivePrecondition('real deadline transition not witnessed inside the native-return hook')
+@@ -793,3 +845 @@
+-                observed['real_crossing_after_native_return'] = clock.real_hook_ran and time.monotonic() > clock.real_deadline
+-        finally:
+-            proxy.clear_orphans()
++                observed['real_crossing_after_native_return'] = clock.real_crossing_witnessed and time.monotonic() > clock.real_deadline
+@@ -804 +854 @@
+-        try:
++        with _Cleanup(proxy.clear_orphans):
+@@ -821,2 +870,0 @@
+-        finally:
+-            proxy.clear_orphans()
+@@ -834 +882 @@
+-        try:
++        with _Cleanup(proxy.clear_orphans):
+@@ -856,2 +903,0 @@
+-        finally:
+-            proxy.clear_orphans()
+@@ -871 +917 @@
+-        try:
++        with _Cleanup(proxy.clear_orphans):
+@@ -888,2 +933,0 @@
+-        finally:
+-            proxy.clear_orphans()
+@@ -950 +994 @@
+-        try:
++        with _Cleanup(proxy.clear_orphans):
+@@ -962,2 +1005,0 @@
+-        finally:
+-            proxy.clear_orphans()
+@@ -1029 +1071,2 @@
+-        o['captures']['stdout'].update(bytes_seen=True, bytes_stored=True)
++        _empty_result(e, o, fixture)  # Actual stdout bytes 0, so False counts are numerically equal.
++        o['captures']['stdout'].update(bytes_seen=False, bytes_stored=False)
+@@ -1129 +1172 @@
+-        e['date_start'], o['date_start'] = {'v': float('nan')}, {'v': float('nan')}
++        e['date_start'], o['date_start'] = {'v': float('inf')}, {'v': float('inf')}
+@@ -1249 +1292 @@
+-    try:
++    with _Cleanup(proxy.clear_orphans):
+@@ -1266,2 +1308,0 @@
+-    finally:
+-        proxy.clear_orphans()
+@@ -1463 +1504 @@
+-    try:
++    with _Cleanup(None if proxy is None else proxy.clear_orphans):
+@@ -1517,3 +1557,0 @@
+-    finally:
+-        if proxy is not None:
+-            proxy.clear_orphans()
+@@ -1554,0 +1593,9 @@
++def _secondary(function, latch):
++    """Best-effort work while a primary BaseException propagates: failures latched by type, never raised."""
++    try:
++        return function()
++    except BaseException as exc:
++        latch.append(type(exc).__name__)
++        return None
++
++
+@@ -1556 +1603 @@
+-    value = {'format': 'beta-consumer-control-case-v2', 'id': case['id'], 'type': case['type'],
++    value = {'format': 'beta-consumer-control-case-v3', 'id': case['id'], 'type': case['type'],
+@@ -1568,0 +1616,18 @@
++def _base_exception_line(case, exc, ctx, owned, mark, output_state):
++    """Primary BaseException in flight: report/retention/emission best effort, cleanup unconditional."""
++    secondary = []
++    try:
++        retained = None
++        if ctx.last_reader is not None:
++            ctx.retained_exception_readers.append(ctx.last_reader)
++            retained = _secondary(lambda: ctx.last_reader.report(), secondary)
++            if retained is not None:
++                _secondary(lambda: ctx.retain_report(case['id'] + '-base-exception', retained), secondary)
++        _secondary(lambda: _emit({'format': 'beta-consumer-control-case-v3', 'id': case['id'], 'type': case['type'],
++                                  'status': 'BASE_EXCEPTION', 'exception_type': type(exc).__name__,
++                                  'reader_state': _state(retained), 'secondary_failure_types': list(secondary),
++                                  'qualification': 'NOT_QUALIFIED'}, output_state), secondary)
++    finally:
++        owned.close_since(mark, primary=exc)
++
++
+@@ -1612 +1677 @@
+-        if plan.get('format') != 'beta-consumer-controls-plan-v3' or type(cases) is not list:
++        if plan.get('format') != 'beta-consumer-controls-plan-v4' or type(cases) is not list:
+@@ -1638 +1703 @@
+-            'format': 'beta-negative-controls-run-start-v2', 'plan_sha256': PLAN_SHA,
++            'format': 'beta-negative-controls-run-start-v3', 'plan_sha256': PLAN_SHA,
+@@ -1645 +1710 @@
+-        _emit({'format': 'beta-consumer-controls-summary-v2', 'status': 'REFUSED_BEFORE_CASES',
++        _emit({'format': 'beta-consumer-controls-summary-v3', 'status': 'REFUSED_BEFORE_CASES',
+@@ -1650,10 +1715,9 @@
+-        retained = None
+-        if loader is not None:
+-            try:
+-                retained = loader.report()
+-            except Exception as report_exc:
+-                retained = {'report_unavailable': type(report_exc).__name__}
+-        _emit({'format': 'beta-consumer-controls-summary-v2', 'status': 'BOOTSTRAP_BASE_EXCEPTION',
+-               'exception_type': type(exc).__name__, 'reader_state': _state(retained),
+-               'qualification': 'NOT_QUALIFIED'}, output_state, summary=True)
+-        owned.close_since(0)
++        secondary = []
++        try:
++            retained = _secondary(lambda: loader.report(), secondary) if loader is not None else None
++            _secondary(lambda: _emit({'format': 'beta-consumer-controls-summary-v3', 'status': 'BOOTSTRAP_BASE_EXCEPTION',
++                                      'exception_type': type(exc).__name__, 'reader_state': _state(retained),
++                                      'secondary_failure_types': list(secondary), 'qualification': 'NOT_QUALIFIED'},
++                                     output_state, summary=True), secondary)
++        finally:
++            owned.close_since(0, primary=exc)
+@@ -1699,16 +1763 @@
+-                    retained = None
+-                    if ctx.last_reader is not None:
+-                        ctx.retained_exception_readers.append(ctx.last_reader)
+-                        try:
+-                            retained = ctx.last_reader.report()
+-                            ctx.retain_report(case['id'] + '-base-exception', retained)
+-                        except Exception as report_exc:
+-                            retained = {'report_unavailable': type(report_exc).__name__}
+-                    # Compact emergency line; no detail allocation may replace the
+-                    # module's BaseException. Cleanup also cannot replace it.
+-                    try:
+-                        _emit({'format': 'beta-consumer-control-case-v2', 'id': case['id'], 'type': case['type'],
+-                               'status': 'BASE_EXCEPTION', 'exception_type': type(exc).__name__,
+-                               'reader_state': _state(retained), 'qualification': 'NOT_QUALIFIED'}, output_state)
+-                    finally:
+-                        owned.close_since(mark)
++                    _base_exception_line(case, exc, ctx, owned, mark, output_state)
+@@ -1716,2 +1765,5 @@
+-                finally:
+-                    cleanup_exc = owned.close_since(mark)
++                try:
++                    cleanup_exc = owned.close_since(mark)  # No primary: a newly arising BaseException propagates.
++                except BaseException as exc:
++                    _base_exception_line(case, exc, ctx, owned, mark, output_state)
++                    raise
+@@ -1725,0 +1778,3 @@
++            except HarnessDeadlineExceeded:
++                stop = status = 'NOT_RUN_DEADLINE'
++                _emit_case(case, status, {'case_output_unretained': True}, time.monotonic() - case_start, ctx, output_state)
+@@ -1731 +1786 @@
+-        if stop == 'NOT_RUN_DEADLINE':
++        if stop == 'NOT_RUN_DEADLINE' or time.monotonic() > deadline:
+@@ -1741 +1796 @@
+-        summary = {'format': 'beta-consumer-controls-summary-v2', 'exit_code': code,
++        summary = {'format': 'beta-consumer-controls-summary-v3', 'exit_code': code,
+@@ -1753,0 +1809,2 @@
++        except HarnessDeadlineExceeded:
++            summary['provisional_summary_write_crossed_deadline'] = True
+@@ -1757,0 +1815,3 @@
++        if time.monotonic() > deadline:
++            code = 5
++            summary.update(exit_code=5, status='FINALIZATION_DEADLINE_NOT_QUALIFIED', finalization_crossed_deadline=True)
+@@ -1759,0 +1820,2 @@
++        if time.monotonic() > deadline:
++            return 5  # Late return after the summary line: the exit code is authoritative.
+@@ -1761,2 +1823,3 @@
+-    finally:
+-        owned.close_since(0)
++    except BaseException as primary:
++        owned.close_since(0, primary=primary)
++        raise

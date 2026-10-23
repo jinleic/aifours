@@ -1,0 +1,242 @@
+--- code/guard_qual_check_v7.py
++++ code/guard_qual_check_v8.py
+@@ -1,7 +1,7 @@
+ #!/usr/bin/env python3
+-"""V11 qualification successor. Restores owned bounded /bin/date and explicit ownership-negative controls.
++"""V12 qualification successor. Restores owned bounded /bin/date and explicit ownership-negative controls.
+ Parent correction fabe57ab...4155a2 withdraws v10's narrowing; all earlier files remain immutable/unrun.
+-Usage: guard_qual_check_v7.py SCENARIO PARENT_APPROVAL_SHA256 ACTUAL_EXIT
++Usage: guard_qual_check_v8.py SCENARIO PARENT_APPROVAL_SHA256 ACTUAL_EXIT
+ Fixed no-follow root, independent actual source/config/GO/stability/preparation/evidence hashes and trusted parent
+ approval digest. Exact outcome sets plus complete helper settlement predicates, all unproved/owned identity evidence,
+ PID-specific intended cause proofs, same-inode publication and whole-sample decoding. No PASS releases reservations.
+@@ -13,20 +13,21 @@
+ import json
+ import math
+ import os
++import datetime
+ import stat
+ import sys
+ import time
+ 
+-VERSION = "guard_qual_check_v7"
++VERSION = "guard_qual_check_v8"
+ LANE = "/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10"
+-QROOT = LANE + "/qual-pkg-v6-v11"
+-ITEM = "owned_supervisor_v11 restored ownership qualification"
+-CHILD = LANE + "/code/guard_qual_child_v8.py"
+-SUPERVISOR = LANE + "/code/owned_supervisor_v11.py"
+-WRITER = LANE + "/code/guard_qual_configs_v7.py"
+-CHILD_SHA = "002925444403fd9cecd6d0d724b207fb08eaa6bc51351f67604db3e94e69ba9b"
+-SUPERVISOR_SHA = "f43c7addf232cfe5e40de7e5622577fb7d883415ee0ad3e701887b376f97d90c"
+-WRITER_SHA = "69dd256ead0d8a26478a57114f60b2b4000dddee701c81bdf1244f0295870532"
++QROOT = LANE + "/qual-pkg-v7-v12"
++ITEM = "owned_supervisor_v12 restored ownership qualification"
++CHILD = LANE + "/code/guard_qual_child_v9.py"
++SUPERVISOR = LANE + "/code/owned_supervisor_v12.py"
++WRITER = LANE + "/code/guard_qual_configs_v8.py"
++CHILD_SHA = "6018262187adee7faab5891a16e33e78c1c9a4e4537f100b409260f78e8f51d8"
++SUPERVISOR_SHA = "304748cc494a71b379094fa964c6ef41d2c3d59e31b19ad969a0ec8ae45ab9b4"
++WRITER_SHA = "2a538618e811bcfede1658f9576ef8f4b0bdb449b52a7d79b4196b1c9b2be8e3"
+ FIXTURE = b"pinned scratch file for the mutate_pin scenario\n"
+ RESERVATION = 20971520
+ 
+@@ -70,7 +71,7 @@
+             "cpu_slots": 2 if name == "busy2" else 1,
+             "admission": {"go_path": run + "/go.json", "stability_receipt_path": run + "/stability.json",
+                           "reservation_bytes": RESERVATION, "outstanding_reservations_bytes": outstanding,
+-                          "lane_outstanding_reservations_bytes": lane_outstanding},
++                          "lane_outstanding_reservations_bytes": lane_outstanding, "stability_max_age_s": 300},
+             "helper_budget": {"max_calls": 8, "call_budget_s": call,
+                               "term_grace_s": 0.5 if name in ("helper_group", "helper_eof") else 5.0},
+             "fault_injection": {FAULTS[name]: True} if name in FAULTS else {}}
+@@ -196,7 +197,7 @@
+         codes = {"HELPER_FAULT_INJECTED"} if name == "date_fault" else {"HELPER_CALL_FAILED"}
+         if unresolved:
+             codes.add("HELPER_OWNERSHIP_UNSETTLED")
+-        return {"state": "UNSETTLED" if unresolved else "NOT_LAUNCHED", "exit": 11 if unresolved else 10,
++        return {"state": "UNSETTLED" if unresolved else "NOT_LAUNCHED", "exit": 14,
+                 "rc": None, "loop": "NOT_STARTED", "failures": codes, "trips": [], "signal": None}
+     if name in ("ok", "rc_nonzero", "zombie_hold"):
+         return {"state": "SETTLED", "exit": 0, "rc": 3 if name == "rc_nonzero" else 0,
+@@ -232,6 +233,9 @@
+     if receipt["helper_calls"] != len(hs) or any(not isinstance(e, dict) or not finite(e.get("mono_start")) or not finite(e.get("mono_end")) for e in log):
+         return False
+     allowed = {"OK", "REFUSED_FAILURE_CANCEL_OR_REENTRANCY"}
++    if name == "go_unlisted":
++        return hs == [] and receipt["helper_calls"] == 0 and receipt.get("end_date") is None and \
++            log and all(e.get("outcome") == "REFUSED_NO_AUTHORIZATION" for e in log)
+     if name == "date_fault":
+         return hs == [] and receipt["helper_calls"] == 0 and receipt.get("admission", {}).get("date") is None and \
+             receipt.get("end_date") is None and any(e.get("outcome") == "FAULT_BEFORE_SPAWN" for e in log) and \
+@@ -273,6 +277,10 @@
+                     finite(h.get("mono_cleanup_deadline")) and finite(h.get("mono_proof_complete")) and
+                     h["mono_proof_complete"] <= h["mono_cleanup_deadline"]):
+                 return False
++            if not (finite(h.get("mono_injection_start")) and finite(h.get("mono_injection_end")) and
++                    h["mono_injection_end"] > h["mono_call_deadline"] and
++                    h["mono_injection_start"] <= h["mono_injection_end"] <= h["mono_cleanup_start"]):
++                return False
+         else:
+             try:
+                 raw = bytes.fromhex(h["capture_hex"])
+@@ -293,6 +301,90 @@
+     return True
+ 
+ 
++def date_epoch(text):
++    return datetime.datetime.strptime(text, "%Y-%m-%dT%H:%M:%S%z").timestamp()
++
++
++def integrated_v12_evidence(receipt, summary, stability, cfg, name):
++    checks = {}
++    baseline = receipt.get("baseline")
++    if not isinstance(baseline, dict) or not finite(baseline.get("mono_complete")) or not isinstance(baseline.get("identities"), list):
++        raise Invalid("complete pre-spawn baseline evidence missing")
++    baseuids = {p.get("uniqueid") for p in baseline["identities"]}
++    hist, coverage, observations = (receipt.get(k) for k in ("unproved_history", "coverage_history", "census_observations"))
++    if not all(isinstance(x, list) for x in (hist, coverage, observations)):
++        raise Invalid("retained unproved/coverage/retry histories missing")
++    seen = set()
++    for entry in hist:
++        first, last = entry.get("first_identity"), entry.get("last_identity")
++        if not isinstance(first, dict) or not isinstance(last, dict):
++            raise Invalid("unproved identity history malformed")
++        uid = first.get("uniqueid")
++        if not integer(uid, 1) or uid in baseuids or uid in seen or last.get("uniqueid") != uid or not (
++            finite(entry.get("mono_first_seen")) and finite(entry.get("mono_last_seen")) and entry["mono_first_seen"] <= entry["mono_last_seen"]):
++            raise Invalid("unproved history changed/duplicated/exempted identity")
++        seen.add(uid)
++    if any(not isinstance(x, dict) or not finite(x.get("mono")) or not isinstance(x.get("observation"), list) for x in coverage):
++        raise Invalid("coverage history malformed")
++    complete_history = True
++    missing_total = 0
++    prior = None
++    for c in observations:
++        if not (isinstance(c, dict) and isinstance(c.get("complete"), bool) and integer(c.get("incomplete_n"), 0) and
++                integer(c.get("lane_busy"), 0) and integer(c.get("lane_rss"), 0) and finite(c.get("mono_complete"))):
++            raise Invalid("resource observation history malformed")
++        missing_total += c["incomplete_n"]
++        complete_history = complete_history and c["lane_busy"] <= 2 and (
++            prior is None or c["mono_complete"] > prior) and all(p.get("uniqueid") in seen for p in c.get("unproved_live", []))
++        prior = c["mono_complete"]
++    checks["all_unproved_and_retry_evidence_retained"] = complete_history and len(coverage) >= missing_total
++    checks["stability_receipt_has_actual_timestamp"] = isinstance(stability.get("now_date"), str)
++    stable_epoch = date_epoch(stability["now_date"])
++    good_clocks = [h for h in receipt.get("helpers", []) if h.get("date") is not None and h.get("clock_failed") is False]
++    commits = [h.get("launch_commit") for h in receipt.get("helpers", [])]
++    commits += [receipt.get("admission", {}).get("checked"), receipt.get("launch_commit"), receipt.get("go_commit")]
++    if summary.get("acknowledged") is True:
++        commits.append(summary.get("ack_commit"))
++    age_ok = True
++    for commit in (c for c in commits if c is not None):
++        if not isinstance(commit, dict) or not finite(commit.get("mono")):
++            raise Invalid("commit clock schema missing")
++        previous = [h for h in good_clocks if finite(h.get("mono_proof_complete")) and h["mono_proof_complete"] <= commit["mono"]]
++        if not previous:
++            age_ok = age_ok and commit.get("phase") == "HELPER" and commit.get("stability_age_upper_s") is None
++            continue
++        clock = max(previous, key=lambda h: h["mono_proof_complete"])
++        upper = date_epoch(clock["date"]) - stable_epoch + 1.0 + max(0, commit["mono"] - clock["mono_call_start"])
++        age_ok = age_ok and finite(commit.get("stability_age_upper_s")) and abs(commit["stability_age_upper_s"] - upper) <= 1e-6 and (
++            0 <= upper <= cfg["admission"]["stability_max_age_s"])
++    checks["actual_bin_date_stability_upper_age_replayed"] = age_ok
++    checks["runtime_obligation_evidence_present"] = isinstance(receipt.get("runtime_observations"), list)
++    if summary.get("acknowledged") is True:
++        ack = summary.get("ack_census")
++        if not isinstance(ack, dict) or ack.get("complete") is not True:
++            raise Invalid("fresh complete ACK census missing")
++        final = receipt.get("final_census") or {}
++        finalids = {p.get("uniqueid") for p in final.get("owned_live", []) + final.get("unproved_live", [])}
++        ackids = {p.get("uniqueid") for p in ack.get("owned_live", []) + ack.get("unproved_live", [])}
++        checks["fresh_ack_census_and_current_blockers"] = ackids <= finalids and (
++            receipt.get("settlement") == "UNSETTLED" or not ackids) and finite(ack.get("mono_complete")) and (
++            summary["post_publish_mono"] <= ack["mono_complete"] <= summary["ack_commit"]["mono"]) and (
++            summary["ack_commit"]["mono"] - ack["mono_complete"] <= max(1, cfg["sample_s"]))
++        later = summary.get("census_observations")
++        checks["postpublication_retry_history_preserved"] = isinstance(later, list) and later[:len(observations)] == observations and (
++            later and later[-1].get("mono_complete") == ack["mono_complete"])
++        sh = summary.get("unproved_history")
++        checks["postpublication_unproved_history_preserved"] = isinstance(sh, list) and seen <= {
++            e.get("first_identity", {}).get("uniqueid") for e in sh}
++    elif name in ("date_fault", "helper_overrun", "helper_group", "helper_eof"):
++        checks["helper_negative_refuses_without_invented_clock"] = "STABILITY_AGE_UNVERIFIABLE" in summary.get("error", "") and (
++            receipt.get("clock_observation") is None)
++    elif name == "go_unlisted":
++        checks["isolated_refusal_has_no_end_helper_contamination"] = "GO_DOES_NOT_NAME_THIS_CONFIG" in summary.get("error", "") and (
++            receipt.get("helpers") == [] and receipt.get("failures") == [])
++    return checks
++
++
+ def verify(name, approval_digest, actual_exit, runfd, outfd):
+     exp, C = expectations(name), {}
+     result = {"checker": VERSION, "scenario": name, "criteria": C,
+@@ -303,7 +395,7 @@
+     if ap["sha256"] != approval_digest:
+         raise Invalid("approval digest differs from the parent-supplied trusted digest")
+     approval = decode(ap["raw"])
+-    if not isinstance(approval, dict) or approval.get("kind") != "v11-qualification-invocation-v1" or approval.get("scenario") != name:
++    if not isinstance(approval, dict) or approval.get("kind") != "v12-qualification-invocation-v1" or approval.get("scenario") != name:
+         raise Invalid("approval kind/scenario")
+     cp, gp, sp, pp = (snapshot(runfd, f, 1 << 20) for f in ("config.json", "go.json", "stability.json", "preparation.json"))
+     require("approval_artifact_bindings", all(approval.get(k) == v["sha256"] for k, v in (
+@@ -338,7 +430,7 @@
+             go.get("stability_receipt_sha256") == sp["sha256"] and stability.get("verdict") == "PASS")
+     require("go_exact_listing", isinstance(go.get("configs"), dict) and
+             (go["configs"] == {} if name == "go_unlisted" else go["configs"] == {cp["sha256"]: expected_entry}))
+-    expected_root = (json.dumps({"kind": "v11-qualification-root", "supervisor_sha256": SUPERVISOR_SHA,
++    expected_root = (json.dumps({"kind": "v12-qualification-root", "supervisor_sha256": SUPERVISOR_SHA,
+                                  "child_sha256": CHILD_SHA}, sort_keys=True) + "\n").encode()
+     qfd = directory(QROOT)
+     try:
+@@ -356,15 +448,15 @@
+         raise Invalid("exactly one captured supervisor summary required")
+     summary = summaries[0]
+     rsha, ssha = files["supervisor-receipt.json"]["sha256"], files["settlement.json"]["sha256"]
+-    require("receipt_source_config_binding", receipt.get("supervisor") == "owned_supervisor_v11" and
++    require("receipt_source_config_binding", receipt.get("supervisor") == "owned_supervisor_v12" and
+             receipt.get("supervisor_sha256") == SUPERVISOR_SHA and receipt.get("config_sha256") == cp["sha256"])
+     require("settlement_receipt_binding", settlement.get("receipt_sha256") == rsha and settlement.get("receipt") == cfg["receipt"] and
+-            settlement.get("config_sha256") == cp["sha256"] and settlement.get("supervisor") == "owned_supervisor_v11")
++            settlement.get("config_sha256") == cp["sha256"] and settlement.get("supervisor") == "owned_supervisor_v12")
+     a, b = files["settlement.json"], files["settlement.json.staged"]
+     require("same_inode_staged_link", a["sha256"] == b["sha256"] and a["inode"] == b["inode"] and a["nlink"] == b["nlink"] == 2)
+     require("summary_and_actual_exit", integer(actual_exit) and actual_exit == exp["exit"] == summary.get("exit_code") and
+             summary.get("receipt_sha256") == rsha and summary.get("settlement_record_sha256") == ssha)
+-    if name == "go_unlisted":
++    if name in ("go_unlisted", "date_fault", "helper_overrun", "helper_group", "helper_eof"):
+         require("intended_ack_refusal", summary.get("acknowledged") is False and summary.get("reason") == "ACK_REFUSED")
+     else:
+         require("publication_acknowledged", summary.get("acknowledged") is True and summary.get("settlement") == exp["state"] and
+@@ -389,6 +481,7 @@
+             rc == exp["rc"] and (rc is None or integer(rc)) and settlement.get("child_returncode") == rc and
+             receipt.get("loop_status") == exp["loop"])
+     require("mandatory_owned_date_helpers", helper_evidence(receipt, cfg, name))
++    C.update(integrated_v12_evidence(receipt, summary, stability, cfg, name))
+     require("no_hidden_cancellation_or_lost_wait", receipt.get("cancel") == {"signal": None, "mono": None} and
+             receipt.get("wait_status_lost") is False)
+     expected_pin_end = [[p["path"], not (name == "mutate_pin" and p["path"].endswith("/pinned-scratch.txt"))] for p in cfg["pins"]]
+@@ -528,8 +621,13 @@
+                     final_c["owned_live"][0].get("uniqueid") == ident["uniqueid"] and final_c.get("unproved_live") == [] and clear is None)
+         result["owned_or_unproved_not_ended"] = blockers
+     mx = receipt.get("maxima") or {}
+-    require("census_maxima_reconciled", integer(mx.get("lane_busy"), 0) and integer(mx.get("lane_rss"), 0) and
+-            mx["lane_busy"] == max(c["lane_busy"] for c in observed) and mx["lane_rss"] == max(c["lane_rss"] for c in observed))
++    retained = receipt.get("census_observations")
++    if not isinstance(retained, list) or not retained or any(not isinstance(x, dict) or not integer(x.get("lane_busy"), 0) or
++        not integer(x.get("lane_rss"), 0) or not finite(x.get("mono_complete")) for x in retained):
++        raise Invalid("all helper/retry resource observations must be retained")
++    enforced = [x for x in retained if x.get("phase") not in ("ADMISSION", "PRE_GO")]
++    require("census_maxima_reconciled", bool(enforced) and integer(mx.get("lane_busy"), 0) and integer(mx.get("lane_rss"), 0) and
++            mx["lane_busy"] == max(x["lane_busy"] for x in enforced) and mx["lane_rss"] == max(x["lane_rss"] for x in enforced))
+     require("free_minimum_explicit", integer(receipt.get("min_free"), 0) and receipt["min_free"] >= cfg["free_trip_bytes"])
+     stdout = files["stdout.txt"]["raw"]
+     childout = decode(files["child-out.json"]["raw"]) if files["child-out.json"] is not None else None
+@@ -629,6 +727,7 @@
+                 ar.get("charged_bytes") == charged_before + payload)
+         remain_before = max(0, RESERVATION - charged_before - payload)
+         require("exact_payload_budget", charged_before + payload <= RESERVATION and payload <= 4 << 20 and
++                charged_before + payload <= cfg["output_trip_bytes"] and ar["charged_bytes"] <= cfg["output_trip_bytes"] and
+                 all(integer(r.get(k), 0) for r in (br, ar) for k in ("free", "charged_bytes", "lane_bytes")) and
+                 br["free"] - payload - adm["outstanding_reservations_bytes"] - remain_before >= cfg["free_trip_bytes"] and
+                 br["lane_bytes"] + payload + adm["lane_outstanding_reservations_bytes"] + remain_before <= cfg["lane_disk_ceiling_bytes"] and

@@ -1,0 +1,208 @@
+--- code/pilot_file_drat_v11.py	2026-10-19 00:48:05.948219783 -0700
++++ code/pilot_file_drat_v12.py	2026-10-19 01:03:19.634942277 -0700
+@@ -1,5 +1,16 @@
+ #!/usr/bin/env python3
+-"""PA19 96h pilot runner v11 (= v10 with the new-file census scoped to the run output tree and LANE/tmp, so
++"""PA19 96h pilot runner v12 = v11 + fixes for Codex r4 (review/codex-pilot-v11-r4/result.json 92eb788e...):
++  r4#1 cleanup: emergency stop state is set before any fallible logging; Child.term marks delivery only
++       after send_signal returns (undelivered SIGTERM is retried); reap_robust protects its whole retry
++       path (including back-off), polls instead of blocking so a pending quarantine receipt is retried
++       until written, and never returns before the retained Popen is reaped; run_child's settle-all
++       requests termination for any child it must settle after an escape.
++  r4#2 resource classifier also matches drat-trim 'failed to reallocate' (unit-stack realloc failure).
++  r4#3 the new-file census is collected BEFORE final admission; cancel/latch/frozen-deadline are rechecked
++       immediately before Popen with no blocking work in between.
++  r4#4 cwd preparation is inside run_child's cleanup guard (a pre-created proof sink is always finished).
++  r4#5 each child gets a private TMPDIR (its own cwd); the census covers only the run output tree.
++PA19 96h pilot runner v11 notes follow (= v10 with the new-file census scoped to the run output tree and LANE/tmp, so
+ unrelated lane writes such as checkpoints cannot cause a false latch; v10 was never frozen or sent).
+ PA19 96h pilot runner v10 notes follow.  v1-v9 are preserved and were never run.  Review history:
+   v3 parent NO-GO; v5 Codex r1, v8 Codex r2, v9 Codex r3 (review/codex-pilot-v9-r3/result.json 749f0d5e...)
+@@ -135,7 +146,7 @@
+ EXIT_EXCEPTION = 60
+ EXIT_PRESTART_REFUSED = 70
+ NONLATCHING_TRIPS = {"proof_cap", "owner_cancel_sigterm"}
+-RESOURCE_DIAG = re.compile(r"(?i)(memout|memory allocation error|out of memory|out-of-memory)")
++RESOURCE_DIAG = re.compile(r"(?i)(memout|memory allocation error|out of memory|out-of-memory|failed to reallocate|reallocation failed)")
+ 
+ ORDER = itertools.count(1)
+ LATCH = []          # persistent safety/unsettled reasons; non-empty refuses every later child
+@@ -267,7 +278,7 @@
+     """r3#4/#5: (path -> (inode, size)) for every non-directory entry under the run output tree and
+     LANE/tmp (the trees a misbehaving child could reach through its paths/cwd; symlinks not followed)."""
+     snap = {}
+-    for root in (STATE["out"], LANE + "/tmp"):
++    for root in (STATE["out"],):  # r4#5: private per-child TMPDIR lives inside the run tree
+         for dp, dns, fns in os.walk(root, followlinks=False):
+             for n in fns:
+                 p = os.path.join(dp, n)
+@@ -507,24 +518,26 @@
+         self.quarantined, self.refused = False, None
+         self.lane_before = None
+         self.capture = open(self.out_path, "xb")  # outputs prepared BEFORE admission and spawn
++        child_env = dict(CHILD_ENV, TMPDIR=cwd)   # r4#5: private TMPDIR inside the run tree
++        if sink is not None:
++            self.lane_before = lane_files()        # r4#3: blocking census BEFORE final admission
+         now = time.time()
+         self.deadline = min(now + wall + GRACE, STATE["abs_end"] - SETTLE_TAIL)
+         why = full_admission(reserve, self.deadline)
+-        if LATCH:
+-            why.append("latched: %r" % LATCH)
+-        if cancelled():
+-            why.append("owner cancel")
+-        if time.time() + wall > self.deadline:
+-            why.append("frozen child deadline already too close")
+         if why:
+             self.capture.close()
+             self.refused = why
+             return
+-        if sink is not None:
+-            self.lane_before = lane_files()
+         OWNED.append(self)  # r3#1: ownership exists before the process does
++        # r4#3: final non-blocking checks, immediately followed by Popen.
++        if LATCH or cancelled() or time.time() + wall > self.deadline:
++            OWNED.remove(self)
++            self.capture.close()
++            self.refused = ["final pre-spawn check: latch=%r cancel=%r deadline_close=%r"
++                            % (bool(LATCH), cancelled(), time.time() + wall > self.deadline)]
++            return
+         self.proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+-                                     start_new_session=True, close_fds=True, cwd=cwd, env=CHILD_ENV)
++                                     start_new_session=True, close_fds=True, cwd=cwd, env=child_env)
+         try:
+             self.pid = self.pgid = self.proc.pid
+             self.started = time.time()
+@@ -541,9 +554,12 @@
+             self.reader = threading.Thread(target=self._read, daemon=True)
+             self.reader.start()
+         except BaseException as exc:
+-            latch("post-Popen registration failure %r" % (exc,))
+             if self.stop is None:
+-                self.stop = "registration_failure"
++                self.stop = "registration_failure"   # r4#1: emergency stop state before fallible logging
++            try:
++                latch("post-Popen registration failure %r" % (exc,))
++            except BaseException:
++                pass
+             self.reap_robust()
+             raise
+ 
+@@ -575,34 +591,49 @@
+ 
+     def term(self, reason):
+         if self.term_sent_at is None and self.proc.returncode is None:
+-            self.stop = reason
+-            self.term_sent_at = time.time()
++            if self.stop is None:
++                self.stop = reason
+             self.proc.send_signal(signal.SIGTERM)  # Popen polls first; never signals a reaped PID
++            self.term_sent_at = time.time()        # r4#1: marked only after delivery returned
+ 
+     def reap_robust(self):
+-        """r3#1: exception-resistant reap state machine; retries on any exception, never unwinds
+-        before wait() returns.  Single SIGTERM (only if requested), quarantine at the 60 s transition."""
++        """r3#1/r4#1: exception-resistant reap state machine.  The whole retry path is protected; it
++        polls (never blocks) so a pending quarantine receipt keeps being retried; a SIGTERM is (re)tried
++        only while undelivered and only if termination was requested; it returns only after the retained
++        Popen is reaped."""
++        receipt_pending = False
+         while True:
+             try:
+-                if self.term_sent_at is None and self.stop is not None:
+-                    self.term_sent_at = time.time()
++                if self.stop is not None and self.term_sent_at is None and self.proc.returncode is None:
+                     self.proc.send_signal(signal.SIGTERM)
+-                if self.term_sent_at is not None and not self.quarantined:
+-                    while self.proc.poll() is None and time.time() < self.term_sent_at + TERM_WAIT:
+-                        time.sleep(0.1)
+-                    if self.proc.poll() is None:
+-                        self.quarantined = True
++                    self.term_sent_at = time.time()
++                if self.term_sent_at is not None and not self.quarantined and self.proc.poll() is None \
++                        and time.time() >= self.term_sent_at + TERM_WAIT:
++                    self.quarantined = True
++                    receipt_pending = True
++                    try:
+                         latch("quarantine pid %d" % self.pid)
+-                        try:
+-                            write_x(self.quarantine_path, {"pid": self.pid, "pgid": self.pgid, "argv": self.argv,
+-                                                           "epoch": time.time(), "note": "survived SIGTERM + 60 s; "
+-                                                           "no further signal; runner keeps waiting"})
+-                        except BaseException:
+-                            pass
+-                return self.proc.wait()
++                    except BaseException:
++                        pass
++                if receipt_pending:
++                    try:
++                        write_x(self.quarantine_path, {"pid": self.pid, "pgid": self.pgid, "argv": self.argv,
++                                                       "epoch": time.time(), "note": "survived SIGTERM + 60 s; "
++                                                       "no further signal; runner keeps waiting"})
++                        receipt_pending = False
++                    except FileExistsError:
++                        receipt_pending = False
++                    except BaseException:
++                        self.quarantine_receipt_failures = getattr(self, "quarantine_receipt_failures", 0) + 1
++                rc = self.proc.poll()
++                if rc is not None and not receipt_pending:
++                    return self.proc.wait()
++                time.sleep(0.1)
+             except BaseException:
+-                time.sleep(0.05)
+-                continue
++                try:
++                    time.sleep(0.05)
++                except BaseException:
++                    pass
+ 
+     def census(self):
+         """Other processes with ppid==child or pgid==child (excluding the child itself)."""
+@@ -757,10 +788,10 @@
+ 
+ def run_child(argv, label, wall, reserve, inputs, sink=None):
+     """Prepared outputs -> admission -> spawn -> supervise -> settle.  Returns (rec|None, lines, refusal)."""
+-    cwd = os.path.join(STATE["out"], "cwd", "%02d-%s" % (STATE["seq"] + 1, label))
+-    os.makedirs(cwd)
+     ch = None
+     try:
++        cwd = os.path.join(STATE["out"], "cwd", "%02d-%s" % (STATE["seq"] + 1, label))
++        os.makedirs(cwd)  # r4#4: inside the cleanup guard
+         ch = Child(argv, label, wall, reserve, inputs, sink, cwd)
+         if ch.refused:
+             return None, [], ch.refused
+@@ -780,6 +811,8 @@
+     finally:
+         for c in OWNED:
+             if c.proc is not None and c.settled_rec is None:
++                if c.stop is None and c.proc.poll() is None:
++                    c.stop = "runner_escape_cleanup"  # r4#1: request termination before settling
+                 c.settle()  # any escape above still reaps and settles every owned child
+         if sink is not None and (ch is None or ch.proc is None):
+             sink.finish()  # never-spawned producer: unblock and join the reader
+@@ -1066,7 +1099,7 @@
+     signal.signal(signal.SIGTERM, on_term)
+     signal.signal(signal.SIGINT, on_term)
+     if len(sys.argv) != 4:
+-        print("usage: pilot_file_drat_v11.py GO.json GO_SHA256 OUT_DIR", flush=True)
++        print("usage: pilot_file_drat_v12.py GO.json GO_SHA256 OUT_DIR", flush=True)
+         return EXIT_PRESTART_REFUSED
+     go_path, go_sha, out_dir = sys.argv[1], sys.argv[2], os.path.abspath(sys.argv[3])
+     if not out_dir.startswith(LANE + "/evidence/pilot-v1/"):
+@@ -1096,7 +1129,7 @@
+                  remaining_reserve=RUN_RESERVE + CONTROL_RESERVE + len(ITEMS) * ITEM_RESERVE,
+                  go={"path": go_path, "sha256": go_sha}, runner_sha=self_sha)
+     launch = {
+-        "schema": "PA19-96H-PILOT-LAUNCH-v11", "host_clock": clock(), "owner": "ContinuePA19",
++        "schema": "PA19-96H-PILOT-LAUNCH-v12", "host_clock": clock(), "owner": "ContinuePA19",
+         "go": STATE["go"], "runner": {"path": os.path.abspath(__file__), "sha256": self_sha},
+         "pid": os.getpid(), "ppid": os.getppid(), "pgid": os.getpgid(0), "cwd": os.getcwd(), "argv": sys.argv,
+         "python": sys.version, "binaries": {"kissat": KISSAT, "drat_trim_lane_copy": DRAT, "drat_trim_old": DRAT_OLD},
+@@ -1120,7 +1153,7 @@
+     run_record = os.path.join(out_dir, "launch-record.json")
+     STATE["run_record"] = {"path": run_record, "sha256": write_x(run_record, launch)}
+     print("LAUNCH_RECORD", run_record, flush=True)
+-    summary = {"schema": "PA19-96H-PILOT-SUMMARY-v11", "items": {}, "controls_ok": None, "stopped": None,
++    summary = {"schema": "PA19-96H-PILOT-SUMMARY-v12", "items": {}, "controls_ok": None, "stopped": None,
+                "terminal_policy": "exit code reports runner execution only; per-item records carry the scientific "
+                                   "status; an item counts only if qualify_unsat, the terminal gate and the commit "
+                                   "boundary all pass; case closure is decided by the parent audit"}

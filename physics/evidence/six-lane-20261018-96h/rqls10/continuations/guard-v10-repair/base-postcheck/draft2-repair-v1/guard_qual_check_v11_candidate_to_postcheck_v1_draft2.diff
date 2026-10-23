@@ -1,0 +1,188 @@
+--- continuations/guard-v10-repair/base/guard_qual_check_v11.py@3995e868985c4a4cc1eb515b9233d90a7e9368ceff7998d830d8c264d3fecb5b
++++ continuations/guard-v10-repair/base-postcheck/guard_qual_postcheck_v1_draft2.py@0e330984e323840e0fd92c2c880752b604db8bf8bd6f172dc840f4cb203abf77
+@@ -1,7 +1,7 @@
+ #!/usr/bin/env python3
+ """V19 evidence-bound qualification checker, source-only. Retains owned bounded /bin/date and explicit negative controls.
+ Parent correction fabe57ab...4155a2 withdraws v10's narrowing; all earlier files remain immutable/unrun.
+-Usage: guard_qual_check_v11.py SCENARIO PARENT_APPROVAL_SHA256 ACTUAL_EXIT
++Usage: guard_qual_postcheck_v1.py SCENARIO PARENT_APPROVAL_SHA256 ACTUAL_EXIT
+ Fixed no-follow root, independent actual source/config/GO/stability/preparation/evidence hashes and trusted parent
+ approval digest. Exact outcome sets plus complete helper settlement predicates, all unproved/owned identity evidence,
+ PID-specific intended cause proofs, same-inode publication and whole-sample decoding. No PASS releases reservations.
+@@ -19,14 +19,15 @@
+ import sys
+ import time
+ 
+-VERSION = "guard_qual_check_v11"
++VERSION = "guard_qual_postcheck_v1"
+ LANE = "/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10"
+ QROOT = LANE + "/qual-pkg-v9-v19"
+ ITEM = "owned_supervisor_v19 rebound creation-identity qualification"
+ CHILD = LANE + "/code/guard_qual_child_v12.py"
+ SUPERVISOR = LANE + "/code/owned_supervisor_v19.py"
+ WRITER = LANE + "/code/guard_qual_configs_v12.py"
+-CHECKER = LANE + "/code/guard_qual_check_v11.py"
++CHECKER = LANE + "/code/guard_qual_check_v11.py"  # Immutable workload-provenance source, not this oracle.
++VERIFIER = LANE + "/code/guard_qual_postcheck_v1.py"
+ SUPERVISOR_SHA = "cb828a78367dc2023bfc6e330696745f186f186811752361472747e5fe547e93"
+ FIXTURE = b"pinned scratch file for the mutate_pin scenario\n"
+ RESERVATION = 20971520
+@@ -309,6 +310,9 @@
+         if len(linked) != 1 or linked[0].get("outcome") != ("FAILED" if injected else "OK"):
+             return False
+         sig = h.get("signal")
++        # supervisor19 helper_term consumes the single TERM attempt BEFORE creating any signal record, sent or not.
++        if h["term_attempted"] is not (sig is not None):
++            return False
+         if sig is not None:
+             if not isinstance(sig, dict) or not isinstance(sig.get("sent"), bool):
+                 return False
+@@ -354,10 +358,10 @@
+     return identity(p) + (p["comm"],)
+ 
+ 
+-def histories(view, baseuids):
++def histories(view, baseuids, supervisor_uid):
+     required = ("identity_history", "identity_events", "unproved_history", "coverage_history", "census_observations", "observation_attempts")
+-    if any(not isinstance(view.get(k), list) for k in required):
+-        raise Invalid("complete current/retained identity-event history missing")
++    if any(not isinstance(view.get(k), list) for k in required) or not integer(supervisor_uid, 0):
++        raise Invalid("complete current/retained identity-event history or supervisor UID missing")
+     ih, events, uh, ch, cs, ats = (view[k] for k in required)
+     if len(ih) > 8192 or len(uh) > 8192 or len(ch) > 16384 or len(cs) > 4096 or len(ats) > 4096:
+         raise Invalid("history entry cap")
+@@ -517,8 +521,11 @@
+             initial_event = event_at(m.get("identity_event_ref"))
+             before_event = event_at(m.get("before_task_event_ref"))
+             after_event = event_at(m.get("identity_after_event_ref"))
+-            # The pre-task acquisition belongs to THIS census and the initial acquisition precedes the task.
++            # The pre-task acquisition belongs to THIS census and the initial acquisition precedes the task. Equal clocks
++            # never order an acquisition against itself: both pre-task references precede the final one in the tape.
+             if identity(before_event["identity"]) != identity(p) or identity(after) != identity(p) or \
++                    not m["identity_event_ref"] < m["identity_after_event_ref"] or \
++                    not m["before_task_event_ref"] < m["identity_after_event_ref"] or \
+                     not same(m.get("identity_after_interval"), [after_event["mono_begin"], after_event["mono_end"]]) or \
+                     not all(finite(m.get(k)) for k in ("mono_task_begin", "mono_task_end", "mono_observed")) or \
+                     not c["mono_start"] <= before_event["mono_begin"] or initial_event["mono_end"] > m["mono_task_begin"] or \
+@@ -537,6 +544,11 @@
+                 sorted(c["lane_busy_pids"]) != sorted(bpids) or c["lane_busy"] != len(bpids) or \
+                 (last is not None and c.get("mono_last_observation") != last):
+             raise Invalid("partial counters disagree with completed measurements")
++        # supervisor19 measures EVERY non-zombie owned/unproved process whose real or effective UID is its own; a failed
++        # measurement leaves the census incomplete, so a completed census cannot omit one.
++        if c["complete"] is True and any(p["status"] != 5 and supervisor_uid in (p["euid"], p["ruid"]) and
++                sum(1 for m in measurements if same(m["identity"], p)) != 1 for p in c["owned_live"] + c["unproved_live"]):
++            raise Invalid("completed census omits a mandatory owned/unproved native measurement")
+     if attempt_by_end:
+         raise Invalid("resource attempt omitted from history")
+     return imap, umap, retained, event_at
+@@ -719,7 +731,13 @@
+     main = view.get("child_identity", view.get("main_identity"))
+     if main is not None:
+         identity(main)
+-        root_objects[main["uniqueid"]] = (main, "child", None)
++        # Receipt view: the MAIN root anchor is its actual initial acquisition, begun after its spawn clock (helpers
++        # are anchored to their own initial acquisition). The current view repeats the receipt's registry prefix.
++        anchor = view.get("main_initial_identity_event_ref") if "child_identity" in view else None
++        if "child_identity" in view and (not integer(anchor, 1) or not finite(view.get("mono_spawn")) or
++                event_at(anchor)["mono_begin"] < view["mono_spawn"]):
++            raise Invalid("MAIN root registration not anchored to its actual post-spawn initial acquisition")
++        root_objects[main["uniqueid"]] = (main, "child", anchor)
+     limit = view.get("mono_decision", view.get("mono_snapshot"))
+     registry = {}
+     keys = {"identity", "identity_event_ref", "via", "root", "first_seen_mono", "proof"}
+@@ -745,8 +763,11 @@
+         if uid in root_objects:
+             continue
+         if via == "owned_group":
++            # A numerical PGID proves nothing before the root incarnation existed: the membership acquisition must be
++            # retained after the root's own anchor acquisition in the event sequence.
+             if proof is not None or p["pgid"] != root_objects[root][0]["pgid"] or \
+-                    registry[root]["first_seen_mono"] > entry["first_seen_mono"]:
++                    registry[root]["first_seen_mono"] > entry["first_seen_mono"] or \
++                    not entry["identity_event_ref"] > registry[root]["identity_event_ref"]:
+                 raise Invalid("owned-group registration not rooted in the actual known group")
+         elif via.startswith("current_parent:"):
+             suffix = via[len("current_parent:"):]
+@@ -795,9 +816,15 @@
+         if uid in baseuids or end <= complete or unproved:
+             continue
+         entry = registry.get(uid)
+-        if entry is None or (end < entry["first_seen_mono"] and not
+-                (entry["via"] in ("child", "helper") and entry["identity_event_ref"] == ref)):
++        if entry is None:
+             raise Invalid("post-baseline unrooted acquisition omitted from unproved coverage")
++        # Registration follows its own reference (and, for an edge, its proof) in the retained sequence, so an earlier
++        # or equal reference was acquired while still unregistered; equal clocks never count as registration. Only the
++        # known MAIN/helper anchor acquisition itself is exempt.
++        known = entry["via"] in ("child", "helper") and entry["identity_event_ref"] == ref
++        proof = entry["proof"] if isinstance(entry["proof"], dict) else {}
++        if not known and (ref <= max([entry["identity_event_ref"]] + list(proof.values())) or end < entry["first_seen_mono"]):
++            raise Invalid("post-baseline unrooted acquisition omitted from unproved coverage")
+     # Every census that was not aborted classifies each non-baseline incarnation it acquired as owned or unproved.
+     order = sorted(range(len(events)), key=lambda i: (events[i][3], i))
+     begins = [events[i][3] for i in order]
+@@ -931,7 +958,7 @@
+         if p["uniqueid"] in baseuids:
+             raise Invalid("duplicate baseline incarnation")
+         baseuids.add(p["uniqueid"])
+-    imap, umap, retained, event_at = histories(receipt, baseuids)
++    imap, umap, retained, event_at = histories(receipt, baseuids, receipt.get("uid"))
+     current = summary.get("reconciliation")
+     current_keys = {"owned_identities", "unproved_history", "identity_history", "coverage_history", "census_observations",
+                     "observation_attempts", "helpers", "helper_log", "failures", "main_identity", "main_signal", "main_stop",
+@@ -943,7 +970,7 @@
+     if not isinstance(current, dict) or set(current) != current_keys or current["history_halted"] is not False or \
+             not integer(current["history_cap_bytes"], 0) or current["history_cap_bytes"] != 4 << 20:
+         raise Invalid("mandatory complete current refusal/ACK reconciliation schema missing")
+-    current_imap, current_umap, current_retained, current_event_at = histories(current, baseuids)
++    current_imap, current_umap, current_retained, current_event_at = histories(current, baseuids, receipt.get("uid"))
+     native_result_evidence(receipt)
+     native_result_evidence(current)
+     registry = rooted_registry(receipt, event_at)
+@@ -1433,6 +1460,8 @@
+                 observations[2]["observed_mono"] <= p["mono_end"] or \
+             any(o["observed_mono"] > j["mono_start"] for o in sources):
+         raise Invalid("private join full observer/child incarnation/current-parent/chronology mismatch")
++    if j["role"] == "zombie" and (intended["status"] != 5 or identities[1]["status"] != 5):
++        raise Invalid("held zombie returned to a live state in its pre-wait evidence")
+     call_fields = {"index", "pid", "options", "mono_call", "mono_return", "returned_pid", "returned_status", "error"}
+     for call in (j["first_call"], j["last_call"]):
+         if not isinstance(call, dict) or set(call) != call_fields or not integer(call["index"], 1) or \
+@@ -1457,6 +1486,12 @@
+             last["error"] is not None or last["returned_pid"] != intended["pid"] or \
+             last["returned_status"] != j["wait_status"] or not same(last["mono_return"], j["mono_reaped"]):
+         raise Invalid("private join first/final actual call/reaped-result join")
++    # Only a retained call carrying an error was interrupted; the final reaping call returned normally, so the count is
++    # exact when every call is retained (calls <= 2) and otherwise bounded by the unretained middle calls.
++    endpoints = [first] if j["calls"] == 1 else [first, last]
++    interrupted = sum(1 for call in endpoints if call["error"] is not None)
++    if not interrupted <= j["interruptions"] <= interrupted + j["calls"] - len(endpoints):
++        raise Invalid("private join interruption count contradicts its retained native wait calls")
+     return observations
+ 
+ 
+@@ -1926,6 +1961,12 @@
+     cp, gp, sp, pp = (snapshot(runfd, f, 1 << 20) for f in ("config.json", "go.json", "stability.json", "preparation.json"))
+     require("approval_artifact_bindings", all(approval.get(k) == v["sha256"] for k, v in (
+         ("config_sha256", cp), ("go_sha256", gp), ("stability_receipt_sha256", sp), ("preparation_sha256", pp))))
++    verifier = absolute_snapshot(VERIFIER, 1 << 20)
++    verifier_pin = approval.get("verifier")
++    if not isinstance(verifier_pin, dict) or set(verifier_pin) != {"path", "sha256"} or \
++            verifier_pin["path"] != VERIFIER or verifier_pin["sha256"] != verifier["sha256"]:
++        raise Invalid("approval must independently pin this postchecker source")
++    require("independent_postchecker_source_matches_actual_bytes", True)
+     package = approval.get("sources")
+     if not isinstance(package, dict) or set(package) != {"supervisor", "child", "writer", "checker"}:
+         raise Invalid("approval must pin the entire four-source package")
+@@ -2249,8 +2290,8 @@
+ 
+ 
+ def main():
+-    if os.path.abspath(__file__) != CHECKER or os.path.realpath(__file__) != CHECKER:
+-        raise Invalid("checker must execute at the exact approved fixed source path")
++    if os.path.abspath(__file__) != VERIFIER or os.path.realpath(__file__) != VERIFIER:
++        raise Invalid("postchecker must execute at the exact approved fixed source path")
+     if len(sys.argv) != 4 or sys.argv[1] not in SC:
+         raise Invalid("usage: SCENARIO PARENT_APPROVAL_SHA256 ACTUAL_EXIT")
+     name, approval_digest, exit_text = sys.argv[1:4]

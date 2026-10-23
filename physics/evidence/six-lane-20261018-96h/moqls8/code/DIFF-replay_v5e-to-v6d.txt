@@ -1,0 +1,995 @@
+Lane ContinueMOQLS8 (phys-1, 96-hour continuation) GA runner successor, recorded 2026-10-18T23:53:53-0700.
+replay_v5e.py sha256 a60a924b306d591631cb09da69ceb41f8d3da33edbe67ede06b00e41a2dfbcdb (read-only, old v5e desk)
+replay_v6d.py sha256 1f7368bf5a6e35c69e0fef96acced77df1db7aa249599aa9a7596348ac035909
+Never-run predecessors kept unchanged: code/replay_v6.py 43751f4f...0ad3f, code/replay_v6b.py de93413c2f110472a3f12f877ab3f440e0dfecd423756d592a4221c5829d8df7, code/replay_v6c.py 584b4778b971e915a1fa3e4761a30de2fec4fd289aa95c0aa8619ec099abd9b5.
+Top-level definitions whose AST differs from v5e: check_env, cmd_assemble, cmd_preexec, cmd_run, gate, lane_decision, load_strengthened, pipeline, post_gate_identity, validate_items; added: _acquire_dup, _acquire_pipe, _new_sink, _sink, check_desk_tree, spawn_block.
+Every other function and class is AST-identical to v5e. Part 1: exact unified diff v5e -> v6d. Part 2: exact unified
+diff v6c -> v6d (the repairs of the v6c re-review).
+
+===== PART 1: replay_v5e.py -> replay_v6d.py =====
+--- OLD_DESK/scripts/replay_v5e.py
++++ code/replay_v6d.py
+@@ -1,5 +1,56 @@
+ #!/usr/bin/env python3
+-"""Parent replay desk for the six MOQLS(8) P1 strengthened formulas (normal form r2, section 5) and the twelve direct
+-F_one leaves, v5e attempt namespace (unchanged v5d transport).
++"""MOQLS(8) n8 GA replay desk v6d: new-round (96-hour continuation, phys-1 lane) copy of the reviewed parent
++replay_v5e.py (a60a924b306d591631cb09da69ceb41f8d3da33edbe67ede06b00e41a2dfbcdb) for the two remaining strengthened GA
++formulas P1-B2.M2 and P1-B3.M2 only. code/replay_v6.py (unreviewed draft), code/replay_v6b.py (review HOLD) and
++code/replay_v6c.py (re-review review/ga-v6c-delta-review-v1: HOLD, launcher MAJORs + sink MINORs) were never run and
++are kept unchanged.
++
++V6d = v6c + the v6c re-review repairs: (G1) absolute wall-clock chunk end: the launcher passes
++MOQLS8_CHUNK_END_EPOCH (its own pre-spawn wall clock + CHILD_END_LIMIT) and records it; 'run' refuses a missing,
++non-finite, past or too-distant value; ABS_CHILD_END = min(that value, wall clock at DRIVER_T0 + CHILD_END_LIMIT) is
++enforced next to the monotonic bound, both before every native spawn (time.time() + backstop <= ABS_CHILD_END) and in
++flight (SIGTERM of every live child once time.time() > ABS_CHILD_END); (G2) the sinks' close errors are part of the
++in-flight veto and the sink closes its two descriptors in independently protected steps; (G3) the new pipe and dup
++descriptors are acquired with rollback (no raw descriptor exists outside the registry if a registration fails).
++
++V6c = replay_v5e.py + code/DIFF-replay_v5e-to-v6c.txt (lane ContinueMOQLS8). Relative to v6b it repairs the v6b
++findings: (F1) the absolute launch cutoff and the driver chunk fit are re-checked immediately before EACH native
++spawn (spawn_block); (F2) a driver-wide chunk deadline: DRIVER_T0 is taken at the start of 'run', no native may be
++spawned unless driver elapsed + the item's backstop <= CHILD_END_LIMIT = 10800 - 120 - 60 = 10620 s, and every live
++child is SIGTERMed when driver elapsed exceeds CHILD_END_LIMIT; a formula PRE-EXEC holds exactly one formula;
++(F3) MINE = 4 (cadical + drat-trim + this driver + one transient ps/lsof helper) against LANE_BUSY_CAP = 4, so any
++other busy lane process refuses admission, and the same busy rule is now enforced in flight; (F4) both children's
++stdout+stderr go through byte-capped sink threads (at most LOG_CAP_EACH = 32 MiB written per log, every byte hashed
++and counted, overflow or sink error = safety stop in flight and at completion), so retained child output is bounded
++by 2 x 32 MiB; (F5) the exception cleanup keeps the first SIGTERM's settlement deadline; (F6) NO_LAUNCH_AT
++2026-10-22 18:59:33 PDT (spawn + 10260 + 120 s reap <= owned_compute_settled_by - 180 s, 60 s margin) and corrected
++drat-trim timeout wording. The selftests use SELFTEST_BACKSTOP = 600 s (they finish in seconds).
++
++The v6b change list follows (still applicable except where superseded above). Changes are confined to constants,
++paths, cutoff texts, admission scope, gate accounting and the guards named here; native argv, CNF writers, proof
++relay, evaluator, acceptance predicate, controls, helper supervision and the other guards are unchanged:
++ (1) outputs (PRE-EXEC, receipts, logs, FIFOs, TMPDIRs, run summaries) live in the new lane desk
++     physics/evidence/six-lane-20261018-96h/moqls8/evidence/ga-replay-v6; the old run, the old lane and the v5e desk
++     (OLD_DESK: BINDING.json, bind_v1.py, earlier scripts and diffs) are read-only inputs, all hash-pinned;
++ (2) new-round clock and chunk fit (control/launch-contract-tightening-v1.json 8ac55669...aa20): see F1/F2/F6 above;
++     total gate wait per run bounded by 600 s (then DEFERRED, no native); in flight SIGTERM at 2026-10-22 21:50:00 PDT;
++ (3) native self-budgets cadical -t 6300 and drat-trim -t 10020 (drat-trim measures wall time from its own start but
++     checks it only inside backward verification, drat-trim.c L904-905: parsing and blocked proof reads do not
++     self-expire, so the driver backstop and CHILD_END_LIMIT are the enforced bounds);
++ (4) formula reservation max(1.5 x worker source-template peak, 9 GiB) (desk stop reservation + 0.5 GiB);
++ (5) gate accounting (NOT a path change): see F3; LANE_BUSY_CAP = 4 and the 11 GiB lane RSS limit come from the
++     parent phys-1 pipeline resource amendment (control/moqls8-pipeline-resource-amendment-v1.json, re-hashed and
++     field-checked);
++ (6) the long-job stability rule (unchanged numbers) reads the parent observer v3
++     (control/resource-observer-live-v3.jsonl, colon-form UTC offsets; addenda v1 rule and v2 path, hash-pinned);
++ (7) lane markers also cover the new lane path;
++ (8) admission accepts only formula:P1-B2.M2 and formula:P1-B3.M2 (plus the five selftests); every other formula and
++     every direct leaf is refused (all parent-qualified; never duplicate accepted computation);
++ (9) retained output: see F4; launch and stability floors reserve 80 MiB retained growth per run (2 x 32 MiB child
++     logs + receipts, run summary, PRE-EXEC and driver/console logs).
++The v5e/v5d history below remains historical text.
++
++Historical (v5e) head: Parent replay desk for the six MOQLS(8) P1 strengthened formulas (normal form r2, section 5)
++and the twelve direct F_one leaves, v5e attempt namespace (unchanged v5d transport).
+ 
+ PARENT v5e: name-only successor of frozen v5d ee52004ba7d12edd673a10bc4ed73005d6c56588697215c9b06cc1dbb846339e.
+@@ -54,7 +105,7 @@
+ leaf launches also need the parent disk-monitor stability rule (amended 07:32 PDT); controls keep the plain gate.
+ Usage (/usr/bin/python3 -I -B, environment TMPDIR=<desk>/tmp/):
+-  replay_v5e.py preexec OUT [--worker-prefix N SHA] ITEM...    ITEM = selftest:NAME | formula:ID | leaf:ID
+-  replay_v5e.py run PREEXEC
+-  replay_v5e.py assemble OUT PREEXEC...
++  replay_v6d.py preexec OUT [--worker-prefix N SHA] ITEM...    ITEM = selftest:NAME | formula:P1-B2.M2 | formula:P1-B3.M2
++  replay_v6d.py run PREEXEC       (environment MOQLS8_CHUNK_END_EPOCH from the launcher; required)
++  replay_v6d.py assemble OUT PREEXEC...
+ """
+ import ctypes
+@@ -69,4 +120,5 @@
+ import selectors
+ import signal
++import stat
+ import struct
+ import subprocess
+@@ -77,11 +129,14 @@
+ 
+ ROOT = "/Users/jinleic/repos/aifours"
+-RUN = ROOT + "/institute/runs/six-lane-2026-10-16"
+-REVIEW = RUN + "/review"
+-LANE = ROOT + "/physics/evidence/six-lane-20261016/moqls8-problem16"
+-DESK = REVIEW + "/moqls8-strengthened-parent-replay-v1"
++RUN = ROOT + "/institute/runs/six-lane-2026-10-16"  # (v6) OLD run: read-only inputs only
++REVIEW = RUN + "/review"  # (v6) OLD review directory: read-only inputs only
++LANE = ROOT + "/physics/evidence/six-lane-20261016/moqls8-problem16"  # (v6) OLD lane: read-only inputs only
++OLD_DESK = REVIEW + "/moqls8-strengthened-parent-replay-v1"  # (v6) the v5e desk: read-only inputs only
++NEW_RUN = ROOT + "/institute/runs/six-lane-2026-10-18-96h"  # (v6) new-round run (parent-owned control files)
++NEW_LANE = ROOT + "/physics/evidence/six-lane-20261018-96h/moqls8"  # (v6) new-round phys-1 lane
++DESK = NEW_LANE + "/evidence/ga-replay-v6d"  # (v6) every output of this version
+ SCRIPT = os.path.realpath(__file__)
+-SCRIPT_REL = "scripts/replay_v5e.py"
+-LABEL_PREFIX = "v5e-"  # every v5d receipt/log/FIFO/TMPDIR name; older (v2-v5c, draft v5) names stay untouched
++SCRIPT_REL = "code/replay_v6d.py"  # (v6) relative to NEW_LANE
++LABEL_PREFIX = "v6d-"  # every v6d receipt/log/FIFO/TMPDIR name
+ TMP = DESK + "/tmp"
+ 
+@@ -119,29 +174,37 @@
+ V1_SCRIPT = REVIEW + "/moqls8-fone-parent-replay-v1/scripts/replay_v1.py"
+ V1_SCRIPT_SHA = "16cba374241636885d71f2e91dd3969d35779ccbe27eca4fc2bee3c8781f486d"
+-BINDING = DESK + "/BINDING.json"
++BINDING = OLD_DESK + "/BINDING.json"
+ BINDING_SHA = "5e1116e8311bfe4b2e06554edd0c77fc564574b06c1320334373648171f5f98c"
+-BIND_SCRIPT = DESK + "/scripts/bind_v1.py"
++BIND_SCRIPT = OLD_DESK + "/scripts/bind_v1.py"
+ BIND_SCRIPT_SHA = "b010baa4dd5c7620f7c6215beeb052af80846bfd6c3ee0a80e8d8a235144786c"
+-V2_SCRIPT = DESK + "/scripts/replay_v2.py"
++V2_SCRIPT = OLD_DESK + "/scripts/replay_v2.py"
+ V2_SCRIPT_SHA = "dcedbe45c6a354c03b400539eda588c2dca65a40d1f7009a3c42faceb97aac82"
+-DIFF_V1_V2 = DESK + "/DIFF-replay_v1-to-v2.txt"
++DIFF_V1_V2 = OLD_DESK + "/DIFF-replay_v1-to-v2.txt"
+ DIFF_V1_V2_SHA = "44b12b90c1ebcfb173cb502f7cff1e6f64f5217cdddad91e9cc59e48789de0ba"
+-V3_SCRIPT = DESK + "/scripts/replay_v3.py"
++V3_SCRIPT = OLD_DESK + "/scripts/replay_v3.py"
+ V3_SCRIPT_SHA = "baa4a675fc2634dc8dc96f53b9f6dd1b59af012b9fef23681af894904aa67565"
+-DIFF_V2_V3 = DESK + "/DIFF-replay_v2-to-v3.txt"
++DIFF_V2_V3 = OLD_DESK + "/DIFF-replay_v2-to-v3.txt"
+ DIFF_V2_V3_SHA = "dc2a67ecf0aa5a9e7f19de0a145f04a60c3fd70325cbb61f7703d2d596aba8c8"
+-V4_SCRIPT = DESK + "/scripts/replay_v4.py"
++V4_SCRIPT = OLD_DESK + "/scripts/replay_v4.py"
+ V4_SCRIPT_SHA = "44b4f293b4a0eeb86cafce1afa9314e7e54592d60d95791dee4d58539c9bdc9d"
+-DIFF_V3_V4 = DESK + "/DIFF-replay_v3-to-v4.txt"
++DIFF_V3_V4 = OLD_DESK + "/DIFF-replay_v3-to-v4.txt"
+ DIFF_V3_V4_SHA = "3e2625c591f17ec432512e4cb9f603901cf2ddea64399f7986348501f48acd53"
+-DIFF_V4_V5B = DESK + "/DIFF-replay_v4-to-v5b.txt"
++DIFF_V4_V5B = OLD_DESK + "/DIFF-replay_v4-to-v5b.txt"
+ DIFF_V4_V5B_SHA = "6d4ef029eb2d5f4eb36fccbb0bc9fcd6c02cb7dd7c1ccafc345923b50e77f296"
+-V5B_SCRIPT = DESK + "/scripts/replay_v5b.py"
++V5B_SCRIPT = OLD_DESK + "/scripts/replay_v5b.py"
+ V5B_SCRIPT_SHA = "5726273c6b584708334a8ce4f0d8c538245445b1e733b3cf607341d5a43aa32d"
+-V5C_SCRIPT = DESK + "/scripts/replay_v5c.py"
++V5C_SCRIPT = OLD_DESK + "/scripts/replay_v5c.py"
+ V5C_SCRIPT_SHA = "36f50cb6483fef91a3e93d78dcba46b1eb97bdfbdfaa247ee7bc99303466c1af"
+-DIFF_V5B_V5C = DESK + "/DIFF-replay_v5b-to-v5c.txt"
++DIFF_V5B_V5C = OLD_DESK + "/DIFF-replay_v5b-to-v5c.txt"
+ DIFF_V5B_V5C_SHA = "27de99fd484299a6be52f74beacc5ccfd7e4578a8a3fb9d35f96e76c1eed2ff4"
+-DIFF = DESK + "/DIFF-replay_v5d-to-v5e.txt"
++DIFF_V5C_V5D = OLD_DESK + "/DIFF-replay_v5c-to-v5d.txt"
++DIFF_V5C_V5D_SHA = "13cec4f99272e1c291318f5eee1b02cd6714024bbf54053a88102e1742308677"
++V5D_SCRIPT = OLD_DESK + "/scripts/replay_v5d.py"
++V5D_SCRIPT_SHA = "ee52004ba7d12edd673a10bc4ed73005d6c56588697215c9b06cc1dbb846339e"
++DIFF_V5D_V5E = OLD_DESK + "/DIFF-replay_v5d-to-v5e.txt"
++DIFF_V5D_V5E_SHA = "e2278f6e31ba127d55e4f7fa5df9593006c9593ab5ea82b1254b3bb3e7a4dfde"
++V5E_SCRIPT = OLD_DESK + "/scripts/replay_v5e.py"
++V5E_SCRIPT_SHA = "a60a924b306d591631cb09da69ceb41f8d3da33edbe67ede06b00e41a2dfbcdb"
++DIFF = NEW_LANE + "/code/DIFF-replay_v5e-to-v6d.txt"  # (v6) names this script's sha256
+ NF_R2 = LANE + "/review/P1_COLUMN0_BOOLEAN_NORMAL_FORM.r2.md"
+ NF_R2_SHA = "8ae0ac01de7ea5883111e8dcc4f84246813d8599b1e8af782e0498104a449e8f"
+@@ -175,17 +238,31 @@
+ LOW_MEMORY_IDS = ("P0-B4", "P0-B5")  # the v2 leaf projection rule: FLOOR_LOW for these two, FLOOR_HIGH for the others
+ PDT = datetime.timezone(datetime.timedelta(hours=-7))
+-NO_LAUNCH_AT = datetime.datetime(2026, 10, 18, 17, 29, 0, tzinfo=PDT).timestamp()    # 60 s before the 17:30 cutoff
+-NATIVE_STOP_AT = datetime.datetime(2026, 10, 18, 17, 57, 0, tzinfo=PDT).timestamp()  # in flight: SIGTERM at this
+-
+-SOLVER_SECONDS, CHECKER_SECONDS = 3600, 7200
+-BACKSTOP = SOLVER_SECONDS + CHECKER_SECONDS + 120
++# (v6c) chunk fit (control/launch-contract-tightening-v1.json 8ac55669...aa20), ENFORCED: DRIVER_T0 = start of 'run';
++# a native spawn needs driver elapsed + the item's backstop <= CHILD_END_LIMIT (10620 s) and every live child is
++# SIGTERMed once driver elapsed > CHILD_END_LIMIT; + 120 s bounded reap + 60 s margin <= DRIVER_T0 + 10800 s.
++# No native spawn at/after NO_LAUNCH_AT = (owned_compute_settled_by 21:56:33 - 180 s) - BACKSTOP - 120 s - 60 s margin.
++NO_LAUNCH_AT = datetime.datetime(2026, 10, 22, 18, 59, 33, tzinfo=PDT).timestamp()  # (v6c) chunk-fit launch cutoff
++NATIVE_STOP_AT = datetime.datetime(2026, 10, 22, 21, 50, 0, tzinfo=PDT).timestamp()  # (v6) in flight: SIGTERM at this
++
++SOLVER_SECONDS, CHECKER_SECONDS = 6300, 10020  # (v6) cadical -t; drat-trim -t (wall from its own start, L904-905)
++CHUNK_CAP_SECONDS = 10800  # (v6) contract max_chunk_seconds
++BACKSTOP = 10260  # (v6) formula backstop from its native spawn: spawn must be <= DRIVER_T0 + 360 s to fit
++SELFTEST_BACKSTOP = 600  # (v6c) control backstop from its native spawn (controls finish in seconds)
++CHILD_END_LIMIT = CHUNK_CAP_SECONDS - 120 - 60  # (v6c) 10620 s after DRIVER_T0: no child may run past it
++DRIVER_T0 = None  # (v6c) time.monotonic() at the start of cmd_run, set once
++ABS_CHILD_END = None  # (v6d G1) absolute wall-clock child end (epoch seconds), set once in cmd_run
++CHUNK_END_ENV = "MOQLS8_CHUNK_END_EPOCH"  # (v6d G1) supplied by code/launch_ga_v6d.py
++LOG_CAP_EACH = 32 << 20  # (v6c) byte-capped sink: at most 32 MiB of each child's output reach its log file
++RETAINED_RESERVATION = 80 << 20  # (v6) per-run retained output reservation (2 x 32 MiB logs + receipts/summaries)
+ GIB, MIB = 1 << 30, 1 << 20
+-LAUNCH_FLOOR = 12200000000 + 10 * MIB   # fresh check before each launch: 12.2e9 + projected retained growth
++LAUNCH_FLOOR = 12200000000 + 80 * MIB   # (v6) fresh check before each launch: 12.2e9 + retained reservation
+ FLOOR = 12000000000                     # in flight: free below this -> SIGTERM -> UNKNOWN
+-LANE_BUSY_CAP, MINE = 4, 2
+-# (F4) parent M8 lane escalation review/parent-decision-m8-lane-rss-escalation-v1.md (b9886e24...09ec): at most ONE
+-# parent GA pipeline (this desk) + ONE worker GB pipeline, lane aggregate RSS limit 11 GiB, <= 4 busy natives
+-LANE_DECISION = REVIEW + "/parent-decision-m8-lane-rss-escalation-v1.md"
+-LANE_DECISION_SHA = "b9886e242764750f55a2393323dfa7da7eb7696554d493bb107cd5f3815209ec"
++LANE_BUSY_CAP, MINE = 4, 4  # (v6c) MINE: cadical + drat-trim + this driver + one transient ps/lsof helper
++# (v6) parent phys-1 pipeline resource amendment (new round): <= 4 busy processes in the lane INCLUDING driver, feeders,
++# helpers, solver and checker; one scientific pipeline at a time; lane RSS <= 11 GiB. The new-round contract is pinned.
++LANE_DECISION = NEW_RUN + "/control/moqls8-pipeline-resource-amendment-v1.json"
++LANE_DECISION_SHA = "dc1eaed016c03d1f65e8041d6c2e59cc410e008b2b37ce0df7d12dd50101b2a8"
++NEW_CONTRACT = NEW_RUN + "/contract-v1.json"
++NEW_CONTRACT_SHA = "55baff0cf1ac1a4b0ab38b0eb1b1fa5a35a47c890f352b79dae4dfea919ffcaa"
+ LANE_RSS_LIMIT = 11 * GIB               # 11,811,160,064 B
+ GATE_RSS = LANE_RSS_LIMIT               # launch: all other lane processes (GB included) + this desk's reservation
+@@ -193,6 +270,8 @@
+ DESK_MARGIN = GIB // 2                  # in flight: desk aggregate > projected + 0.5 GiB -> SIGTERM
+ FLOOR_LOW, FLOOR_HIGH = 13 * GIB // 10, 46 * GIB // 10
++FORMULA_FLOOR = 9 * GIB  # (v6) formula reservation floor for the extended self-budgets
++V6_FORMULAS = ("P1-B2.M2", "P1-B3.M2")  # (v6) the only science items this version admits
+ SELFTEST_PROJECTED = 512 * MIB
+-WAIT_POLL, WAIT_BUDGET, GATE_STREAK = 60, 6 * 3600, 2
++WAIT_POLL, WAIT_BUDGET, GATE_STREAK = 60, 600, 2  # (v6c) total gate wait per run <= 600 s; then DEFERRED
+ SAMPLE, LANE_SCAN_PERIOD, SIGTERM_GRACE = 0.25, 1.0, 120
+ HOT_CPU_FRACTION, HOT_WINDOW = 0.5, 2.0
+@@ -202,5 +281,5 @@
+ NATIVE = {"cadical", "kissat", "drat-trim", "lrat-check", "lrat-trim", "cake_lpr", "dpr-trim", "glucose",
+           "minisat", "lingeling", "plingeling", "treengeling", "cryptominisat5", "kissat_mab", "dpr2pr"}
+-LANE_MARKERS = ("/moqls8-problem16", "/review/moqls8-")
++LANE_MARKERS = ("/moqls8-problem16", "/review/moqls8-", "/six-lane-20261018-96h/moqls8")  # (v6) + new lane
+ INFO_KEYS = (b"finished parsing", b"clauses in core", b"lemmas in core", b"RAT lemmas", b"verification time",
+              b"ERROR", b"empty clause", b"conflict", b"TIMEOUT", b"timeout", b"FAIL", b"failed")
+@@ -232,16 +311,22 @@
+ # (message to N8ReplayV5: drop allowance max(300,000,000, (free_last - 13.5e9)/12); sample quality unchanged),
+ # read from the parent's 10 s monitor file; fail closed. Controls keep the plain fresh gate.
+-MONITOR = REVIEW + "/disk-monitor-v1-20261018T0722-to-1810.jsonl"
+-STABLE_FREE_MIN = 13500000000 + 10 * MIB  # last monitor free >= 13.5e9 + 10 MiB growth (stricter than the 13.5e9)
++MONITOR = NEW_RUN + "/control/resource-observer-live-v3.jsonl"  # (v6) parent observer v3, 10 s, colon offsets
++STABILITY_ADDENDA = {  # (v6) unchanged rule (v1) and the monitor path (v2), re-hashed at preexec and run
++    NEW_RUN + "/control/resource-stability-addendum-v1.json":
++        "9aff1085dfa6c99b6c7e610925a00181f7e79201b50e5b6163e0d84045ef1fff",
++    NEW_RUN + "/control/resource-stability-addendum-v2.json":
++        "6ddac862481b215921fa51c4dac515b73a4ac6d5f50b313e66f076b65a1f2687",
++}
++STABLE_FREE_MIN = 13500000000 + 80 * MIB  # (v6) last monitor free >= 13.5e9 + the 80 MiB retained reservation
+ STABLE_RUNWAY_BASE, STABLE_RUNWAY_DIV = 13500000000, 12  # drop allowance (free_last - 13.5e9) / 12: 1 h of runway
+ STABLE_WINDOW, STABLE_MIN_DROP_CAP = 300.0, 300000000    # window 300 s; the allowance is never below 300,000,000
+ STABLE_MAX_AGE, STABLE_MIN_SAMPLES, STABLE_MIN_SPAN = 30.0, 25, 290.0
+ 
+-SCOPE = ("Parent replay of exact formulas only: the six strengthened P1 formulas (source P1 leaf + 126-clause M_s "
+-         "tail) and the twelve direct F_one leaves (P0-B1..B6, P1-B4, P1-B6, P2-C1..C4; parent binding RESULT "
+-         "65311ab0...28b0, MANIFEST 355b3380...fc74); CaDiCaL 3.0.1 -> named FIFO -> parent hashing/counting relay "
+-         "-> parent drat-trim, measured parent feeds. Results are exact-formula facts; the transfer of the "
+-         "strengthened results to the four open P1 templates needs separate parent acceptance of the normal form r2. "
+-         "It establishes no n=8 or Problem-16 conclusion and makes no theorem claim.")
++SCOPE = ("New-round (v6) replay of exact formulas only: the two remaining strengthened P1 formulas P1-B2.M2 and "
++         "P1-B3.M2 (source P1 leaf + 126-clause M_s tail, bound in BINDING.json 5e1116e8...f98c); CaDiCaL 3.0.1 -> "
++         "named FIFO -> parent hashing/counting relay -> parent drat-trim, measured feeds. Results are exact-formula "
++         "facts; their use for templates P1-B2/P1-B3 rests on the accepted normal form r2 (NF verdict 4748f023..., "
++         "erratum-1 da050a74...) and needs parent audit and the final composition verdict. It establishes no n=8 or "
++         "Problem-16 conclusion and makes no theorem claim.")
+ ACCEPTANCE = ("PASS iff all of: solver rc 20; solver status lines (log with only '\\r' removed, lines starting "
+               "with 's') exactly ['s UNSATISFIABLE']; checker rc 0; checker log with only '\\r' removed has a line "
+@@ -270,16 +355,19 @@
+              "or argv lies in the lane or a review/moqls8-* desk, excluding this desk's driver and children; python "
+              "counts as busy if its CPU use over a 2 s libproc window is >= 50%; lane RSS conservatively includes "
+-             "every such python, busy or not) and a fresh statvfs: launch only if lane busy + 2 <= 4, lane RSS (all "
++             "every such python, busy or not) and a fresh statvfs: launch only if lane busy + 4 <= 4 (v6c: this desk "
++             "counts cadical, drat-trim, its own driver and one transient helper), lane RSS (all "
+              "other lane processes, a worker GB pipeline included) + max(fresh measured desk RSS, projected; an "
+-             "unreadable desk RSS refuses) <= 11 GiB (parent M8 lane escalation "
+-             "b9886e24...09ec: one GA + one GB pipeline) and free >= 12,200,000,000 + 10 MiB. Stricter than the "
++             "unreadable desk RSS refuses) <= 11 GiB (v6: parent phys-1 pipeline resource amendment "
++             "dc1eaed0...b2a8: one scientific pipeline) and free >= 12,200,000,000 + 80 MiB. Stricter than the "
+              "brief: two consecutive "
+              "passing checks 60 s apart are required, so a launch never rides a transient gap of the priority "
+-             "worker pipeline. Otherwise sleep 60 s and re-check; total gate wait per run bounded by 6 h, then stop "
+-             "and report deferral. No launch at or after 2026-10-18 17:29:00 PDT (host clock; 60 s margin before "
+-             "the 17:30 cutoff). Formula and leaf launches additionally need the parent disk monitor "
+-             "(review/disk-monitor-v1-20261018T0722-to-1810.jsonl, 10 s cadence; rule amended by the parent at "
+-             "07:32 PDT) to show, from complete JSON lines with tz-aware strictly increasing timestamps: last sample "
+-             "0 <= age <= 30 s with free >= 13,500,000,000 + 10 MiB, >= 25 samples spanning >= 290 s within the last "
++             "worker pipeline. Otherwise sleep 60 s and re-check; total gate wait per run bounded by 600 s (v6c), then stop "
++             "and report deferral. No launch at or after 2026-10-22 18:59:33 PDT (host clock; chunk fit: spawn + backstop "
++             "+ 120 s reap + 60 s margin <= owned_compute_settled_by - 180 s), and (v6c) no native spawn unless driver "
++             "elapsed + the item's backstop <= 10620 s. Formula launches additionally need "
++             "the parent observer v3 "
++             "(control/resource-observer-live-v3.jsonl, 10 s cadence; rule: stability addendum v1 9aff1085..., path: "
++             "addendum v2 6ddac862...) to show, from complete JSON lines with tz-aware strictly increasing timestamps: last sample "
++             "0 <= age <= 30 s with free >= 13,500,000,000 + 80 MiB, >= 25 samples spanning >= 290 s within the last "
+              "300 s, and a max peak-to-later free drop over that window <= max(300,000,000, (free_last - "
+              "13,500,000,000) / 12); a malformed complete line, an absent, unreadable or stale monitor refuses the "
+@@ -287,6 +375,6 @@
+              "the plain fresh gate. Any recorded helper survivor refuses every launch. Projected peak = "
+              "formulas: max(1.5 x worker aggregate peak of the formula's source template leaf (the worker's 900 s "
+-             "attempt; no worker run of a strengthened formula exists), 4.6 GiB); leaves (the v2 rule): max(1.5 x "
+-             "worker aggregate peak of the leaf, 1.3 GiB for P0-B4 and P0-B5, else 4.6 GiB); self-tests 512 MiB.")
++             "attempt; no worker run of a strengthened formula exists), 9 GiB) (v6); leaves are refused by v6; "
++             "self-tests 512 MiB.")
+ STOPS = ("In flight, every 0.25 s: desk aggregate RSS (driver + live children, libproc; a live child unreadable twice "
+          "in a row is a guard failure) and free space; a scanner thread publishes lane scans every >= 1 s (helpers "
+@@ -294,11 +382,13 @@
+          "failure is latched or the reading is older than %.0f s, lane RSS (other lane processes, GB included, + "
+          "max(desk measured, desk reservation = projected)) > 11 GiB, desk aggregate > projected + 0.5 GiB, free < "
+-         "12,000,000,000, "
+-         "wall > %d + %d + 120 s, the host clock reaches 2026-10-18 17:57:00 PDT, the checker exits while the solver "
++         "12,000,000,000, a child-output sink overflow (> 32 MiB per log) or sink failure (v6c), other lane busy + 4 > 4 "
++         "(v6c), driver elapsed > 10620 s (v6c chunk deadline), "
++         "wall > %d s from the native spawn (600 s for controls; cadical -t %d, drat-trim -t %d), the host clock "
++         "reaches 2026-10-22 21:50:00 PDT, the checker exits while the solver "
+          "still runs, a solver spawn error, a helper survivor, any exception after the first fd, or the driver "
+          "receives SIGTERM (also checked immediately before each spawn, before gate success and before the "
+          "completion break, where a latched SIGTERM or scanner failure becomes the stop reason); then wait at most "
+          "120 s, never escalate; result UNKNOWN and the desk launches nothing more." % (
+-             HELPER_DEADLINE, STALE_SECONDS, SOLVER_SECONDS, CHECKER_SECONDS))
++             HELPER_DEADLINE, STALE_SECONDS, BACKSTOP, SOLVER_SECONDS, CHECKER_SECONDS))
+ 
+ 
+@@ -742,5 +832,5 @@
+         if time.time() >= NO_LAUNCH_AT:
+             budget["used"] += waited
+-            res.update({"launch": False, "cutoff": True, "stopped": "launch cutoff 2026-10-18 17:29:00 PDT reached",
++            res.update({"launch": False, "cutoff": True, "stopped": "launch cutoff 2026-10-22 18:59:33 PDT reached",
+                         "stopped_at": now()})
+             return res
+@@ -967,5 +1057,7 @@
+                       (V3_SCRIPT, V3_SCRIPT_SHA), (DIFF_V2_V3, DIFF_V2_V3_SHA), (V4_SCRIPT, V4_SCRIPT_SHA),
+                       (DIFF_V3_V4, DIFF_V3_V4_SHA), (V5B_SCRIPT, V5B_SCRIPT_SHA), (DIFF_V4_V5B, DIFF_V4_V5B_SHA),
+-                      (V5C_SCRIPT, V5C_SCRIPT_SHA), (DIFF_V5B_V5C, DIFF_V5B_V5C_SHA)):
++                      (V5C_SCRIPT, V5C_SCRIPT_SHA), (DIFF_V5B_V5C, DIFF_V5B_V5C_SHA),
++                      (DIFF_V5C_V5D, DIFF_V5C_V5D_SHA), (V5D_SCRIPT, V5D_SCRIPT_SHA),
++                      (DIFF_V5D_V5E, DIFF_V5D_V5E_SHA), (V5E_SCRIPT, V5E_SCRIPT_SHA)):
+         raw[path] = read_bytes(path)
+         if sha_bytes(raw[path]) != exp:
+@@ -1051,14 +1143,25 @@
+ 
+ def lane_decision():
+-    """(F4) The parent M8 lane escalation implemented here, re-hashed -> record; a changed decision file refuses."""
+-    got = sha_file(LANE_DECISION)
++    """(v6) The new-round parent phys-1 pipeline resource amendment, the new-round contract and the stability addenda,
++    re-hashed (and the amendment's fields checked) -> record; any change refuses."""
++    raw = read_bytes(LANE_DECISION)
++    got = sha_bytes(raw)
+     if got != LANE_DECISION_SHA:
+-        die("parent M8 lane decision sha256 %s != %s" % (got, LANE_DECISION_SHA))
++        die("parent phys-1 resource amendment sha256 %s != %s" % (got, LANE_DECISION_SHA))
++    a = json.loads(raw)
++    if (a.get("lane") != "phys-1" or a.get("per_lane_busy_processes") != LANE_BUSY_CAP
++            or a.get("rss_bytes_max") != LANE_RSS_LIMIT or a.get("maximum_simultaneous_scientific_pipelines") != 1):
++        die("parent phys-1 resource amendment fields differ from LANE_BUSY_CAP / LANE_RSS_LIMIT / one pipeline")
++    if sha_file(NEW_CONTRACT) != NEW_CONTRACT_SHA:
++        die("new-round contract sha256 differs")
++    for path, exp in sorted(STABILITY_ADDENDA.items()):
++        if sha_file(path) != exp:
++            die("stability addendum sha256 differs: " + path)
+     return {"path": LANE_DECISION, "sha256": got, "lane_rss_limit_bytes": LANE_RSS_LIMIT,
+-            "lane_busy_cap": LANE_BUSY_CAP,
+-            "rule": "at most one parent GA pipeline (this desk) and one worker GB pipeline; admission: all other lane "
+-                    "processes (GB included) + max(fresh measured desk RSS, reservation) <= 11 GiB and busy + 2 <= 4; "
+-                    "in "
+-                    "flight: other lane + max(desk measured, reservation) > 11 GiB stops this desk's pipeline"}
++            "lane_busy_cap": LANE_BUSY_CAP, "mine": MINE, "contract": {"path": NEW_CONTRACT, "sha256": NEW_CONTRACT_SHA},
++            "stability_addenda": [{"path": p, "sha256": s} for p, s in sorted(STABILITY_ADDENDA.items())],
++            "rule": "one scientific pipeline at a time; admission: all other lane processes + max(fresh measured desk "
++                    "RSS, reservation) <= 11 GiB and other busy + 3 (cadical, drat-trim, driver) <= 4; in flight: "
++                    "other lane + max(desk measured, reservation) > 11 GiB stops this desk's pipeline"}
+ 
+ 
+@@ -1287,4 +1390,123 @@
+ 
+ 
++def spawn_block(stop, backstop):
++    """(v6c F1/F2) Shared native-spawn predicate, checked immediately before EACH Popen -> reason or None: a latched
++    driver signal, the absolute launch cutoff, the native-work deadline, a missing driver start, or a driver chunk
++    in which elapsed + this item's backstop would exceed CHILD_END_LIMIT."""
++    if stop.get("signal"):
++        return "driver received %s" % stop["signal"]
++    if time.time() >= NO_LAUNCH_AT:
++        return "launch cutoff 2026-10-22 18:59:33 PDT reached"
++    if time.time() >= NATIVE_STOP_AT:
++        return "native-work deadline 2026-10-22 21:50:00 PDT reached"
++    if DRIVER_T0 is None or ABS_CHILD_END is None:
++        return "driver start time or absolute chunk end not recorded"
++    elapsed = time.monotonic() - DRIVER_T0
++    if elapsed + backstop > CHILD_END_LIMIT:
++        return "chunk fit refused: driver elapsed %.1f s + backstop %d s > %d s" % (elapsed, backstop, CHILD_END_LIMIT)
++    if time.time() + backstop > ABS_CHILD_END:  # (v6d G1) the launcher-recorded absolute child end
++        return "chunk fit refused: now + backstop %d s > absolute child end %.0f" % (backstop, ABS_CHILD_END)
++    return None
++
++
++def _acquire_pipe(fds, rname, wname):
++    """(v6d G3) os.pipe() with both ends registered; an end whose registration did not commit is closed here."""
++    got, first, second = None, False, False
++    try:
++        got = os.pipe()
++        fds.put(rname, got[0])
++        first = True
++        fds.put(wname, got[1])
++        second = True
++    finally:
++        if got is not None:
++            if not first:
++                os.close(got[0])
++            if not second:
++                os.close(got[1])
++
++
++def _acquire_dup(fds, name, fd_to_dup):
++    """(v6d G3) os.dup() registered under name; closed here if the registration did not commit."""
++    fd, committed = None, False
++    try:
++        fd = os.dup(fd_to_dup)
++        fds.put(name, fd)
++        committed = True
++    finally:
++        if fd is not None and not committed:
++            os.close(fd)
++
++
++def _sink(fds, src_name, dst_name, res):
++    """(v6c F4) Byte-capped child-output sink. All state exists before the claim; the child's output pipe read end
++    (src) and the duplicated exclusive log descriptor (dst) are claimed inside the try whose finally closes whatever
++    was claimed (an incomplete claim is an error). src is read to EOF in CHUNK reads; every byte is hashed and counted
++    (stream_*); bytes are written to the log only while it holds fewer than LOG_CAP_EACH bytes (log_* = exactly the
++    bytes written). After the cap (overflow True) or a log write error the sink keeps draining to EOF so the child
++    never blocks. ok = EOF seen, both claimed, no read/write/close error and no overflow."""
++    hs, hl = hashlib.sha256(), hashlib.sha256()
++    st = {"nin": 0, "nlog": 0, "log_open": True}
++    src = dst = None
++    close_errors = []
++    try:
++        src, dst = fds.take(src_name, dst_name)
++        res["fds_claimed"] = {"src": src is not None, "dst": dst is not None}
++        if src is None or dst is None:
++            res["ok"] = False
++            res["error"] = "descriptor(s) not handed over (taken by the cleanup first)"
++            return
++        while True:
++            b = os.read(src, CHUNK)
++            if not b:
++                res["eof_seen"] = True
++                break
++            hs.update(b)
++            st["nin"] += len(b)
++            room = LOG_CAP_EACH - st["nlog"]
++            if st["log_open"] and room > 0:
++                mv, off = memoryview(b)[:room], 0
++                while off < len(mv):
++                    try:
++                        n = os.write(dst, mv[off:])
++                    except OSError as e:
++                        res["log_write_error"] = repr(e)
++                        st["log_open"] = False
++                        break
++                    hl.update(mv[off:off + n])
++                    off += n
++                    st["nlog"] += n
++            if st["nin"] > LOG_CAP_EACH:
++                res["overflow"] = True
++        res["ok"] = (res.get("eof_seen") is True and not res.get("overflow") and "log_write_error" not in res)
++    except Exception as e:  # recorded, never hidden
++        res["ok"] = False
++        res["error"] = repr(e)
++    finally:  # (v6d G2) independently protected closes: dst is attempted even if closing src fails
++        try:
++            if src is not None:
++                try:
++                    os.close(src)
++                except OSError as e:
++                    close_errors.append("src: %r" % e)
++        finally:
++            if dst is not None:
++                try:
++                    os.close(dst)
++                except OSError as e:
++                    close_errors.append("dst: %r" % e)
++        if close_errors:
++            res["close_errors"] = close_errors
++            res["ok"] = False
++        res["stream_bytes"], res["stream_sha256"] = st["nin"], hs.hexdigest()
++        res["log_bytes"], res["log_sha256"] = st["nlog"], hl.hexdigest()
++
++
++def _new_sink(fds, src_name, dst_name):
++    """(v6c) -> (thread, res), NOT started (the _new_writer pattern)."""
++    res = {"ok": False, "src": src_name, "dst": dst_name, "cap_bytes": LOG_CAP_EACH}
++    return threading.Thread(target=_sink, args=(fds, src_name, dst_name, res), daemon=True), res
++
++
+ def _lines(b):
+     text = b.replace(b"\r", b"")
+@@ -1304,5 +1526,6 @@
+ 
+ 
+-def pipeline(label, solver_parts, checker_parts, projected, log, stop, relay_mode="plain", early_close=False):
++def pipeline(label, solver_parts, checker_parts, projected, log, stop, relay_mode="plain", early_close=False,
++             backstop=BACKSTOP):
+     fifo = os.path.join(DESK, "fifo", label + ".drat.fifo")
+     slog = os.path.join(DESK, "logs", label + ".solver.log")
+@@ -1327,11 +1550,12 @@
+            "cwd": {"solver": rel(stmp), "checker": rel(ctmp)}, "env": {"solver": senv, "checker": cenv},
+            "projected_peak_bytes": projected, "desk_stop_bytes": projected + DESK_MARGIN,
+-           "lane_stop_bytes": STOP_LANE_RSS, "free_floor_bytes": FLOOR, "wall_backstop_seconds": BACKSTOP,
++           "lane_stop_bytes": STOP_LANE_RSS, "free_floor_bytes": FLOOR, "wall_backstop_seconds": backstop,
++           "child_end_limit_seconds": CHILD_END_LIMIT, "log_cap_each_bytes": LOG_CAP_EACH,
+            "stale_lane_reading_seconds": STALE_SECONDS, "stops": STOPS}
+-    fds, procs, done, writers, events, rss_fail = Fds(), {}, {}, {}, [], {}
++    fds, procs, done, writers, events, rss_fail, sinks = Fds(), {}, {}, {}, [], {}, {}
+     ev_solver, ev_checker = threading.Event(), threading.Event()
+     relay, scanner = None, Scanner()
+     peak_desk = peak_lane = peak_other = other_rss = peak_lane_reserved = 0
+-    max_other_busy = 0
++    max_other_busy = cur_busy = 0
+     min_free = None
+     reason, term_at, grace_exceeded = None, None, False
+@@ -1383,12 +1607,16 @@
+                 fds.put(rname, r)
+                 fds.put(wname, w)
+-            if stop.get("signal"):  # latched SIGTERM: no spawn
++            _acquire_pipe(fds, "cor", "cow")  # (v6c F4, v6d G3) checker output pipe
++            _acquire_dup(fds, "clogw", cl.fileno())  # (v6c F4, v6d G3) the checker sink's own log descriptor
++            why = spawn_block(stop, backstop)  # (v6c F1/F2) immediately before the checker Popen
++            if why is not None:  # latched SIGTERM, cutoff or chunk fit: no spawn
+                 rec["stop_latched_before_spawn"] = "checker"
+-                reason = "driver received %s before the checker spawn" % stop["signal"]
++                reason = "%s before the checker spawn" % why
+             else:
+                 try:  # (A) registered in procs the moment Popen returns
+                     procs["checker"] = subprocess.Popen(
+                         [DRAT, "/dev/fd/%d" % fds.get("ccr"), "-i", "-t", str(CHECKER_SECONDS)],
+-                        stdin=fds.get("cpr"), stdout=cl, stderr=subprocess.STDOUT, pass_fds=(fds.get("ccr"),),
++                        stdin=fds.get("cpr"), stdout=fds.get("cow"), stderr=subprocess.STDOUT,
++                        pass_fds=(fds.get("ccr"),),
+                         cwd=ctmp, env=cenv)
+                 except OSError as e:  # (F) a spawn error is a stop reason; nothing more is launched
+@@ -1399,4 +1627,7 @@
+                 close_fd("cpr")
+                 close_fd("ccr")
++                close_fd("cow")  # (v6c) only drat-trim holds the write end: the sink sees EOF when it exits
++                sinks["checker"] = _new_sink(fds, "cor", "clogw")  # registered before start()
++                sinks["checker"][0].start()
+                 # (A) 'fifo_read', 'cpw' and 'ccw' stay in fds until the started threads claim them; (F1) each
+                 # handle is registered before its start(), so an interrupted start() is still joined/reported
+@@ -1408,11 +1639,14 @@
+                 fds.put("scr", r)
+                 fds.put("scw", w)
+-                if stop.get("signal"):  # latched SIGTERM: no solver spawn; the checker is stopped below
++                _acquire_pipe(fds, "sor", "sow")  # (v6c F4, v6d G3) solver output pipe
++                _acquire_dup(fds, "slogw", sl.fileno())  # the solver sink's own log descriptor
++                why = spawn_block(stop, backstop)  # (v6c F1/F2) immediately before the solver Popen
++                if why is not None:  # no solver spawn; the checker is stopped below
+                     rec["stop_latched_before_spawn"] = "solver"
+-                    reason = "driver received %s before the solver spawn" % stop["signal"]
++                    reason = "%s before the solver spawn" % why
+                 else:
+                     try:  # (A) registered in procs the moment Popen returns, before close_fd('scr') or anything else
+                         procs["solver"] = subprocess.Popen(solver_argv + ["/dev/fd/%d" % fds.get("scr"), fifo],
+-                                                           stdin=subprocess.DEVNULL, stdout=sl,
++                                                           stdin=subprocess.DEVNULL, stdout=fds.get("sow"),
+                                                            stderr=subprocess.STDOUT, pass_fds=(fds.get("scr"),),
+                                                            cwd=stmp, env=senv)
+@@ -1423,4 +1657,7 @@
+                     rec["solver_pid"] = procs["solver"].pid
+                     close_fd("scr")
++                    close_fd("sow")  # (v6c) only cadical holds the write end
++                    sinks["solver"] = _new_sink(fds, "sor", "slogw")  # registered before start()
++                    sinks["solver"][0].start()
+                     writers["solver_feed"] = _new_writer(fds, "scw", solver_parts)  # 'scw' claimed by the thread
+                     writers["solver_feed"][0].start()
+@@ -1493,4 +1730,5 @@
+                                     busy += 1
+                         prev_cpu, prev_mono = cpu, mono
++                        cur_busy = busy  # (v6c F3) enforced below
+                         max_other_busy = max(max_other_busy, busy)
+                         peak_other = max(peak_other, other_rss)
+@@ -1513,8 +1751,17 @@
+                     elif fb < FLOOR:
+                         reason = "free bytes %d < in-flight floor %d" % (fb, FLOOR)
+-                    elif tnow - t0 > BACKSTOP:
+-                        reason = "wall %.1f s > solver+checker+120 s (%d s)" % (tnow - t0, BACKSTOP)
++                    elif any(s[1].get("overflow") or s[1].get("error") or s[1].get("log_write_error")
++                             or s[1].get("close_errors") for s in sinks.values()):  # (v6c F4, v6d G2)
++                        reason = "child-output sink overflow (> %d B) or failure" % LOG_CAP_EACH
++                    elif cur_busy + MINE > LANE_BUSY_CAP:  # (v6c F3) the busy cap is enforced in flight too
++                        reason = "lane busy %d other + %d > %d in flight" % (cur_busy, MINE, LANE_BUSY_CAP)
++                    elif DRIVER_T0 is None or time.monotonic() - DRIVER_T0 > CHILD_END_LIMIT:  # (v6c F2)
++                        reason = "driver chunk deadline: driver elapsed > %d s" % CHILD_END_LIMIT
++                    elif ABS_CHILD_END is None or time.time() > ABS_CHILD_END:  # (v6d G1)
++                        reason = "absolute child end %s reached" % ABS_CHILD_END
++                    elif tnow - t0 > backstop:
++                        reason = "wall %.1f s > backstop (%d s)" % (tnow - t0, backstop)
+                     elif time.time() >= NATIVE_STOP_AT:
+-                        reason = "host clock reached the native-work deadline 2026-10-18 17:57:00 PDT"
++                        reason = "host clock reached the native-work deadline 2026-10-22 21:50:00 PDT"
+                     elif "checker" in done and "solver" in procs and "solver" not in done:
+                         reason = "checker exited (rc %s) while the solver was still running" % done["checker"]["rc"]
+@@ -1535,4 +1782,6 @@
+             if reason is None:
+                 reason = "exception in pipeline: " + rec["exception"]
++            if term_at is None:  # (v6c F5) one settlement deadline from the FIRST SIGTERM
++                term_at = time.monotonic()
+             term_live(reason)
+             try:
+@@ -1540,5 +1789,5 @@
+             except Exception as e3:  # recorded, never hidden (e.g. a full disk refusing the log line)
+                 events.append({"at": now(), "event": "driver log write failed", "error": repr(e3)})
+-            t_end = time.monotonic() + SIGTERM_GRACE
++            t_end = term_at + SIGTERM_GRACE
+             while any(n not in done for n in procs) and time.monotonic() < t_end:
+                 try:
+@@ -1574,4 +1823,9 @@
+         relay[1]["thread_started"] = relay[0].ident is not None
+         relay[1]["thread_finished"] = relay[0].ident is not None and not relay[0].is_alive()
++    for name, (t, res) in sinks.items():  # (v6c F4) the byte-capped child-output sinks
++        if t.ident is not None:
++            t.join(5.0 if grace_exceeded else 30.0)
++        res["thread_started"] = t.ident is not None
++        res["thread_finished"] = t.ident is not None and not t.is_alive()
+     # (D) latched state read after every join: stop, scanner and threads (evaluate() vetoes PASS on any of them)
+     rec["lane_scanner"] = {"started": scan_started is not None, "scans": scanner.scans, "failures": scanner.failures,
+@@ -1580,5 +1834,7 @@
+                       "relay_started": relay is not None and relay[1]["thread_started"],
+                       "unfinished": ([n for n, (_t, r) in sorted(writers.items()) if not r["thread_finished"]]
+-                                     + (["relay"] if relay is not None and not relay[1]["thread_finished"] else []))}
++                                     + (["relay"] if relay is not None and not relay[1]["thread_finished"] else [])
++                                     + ["sink_" + n for n, (_t, r) in sorted(sinks.items())
++                                        if not r["thread_finished"]])}
+     rec["stop_latched_during_pipeline"] = stop.get("signal")
+     rec["helper_survivors"] = list(HELPER_SURVIVORS)
+@@ -1603,4 +1859,10 @@
+     rec["max_lane_other_busy_in_flight"] = max_other_busy
+     rec["min_free_bytes_in_flight"] = min_free
++    rec["output_sinks"] = {n: dict(r) for n, (_t, r) in sinks.items()}  # (v6c F4)
++    for n in ("checker", "solver"):  # (v6c F4) terminal retained-output accounting: an unclean sink is a stop
++        r = sinks[n][1] if n in sinks else {}
++        if n in procs and reason is None and not (r.get("ok") is True and r.get("thread_finished") is True):
++            reason = "%s output sink not clean at completion: %s" % (n, {k: r.get(k) for k in (
++                "ok", "overflow", "error", "log_write_error", "eof_seen", "thread_finished")})
+     rec["safety_stop_reason"] = reason
+     rec["sigterm_grace_exceeded"] = grace_exceeded
+@@ -1767,5 +2029,19 @@
+ 
+ # --- subcommands
++def check_desk_tree():
++    """(v6c) Physical write containment: DESK and its fixed output subdirectories must be real directories (lstat
++    S_ISDIR, no symlink anywhere: realpath equal to the path, which also excludes symlinked ancestors), so every
++    exclusively created output under them (and every tmp/<label> directory this script creates) stays in the lane."""
++    for p in [DESK] + [os.path.join(DESK, d) for d in ("receipts", "logs", "fifo", "tmp", "runs")]:
++        try:
++            st_ = os.lstat(p)
++        except OSError as e:
++            die("desk directory missing: %s (%r)" % (p, e))
++        if not stat.S_ISDIR(st_.st_mode) or os.path.realpath(p) != p:
++            die("desk path is not a real directory inside the lane: " + p)
++
++
+ def check_env():
++    check_desk_tree()  # (v6c)
+     if os.environ.get("TMPDIR") != TMP + "/":
+         die("TMPDIR must be %s/" % TMP)
+@@ -1806,16 +2082,16 @@
+             if key not in FORMULAS:
+                 problems.append("formula %s is not one of the six strengthened formulas" % key)
++            elif key not in V6_FORMULAS:  # (v6) the other four are parent-qualified
++                problems.append("formula %s is not admitted by v6 (only %s)" % (key, ", ".join(V6_FORMULAS)))
+             elif it.get("bound_cnf_sha256") != FORMULAS[key][2]:
+                 problems.append("formula %s bound hash differs" % key)
+-        elif kind == "leaf":
+-            if key not in DIRECT_LEAVES:
+-                problems.append("leaf %s is not one of the twelve direct F_one leaves" % key)
+-            elif (it.get("parent_binding_result_sha256") != BIND_RESULT_SHA
+-                  or it.get("manifest_sha256") != PINS[MANIFEST_REL]):
+-                problems.append("leaf %s binding fields differ" % key)
++        elif kind == "leaf":  # (v6) all twelve direct leaves are parent-qualified
++            problems.append("leaf %s refused: v6 admits no direct leaf" % key)
+         else:
+             problems.append("unknown item kind %r" % (kind,))
+     if len(kinds) != 1:
+         problems.append("a PRE-EXEC holds exactly one item kind, found %s" % sorted(kinds))
++    if "formula" in kinds and len(items) != 1:  # (v6c F2) one formula per run: the driver chunk fits one backstop
++        problems.append("a formula PRE-EXEC holds exactly one formula (v6c chunk fit)")
+     return problems
+ 
+@@ -1866,10 +2142,10 @@
+         prefix_n, prefix_sha = int(specs[1]), specs[2]
+         specs = specs[3:]
+-    if not out.startswith(DESK + "/") or os.path.lexists(out):
+-        die("pre-exec path must be new and inside the desk")
++    if os.path.dirname(out) != DESK or os.path.lexists(out):  # (v6c) directly in the verified real DESK
++        die("pre-exec path must be new and directly inside the desk")
+     started = now()
+     ctx = load_strengthened(load_inputs(print), print)
+     dtext = read_bytes(DIFF)
+-    if ("replay_v5e.py sha256 %s" % sha_file(SCRIPT)).encode() not in dtext:
++    if ("replay_v6d.py sha256 %s" % sha_file(SCRIPT)).encode() not in dtext:
+         die("the recorded diff does not name this script's sha256")
+     worker = worker_prefix(prefix_n, prefix_sha)
+@@ -1922,5 +2198,5 @@
+             w = worker["records"].get(f["template"])
+             peak = w.get("aggregate_peak_rss_bytes") if w else None
+-            projected = max(3 * peak // 2 if peak else 0, FLOOR_HIGH)
++            projected = max(3 * peak // 2 if peak else 0, FORMULA_FLOOR)  # (v6)
+             items.append({"item": spec, "kind": kind, "id": name, "source_template": f["template"],
+                           "monomial_square": f["square"],
+@@ -1933,5 +2209,5 @@
+                           "worker_source_template_record": w, "projected_peak_bytes": projected,
+                           "projected_rule": "max(1.5 x worker aggregate peak %s of source template %s, floor %d)"
+-                                            % (peak, f["template"], FLOOR_HIGH),
++                                            % (peak, f["template"], FORMULA_FLOOR),
+                           "acceptance": ACCEPTANCE})
+             continue
+@@ -1988,5 +2264,8 @@
+                       "flags": "-I -B"},
+            "binaries": binaries, "inputs": ctx["info"], "inputs_strengthened": ctx["strong_info"],
+-           "provenance": {"derived_from": V5C_SCRIPT, "derived_from_sha256": V5C_SCRIPT_SHA, "diff": rel(DIFF),
++           "provenance": {"derived_from": V5E_SCRIPT, "derived_from_sha256": V5E_SCRIPT_SHA, "diff": rel(DIFF),
++                          "v5d_script": V5D_SCRIPT, "v5d_script_sha256": V5D_SCRIPT_SHA,
++                          "v5d_to_v5e_diff": DIFF_V5D_V5E, "v5d_to_v5e_diff_sha256": DIFF_V5D_V5E_SHA,
++                          "v5c_to_v5d_diff": DIFF_V5C_V5D, "v5c_to_v5d_diff_sha256": DIFF_V5C_V5D_SHA,
+                           "diff_sha256": sha_bytes(dtext), "v5b_script": V5B_SCRIPT,
+                           "v5b_script_sha256": V5B_SCRIPT_SHA,
+@@ -2003,5 +2282,6 @@
+                           "binding": rel(BINDING), "binding_sha256": BINDING_SHA,
+                           "unfrozen_draft_left_untouched": "scripts/replay_v5.py c1521f95...cc4f",
+-                          "stability_rule": "parent amendment 07:32 PDT (message to N8ReplayV5)"},
++                          "stability_rule": "unchanged numbers (old parent amendment 07:32 PDT); new-round addenda "
++                                            "v1 rule 9aff1085... and v2 observer-v3 path 6ddac862..."},
+            "run_kind": {"selftest": "controls", "formula": "formulas", "leaf": "leaves"}[next(iter(kinds))],
+            "admission_controls": admission,
+@@ -2015,6 +2295,9 @@
+                       "wait_poll_seconds": WAIT_POLL, "wait_budget_seconds": WAIT_BUDGET,
+                       "gate_consecutive_passes": GATE_STREAK, "sigterm_grace_seconds": SIGTERM_GRACE,
+-                      "projected_retained_growth_bytes": 10 * MIB, "no_launch_at": "2026-10-18T17:29:00-07:00",
+-                      "native_stop_at": "2026-10-18T17:57:00-07:00", "monitor": rel(MONITOR),
++                      "projected_retained_growth_bytes": RETAINED_RESERVATION,
++                      "chunk_cap_seconds": CHUNK_CAP_SECONDS, "no_launch_at": "2026-10-22T18:59:33-07:00",
++                      "child_end_limit_seconds": CHILD_END_LIMIT, "selftest_backstop_seconds": SELFTEST_BACKSTOP,
++                      "log_cap_each_bytes": LOG_CAP_EACH,
++                      "native_stop_at": "2026-10-22T21:50:00-07:00", "monitor": MONITOR,
+                       "stable_free_min_bytes": STABLE_FREE_MIN, "stable_window_seconds": STABLE_WINDOW,
+                       "stable_drop_allowance": "max(%d, (free_last - %d) // %d)"
+@@ -2036,5 +2319,5 @@
+                          "verdict stops the run; after a SAT report, a floor/safety stop, a spawn error, an "
+                          "exception, a driver SIGTERM, a scanner failure, an unfinished thread, a live scanner, a "
+-                         "helper survivor or the 17:29 PDT launch cutoff nothing more is launched; any other UNKNOWN "
++                         "helper survivor or the 2026-10-22 18:59:33 PDT launch cutoff nothing more is launched; any other UNKNOWN "
+                          "continues with the next item",
+            "fresh_check": {"free_bytes": fb, "lane_other_busy": busy, "lane_other_rss_bytes": other,
+@@ -2052,5 +2335,5 @@
+     (realpath of sys.executable), cadical and drat-trim against the pins and the PRE-EXEC record; for formulas and
+     leaves re-run validate_controls() and compare the identities with the PRE-EXEC admission record. A latched
+-    SIGTERM, a helper survivor or the 17:29 cutoff found here also refuses. -> record (stored in the receipt as
++    SIGTERM, a helper survivor or the launch cutoff found here also refuses. -> record (stored in the receipt as
+     post_gate_identity); ok False refuses the launch and stops the desk."""
+     t0 = time.monotonic()
+@@ -2079,5 +2362,5 @@
+         problems.append("helper survivor(s) recorded")
+     if time.time() >= NO_LAUNCH_AT:
+-        problems.append("launch cutoff 2026-10-18 17:29:00 PDT reached after gate success")
++        problems.append("launch cutoff 2026-10-22 18:59:33 PDT reached after gate success")
+     out.update(ok=not problems, problems=problems, seconds=round(time.monotonic() - t0, 3))
+     return out
+@@ -2085,4 +2368,15 @@
+ 
+ def cmd_run(argv):
++    global DRIVER_T0, ABS_CHILD_END
++    DRIVER_T0 = time.monotonic()  # (v6c F2) the driver chunk starts here, before any input load or gate
++    wall_t0 = time.time()
++    try:  # (v6d G1) the launcher's recorded absolute child end; refuse anything else
++        given = float(os.environ.get(CHUNK_END_ENV, "nan"))
++    except ValueError:
++        given = float("nan")
++    if not (given == given and wall_t0 < given <= wall_t0 + CHILD_END_LIMIT):
++        die("%s must be the launcher's absolute chunk end: finite, in the future, at most %d s ahead (got %r)"
++            % (CHUNK_END_ENV, CHILD_END_LIMIT, os.environ.get(CHUNK_END_ENV)))
++    ABS_CHILD_END = min(given, wall_t0 + CHILD_END_LIMIT)
+     check_env()
+     if len(argv) != 1:
+@@ -2116,4 +2410,6 @@
+     signal.signal(signal.SIGTERM, on_term)
+     summary = {"schema": "moqls8-strengthened-parent-replay-run/4", "run_tag": runtag, "started_at": now(),
++               "absolute_child_end_epoch": ABS_CHILD_END, "chunk_end_env": os.environ.get(CHUNK_END_ENV),
++               "child_end_limit_seconds": CHILD_END_LIMIT,
+                "pre_exec": {"path": rel(pre_path), "sha256": pre_sha}, "script_sha256": script_sha,
+                "python": {"realpath": py, "sha256": pre["python"]["sha256"]},
+@@ -2203,5 +2499,5 @@
+             summary["events"].append(ev)
+             entry.update({"status": "DEFERRED" if g.get("deferred") else "STOPPED", "gate": g})
+-            summary["stopped_reason"] = ("total gate wait budget of 6 h exhausted at %s" % label
++            summary["stopped_reason"] = ("total gate wait budget of 300 s (v6) exhausted at %s" % label
+                                          if g.get("deferred") else g.get("stopped"))
+             log("%s %s" % (entry["status"], label))
+@@ -2216,5 +2512,6 @@
+         try:
+             rec = pipeline(label, s_parts, c_parts, projected, log, stop, relay_mode=it.get("relay_mode", "plain"),
+-                           early_close=bool(it.get("early_close_control")))
++                           early_close=bool(it.get("early_close_control")),
++                           backstop=SELFTEST_BACKSTOP if it["kind"] == "selftest" else BACKSTOP)  # (v6c)
+         except BaseException as e:  # pipeline() reaps its own children; this records what escaped its scope
+             rec = {"label": label, "exception": "%s: %s" % (type(e).__name__, e),
+@@ -2366,6 +2663,7 @@
+         die("assemble OUT PREEXEC...")
+     out = os.path.abspath(argv[0])
+-    if not out.startswith(DESK + "/") or os.path.lexists(out):
+-        die("result path must be new and inside the desk")
++    check_desk_tree()  # (v6c)
++    if os.path.dirname(out) != DESK or os.path.lexists(out):  # (v6c) directly in the verified real DESK
++        die("result path must be new and directly inside the desk")
+     pres, labels = [], {}
+     for p in argv[1:]:
+
+===== PART 2: replay_v6c.py -> replay_v6d.py =====
+--- code/replay_v6c.py
++++ code/replay_v6d.py
+@@ -1,7 +1,16 @@
+ #!/usr/bin/env python3
+-"""MOQLS(8) n8 GA replay desk v6c: new-round (96-hour continuation, phys-1 lane) copy of the reviewed parent
++"""MOQLS(8) n8 GA replay desk v6d: new-round (96-hour continuation, phys-1 lane) copy of the reviewed parent
+ replay_v5e.py (a60a924b306d591631cb09da69ceb41f8d3da33edbe67ede06b00e41a2dfbcdb) for the two remaining strengthened GA
+-formulas P1-B2.M2 and P1-B3.M2 only. code/replay_v6.py (unreviewed draft) and code/replay_v6b.py (Codex delta review
+-review/ga-v6b-delta-review-v1: HOLD, five MAJOR + one MINOR) were never run and are kept unchanged.
++formulas P1-B2.M2 and P1-B3.M2 only. code/replay_v6.py (unreviewed draft), code/replay_v6b.py (review HOLD) and
++code/replay_v6c.py (re-review review/ga-v6c-delta-review-v1: HOLD, launcher MAJORs + sink MINORs) were never run and
++are kept unchanged.
++
++V6d = v6c + the v6c re-review repairs: (G1) absolute wall-clock chunk end: the launcher passes
++MOQLS8_CHUNK_END_EPOCH (its own pre-spawn wall clock + CHILD_END_LIMIT) and records it; 'run' refuses a missing,
++non-finite, past or too-distant value; ABS_CHILD_END = min(that value, wall clock at DRIVER_T0 + CHILD_END_LIMIT) is
++enforced next to the monotonic bound, both before every native spawn (time.time() + backstop <= ABS_CHILD_END) and in
++flight (SIGTERM of every live child once time.time() > ABS_CHILD_END); (G2) the sinks' close errors are part of the
++in-flight veto and the sink closes its two descriptors in independently protected steps; (G3) the new pipe and dup
++descriptors are acquired with rollback (no raw descriptor exists outside the registry if a registration fails).
+ 
+ V6c = replay_v5e.py + code/DIFF-replay_v5e-to-v6c.txt (lane ContinueMOQLS8). Relative to v6b it repairs the v6b
+@@ -96,7 +105,7 @@
+ leaf launches also need the parent disk-monitor stability rule (amended 07:32 PDT); controls keep the plain gate.
+ Usage (/usr/bin/python3 -I -B, environment TMPDIR=<desk>/tmp/):
+-  replay_v6c.py preexec OUT [--worker-prefix N SHA] ITEM...    ITEM = selftest:NAME | formula:P1-B2.M2 | formula:P1-B3.M2
+-  replay_v6c.py run PREEXEC
+-  replay_v6c.py assemble OUT PREEXEC...
++  replay_v6d.py preexec OUT [--worker-prefix N SHA] ITEM...    ITEM = selftest:NAME | formula:P1-B2.M2 | formula:P1-B3.M2
++  replay_v6d.py run PREEXEC       (environment MOQLS8_CHUNK_END_EPOCH from the launcher; required)
++  replay_v6d.py assemble OUT PREEXEC...
+ """
+ import ctypes
+@@ -126,8 +135,8 @@
+ NEW_RUN = ROOT + "/institute/runs/six-lane-2026-10-18-96h"  # (v6) new-round run (parent-owned control files)
+ NEW_LANE = ROOT + "/physics/evidence/six-lane-20261018-96h/moqls8"  # (v6) new-round phys-1 lane
+-DESK = NEW_LANE + "/evidence/ga-replay-v6c"  # (v6) every output of this version
++DESK = NEW_LANE + "/evidence/ga-replay-v6d"  # (v6) every output of this version
+ SCRIPT = os.path.realpath(__file__)
+-SCRIPT_REL = "code/replay_v6c.py"  # (v6) relative to NEW_LANE
+-LABEL_PREFIX = "v6c-"  # every v6c receipt/log/FIFO/TMPDIR name
++SCRIPT_REL = "code/replay_v6d.py"  # (v6) relative to NEW_LANE
++LABEL_PREFIX = "v6d-"  # every v6d receipt/log/FIFO/TMPDIR name
+ TMP = DESK + "/tmp"
+ 
+@@ -197,5 +206,5 @@
+ V5E_SCRIPT = OLD_DESK + "/scripts/replay_v5e.py"
+ V5E_SCRIPT_SHA = "a60a924b306d591631cb09da69ceb41f8d3da33edbe67ede06b00e41a2dfbcdb"
+-DIFF = NEW_LANE + "/code/DIFF-replay_v5e-to-v6c.txt"  # (v6) names this script's sha256
++DIFF = NEW_LANE + "/code/DIFF-replay_v5e-to-v6d.txt"  # (v6) names this script's sha256
+ NF_R2 = LANE + "/review/P1_COLUMN0_BOOLEAN_NORMAL_FORM.r2.md"
+ NF_R2_SHA = "8ae0ac01de7ea5883111e8dcc4f84246813d8599b1e8af782e0498104a449e8f"
+@@ -242,4 +251,6 @@
+ CHILD_END_LIMIT = CHUNK_CAP_SECONDS - 120 - 60  # (v6c) 10620 s after DRIVER_T0: no child may run past it
+ DRIVER_T0 = None  # (v6c) time.monotonic() at the start of cmd_run, set once
++ABS_CHILD_END = None  # (v6d G1) absolute wall-clock child end (epoch seconds), set once in cmd_run
++CHUNK_END_ENV = "MOQLS8_CHUNK_END_EPOCH"  # (v6d G1) supplied by code/launch_ga_v6d.py
+ LOG_CAP_EACH = 32 << 20  # (v6c) byte-capped sink: at most 32 MiB of each child's output reach its log file
+ RETAINED_RESERVATION = 80 << 20  # (v6) per-run retained output reservation (2 x 32 MiB logs + receipts/summaries)
+@@ -1389,10 +1400,41 @@
+     if time.time() >= NATIVE_STOP_AT:
+         return "native-work deadline 2026-10-22 21:50:00 PDT reached"
+-    if DRIVER_T0 is None:
+-        return "driver start time not recorded"
++    if DRIVER_T0 is None or ABS_CHILD_END is None:
++        return "driver start time or absolute chunk end not recorded"
+     elapsed = time.monotonic() - DRIVER_T0
+     if elapsed + backstop > CHILD_END_LIMIT:
+         return "chunk fit refused: driver elapsed %.1f s + backstop %d s > %d s" % (elapsed, backstop, CHILD_END_LIMIT)
++    if time.time() + backstop > ABS_CHILD_END:  # (v6d G1) the launcher-recorded absolute child end
++        return "chunk fit refused: now + backstop %d s > absolute child end %.0f" % (backstop, ABS_CHILD_END)
+     return None
++
++
++def _acquire_pipe(fds, rname, wname):
++    """(v6d G3) os.pipe() with both ends registered; an end whose registration did not commit is closed here."""
++    got, first, second = None, False, False
++    try:
++        got = os.pipe()
++        fds.put(rname, got[0])
++        first = True
++        fds.put(wname, got[1])
++        second = True
++    finally:
++        if got is not None:
++            if not first:
++                os.close(got[0])
++            if not second:
++                os.close(got[1])
++
++
++def _acquire_dup(fds, name, fd_to_dup):
++    """(v6d G3) os.dup() registered under name; closed here if the registration did not commit."""
++    fd, committed = None, False
++    try:
++        fd = os.dup(fd_to_dup)
++        fds.put(name, fd)
++        committed = True
++    finally:
++        if fd is not None and not committed:
++            os.close(fd)
+ 
+ 
+@@ -1441,11 +1483,17 @@
+         res["ok"] = False
+         res["error"] = repr(e)
+-    finally:
+-        for fd in (src, dst):
+-            if fd is not None:
++    finally:  # (v6d G2) independently protected closes: dst is attempted even if closing src fails
++        try:
++            if src is not None:
+                 try:
+-                    os.close(fd)
++                    os.close(src)
+                 except OSError as e:
+-                    close_errors.append(repr(e))
++                    close_errors.append("src: %r" % e)
++        finally:
++            if dst is not None:
++                try:
++                    os.close(dst)
++                except OSError as e:
++                    close_errors.append("dst: %r" % e)
+         if close_errors:
+             res["close_errors"] = close_errors
+@@ -1555,9 +1603,10 @@
+                         fcntl.fcntl(fds.get("fifo_read"), fcntl.F_GETFL) & ~os.O_NONBLOCK)
+             fds.put("keepalive", os.open(fifo, os.O_WRONLY))
+-            for rname, wname in (("ccr", "ccw"), ("cpr", "cpw"), ("cor", "cow")):  # (v6c) + checker output pipe
++            for rname, wname in (("ccr", "ccw"), ("cpr", "cpw")):
+                 r, w = os.pipe()
+                 fds.put(rname, r)
+                 fds.put(wname, w)
+-            fds.put("clogw", os.dup(cl.fileno()))  # (v6c F4) the checker sink's own log descriptor
++            _acquire_pipe(fds, "cor", "cow")  # (v6c F4, v6d G3) checker output pipe
++            _acquire_dup(fds, "clogw", cl.fileno())  # (v6c F4, v6d G3) the checker sink's own log descriptor
+             why = spawn_block(stop, backstop)  # (v6c F1/F2) immediately before the checker Popen
+             if why is not None:  # latched SIGTERM, cutoff or chunk fit: no spawn
+@@ -1590,8 +1639,6 @@
+                 fds.put("scr", r)
+                 fds.put("scw", w)
+-                r, w = os.pipe()  # (v6c F4) solver output pipe and the solver sink's own log descriptor
+-                fds.put("sor", r)
+-                fds.put("sow", w)
+-                fds.put("slogw", os.dup(sl.fileno()))
++                _acquire_pipe(fds, "sor", "sow")  # (v6c F4, v6d G3) solver output pipe
++                _acquire_dup(fds, "slogw", sl.fileno())  # the solver sink's own log descriptor
+                 why = spawn_block(stop, backstop)  # (v6c F1/F2) immediately before the solver Popen
+                 if why is not None:  # no solver spawn; the checker is stopped below
+@@ -1705,5 +1752,5 @@
+                         reason = "free bytes %d < in-flight floor %d" % (fb, FLOOR)
+                     elif any(s[1].get("overflow") or s[1].get("error") or s[1].get("log_write_error")
+-                             for s in sinks.values()):  # (v6c F4)
++                             or s[1].get("close_errors") for s in sinks.values()):  # (v6c F4, v6d G2)
+                         reason = "child-output sink overflow (> %d B) or failure" % LOG_CAP_EACH
+                     elif cur_busy + MINE > LANE_BUSY_CAP:  # (v6c F3) the busy cap is enforced in flight too
+@@ -1711,4 +1758,6 @@
+                     elif DRIVER_T0 is None or time.monotonic() - DRIVER_T0 > CHILD_END_LIMIT:  # (v6c F2)
+                         reason = "driver chunk deadline: driver elapsed > %d s" % CHILD_END_LIMIT
++                    elif ABS_CHILD_END is None or time.time() > ABS_CHILD_END:  # (v6d G1)
++                        reason = "absolute child end %s reached" % ABS_CHILD_END
+                     elif tnow - t0 > backstop:
+                         reason = "wall %.1f s > backstop (%d s)" % (tnow - t0, backstop)
+@@ -2098,5 +2147,5 @@
+     ctx = load_strengthened(load_inputs(print), print)
+     dtext = read_bytes(DIFF)
+-    if ("replay_v6c.py sha256 %s" % sha_file(SCRIPT)).encode() not in dtext:
++    if ("replay_v6d.py sha256 %s" % sha_file(SCRIPT)).encode() not in dtext:
+         die("the recorded diff does not name this script's sha256")
+     worker = worker_prefix(prefix_n, prefix_sha)
+@@ -2319,6 +2368,15 @@
+ 
+ def cmd_run(argv):
+-    global DRIVER_T0
++    global DRIVER_T0, ABS_CHILD_END
+     DRIVER_T0 = time.monotonic()  # (v6c F2) the driver chunk starts here, before any input load or gate
++    wall_t0 = time.time()
++    try:  # (v6d G1) the launcher's recorded absolute child end; refuse anything else
++        given = float(os.environ.get(CHUNK_END_ENV, "nan"))
++    except ValueError:
++        given = float("nan")
++    if not (given == given and wall_t0 < given <= wall_t0 + CHILD_END_LIMIT):
++        die("%s must be the launcher's absolute chunk end: finite, in the future, at most %d s ahead (got %r)"
++            % (CHUNK_END_ENV, CHILD_END_LIMIT, os.environ.get(CHUNK_END_ENV)))
++    ABS_CHILD_END = min(given, wall_t0 + CHILD_END_LIMIT)
+     check_env()
+     if len(argv) != 1:
+@@ -2352,4 +2410,6 @@
+     signal.signal(signal.SIGTERM, on_term)
+     summary = {"schema": "moqls8-strengthened-parent-replay-run/4", "run_tag": runtag, "started_at": now(),
++               "absolute_child_end_epoch": ABS_CHILD_END, "chunk_end_env": os.environ.get(CHUNK_END_ENV),
++               "child_end_limit_seconds": CHILD_END_LIMIT,
+                "pre_exec": {"path": rel(pre_path), "sha256": pre_sha}, "script_sha256": script_sha,
+                "python": {"realpath": py, "sha256": pre["python"]["sha256"]},

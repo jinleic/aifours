@@ -1,0 +1,62 @@
+{
+ "item": "W4 rqls_assay_v2 under owned_supervisor_v1: control-only smoke, then full assay (numpy float; NOT a certificate)",
+ "owner": "ContinueRQLS10",
+ "recorded_at_pt": "2026-10-18T23:49:06-0700",
+ "requests_parent_item_GO": true,
+ "supersedes_request": {
+  "path": "/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10/evidence/rqls_assay_v1.prereg.json",
+  "sha256": "5f0fb8f5af0d75b5081a11fd31310d60a1a7c3727e61f336ffb5ae5d6a12ab17",
+  "note": "v1 (code/rqls_assay_v1.py sha256 bf13f4b8...) never ran and stays preserved; parent review found A/C1/C2 not gating and silent JSONL drops"
+ },
+ "launch_tightening_sha256": "8ac556699352a42f3d97f83861039e21f57db0646da2f38391ee1f11e330aa20",
+ "stop_registry": {
+  "path": "/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10/review/stop-registry-v1.json",
+  "sha256": "95f0ac093c23ef26a403dca52132ea9bb176b2295796ff5417090ed32fef97d5",
+  "relevant": "S-OLD-1 not resumed; none other"
+ },
+ "w2_erratum_1": {
+  "path": "/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10/evidence/w2-cyclic-quasidifference-v1.erratum-1.md",
+  "sha256": "90073e5d21630aa06d037c8f8c34c86c83c12588d56f776aa84b947479dee5f3"
+ },
+ "sources": {
+  "assay": {
+   "path": "/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10/code/rqls_assay_v2.py",
+   "sha256": "6042d573a821c15119c2e90db273bbf650ff43f1212e2bc6aca19ac2ae323dde"
+  },
+  "supervisor": {
+   "path": "/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10/code/owned_supervisor_v1.py",
+   "sha256": "ffb71dc228257b3567f02bc1627321f9abc44e910306f22404a049c3d4be1f17"
+  }
+ },
+ "configs": {
+  "smoke": {
+   "path": "/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10/evidence/rqls_assay_v2.smoke.supervisor-config.json",
+   "sha256": "c1fc13f40b86c62a71247293268ec0b9cdca55585b5190a7e052a60b9f79deeb"
+  },
+  "full": {
+   "path": "/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10/evidence/rqls_assay_v2.full.supervisor-config.json",
+   "sha256": "1bbd46d2c8daa07e29fa366d445955f0bd99af3aae1157cb7c17a6eebe0fb312"
+  }
+ },
+ "commands": [
+  "cd /Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10 && /usr/bin/env -i TMPDIR=/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10/tmp /opt/homebrew/bin/python3.14 -I -B code/owned_supervisor_v1.py evidence/rqls_assay_v2.smoke.supervisor-config.json",
+  "ONLY IF smoke supervisor receipt = EXITED, returncode 0, SETTLED and its JSONL has GATE A_anchors/C1/C2 pass=true and end.mode=smoke: same command with evidence/rqls_assay_v2.full.supervisor-config.json"
+ ],
+ "child_argv": "python3.14 -I -B code/rqls_assay_v2.py <out.jsonl> <budget> <classical.json> <old C1_ex24_positive.json> da95d092... <stop-receipt.json> smoke|full (see configs); child env = configs' env (threads 1, lane TMPDIR); -I ignores PYTHON* env so PYTHONOPTIMIZE cannot apply; the assay also refuses to run if sys.flags.optimize",
+ "processes": "supervisor (stdlib, mostly sleeping) + one child; child in its own session/PGID; no grandchildren by design",
+ "gating": "compute starts only after the supervisor wrote the launch record (stdin GO). In-child fail-closed gates: A anchors (7 checks), C1 (>=1 run, each >=1000 iterations, zero verified solutions on v=6), C2 (>=1 verified v=5 solution, all with 5 rays). Any gate failure -> GATE record, stop receipt, exit 3, no L/T stage runs. Smoke = gates only.",
+ "guard": "supervisor samples every 2 s: free (statvfs lane), child RSS (/bin/ps), output bytes, wall; trips: RSS > 2 GiB, free < 12.2e9, outputs > 9 MiB, wall > max_wall (smoke 150 s, full 1800 s); on first trip exactly one SIGTERM to the child's PGID after identity check; wait <= 120 s; no escalation; UNSETTLED otherwise.",
+ "absolute_ends": {
+  "smoke": "launch + 150 s (+120 s settlement)",
+  "full": "launch + 1800 s (+120 s settlement + 60 s margin)"
+ },
+ "resources": {
+  "rss_reservation_bytes": 1073741824,
+  "retained_output_reservation_bytes": 19274368,
+  "output_enforcement": "child JSONL writer raises CAP_STOP before exceeding 8 MiB (never drops records; stop receipt outside JSONL, exit 4); supervisor trips at 9 MiB total outputs; samples file bounded by 2 s cadence x max wall (<100 KB)",
+  "fresh_free_bytes_at_prereg": 196464340992
+ },
+ "stages_full": "A, C1, C2 (gates) -> L (local Jacobian/kernel excess at 300 classical forced-U Z7+3 points; Jacobian columns via the quadratic central-difference identity evaluated in float; kernel dimension is a numerical SVD rank estimate) -> C3-C7 calibrations -> T1 (Z7+3 forced random), T1t (forced form with corner triples fixed to real trines, parent headroom calibration), T1c (classical-start), T2 (Z9+1), T3 (Z5+5), T4 (unsym v=10: Parker B, Cay(D5), Cay(Z10)).",
+ "candidate_rule": "numeric-only regardless of residual: maxdev<1e-8, all v^2 rays (merge 1-|<q,q'>|^2<1e-7), minsep>1e-6. Any v=10 candidate -> immediate parent notice; exact recognition only under a new GO.",
+ "scientific_consequence": "misses UNKNOWN; kernel counts are numerical rank estimates at named classical points, not proofs"
+}

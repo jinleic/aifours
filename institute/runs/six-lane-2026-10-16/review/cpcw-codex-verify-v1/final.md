@@ -1,0 +1,264 @@
+RESULT: ALL VALID
+
+| File | v | k | s | max auto | max cross | Uncovered residues |
+|---|---:|---:|---:|---:|---:|---|
+| cpcw_122_6.txt | 122 | 6 | 4 | 1 | 1 | {61} |
+| cpcw_123_6.txt | 123 | 6 | 4 | 1 | 1 | {41, 82} |
+| cpcw_124_6.txt | 124 | 6 | 4 | 1 | 1 | {19, 62, 105} |
+| cpcw_143_5.txt | 143 | 5 | 7 | 1 | 1 | {39, 104} |
+| cpcw_144_5.txt | 144 | 5 | 7 | 1 | 1 | {30, 72, 114} |
+| cpcw_146_5.txt | 146 | 5 | 7 | 1 | 1 | {11, 17, 73, 129, 135} |
+| cpcw_162_5.txt | 162 | 5 | 8 | 1 | 1 | {81} |
+| cpcw_167_5.txt | 167 | 5 | 8 | 1 | 1 | {24, 25, 79, 88, 142, 143} |
+
+All eight SHA-256 digests match `manifest.json`; the `task.md` digest also matches. Every file satisfies the specified format, point constraints, and size \(s=\lfloor(v-1)/(k(k-1))\rfloor\).
+
+The independent verifier performed **7,090 auto-correlation** and **20,519 cross-correlation** checks by direct modular shift and set intersection, covering every required shift. Uncovered residues are the nonzero residues absent from all differences between distinct points **within the same codeword**.
+
+**267 in-memory corruption controls passed.** Each category below received three controls per code file; SHA-256 received three additional controls for `task.md`. Every rejection reason was checked explicitly. Parser and correlation controls bypassed the hash check to reach the intended condition.
+
+| Condition | Three corruptions | Observed rejection |
+|---|---|---|
+| SHA-256 | Change byte; truncate; append newline | `SHA256` mismatch |
+| Encoding | Non-ASCII prefix; replacement; suffix | `ENCODING` |
+| Header | Wrong tag; wrong v; wrong k | `HEADER` |
+| Row format | Double space; tab; noninteger | `ROW_FORMAT` |
+| Size | Remove word; add word; add blank line | `SIZE` |
+| Cardinality | k−1; k+1; k−2 points | `CARDINALITY` |
+| Distinctness | Duplicate first; duplicate last; all zeros | `DISTINCTNESS` |
+| Range | −1; v; v+1 | `RANGE` |
+| Increasing order | Swap; reverse; rotate | `ORDER` |
+| Auto-correlation | Arithmetic progressions with steps 1, 2, 3 | `AUTO`: overlap k−1 at shifts 1, 2, 3 |
+| Cross-correlation | Replace second word by first word translated by 0, 1, 2 | `CROSS`: overlap k at shifts 0, v−1, v−2 |
+
+No files were modified. All commands ran in the specified directory.
+
+<details>
+<summary>Commands run, including the complete verifier</summary>
+
+Read the task and manifest:
+
+```sh
+python3 -c 'from pathlib import Path; p=Path.cwd(); files=[p/"task.md",p/"manifest.json"]; [(print("FILE "+f.name),print(f.read_text())) for f in files]'
+```
+
+Read the eight code files:
+
+```sh
+python3 -c 'from pathlib import Path; names=("cpcw_122_6.txt","cpcw_123_6.txt","cpcw_124_6.txt","cpcw_143_5.txt","cpcw_144_5.txt","cpcw_146_5.txt","cpcw_162_5.txt","cpcw_167_5.txt"); [(print("FILE "+n),print(Path(n).read_text())) for n in names]'
+```
+
+Run the independent verifier and controls:
+
+```sh
+python3 -c 'import sys
+sys.dont_write_bytecode = True
+import hashlib
+import json
+import re
+from pathlib import Path
+from collections import defaultdict
+
+expected = {
+    "cpcw_122_6.txt": (122, 6),
+    "cpcw_123_6.txt": (123, 6),
+    "cpcw_124_6.txt": (124, 6),
+    "cpcw_143_5.txt": (143, 5),
+    "cpcw_144_5.txt": (144, 5),
+    "cpcw_146_5.txt": (146, 5),
+    "cpcw_162_5.txt": (162, 5),
+    "cpcw_167_5.txt": (167, 5),
+}
+
+class Rejected(Exception):
+    def __init__(self, reason, detail=""):
+        self.reason = reason
+        self.detail = detail
+        super().__init__(reason + ": " + str(detail))
+
+def require(condition, reason, detail=""):
+    if not condition:
+        raise Rejected(reason, detail)
+
+def check_hash(data, digest):
+    actual = hashlib.sha256(data).hexdigest()
+    require(actual == digest, "SHA256", actual)
+    return actual
+
+def verify(data, v, k):
+    try:
+        lines = data.decode("ascii").splitlines()
+    except UnicodeDecodeError as error:
+        raise Rejected("ENCODING", str(error))
+    require(bool(lines) and lines[0] == f"CPCW {v} {k}", "HEADER")
+    s = (v - 1) // (k * (k - 1))
+    require(len(lines) - 1 == s, "SIZE", f"got={len(lines)-1}, expected={s}")
+    words = []
+    for i, line in enumerate(lines[1:]):
+        require(re.fullmatch(r"-?[0-9]+(?: -?[0-9]+)*", line) is not None,
+                "ROW_FORMAT", f"row={i+1}")
+        word = [int(token) for token in line.split(" ")]
+        require(len(word) == k, "CARDINALITY", f"row={i+1}, got={len(word)}, expected={k}")
+        require(len(set(word)) == k, "DISTINCTNESS", f"row={i+1}")
+        require(all(0 <= x < v for x in word), "RANGE", f"row={i+1}")
+        require(all(a < b for a, b in zip(word, word[1:])), "ORDER", f"row={i+1}")
+        words.append(set(word))
+    max_auto = 0
+    max_cross = 0
+    auto_witness = None
+    cross_witness = None
+    auto_checks = 0
+    cross_checks = 0
+    # Exhaustive shifted-set intersections, independently of differences.
+    for i, word in enumerate(words):
+        for t in range(1, v):
+            overlap = len(word.intersection({(x + t) % v for x in word}))
+            auto_checks += 1
+            if overlap > max_auto:
+                max_auto = overlap
+                auto_witness = (i + 1, t, overlap)
+    for i in range(s):
+        for j in range(i + 1, s):
+            for t in range(v):
+                overlap = len(words[i].intersection({(x + t) % v for x in words[j]}))
+                cross_checks += 1
+                if overlap > max_cross:
+                    max_cross = overlap
+                    cross_witness = (i + 1, j + 1, t, overlap)
+    require(max_auto <= 1, "AUTO", auto_witness)
+    require(max_cross <= 1, "CROSS", cross_witness)
+    differences = {(a - b) % v for word in words for a in word for b in word if a != b}
+    uncovered = sorted(set(range(1, v)) - differences)
+    return {
+        "v": v, "k": k, "s": s, "max_auto": max_auto, "max_cross": max_cross,
+        "uncovered": uncovered, "auto_checks": auto_checks, "cross_checks": cross_checks
+    }
+
+def encode_lines(lines):
+    return ("\n".join(lines) + "\n").encode("ascii")
+
+def replace_row(lines, row, values):
+    changed = lines[:]
+    changed[row + 1] = " ".join(map(str, values))
+    return encode_lines(changed)
+
+controls = defaultdict(lambda: {"passed": 0, "observed": set(), "details": []})
+
+def rejection_control(kind, name, variant, action):
+    try:
+        action()
+    except Rejected as error:
+        require(error.reason == kind, "CONTROL_WRONG_REASON",
+                f"{name}/{variant}: expected={kind}, observed={error}")
+        controls[kind]["passed"] += 1
+        controls[kind]["observed"].add(error.reason)
+        if kind in ("AUTO", "CROSS"):
+            controls[kind]["details"].append((name, variant, error.detail))
+    else:
+        raise Rejected("CONTROL_ACCEPTED", f"{name}/{kind}/{variant}")
+
+manifest = json.loads(Path("manifest.json").read_bytes())
+require(set(manifest["files"]) == set(expected), "MANIFEST_FILE_SET")
+task = Path("task.md").read_bytes()
+print("TASK_SHA256", check_hash(task, manifest["task.md"]), "MATCH")
+
+# The manifest supplies digests, so SHA256 controls exercise that check separately.
+for variant, corrupted in (
+    ("changed-byte", bytes([task[0] ^ 1]) + task[1:]),
+    ("truncated", task[:-1]),
+    ("appended-newline", task + b"\n"),
+):
+    rejection_control("SHA256", "task.md", variant,
+                      lambda data=corrupted: check_hash(data, manifest["task.md"]))
+
+results = []
+for name, (v, k) in expected.items():
+    metadata = manifest["files"][name]
+    require((metadata["v"], metadata["k"]) == (v, k), "MANIFEST_PARAMETERS", name)
+    raw = Path(name).read_bytes()
+    digest = check_hash(raw, metadata["sha256"])
+    result = verify(raw, v, k)
+    results.append(result)
+    print("FILE", name, "SHA256", digest, "MATCH", json.dumps(result, sort_keys=True))
+    lines = raw.decode("ascii").splitlines()
+    first = list(map(int, lines[1].split(" ")))
+    cases = {
+        "SHA256": [
+            ("changed-byte", bytes([raw[0] ^ 1]) + raw[1:]),
+            ("truncated", raw[:-1]),
+            ("appended-newline", raw + b"\n"),
+        ],
+        "ENCODING": [
+            ("non-ascii-prefix", b"\xff" + raw),
+            ("non-ascii-replacement", b"\x80" + raw[1:]),
+            ("non-ascii-suffix", raw + b"\xfe"),
+        ],
+        "HEADER": [
+            ("wrong-tag", encode_lines(["OOC " + str(v) + " " + str(k)] + lines[1:])),
+            ("wrong-v", encode_lines([f"CPCW {v+1} {k}"] + lines[1:])),
+            ("wrong-k", encode_lines([f"CPCW {v} {k+1}"] + lines[1:])),
+        ],
+        "ROW_FORMAT": [
+            ("double-space", encode_lines([lines[0], lines[1].replace(" ", "  ", 1)] + lines[2:])),
+            ("tab-separator", encode_lines([lines[0], lines[1].replace(" ", "\t", 1)] + lines[2:])),
+            ("noninteger", encode_lines([lines[0], "x " + " ".join(map(str, first[1:]))] + lines[2:])),
+        ],
+        "SIZE": [
+            ("missing-word", encode_lines(lines[:-1])),
+            ("extra-word", encode_lines(lines + [lines[1]])),
+            ("extra-blank-line", encode_lines(lines + [""])),
+        ],
+        "CARDINALITY": [
+            ("k-minus-one", replace_row(lines, 0, first[:-1])),
+            ("k-plus-one", replace_row(lines, 0, first + [first[-1] + 1])),
+            ("k-minus-two", replace_row(lines, 0, first[:-2])),
+        ],
+        "DISTINCTNESS": [
+            ("duplicate-first", replace_row(lines, 0, [first[0]] + first[:-1])),
+            ("duplicate-last", replace_row(lines, 0, first[:-1] + [first[-2]])),
+            ("all-zero", replace_row(lines, 0, [0] * k)),
+        ],
+        "RANGE": [
+            ("negative", replace_row(lines, 0, [-1] + first[1:])),
+            ("equals-v", replace_row(lines, 0, first[:-1] + [v])),
+            ("greater-than-v", replace_row(lines, 0, first[:-1] + [v+1])),
+        ],
+        "ORDER": [
+            ("swap-first-two", replace_row(lines, 0, [first[1], first[0]] + first[2:])),
+            ("reverse", replace_row(lines, 0, first[::-1])),
+            ("rotate", replace_row(lines, 0, first[1:] + first[:1])),
+        ],
+        "AUTO": [
+            (f"progression-step-{step}", replace_row(lines, 0, [step * x for x in range(k)]))
+            for step in (1, 2, 3)
+        ],
+        "CROSS": [
+            (f"translated-copy-{shift}", replace_row(lines, 1, sorted((x + shift) % v for x in first)))
+            for shift in (0, 1, 2)
+        ],
+    }
+    for kind, examples in cases.items():
+        require(len(examples) >= 3, "CONTROL_COVERAGE", kind)
+        for variant, corrupted in examples:
+            if kind == "SHA256":
+                action = lambda data=corrupted: check_hash(data, metadata["sha256"])
+            else:
+                # Deliberately bypass hash checks to exercise each mathematical/parser condition.
+                action = lambda data=corrupted: verify(data, v, k)
+            rejection_control(kind, name, variant, action)
+
+print("CONTROL_SUMMARY")
+for kind, item in controls.items():
+    print(kind, "passed=", item["passed"], "observed=", ",".join(sorted(item["observed"])))
+    if kind in ("AUTO", "CROSS"):
+        for name, variant, witness in item["details"]:
+            print("WITNESS", kind, name, variant, witness)
+print("TOTAL_CONTROLS", sum(item["passed"] for item in controls.values()))
+print("TOTAL_DIRECT_CHECKS",
+      sum(row["auto_checks"] for row in results),
+      sum(row["cross_checks"] for row in results))
+print("RESULT: ALL VALID")
+'
+```
+
+</details>

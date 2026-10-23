@@ -1,0 +1,70 @@
+--- code/pilot_stream_drat_ms06_v2.py
++++ code/pilot_stream_drat_ms09_v2.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""PA19 96h P-STREAM runner v2, multiset ms06: code/pilot_stream_drat_ms06_v1.py (e66cbc5d...) + focused fixes for the
++"""PA19 96h P-STREAM runner v2, multiset ms09: code/pilot_stream_drat_ms09_v1.py (d3ccc3cf...) + focused fixes for the
+ parent-routed Codex source review (RUN/review/pa19-PSTREAM-source-codex-v1.prompt.stdout.txt af15a4e1..., HOLD, 13
+ findings) under the parent runtime-guard HOLD (RUN/review/runtime-guard-admission-HOLD-v1.json 6c1d8440...):
+   V1 (Codex 1) No /bin/ps.  The start identity, the owned-process census (own process group + transitive PPID closure,
+@@ -52,7 +52,7 @@
+ items per run, ITEMS = [] (controls-only qualification; production only by a later reviewed item-only delta bound
+ to the then-current frontier).
+ PA19 96h P-STREAM runner v1 notes follow.
+-PA19 96h P-STREAM runner v1, multiset ms06: pilot_file_drat_v26.py (d31f1a8e...) + the P-STREAM transport
++PA19 96h P-STREAM runner v1, multiset ms09: pilot_file_drat_v27.py (d9a1d5b3...) + the P-STREAM transport
+ (parent request 2026-10-19 04:5x; design notes/p-stream-design-v1.md and review/p-stream-design-v1.json):
+   S1 No proof byte is ever written to disk.  kissat writes its proof into an owned FIFO; the ProofBuffer collector
+      thread retains it in RAM (immutable FEED_BLOCK blocks) under the HARD byte cap and measures bytes and SHA-256
+@@ -130,8 +130,8 @@
+ NOT TO BE RUN without the item-specific parent GO whose JSON names this file's SHA-256.
+ 
+ Scope (frozen): controls only (ITEMS = []): C1-C7 and C7b through the P-STREAM transport for both pinned
+-checkers.  Production items of multiset ms06 are added only by a later item-only delta with its own parent GO:
+-  encode_skel_b.build_v2, DIRECT whole case.
++checkers.  Production items of multiset ms09 are added only by a later item-only delta with its own parent GO:
++  encode_skel_b.build_partbatch over a pinned placement-list interval.
+ Per item: CNF built in memory by the vendored unchanged encoder, frozen digest required, written by exclusive
+ creation and re-hashed (the only retained input); kissat -q -f --seed=1 --time=300 CNF PROOF_FIFO (owned RAM
+ collector, HARD cap, nothing on disk); then, only on a settled self-exit rc20 's UNSATISFIABLE' with a complete
+@@ -174,7 +174,7 @@
+ LANE_CEILING = 10_737_418_240         # V2: contract resources.per_lane_new_disk_bytes (re-read at prestart)
+ PILOT_ROOT = LANE + "/evidence/pilot-v1"
+ ENC = (LANE + "/code/vendor/encode_skel_b.py", "d0002e60d11ef5cba568309fde5b15e29280ca127bc0e6bb1f4d22929a5628e5")
+-SKEL = (OLD + "/cycle2/skel-b/skeletons-b-ms06.json", "9ec0fd1dd036cbddf197f495684c2d6a54bc36feff35cb6466799a13493e0488")
++SKEL = (OLD + "/cycle2/skel-b/skeletons-b-ms09.json", "7c46ebbad3389476407e99807593287a8b3bb6c6a80f34574f0e9c00134293d0")
+ REGISTRY = (LANE + "/evidence/inherited-stop-registry-v1.json", "ee370929f20ffe514e71bce6961e31ed32faaf243e0433d9268179956a0e9873")
+ LAUNCH_CONTRACT = (RUN + "/control/launch-contract-tightening-v1.json", "8ac556699352a42f3d97f83861039e21f57db0646da2f38391ee1f11e330aa20")
+ BINARY_IMPORTS = (LANE + "/evidence/probes/binary-process-imports-v1.json", "c822c4f07974b3f107c18c91bd910a972aa6ddee025e8087c256917492b7cffc")
+@@ -194,7 +194,7 @@
+     "STOP-m2r12": "94b56f04b59849923b41db6929760de00a33c12f077983faa2670a2080015bb2",
+     "STOP-K1": "b05f12b9587bb89a8b30d3d040074e1958463109d866bddeb96527d79c9716bf",
+ }
+-FAMILY = "ms06"                       # V12: item shape family of this runner
++FAMILY = "ms09"                       # V12: item shape family of this runner
+ P0 = [4, 3, 3, 3, 3, 3]
+ ITEMS = []  # P-STREAM v1: controls-only qualification; production items only by a later item-only delta
+ SOLVER_SECONDS = 300
+@@ -2078,8 +2078,12 @@
+         rec = {"id": it["id"], "status": "UNKNOWN", "count_for_scientific_coverage": False,
+                "host_clock_start": clock()}
+         rec_path = os.path.join(out_dir, label + ".record.json")
++        Ej = json.loads(read_pinned(*it["list"]))
++        if not (Ej["num_placements"] == len(Ej["placements"]) == it["denominator"]):
++            raise RuntimeError("list denominator mismatch " + it["id"])
+         sk = D["skeletons"][it["b"]]
+-        nv, cl = E.build_v2(D["c0"], [tuple(t) for t in sk["types"]], sk["empty"], special)
++        nv, cl = E.build_partbatch(D["c0"], [tuple(t) for t in sk["types"]], sk["empty"], special,
++                                   [Ej["placements"][i] for i in range(it["lo"], it["hi"] + 1)])
+         cnf = E.cnf_bytes(nv, cl)
+         del cl
+         got = (hashlib.sha256(cnf).hexdigest(), len(cnf), cnf.split(b"\n", 1)[0].decode())
+@@ -2090,7 +2094,7 @@
+         del cnf
+         if sha_file(cnf_path) != (it["cnf"][0], it["cnf"][1]):
+             raise RuntimeError("CNF file re-hash mismatch")
+-        inputs = {"item": it["id"], "cnf_pin": [it["cnf"][0], it["cnf"][1]], "case_b": it["b"],
++        inputs = {"item": it["id"], "cnf_pin": [it["cnf"][0], it["cnf"][1]], "list_pin": it["list"][1],
+                   "skeleton_pin": SKEL[1], "encoder_pin": ENC[1]}
+         buf = None
+         try:

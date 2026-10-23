@@ -1,0 +1,178 @@
+--- control/beta_supervisor19_adapter_v2.py
++++ control/beta_supervisor19_adapter_v3.py
+@@ -1 +1 @@
+-"""SOURCE ONLY, UNEXECUTED. Raw owned_supervisor_v19 evidence -> beta_parent_adapter_v3 input records bridge (v2).
++"""SOURCE ONLY, UNEXECUTED. Raw owned_supervisor_v19 evidence -> beta_parent_adapter_v3 input records bridge (v3).
+@@ -6,2 +6,4 @@
+-Repair:    RUN/control/beta-supervisor19-v2-repair-scope-v1.json  64fe152a54e26aec87c7f150c72ba540f414a57ed4298e931d33ee4617c96fbd
+-Replaces:  RUN/control/beta_supervisor19_adapter_v1.py      fb857b959da63365bd39f438e99c5ee9b7dbe4e2286b003f5ec579419c33ab1c (HOLD)
++Amended:   RUN/control/beta-supervisor19-interface-v3.json  (written after this source; changes D1-D11)
++Repair:    RUN/control/beta-supervisor19-v3-source-repair-scope-v1.json  4b559c4197f824bde5a411c0daf55d280105145425266ac413e710d114c8854a
++Plan:      RUN/control/beta-supervisor19-v3-repair-plan-v1.json  e6a34a10ca5a455cbb36684149bc7964e99d63a01f1cd4eb2dc6fe624545cb54
++Replaces:  RUN/control/beta_supervisor19_adapter_v2.py      335696330831e7cf483404db4c236ed51e8b5bf6f22a4b40e7fda58a97a94854 (HOLD)
+@@ -14,2 +16,3 @@
+-through read_bytes(path, cap) followed by last_file(path); report() is read once at the end. The bridge never
+-constructs, closes or replaces that reader; the caller retains it on every exception. Nothing runs at import.
++through read_bytes(path, cap) followed by last_file(path), each path attempted at most once per call; report() is
++attempted exactly once per call on every path, including BaseException propagation. The bridge never constructs,
++closes or replaces that reader; the caller retains it on every exception. Nothing runs at import.
+@@ -35,2 +38,4 @@
+-The original deadline_check is called before and after every acquisition and after the complete result is assembled;
+-a raise or non-None return is HELD with no further acquisitions. Non-Exception BaseExceptions propagate unchanged.
++The original deadline_check is called before and after every acquisition and after the complete candidate result is
++assembled; a raise or non-None return is HELD with no further acquisitions and no records. Any reader failure is
++terminal: READ_FAILED, one completion check of the original deadline, then no further acquisition or evaluation.
++Non-Exception BaseExceptions propagate unchanged; a secondary report failure never replaces them.
+@@ -239 +244,8 @@
+-    return value is None or (type(value) in (int, float) and math.isfinite(value))
++    if value is None:
++        return True
++    if type(value) not in (int, float):
++        return False
++    try:
++        return math.isfinite(value)
++    except OverflowError:
++        return False  # An oversized JSON integer is not a finite stream value: MAIN_STREAM_UNBOUND, never internal.
+@@ -302 +314 @@
+-    """Per-call evidence state. Private coherent cache: each path is acquired once per call."""
++    """Per-call evidence state. Private coherent cache: each path is attempted at most once per call."""
+@@ -308,0 +321 @@
++        self.reported, self.report_failure = False, None
+@@ -337,0 +351,14 @@
++
++    def reader_failed(self, detail):
++        """Any reader failure is terminal for the call: one completion check, never resumed by a later None."""
++        self.hold('READ_FAILED', detail)
++        if not self.stopped:
++            self.stopped = True
++            try:
++                value = self.check()
++            except Exception as exc:
++                self.hold('DEADLINE', 'completion check after a reader failure raised ' + type(exc).__name__)
++            else:
++                if value is not None:
++                    self.hold('DEADLINE', 'completion check after a reader failure returned a non-None value')
++        return _Stop()
+@@ -340 +367 @@
+-        """One actual reader acquisition per path; the current completed observation must match the bytes."""
++        """At most one reader attempt per path per call; the current completed observation must match the bytes."""
+@@ -345,0 +373,2 @@
++            if entry['row'] is None:
++                raise _Held('READ_FAILED', role + ': an earlier attempt on this path did not complete; never retried')
+@@ -350,0 +380 @@
++        self.cache[path] = {'data': None, 'after': None, 'row': None}  # Attempt marker BEFORE the reader call.
+@@ -354 +384 @@
+-            raise _Held('READ_FAILED', role + ': reader refused or failed: ' + type(exc).__name__)
++            raise self.reader_failed(role + ': reader refused or failed: ' + type(exc).__name__)
+@@ -358 +388 @@
+-            raise _Held('READ_FAILED', role + ': last_file failed: ' + type(exc).__name__)
++            raise self.reader_failed(role + ': last_file failed: ' + type(exc).__name__)
+@@ -363 +393 @@
+-            raise _Held('READ_FAILED', role + ': current completed acquisition not established')
++            raise self.reader_failed(role + ': current completed acquisition not established')
+@@ -379,0 +410,8 @@
++    def final_check(self):
++        """The original deadline AFTER the complete candidate result exists; False means HELD without records."""
++        try:
++            self.tick()
++        except _Stop:
++            return False
++        return True
++
+@@ -399 +437 @@
+-    records, reader_unresolved, reported = None, None, False
++    records, reader_unresolved = None, None
+@@ -401,16 +439,26 @@
+-        if not callable(deadline_check):
+-            state.stopped = True
+-            state.hold('DEADLINE', 'deadline_check is not callable')
+-        else:
+-            assembled = _evaluate(state, request_ref)
+-            reader_unresolved, reported = _reader_unresolved(state), True
+-            if assembled is not None and not state.causes:
+-                records = _records(assembled)
+-            state.tick()  # Original deadline AFTER complete assembly; a late result is never READY.
+-    except _Stop:
+-        pass
+-    except Exception as exc:
+-        state.hold('BRIDGE_INTERNAL_EXCEPTION', repr(exc))
+-    if not reported:
+-        reader_unresolved = _reader_unresolved(state)  # In-memory report only; HELD is already certain.
+-    return state.result(records, reader_unresolved)
++        try:
++            if not callable(deadline_check):
++                state.stopped = True
++                state.hold('DEADLINE', 'deadline_check is not callable')
++            else:
++                assembled = _evaluate(state, request_ref)
++                reader_unresolved = _reader_unresolved(state)
++                if assembled is not None and not state.causes:
++                    records = _records(assembled)
++        except _Stop:
++            pass
++        except Exception as exc:
++            state.hold('BRIDGE_INTERNAL_EXCEPTION', repr(exc))
++        if not state.reported:
++            reader_unresolved = _reader_unresolved(state)  # The call's single report attempt; HELD is already certain.
++        candidate = state.result(records, reader_unresolved)  # Complete candidate BEFORE the final deadline check.
++        if state.stopped or state.final_check():
++            return candidate
++        return state.result(None, reader_unresolved)  # Late: records stripped, HELD, no further acquisition.
++    except BaseException:
++        if not state.reported:
++            try:
++                _reader_unresolved(state)  # Exactly one report attempt also while a BaseException is pending.
++            except BaseException as secondary:
++                state.report_failure = type(secondary).__name__  # Retained; never replaces the pending primary.
++        raise
+@@ -419,0 +468 @@
++    st.reported = True  # Marked BEFORE report() is invoked: exactly one attempt per call.
+@@ -697,0 +747,3 @@
++    if (not _exact(ack['owned_live'], ack['ack_census']['owned_live'])
++            or not _exact(ack['unproved_live'], ack['ack_census']['unproved_live'])):
++        raise _Held('SUPERVISOR_ACK_INVALID', 'ACK owned_live/unproved_live differ from ack_census (supervisor19 2614)')
+@@ -749,2 +801,2 @@
+-    if not (r['cancel'].get('signal') is None or type(r['cancel'].get('signal')) is int):
+-        raise _Held('RECEIPT_INVALID', 'receipt cancel signal')
++    if 'signal' not in r['cancel'] or not (r['cancel']['signal'] is None or type(r['cancel']['signal']) is int):
++        raise _Held('RECEIPT_INVALID', 'receipt cancel signal (key mandatory: supervisor19 CANCEL always holds it)')
+@@ -781 +833 @@
+-    def add(p, label):
++    def add(p, label, cause):
+@@ -783 +835 @@
+-            raise _Held('RECEIPT_INVALID', label + ': malformed identity')
++            raise _Held(cause, label + ': malformed identity')
+@@ -786 +838 @@
+-            raise _Held('RECEIPT_INVALID', label + ': one uniqueid reported with two pids')
++            raise _Held(cause, label + ': one uniqueid reported with two pids')
+@@ -789 +841 @@
+-        add(r['child_identity'], 'child_identity')
++        add(r['child_identity'], 'child_identity', 'RECEIPT_INVALID')
+@@ -791 +843 @@
+-        add(entry['identity'], 'owned_identities')
++        add(entry['identity'], 'owned_identities', 'RECEIPT_INVALID')
+@@ -793,2 +845,2 @@
+-        add(entry['first_identity'], 'unproved_history')
+-        add(entry['last_identity'], 'unproved_history')
++        add(entry['first_identity'], 'unproved_history', 'RECEIPT_INVALID')
++        add(entry['last_identity'], 'unproved_history', 'RECEIPT_INVALID')
+@@ -799 +851 @@
+-            add(h['identity'], 'helpers')
++            add(h['identity'], 'helpers', 'RECEIPT_INVALID')
+@@ -801 +853 @@
+-        add(p, 'final_census')
++        add(p, 'final_census', 'RECEIPT_INVALID')
+@@ -805 +857 @@
+-            add(p, 'ack_census')
++            add(p, 'ack_census', 'SUPERVISOR_ACK_INVALID')  # ACK-originated identity or conflict blames the ACK.
+@@ -877 +929 @@
+-    if wait['pid'] != child_pid or not _exact(wait['native_wait_result'], [child_pid, status]):
++    if not _exact(wait['pid'], child_pid) or not _exact(wait['native_wait_result'], [child_pid, status]):
+@@ -948,2 +1000,3 @@
+-    if (not _keys(art, ARTIFACT_KEYS) or art['sha256'] != rec['sha256_written'] or art['bytes'] != rec['bytes_written']
+-            or type(art['nlink']) is not int or art['nlink'] != 1 or not _inode(art['inode'])):
++    if (not _keys(art, ARTIFACT_KEYS) or art['sha256'] != rec['sha256_written'] or not _int(art['bytes'], 0)
++            or not _exact(art['bytes'], rec['bytes_written']) or type(art['nlink']) is not int or art['nlink'] != 1
++            or not _inode(art['inode'])):
+@@ -1142,0 +1196 @@
++    evidence.add(req['job_dir'])  # adapter3 itself enumerates the job directory (directory_names, twice).

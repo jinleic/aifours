@@ -1,0 +1,33 @@
+{
+ "format": "beta-supervisor19-interface-v2",
+ "at": "2026-10-19T16:43:41-0700",
+ "status": "CORRECTED_INTERFACE_NOEXEC; supersedes interface-v1 for settlement/history semantics; every v1 field not changed below remains exactly as in v1",
+ "supersedes": {"path": "RUN/control/beta-supervisor19-interface-v1.json", "sha256": "91f709f6dc9b07a7d9c36bf2593dcae21175ffaaf0fbd8c3ca883591612b3086"},
+ "scope": {"path": "RUN/control/beta-supervisor19-scope-v1.json", "sha256": "4087d6f9eab6034f142d9706972774cbea04aed982fe7600f2753129f602315c"},
+ "corrects_source": {"path": "RUN/control/beta_supervisor19_adapter_v1.py", "sha256": "fb857b959da63365bd39f438e99c5ee9b7dbe4e2286b003f5ec579419c33ab1c", "v1_status": "DO_NOT_USE: defects V1-D1..V1-D3 (MAJOR) and V1-D4 (MINOR) recorded in RUN/review/beta-supervisor19-checkpoint-002-v1.json"},
+ "module": "RUN/control/beta_supervisor19_adapter_v2.py, exclusive-create ONLY under explicit parent authorization (requested by IRC 2026-10-19 ~16:41). Same entry, imports (copy, hashlib, json, math), exports and non-execution boundary as v1.",
+ "authority_for_correction": [
+  "rqls10 owned_supervisor_v19 qualification package v9 plan 05de56da9f081e65ece2c4f022d5ec4520be75e52d7c715751df3bd19a2caf26, section 4 item 5: 'All historical unproved/failed coverage stays visible and blocking.'",
+  "same plan, section 5 part 4: 'independently establish endedness for every ... historical unproved identity; retain unresolved coverage. No PID-only or missing means gone shortcut.'",
+  "supervisor19 cb828a78 receipt header ownership_residual: 'all post-baseline unproved identities block'",
+  "supervisor19 full_census retries up to three census attempts; incomplete attempts append coverage_history and may retain unproved identities AFTER the receipt is serialized, and the successful ACK reports s.coverage_history, s.unproved_history and s.violations at ACK time"
+ ],
+ "changes_from_v1": [
+  {"id": "C1", "fixes": "V1-D1", "rule": "ACK coverage_history must be a list whose first len(receipt.coverage_history) entries typed-exactly equal the receipt coverage_history (else HELD SUPERVISOR_ACK_INVALID). For EVERY ACK coverage_history entry i (observation[0]=pid) emit unresolved label COVERAGE_GAP:<i>:<pid>. Union status never clears it. Each gap pid must still appear in the union (else IDENTITY_UNION_INVALID)."},
+  {"id": "C2", "fixes": "V1-D2", "rule": "Receipt unproved_history uniqueids must be a subset of ACK unproved_history uniqueids (else HELD SUPERVISOR_ACK_INVALID). For EVERY uniqueid in receipt or ACK unproved_history emit unresolved label UNPROVED_HISTORY:<uniqueid>. Union status never clears it. Every first/last identity of both histories must be in the union with equal pid."},
+  {"id": "C3", "fixes": "V1-D3", "rule": "ACK contract_violations must be a list of identity dicts whose first len(receipt.contract_violations) entries typed-exactly equal the receipt list (else HELD SUPERVISOR_ACK_INVALID). CONTRACT_VIOLATION:<uniqueid> labels come from the ACK list; its identities join the union identity set."},
+  {"id": "C4", "fixes": "V1-D4", "rule": "Receipt helper rows must contain keys pid, identity, settled and signal (else RECEIPT_INVALID), so malformed rows cannot surface as BRIDGE_INTERNAL_EXCEPTION."},
+  {"id": "C5", "rule": "ACK history shape: coverage_history entries are dicts with a nonempty observation list whose first element is an int pid >= 0; unproved_history entries are dicts with identity-dict first_identity/last_identity sharing one uniqueid; contract_violations entries are identity dicts. Any other shape => SUPERVISOR_ACK_INVALID."}
+ ],
+ "mapping_unresolved_labels_v2": ["FINAL_OWNED_LIVE:<uniqueid>", "FINAL_UNPROVED_LIVE:<uniqueid>", "ACK_OWNED_LIVE:<uniqueid>", "ACK_UNPROVED_LIVE:<uniqueid>", "UNPROVED_HISTORY:<uniqueid>", "COVERAGE_GAP:<ack index>:<pid>", "HELPER_UNSETTLED:<pid>", "SUPERVISOR_FAILURE:<code>", "SUPERVISOR_TRIP:<code>", "SUPERVISOR_STATE:<state> when not SETTLED", "CONTRACT_VIOLATION:<uniqueid|index>", "LOOP_STATUS:<status> when not EXITED", "CLEARANCE_NOT_ESTABLISHED", "UNION_UNRESOLVED:<role>:<pid>:<uniqueid|null>"],
+ "mapping_signal_labels_v2": "unchanged from v1: STOP_REQUESTED:<reason>, MAIN_SIGTERM_SENT, HELPER_SIGTERM_SENT:<pid>, SUPERVISOR_CANCEL_SIGNAL:<signum>",
+ "union_identity_set_v2": "child_identity; receipt owned_identities; receipt AND ACK unproved_history first/last identities; ACK contract_violations; helper identities (identity-less helpers by pid with role helper); final and ACK census owned_live/unproved_live; ACK owned_live/unproved_live; plus every ACK coverage_history gap pid by pid",
+ "consequence_disclosed": "Any run whose supervisor observed a post-baseline non-owned process (including descendants first seen before registration) or any failed identification gap, before or after the receipt, yields settlement.unresolved nonempty and therefore capture4 X6 failure, regardless of parent endedness classification. This is the declared conservative supervisor19/package-v9 semantics (quiet-host prerequisite), not a bridge relaxation; READY still never means PASS.",
+ "errata_to_prior_files": [
+  {"id": "E1", "file": "RUN/control/beta-supervisor19-scope-v1.json", "lines": [39, 53], "correct": "CONFIG has 39 exact keys, not 31"},
+  {"id": "E2", "file": "RUN/control/beta-supervisor19-interface-v1.json", "field": "post_freeze_refinements_disclosed[0]", "correct": "union membership for gap pids is a tightening, but dropping the scope-v1 COVERAGE_GAP label was a relaxation; v2 restores always-blocking labels"},
+  {"id": "E3", "file": "RUN/control/beta-supervisor19-interface-v1.json", "field": "result_schema.consumed", "correct": "metadata has seven keys {dev,ino,mode,nlink,size,mtime_ns,ctime_ns} (v1 and v2 source both record mode)"}
+ ],
+ "unchanged_from_v1": "request schema, union schema, actual evidence derivation, caps, HELD cause names and order, expectation/observation/context mapping except settlement.unresolved, freeze coverage, result schema, never-list, verification boundary",
+ "verification_boundary": "Written by reading only. No execution/import/compile/AST/tests. Grants no runtime, release, canonical-audit or scientific authority."
+}

@@ -1,0 +1,73 @@
+--- gb_direct_r3.py
++++ gb_direct_r4.py
+@@ -1,4 +1,9 @@
+-"""GB direct-leaf production r3 (WORKER results; not parent-qualified evidence).
++"""GB direct-leaf production r4 (WORKER results; not parent-qualified evidence).
++
++r4 = r3 (619cc455...6e07) + GA-desk priority at launch: a new GB pipeline is launched only when NO GA desk
++driver (argv/env containing the GA desk marker) is alive, and the launch gate waits for that condition until
++the 17:29 cutoff (GA desk N8ReplayV5 in-flight rule counts all lane processes against 7.85 GiB, so scientific
++pipelines must never overlap). Everything else is unchanged from r3.
+ 
+ r3 = r2 (1cb44062...806e) + parent decision b9886e24...09ec: explicit 12-item shortest-first list, per-pipeline
+ resident cap 6 GiB (self+kissat+drat-trim), M8 lane-reservation check counting the GA desk (declared 4.6 GiB,
+@@ -53,7 +58,7 @@
+ DRAT = '/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-16/review/moqls7-parent-proofcheck-v1/drat-trim'
+ DRAT_SHA = 'a46c0c717f702206a7fe345de5bcdc0b10112bca6bdbf04dd42cd9848ff08e37'
+ BODY_SHA = 'f5da05206f44ff72e5aeade076820e2de52c9d2352f58b048ded1df76bdbf1b9'
+-OUTBASE = ROOT/'evidence/gb_direct_v3'
++OUTBASE = ROOT/'evidence/gb_direct_v4'
+ OUTDIR = OUTBASE
+ TZ = ZoneInfo('America/Los_Angeles')
+ DEADLINE = datetime.fromisoformat('2026-10-18T17:55:00-07:00').timestamp()
+@@ -390,7 +395,7 @@
+ 
+ def gate(label):
+     fb = shutil.disk_usage(ROOT).free; used = lane_allocated(ROOT); ga = ga_usage()
+-    lane_ok = ga['ga_counted_bytes'] + AGG_CAP <= LANE_CAP_RSS
++    lane_ok = ga['ga_counted_bytes'] + AGG_CAP <= LANE_CAP_RSS and not ga['ga_roots'] and not ga['ga_unknown']
+     ok = (fb - MARGIN >= FRESH and used + MARGIN <= LANE_CAP and time.time() < LAUNCH_CUTOFF and lane_ok)
+     return {'item': label, 'at': now(), 'free_bytes': fb, 'lane_allocated_bytes': used, 'ga': ga,
+             'lane_rss_check': {'ga_counted': ga['ga_counted_bytes'], 'pipeline_cap': AGG_CAP, 'lane_cap': LANE_CAP_RSS, 'ok': lane_ok},
+@@ -408,7 +413,7 @@
+     OUTDIR = OUTBASE/('run-' + args.run_tag)
+     OUTDIR.mkdir(parents=True, exist_ok=False)
+     t_start = time.monotonic(); script_sha = sha_file(__file__)
+-    freeze = json.loads((ROOT/'review/GB_DIRECT_FREEZE.r3.json').read_bytes())
++    freeze = json.loads((ROOT/'review/GB_DIRECT_FREEZE.r4.json').read_bytes())
+     if freeze['script_sha256'] != script_sha:
+         raise SystemExit('probe script not frozen')
+     pins = {'generator': (GEN, GEN_SHA), 'own_hashes': (OWN, OWN_SHA), 'WMAN': (WMAN, WMAN_SHA),
+@@ -420,7 +425,7 @@
+     signal.signal(signal.SIGTERM, lambda *a: stopflag.update(sigterm=True))
+     for d in ('fifo', 'logs', 'tmp', 'receipts'):
+         (OUTDIR/d).mkdir(exist_ok=True)
+-    summary = {'schema': 'gb-direct-r3-summary/1', 'started_at': now(), 'script_sha256': script_sha, 'pins': pin_res,
++    summary = {'schema': 'gb-direct-r4-summary/1', 'started_at': now(), 'script_sha256': script_sha, 'pins': pin_res,
+                'run_tag': args.run_tag, 'start_at': args.start_at, 'item_order': ids,
+                'python': sys.version.split()[0], 'scope': 'WORKER GB direct-leaf results; not parent-qualified; no CNF/proof on disk',
+                'items': [], 'gates': []}
+@@ -461,9 +466,12 @@
+     cases = {x['id']: x for x in json.loads(WMAN.read_bytes())['cases']}
+     for cid, ksec, dsec in GB_ITEMS[ids.index(args.start_at):]:
+         g = gate(cid); summary['gates'].append(g); waited = 0
+-        while (not g['ok'] and not g['lane_rss_check']['ok'] and g['before_launch_cutoff'] and waited < 1200
++        while (not g['ok'] and not g['lane_rss_check']['ok'] and g['before_launch_cutoff']
+                and not stopflag.get('sigterm')):
+-            time.sleep(30); waited += 30; g = gate(cid); summary['gates'].append(g)
++            time.sleep(30); waited += 30; g = gate(cid)
++            if waited % 600 == 0:
++                summary['gates'].append(g)
++        summary['gates'].append(g)
+         if not g['ok'] or stopflag.get('sigterm'):
+             summary['items'].append({'label': 'GB-' + cid, 'verdict': 'NOT_STARTED', 'gate': g})
+             break
+@@ -522,7 +530,7 @@
+ def finish(summary, t_start):
+     summary['finished_at'] = now(); summary['seconds'] = round(time.monotonic() - t_start, 3)
+     summary['self_ru_maxrss_bytes'] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+-    sh = xjson(OUTDIR/'SUMMARY.r3.json', summary)
++    sh = xjson(OUTDIR/'SUMMARY.r4.json', summary)
+     print(json.dumps({'summary_sha256': sh, 'items': summary['items']}, default=str), flush=True)
+ 
+ 

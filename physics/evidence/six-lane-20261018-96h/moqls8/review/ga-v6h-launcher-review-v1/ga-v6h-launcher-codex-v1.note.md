@@ -1,0 +1,25 @@
+VERDICT: HOLD
+
+| Finding | Status | File:line evidence |
+|---|---|---|
+| **03a NEW1 — complete registration-failure handling** | **PARTIAL** | Console close, record construction, write and announcement now share the handler that attempts one owned SIGTERM, then waits. However, settlement publication can raise and bypass exit 4. `snapshot/10-launch_ga_v6h.py:171–219,245–257`. |
+| **03a NEW2 — single reap owner, preserved status** | **REPAIRED** | `Popen.wait()` replaces raw `waitpid()`; no `poll()` competes for the status. Cached `returncode` supplies exit/signal fields and propagation. `snapshot/10-launch_ga_v6h.py:210,219,231–234,254–257`. |
+| **03a NEW3 — quantization refusal** | **REPAIRED** | The fit check permits 2 ms tolerance. The fixed settlement ceiling remains; the driver independently validates the supplied end and checks native budgets against it. `snapshot/10-launch_ga_v6h.py:144–145`; `snapshot/00-replay_v6f.py:2397–2400,1417–1420`. |
+| **03b NEW4 — terminal signal/status race** | **REPAIRED** | After waiting, SIGINT/SIGTERM/SIGHUP are blocked before settlement construction, serialization and the final status decision. A blocking failure is recorded as an error. `snapshot/10-launch_ga_v6h.py:215–229,245–257`. |
+
+1. **NEW — MAJOR: settlement publication errors escape the ownership handler; the required settlement/exit-4 guarantee remains incomplete.**
+
+   Settlement serialization, writing, fsync and announcement occur in a `try/finally` whose only recovery is descriptor closure. There is no exception handler or minimal-record fallback. A raised write error can leave the reserved settlement file empty or partial, with the cached driver status unpublished. The exception also skips the intended return-status decision. Unconditional settlement and exit 4 are **NOT ESTABLISHED**. Evidence: [10-launch_ga_v6h.py:88–94](/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/moqls8/review/ga-v6h-launcher-review-v1/snapshot/10-launch_ga_v6h.py:88), [245–257](/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/moqls8/review/ga-v6h-launcher-review-v1/snapshot/10-launch_ga_v6h.py:245).
+
+   There is also a concrete continuation of the required announcement-failure case: stdout raises `BrokenPipeError` during the launch announcement; the launcher catches it, SIGTERMs the driver and waits; settlement writing succeeds, but its announcement uses the same broken stdout and raises uncaught. The driver status survives in the settlement file, yet the promised exit 4 is bypassed. Evidence: [10-launch_ga_v6h.py:206–219](/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/moqls8/review/ga-v6h-launcher-review-v1/snapshot/10-launch_ga_v6h.py:206), `:245–257`.
+
+   Handle settlement publication and announcement independently, preserve the cached status and exit decision through their exceptions, and provide a minimal-record fallback when writing remains possible.
+
+Verified:
+
+- **Snapshot integrity:** all **16 manifest-listed files** match their SHA256 entries. Review used static reading, comparison and hashing only; no source execution, writes or delegation.
+- **Placement and admission guards remain:** `lstat`, file-type and realpath checks enforce the real-directory desk tree and regular PRE-EXEC/GO placement (`snapshot/10-launch_ga_v6h.py:78–85,118–125`). GO checks cover status, lane, driver/launcher/PRE-EXEC hashes, exact ordered items, tightening hash and 80 MiB reservation (`:130–140`). STOP registry validation requires the canonical versioned pathname, regular-file placement, SHA256 and schema; stop dispositions must be non-empty (`:48–49,102–111,135–138`).
+- **Cutoff and reservation remain:** the launcher refuses at its cutoff and exclusively creates all three outputs before spawning (`snapshot/10-launch_ga_v6h.py:141–169`). The driver additionally checks the native cutoff before native launches (`snapshot/00-replay_v6f.py:1404–1420`).
+- **Process ownership remains:** the driver starts in a new session. The launcher's caught managed-signal dispositions reset on exec; no pre-spawn mask change appears. Its sole explicit signalling operation is the single fail-closed SIGTERM to its owned, unreaped driver PID (`snapshot/10-launch_ga_v6h.py:164–169,208–223`).
+- **Deadline handoff matches:** the same quantized value enters the environment and launch record (`snapshot/10-launch_ga_v6h.py:144,154,188`). Accepted driver validation makes its subsequent `min()` retain that supplied value (`snapshot/00-replay_v6f.py:2393–2400`). Native admission, in-flight enforcement and late-reap veto use that bound (`:1417–1420,1773–1776,1876–1887`). No additional recorded/enforced-end mismatch or unregistered-native path was identified within the stated review limits.
+- **Status handling remains correct when settlement publication completes:** exit/signal fields preserve the cached driver status; clean exits propagate it, negative return codes map to `128+signal`, and recorded errors/signals select 4 (`snapshot/10-launch_ga_v6h.py:231–257`).

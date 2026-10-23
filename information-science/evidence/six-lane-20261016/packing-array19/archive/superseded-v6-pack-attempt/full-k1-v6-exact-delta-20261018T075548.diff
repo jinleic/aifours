@@ -1,0 +1,757 @@
+--- v5/src/check_m2_ms09_k1_v5.py
++++ v6/src/check_m2_ms09_k1_v6.py
+@@ -21,13 +21,13 @@
+ from pathlib import Path
+ 
+ import lane_new_data_accounting as A
+-import m2_item_owner_v5 as O
+-import m2_ms09_contract_v5 as C
+-import m2_ms09_evidence_v5 as E
+-import m2_native_staged_v5 as N
+-import m2_supervised_runtime_v5 as R
+-import run_m2_ms06_direct_v5 as M6
+-import run_m2_ms09_k1_v5 as TX
++import m2_item_owner_v6 as O
++import m2_ms09_contract_v6 as C
++import m2_ms09_evidence_v6 as E
++import m2_native_staged_v6 as N
++import m2_supervised_runtime_v6 as R
++import run_m2_ms06_direct_v6 as M6
++import run_m2_ms09_k1_v6 as TX
+ 
+ L = C.LANE
+ SELF = Path(__file__).resolve()
+@@ -105,6 +105,9 @@
+             signal.signal(signal.SIGTERM,signal.SIG_IGN)
+             dump(cfg['marker'],{'pid':os.getpid()}); time.sleep(2.0); return
+         with open(extra[1],'rb') as f: f.read()
++        if kind == 'solver' and cfg.get('delayed_publication'):
++            with open(extra[2],'wb') as f: f.write(b'\0'*65536)  # exceeds the control-only small raw cap
++            time.sleep(1.0); raise SystemExit(0)  # alive at the cap-induced bounded exit, gone before worker exit
+         if kind == 'solver':
+             with open(extra[2],'wb') as f: f.write(b'')
+             out,rc = cfg.get('solver_lines','s UNSATISFIABLE\n'),20
+@@ -139,9 +142,36 @@
+         start = threading.Thread.start
+         def failing(thread):
+             if thread._target is N.collector:
+-                time.sleep(0.2); raise RuntimeError('CONTROL collector start failure')
++                time.sleep(0.2); dump(cfg['injection_marker'],{'injected':'CONTROL collector start failure'})
++                raise RuntimeError('CONTROL collector start failure')
+             return start(thread)
+         threading.Thread.start = failing
++    natives = []
++    if cfg.get('delayed_publication'):
++        # Deterministic race model: the solver feeder suffers a REAL write failure, but publishes only after the
++        # worker's main thread has begun its bounded-exit stop. v6 must still settle and classify it.
++        N.MAX_RAW = 1000
++        released = threading.Event()
++        OriginalEvent = threading.Event
++        class BoundedExitEvent(OriginalEvent):
++            def set(self):
++                if threading.current_thread() is threading.main_thread(): released.set()
++                return super().set()
++        threading.Event = BoundedExitEvent
++        real_feed = N.feed_cnf
++        def delayed(fifo,data,record,stop,deadline):
++            private = {}
++            real_feed(fifo,data,private,stop,deadline)
++            if 'solver-cnf' in str(fifo):
++                assert released.wait(30), 'bounded exit never began'
++                time.sleep(0.2)
++                dump(cfg['injection_marker'],{'published_after_bounded_exit_stop':True,'feed':private})
++            record.update(private)
++        N.feed_cnf = delayed
++        real_start = N.start_native
++        def capture(*args,**kwargs):
++            p,t = real_start(*args,**kwargs); natives.append(p); return p,t
++        N.start_native = capture
+     def commands(paths):
+         if cfg.get('real_positive'):
+             return ([N.KISSAT,'-q','-f','--seed=1','--time=600',paths['solver-cnf.fifo'],paths['proof.fifo']],[N.DT,paths['checker-cnf.fifo'],'-i','-t','1200'])
+@@ -149,14 +179,17 @@
+         checker = [N.DT,paths['checker-cnf.fifo'],'-i','-t','1200'] if cfg.get('real_negative') else [sys.executable,'-B',str(SELF),'--child','emit',str(path),'checker',paths['checker-cnf.fifo']]
+         return solver,checker
+     def hook(p):
+-        time.sleep(0.2); raise RuntimeError('CONTROL post-Popen exception')
+-    dump(cfg['result'],N.pipeline(raw,cfg['job'],commands,hook if cfg.get('start_failure') else None))
++        time.sleep(0.2); dump(cfg['injection_marker'],{'injected':'CONTROL post-Popen exception'})
++        raise RuntimeError('CONTROL post-Popen exception')
++    result = N.pipeline(raw,cfg['job'],commands,hook if cfg.get('start_failure') else None)
++    for p in natives: p.wait(10)  # control-only: clean supervision proves the veto does not rely on a supervisor trip
++    dump(cfg['result'],result)
+ 
+ 
+ def native_case(root,name,**options):
+     folder = root/name; folder.mkdir(); priv = folder/'scope'; scope(priv)
+     item = lease(priv,time.monotonic()+8000)
+-    cfg = dict(options,scope=str(priv),result=str(folder/'worker.json'),marker=str(folder/'marker.json'),
++    cfg = dict(options,scope=str(priv),result=str(folder/'worker.json'),marker=str(folder/'marker.json'),injection_marker=str(folder/'injection.json'),
+                job={'solver':'kissat','solver_seconds':600,'checker_seconds':1200,'lease':item,'workdir':str(folder/'fifo')})
+     cp = folder/'config.json'; dump(cp,cfg)
+     rec_path = folder/('absent/supervisor.json' if options.get('receipt_error') else 'supervisor.json')
+@@ -188,8 +221,27 @@
+     if options.get('start_failure') or options.get('thread_failure'):
+         alive = [x for x in observations if x['native_state'] == 'alive']
+         assert alive and all(x['held_t0_free'] is False for x in alive), 'owned token released while native alive'
+-        assert rec.get('trip_reason') and (rec.get('uncertain') is True or (rec.get('stop') or {}).get('listing_ok') is True), rec
+-        if options.get('receipt_error'): assert rec.get('record_write_error') and rec.get('cleanup_exception')
++        injected = 'CONTROL collector start failure' if options.get('thread_failure') else 'CONTROL post-Popen exception'
++        assert json.loads((folder/'injection.json').read_bytes()) == {'injected':injected}, 'injection did not run'
++        assert injected in str(result.get('unknown_reason')), (injected,result.get('unknown_reason'))
++        assert str(rec.get('trip_reason')).startswith('group member alive after leader exit'), rec.get('trip_reason')
++        if options.get('receipt_error'):
++            assert rec.get('record_write_error') and rec.get('cleanup_exception') and rec.get('uncertain') is True
++        else:
++            assert rec.get('uncertain') is False and (rec.get('stop') or {}).get('listing_ok') is True and (rec.get('stop') or {}).get('survivors') == []
++    if options.get('delayed_publication'):
++        late = json.loads((folder/'injection.json').read_bytes())
++        assert late['published_after_bounded_exit_stop'] is True and late['feed']['error'] and late['feed']['cancelled'] is None
++        assert result.get('bounded_unknown') and result.get('proof_cap_hit') == 'raw' and result['feeders_settled'] == ['solver']
++        assert rec.get('completed_cleanly') is True and not rec.get('trip_reason'), ('supervision must be clean',rec)
++        composed = O.apply_worker_outcome({'status':'UNKNOWN','checked':False,'halt_production':False,'sat_candidate':False,
++            'integrity_status':result['integrity_status']},result,rec,cap.settlement)
++        saved_lane = O.L
++        try:
++            O.L = priv
++            O.persist_veto(composed,{'worker_result':priv/'cycle2/CONTROL-worker.json','supervisor':priv/'cycle2/CONTROL-supervisor.json'},'CONTROL',{})
++        finally: O.L = saved_lane
++        assert composed['halt_production'] is True and (priv/'cycle2/m2k3-INTEGRITY.flag').exists(), 'persistent veto missing'
+     assert all(lock_free(priv/'cycle2/tokens'/('t%d' % i)) for i in range(2))
+     dump(folder/'control-receipt.json',{'result':result,'supervisor':rec,'observations':observations,'production_coverage':False})
+     return {'name':name,'status':result['status'],'integrity_status':result['integrity_status'],'unknown_reason':result.get('unknown_reason'),
+@@ -295,7 +347,7 @@
+ 
+ 
+ def safety_dominance_control():
+-    native = {'schema':'PA19-NATIVE-RESULT-v5','status':'UNKNOWN','integrity_status':'NOT_EVALUATED','bounded_unknown':'native wall',
++    native = {'schema':'PA19-NATIVE-RESULT-v6','status':'UNKNOWN','integrity_status':'NOT_EVALUATED','bounded_unknown':'native wall',
+               'halt_production':False,'sat_candidate':False}
+     rec = {'completed_cleanly':False,'trip_reason':'free bytes 1 below floor 12000000000 at completion','uncertain':False,'stop':{}}
+     settle = {'group_quiescent':True,'leader_reaped':True,'explicit_owned_popen_wait':True}
+@@ -434,12 +486,12 @@
+             'skeleton_path':contract['skeleton_path'],'skeleton_sha256':contract['skeleton_sha256'],
+             'encoder_sha256':contract['source_sha256']['src/encode_skel_b.py'],'list_path':ca['list']['path'],
+             'list_sha256':ca['list']['sha256'],'complete_denominator':ca['list']['n']}
+-        pin = {'schema':'PA19-K1-CNF-PIN-v5','production_contract_sha256':h,'multiset':9,'b_index':70,'indices':[0,24],
++        pin = {'schema':'PA19-K1-CNF-PIN-v6','production_contract_sha256':h,'multiset':9,'b_index':70,'indices':[0,24],
+                'recipe':recipe,'binary_authority':contract['binary_authority'],'cnf_sha256':expected['cnf_sha256'],'cnf_bytes':expected['cnf_bytes'],
+                'source_sha256':contract['source_sha256'],'supervisor_sha256':R.SUP_SHA}
+         ph = C.publish_json(shadow/it['pin'],pin,shadow/'stage')
+         dump(shadow/'cycle2'/'m2k3-INTEGRITY.flag',{'status':'UNKNOWN','veto':'INTEGRITY','CONTROL':True})
+-        result = {'pipeline_schema':'PA19-SUPERVISED-DRAT-v5','status':'UNKNOWN','integrity_status':'INVALID','integrity_errors':['CONTROL invalid proof'],'sat_candidate':False,'checked':False,'halt_production':True,
++        result = {'pipeline_schema':'PA19-SUPERVISED-DRAT-v6','status':'UNKNOWN','integrity_status':'INVALID','integrity_errors':['CONTROL invalid proof'],'sat_candidate':False,'checked':False,'halt_production':True,
+                   'cnf_sha256':pin['cnf_sha256'],'cnf_bytes':pin['cnf_bytes'],'pre_child_pin_sha256':ph,
+                   'native_result':{'status':'UNKNOWN','integrity_status':'INVALID','checker_collector':{'status_lines':['s NOT VERIFIED']}}}
+         TX.publish_item(result,contract,h,ca,it,shadow/'stage')
+@@ -458,7 +510,7 @@
+             R.Capacity = lambda *args,**kwargs:AlreadyHeld()  # REAL outer control token remains held
+             C.load = scoped_contract(contract,contract['_control_contract_path'],h)
+             O.execute = forbidden_native
+-            sys.argv = [str(L/'src/run_m2_ms09_k1_v5.py'),str(L/contract['_control_contract_path']),h,'--max-attempts','1']
++            sys.argv = [str(L/'src/run_m2_ms09_k1_v6.py'),str(L/contract['_control_contract_path']),h,'--max-attempts','1']
+             TX.main()
+         finally:
+             R.Capacity,O.execute,sys.argv,C.load = original_cap,original_owner,argv,original_load
+@@ -479,7 +531,7 @@
+             rr = dict(result,status='UNKNOWN',integrity_status='NOT_EVALUATED',integrity_errors=[],sat_candidate=False,checked=False,halt_production=False,native_result={},pre_child_pin_sha256=ph2)
+             if variant == 'unknown-pipeline': rr['pipeline_schema'] = 'UNKNOWN'
+             rb = (json.dumps(rr,indent=1)+'\n').encode()
+-            cc = {'schema':'PA19-K1-RECEIPT-v5','production_contract_sha256':h,'b_index':70,'indices':[0,24],
++            cc = {'schema':'PA19-K1-RECEIPT-v6','production_contract_sha256':h,'b_index':70,'indices':[0,24],
+                   'pin_sha256':ph2,'record_sha256':'0'*64 if variant == 'bad-record-sha' else hashlib.sha256(rb).hexdigest()}
+             if variant != 'omit-commit': C.publish_json(shadow/fixture['commit'],cc,shadow/'stage')
+             if variant != 'interrupted-before-primary': C.publish_bytes(shadow/fixture['new_record'],rb,shadow/'stage')
+@@ -521,11 +573,11 @@
+         recipe = {'mode':'partbatch','multiset':9,'b_index':ca['b_index'],'indices':it['indices'],'skeleton_path':contract['skeleton_path'],
+             'skeleton_sha256':contract['skeleton_sha256'],'encoder_sha256':contract['source_sha256']['src/encode_skel_b.py'],
+             'list_path':ca['list']['path'],'list_sha256':ca['list']['sha256'],'complete_denominator':ca['list']['n']}
+-        pin = {'schema':'PA19-K1-CNF-PIN-v5','production_contract_sha256':h,'multiset':9,'b_index':ca['b_index'],'indices':it['indices'],
++        pin = {'schema':'PA19-K1-CNF-PIN-v6','production_contract_sha256':h,'multiset':9,'b_index':ca['b_index'],'indices':it['indices'],
+             'recipe':recipe,'cnf_sha256':hashlib.sha256(UNSAT).hexdigest(),'cnf_bytes':len(UNSAT),'source_sha256':contract['source_sha256'],
+             'supervisor_sha256':R.SUP_SHA,'binary_authority':contract['binary_authority']}
+         ph = C.publish_json(shadow/it['pin'],pin,shadow/'stage')
+-        r = {'pipeline_schema':'PA19-SUPERVISED-DRAT-v5','status':'UNKNOWN','checked':False,'integrity_status':'NOT_EVALUATED',
++        r = {'pipeline_schema':'PA19-SUPERVISED-DRAT-v6','status':'UNKNOWN','checked':False,'integrity_status':'NOT_EVALUATED',
+              'integrity_errors':[],'sat_candidate':False,'halt_production':False,'cnf_sha256':pin['cnf_sha256'],'cnf_bytes':len(UNSAT),
+              'pre_child_pin_sha256':ph,'native_result':{'status':'UNKNOWN','integrity_status':'NOT_EVALUATED','bounded_unknown':'CONTROL'}}
+         TX.publish_item(r,contract,h,ca,it,shadow/'stage')
+@@ -541,13 +593,13 @@
+         def record(constructor,recipe,contract_sha,source_sha,paths,deadline,admission,*a,**k):
+             calls.append(paths['id']); return {'status':'UNKNOWN'}
+         O.execute = record
+-        sys.argv = [str(L/'src/run_m2_ms09_k1_v5.py'),contract['_control_contract_path'],h,'--max-attempts','1']
++        sys.argv = [str(L/'src/run_m2_ms09_k1_v6.py'),contract['_control_contract_path'],h,'--max-attempts','1']
+         TX.main()
+     finally:
+         C.LANE,TX.L,R.create_census,R.census_for_gate,R.Capacity,O.execute,sys.argv = old; C.load = original_load
+     assert calls == [second], ('existing UNKNOWN was retried or queue changed',calls,first,second)
+     import re as regex
+-    archived = [p for p in (shadow/'archive/k1-v5-unattempted').iterdir() if regex.fullmatch(regex.escape(Path(second_claim).name)+r'\.[0-9]+',p.name)]
++    archived = [p for p in (shadow/'archive/k1-v6-unattempted').iterdir() if regex.fullmatch(regex.escape(Path(second_claim).name)+r'\.[0-9]+',p.name)]
+     assert len(archived) == 1 and not (shadow/second_claim).exists(), ('second claim not archived with timestamp suffix',archived)
+     assert E.digest(shadow/it['new_record']) == first_record_sha, 'first UNKNOWN receipt changed'
+     return {'skipped_existing_unknown':first,'next_attempted':second,'calls':calls,'archived_claim':str(archived[0].relative_to(shadow)),
+@@ -573,10 +625,10 @@
+             if mode == 'started-group-safety-trip':
+                 O.WORKER = SELF  # fake worker sleeps; owner/runner/Capacity/supervisor remain the real code paths
+                 def external_stop():
+-                    while not list(shadow.glob('cycle2/m2part_drat/*/*_k1_v5.json.job.json')): time.sleep(0.02)
++                    while not list(shadow.glob('cycle2/m2part_drat/*/*_k1_v6.json.job.json')): time.sleep(0.02)
+                     time.sleep(0.5); os.kill(os.getpid(),signal.SIGTERM)
+                 threading.Thread(target=external_stop,daemon=True).start()
+-            sys.argv = [str(L/'src/run_m2_ms09_k1_v5.py'),contract['_control_contract_path'],h,'--max-attempts','1']
++            sys.argv = [str(L/'src/run_m2_ms09_k1_v6.py'),contract['_control_contract_path'],h,'--max-attempts','1']
+             TX.main()
+         finally:
+             C.LANE,TX.L,O.L,O.WORKER,R.create_census,R.census_for_gate,R.Capacity,R.full_gate,sys.argv = saved; C.load = original_load
+@@ -714,7 +766,7 @@
+     try:
+         C.LANE = TX.L = shadow; C.load = scoped_contract(contract,contract['_control_contract_path'],h)
+         R.Capacity = lambda *a,**k: AlreadyHeld(); O.execute = forbidden
+-        sys.argv = [str(L/'src/run_m2_ms09_k1_v5.py'),contract['_control_contract_path'],h,'--max-attempts','1']
++        sys.argv = [str(L/'src/run_m2_ms09_k1_v6.py'),contract['_control_contract_path'],h,'--max-attempts','1']
+         TX.main()
+     finally:
+         C.LANE,TX.L,R.Capacity,O.execute,sys.argv,C.load = saved
+@@ -754,7 +806,7 @@
+         R.create_census = lambda lane=shadow: saved[4](lane)
+         R.census_for_gate = lambda ref,force=False,lane=shadow: saved[5](ref,force,lane)
+         M6.OWNER.execute = forbidden
+-        sys.argv = [str(L/'src/run_m2_ms06_direct_v5.py'),str(Path(path6).resolve()),sha6,'--max-attempts','1']
++        sys.argv = [str(L/'src/run_m2_ms06_direct_v6.py'),str(Path(path6).resolve()),sha6,'--max-attempts','1']
+         M6.main()
+     finally:
+         M6.L,M6.COMMON.LANE,M6.verify,R.Capacity,R.create_census,R.census_for_gate,M6.OWNER.execute,sys.argv = saved
+@@ -773,8 +825,8 @@
+     ap = argparse.ArgumentParser(); ap.add_argument('contract'); ap.add_argument('sha256')
+     ap.add_argument('ms06_contract'); ap.add_argument('ms06_sha256'); args = ap.parse_args()
+     R.install_handlers()
+-    root = L/'cycle2'/('v5-required-controls-'+str(time.time_ns())); root.mkdir()
+-    out = {'host_clock':time.strftime('%Y-%m-%dT%H:%M:%S%z'),'schema':'PA19-V5-REQUIRED-CONTROLS-v1','production_coverage':False,
++    root = L/'cycle2'/('v6-required-controls-'+str(time.time_ns())); root.mkdir()
++    out = {'host_clock':time.strftime('%Y-%m-%dT%H:%M:%S%z'),'schema':'PA19-V6-REQUIRED-CONTROLS-v1','production_coverage':False,
+            'control_source_sha256':E.digest(SELF),'contract_sha256':args.sha256,'families':{}}
+     try:
+         with R.Capacity(time.monotonic()+10800):  # one real lane token; private shadow tokens for lifecycle fixtures
+@@ -789,6 +841,7 @@
+                 ('checker-prefix',{'feed_fault':'checker'}),('solver-write-error',{'fd_error':'solver-write'}),
+                 ('checker-write-error',{'fd_error':'checker-write'}),('solver-close-error',{'fd_error':'solver-close'}),
+                 ('checker-close-error',{'fd_error':'checker-close'}),('real-SAT-invalid-proof',{'real_negative':True}),
++                ('delayed-real-feed-failure-across-bounded-exit',{'delayed_publication':True,'fd_error':'solver-write'}),
+                 ('post-Popen-exception',{'start_failure':True}),('collector-Thread.start-exception',{'thread_failure':True}),
+                 ('post-Popen-plus-receipt-OSError',{'start_failure':True,'receipt_error':True})]:
+                 entry = native_case(root,name,**opts); natives.append(entry)
+@@ -797,7 +850,8 @@
+                     'solver-write-error':'CNF transport failure (not bound-induced cancellation): solver',
+                     'checker-write-error':'CNF transport failure (not bound-induced cancellation): checker',
+                     'solver-close-error':'CNF FIFO close failed: solver','checker-close-error':'CNF FIFO close failed: checker',
+-                    'real-SAT-invalid-proof':'checker NOT VERIFIED'}
++                    'real-SAT-invalid-proof':'checker NOT VERIFIED',
++                    'delayed-real-feed-failure-across-bounded-exit':'CNF transport failure (not bound-induced cancellation): solver'}
+                 wanted = ('UNSAT','VALIDATED') if name == 'valid-full-feed' else ('UNKNOWN','INVALID')
+                 assert (entry['status'],entry['integrity_status']) == wanted, (name,entry,wanted)
+                 if name in reasons: assert entry['unknown_reason'] == reasons[name], (name,entry['unknown_reason'])
+--- v5/src/final_m2_ms09_inventory_v5.py
++++ v6/src/final_m2_ms09_inventory_v6.py
+@@ -8,8 +8,8 @@
+ import json
+ import time
+ 
+-import m2_ms09_contract_v5 as C
+-import m2_supervised_runtime_v5 as R
++import m2_ms09_contract_v6 as C
++import m2_supervised_runtime_v6 as R
+ 
+ 
+ def main():
+--- v5/src/freeze_m2_ms09_k1_v5.py
++++ v6/src/freeze_m2_ms09_k1_v6.py
+@@ -11,9 +11,9 @@
+ from pathlib import Path
+ 
+ import lane_new_data_accounting as ACCOUNT
+-import m2_ms09_contract_v5 as C
+-import m2_ms09_evidence_v5 as E
+-import m2_supervised_runtime_v5 as R
++import m2_ms09_contract_v6 as C
++import m2_ms09_evidence_v6 as E
++import m2_supervised_runtime_v6 as R
+ 
+ L = C.LANE
+ PHASE = L/'cycle2'/'ms09-batch-denominators-v2-20261018T015110.json'
+@@ -45,7 +45,7 @@
+         'cases':[],'calibration_reservations':[],'reserved_ids':[],'pending_order':[],'frozen_original_records':[],
+         'validation_tasks':[],'validation_order':C.CALIBRATION_VALIDATION_IDS+C.HISTORICAL_VALIDATION_IDS,
+         'reuse_policy':'WITHDRAWN: only new measured-v3 exact-input validation may qualify historical inputs',
+-        'no_retry':'one new _k1_v5 attempt/input; pre-worker admission refusals stay unattempted; every supervisor stop and UNKNOWN preserved; individual re-admission needs explicit parent decision',
++        'no_retry':'one new _k1_v6 attempt/input; pre-worker admission refusals stay unattempted; every supervisor stop and UNKNOWN preserved; individual re-admission needs explicit parent decision',
+         'priority':'primary open-M2 work before14 measured validations; LEGACY5 repair E0 then ms01 only afterward',
+         'final_gate':'all exact intervals measured-v3; scientific UNKNOWN on failed certification with separate persistent integrity/SAT/safety veto',
+         'resource_policy':C.resource_policy()}
+@@ -166,7 +166,7 @@
+     assert a['known'] and a['new_data_usage_upper_bytes']+R.ALL_PLANNED_RETAINED_BOUND+R.OTHER_WRITER_MARGIN+16*1024**2 <= ACCOUNT.ENFORCED_CAP_BYTES
+     sats,invalid = C.sat_scan()
+     assert not sats and not invalid, ('SAT/invalid JSON veto',sats,invalid)
+-    dest = L/'cycle2'/('m2-ms09-k1-v5-contract-'+time.strftime('%Y%m%dT%H%M%S')+'.json')
++    dest = L/'cycle2'/('m2-ms09-k1-v6-contract-'+time.strftime('%Y%m%dT%H%M%S')+'.json')
+     stage = L/'scratch'/'m2k1-publish'/('contract-'+str(time.time_ns()))
+     C.verify_sources(out)
+     assert len((json.dumps(out,indent=1)+'\n').encode()) <= 8*1024**2, 'two contract hardlinks exceed16MiB frozen bound'
+--- v5/src/m2_item_owner_v5.py
++++ v6/src/m2_item_owner_v6.py
+@@ -9,12 +9,12 @@
+ import time
+ from pathlib import Path
+ 
+-import m2_ms09_contract_v5 as C
+-import m2_supervised_runtime_v5 as R
+-import m2_supervised_evidence_v5 as EVIDENCE
++import m2_ms09_contract_v6 as C
++import m2_supervised_runtime_v6 as R
++import m2_supervised_evidence_v6 as EVIDENCE
+ 
+ L = C.LANE
+-WORKER = L/'src/m2_native_staged_v5.py'
++WORKER = L/'src/m2_native_staged_v6.py'
+ 
+ 
+ def bounded_publish(path,value,stage,limit):
+@@ -78,7 +78,7 @@
+     """All expectations derive from the frozen contract admission object; observed hashes NEVER become authority."""
+     authority = admission['binary_authority']
+     assert authority['solver']['path'] == '/opt/homebrew/bin/'+solver
+-    result = {'pipeline_schema':'PA19-SUPERVISED-DRAT-v5','status':'UNKNOWN','checked':False,
++    result = {'pipeline_schema':'PA19-SUPERVISED-DRAT-v6','status':'UNKNOWN','checked':False,
+         'integrity_status':'NOT_EVALUATED','integrity_errors':[],'sat_candidate':False,'halt_production':False,
+         'group_started':False,'production_contract_sha256':contract_sha,'multiset':recipe['multiset'],'b_index':recipe['b_index'],
+         'indices':recipe.get('indices'),'encoder':'encode_skel_b.build_v2' if recipe['mode'] == 'direct' else 'encode_skel_b.build_partbatch',
+@@ -102,14 +102,14 @@
+             raw = constructor()
+             h,nbytes = hashlib.sha256(raw).hexdigest(),len(raw)
+             result.update(cnf_sha256=h,cnf_bytes=nbytes)
+-            pin = {'schema':'PA19-K1-CNF-PIN-v5','host_clock':time.strftime('%Y-%m-%dT%H:%M:%S%z'),
++            pin = {'schema':'PA19-K1-CNF-PIN-v6','host_clock':time.strftime('%Y-%m-%dT%H:%M:%S%z'),
+                 'production_contract_sha256':contract_sha,'multiset':recipe['multiset'],'b_index':recipe['b_index'],
+                 'indices':recipe.get('indices'),'cnf_sha256':h,'cnf_bytes':nbytes,'recipe':recipe,'source_sha256':source_sha,
+                 'supervisor_sha256':R.SUP_SHA,'binary_authority':authority,'no_cnf_or_proof_retained':True}
+             pin_sha = bounded_publish(paths['pin'],pin,stage,16384)
+             result.update(pre_child_pin_sha256=pin_sha,pre_child_pin_path=str(Path(paths['pin']).relative_to(L)))
+             lease['item_deadline_monotonic'] = time.monotonic()+2400
+-            job = {'schema':'PA19-NATIVE-JOB-v5','recipe':recipe,'cnf_sha256':h,'cnf_bytes':nbytes,'solver':solver,
++            job = {'schema':'PA19-NATIVE-JOB-v6','recipe':recipe,'cnf_sha256':h,'cnf_bytes':nbytes,'solver':solver,
+                 'solver_seconds':seconds,'checker_seconds':1200,'lease':lease,'source_sha256':source_sha,'binary_authority':authority,
+                 'workdir':str(paths['workdir']),'result_path':str(paths['worker_result'])}
+             job_sha = bounded_publish(paths['job'],job,stage,16384)
+@@ -128,7 +128,7 @@
+             native = None
+             try:
+                 native = json.loads(Path(paths['worker_result']).read_bytes())
+-                assert native['schema'] == 'PA19-NATIVE-RESULT-v5' and native['status'] in ('UNSAT','UNKNOWN')
++                assert native['schema'] == 'PA19-NATIVE-RESULT-v6' and native['status'] in ('UNSAT','UNKNOWN')
+                 assert native['integrity_status'] in ('VALIDATED','INVALID','NOT_EVALUATED')
+                 result.update(native_result=native,worker_result_path=str(Path(paths['worker_result']).relative_to(L)),
+                               worker_result_sha256=R.digest(paths['worker_result']))
+--- v5/src/m2_ms09_contract_v5.py
++++ v6/src/m2_ms09_contract_v6.py
+@@ -11,23 +11,23 @@
+ from pathlib import Path
+ 
+ import encode_skel_b as ENC
+-import m2_ms09_evidence_v5 as E
++import m2_ms09_evidence_v6 as E
+ import structural_b3_acceptance as B3
+-import m2_supervised_runtime_v5 as supervised_runtime
++import m2_supervised_runtime_v6 as supervised_runtime
+ 
+ LANE = Path(__file__).resolve().parent.parent
+ P0 = [4,3,3,3,3,3]
+-SCHEMA = 'PA19-MS09-K1-v5'
++SCHEMA = 'PA19-MS09-K1-v6'
+ SKELETON_SHA = '7c46ebbad3389476407e99807593287a8b3bb6c6a80f34574f0e9c00134293d0'
+ MAP_SHA = 'd06bb6fce38a2fbf96cf7d84d18331ec8233b54ccdccfc4b4ec759f281aa5282'
+ ENCODER_SHA = 'd0002e60d11ef5cba568309fde5b15e29280ca127bc0e6bb1f4d22929a5628e5'
+ PHASE_PATH = 'cycle2/ms09-batch-denominators-v2-20261018T015110.json'
+ PHASE_SHA = 'd0d0d7fa9dae6ab263b05af800c0967916adf840c7583613d98c15d41d810d33'
+ SOURCE_FILES = ('src/encode_skel_b.py','src/gen_skel_b.py','src/extend_b.py','src/extend_b_x.py',
+-                'src/stream_check15.py','src/calibration_chunk_budget.py','src/m2_ms09_evidence_v5.py',
+-                'src/m2_ms09_contract_v5.py','src/freeze_m2_ms09_k1_v5.py','src/run_m2_ms09_k1_v5.py','src/final_m2_ms09_inventory_v5.py',
+-                'src/m2_supervised_runtime_v5.py','src/m2_native_staged_v5.py','src/m2_item_owner_v5.py','src/m2_supervised_evidence_v5.py',
+-                'src/lane_new_data_accounting.py','src/structural_b3_acceptance.py','src/run_m2_ms06_direct_v5.py','src/check_m2_ms09_k1_v5.py',
++                'src/stream_check15.py','src/calibration_chunk_budget.py','src/m2_ms09_evidence_v6.py',
++                'src/m2_ms09_contract_v6.py','src/freeze_m2_ms09_k1_v6.py','src/run_m2_ms09_k1_v6.py','src/final_m2_ms09_inventory_v6.py',
++                'src/m2_supervised_runtime_v6.py','src/m2_native_staged_v6.py','src/m2_item_owner_v6.py','src/m2_supervised_evidence_v6.py',
++                'src/lane_new_data_accounting.py','src/structural_b3_acceptance.py','src/run_m2_ms06_direct_v6.py','src/check_m2_ms09_k1_v6.py',
+                 'src/supervise_pa19_v3.py')
+ 
+ 
+@@ -46,10 +46,10 @@
+         lo,hi = indices
+         base,ident,suffix = ('cycle2/m2part_drat/ms09_b%05d/batch_%05d_%05d' % (bi,lo,hi),
+                              key(bi,lo,hi),'%05d_%05d' % (lo,hi))
+-    tail = '_k1_v5'
++    tail = '_k1_v6'
+     return {'id':ident,'indices':indices,'original':base+'.json','new_record':base+tail+'.json',
+             'pin':base+tail+'.cnf-pin.json','commit':base+tail+'.receipt.json',
+-            'claim':'cycle2/claims/m2k1_v5_ms09_b%05d_%s.claim' % (bi,suffix),'baseline':None}
++            'claim':'cycle2/claims/m2k1_v6_ms09_b%05d_%s.claim' % (bi,suffix),'baseline':None}
+ 
+ 
+ def read(p):
+@@ -120,9 +120,9 @@
+                 lo,hi = it['indices']
+                 assert all(type(v) is int for v in it['indices']) and it['id'] == key(bi,lo,hi)
+                 base = 'cycle2/m2part_drat/ms09_b%05d/batch_%05d_%05d' % (bi,lo,hi)
+-                assert it['original'] == base+'.json' and it['new_record'] == base+'_k1_v5.json'
+-                assert it['pin'] == base+'_k1_v5.cnf-pin.json' and it['commit'] == base+'_k1_v5.receipt.json'
+-                assert it['claim'] == 'cycle2/claims/m2k1_v5_ms09_b%05d_%05d_%05d.claim' % (bi,lo,hi)
++                assert it['original'] == base+'.json' and it['new_record'] == base+'_k1_v6.json'
++                assert it['pin'] == base+'_k1_v6.cnf-pin.json' and it['commit'] == base+'_k1_v6.receipt.json'
++                assert it['claim'] == 'cycle2/claims/m2k1_v6_ms09_b%05d_%05d_%05d.claim' % (bi,lo,hi)
+                 if it.get('baseline'):
+                     ex = it['baseline']['expected']
+                     assert it['baseline']['path'] == it['original'] and ex['multiset'] == 9 and ex['b_index'] == bi and ex['indices'] == [lo,hi]
+@@ -275,7 +275,7 @@
+         return {'state':'MISSING','errors':[],'sat':False}
+     try:
+         pin,commit = read(LANE/it['pin']),read(LANE/it['commit'])
+-        assert pin['schema'] == 'PA19-K1-CNF-PIN-v5' and commit['schema'] == 'PA19-K1-RECEIPT-v5'
++        assert pin['schema'] == 'PA19-K1-CNF-PIN-v6' and commit['schema'] == 'PA19-K1-RECEIPT-v6'
+         assert pin['production_contract_sha256'] == commit['production_contract_sha256'] == contract_sha
+         assert type(pin['multiset']) is int and pin['multiset'] == 9
+         assert type(pin['b_index']) is int and type(commit['b_index']) is int
+@@ -306,8 +306,8 @@
+         obj = r.get('record') or {}
+         assert isinstance(obj,dict)
+         assert obj.get('production_contract_sha256') == contract_sha and obj.get('pre_child_pin_sha256') == commit['pin_sha256']
+-        assert obj.get('count_for_scientific_coverage') is True and obj.get('runner') == 'run_m2_ms09_k1_v5.py'
+-        assert obj.get('pipeline_schema') == 'PA19-SUPERVISED-DRAT-v5'
++        assert obj.get('count_for_scientific_coverage') is True and obj.get('runner') == 'run_m2_ms09_k1_v6.py'
++        assert obj.get('pipeline_schema') == 'PA19-SUPERVISED-DRAT-v6'
+         if idx is not None:
+             assert obj.get('list_sha256') == ca['list']['sha256'] and obj.get('enumerator') == 'extend_b.py'
+             assert type(obj.get('complete_denominator')) is int and obj['complete_denominator'] == ca['list']['n']
+--- v5/src/m2_ms09_evidence_v5.py
++++ v6/src/m2_ms09_evidence_v6.py
+@@ -94,8 +94,8 @@
+         return {'state':'INTEGRITY_VETO','errors':['record is not an object'],'sha256':h,'sat':False,'record':r}
+     inner = r.get('native_result') if isinstance(r.get('native_result'),dict) else {}
+     sat = r.get('sat_candidate') is True or inner.get('sat_candidate') is True or r.get('status') == 'SAT' or inner.get('status') == 'SAT'
+-    if r.get('pipeline_schema') == 'PA19-SUPERVISED-DRAT-v5':
+-        import m2_supervised_evidence_v5 as supervised
++    if r.get('pipeline_schema') == 'PA19-SUPERVISED-DRAT-v6':
++        import m2_supervised_evidence_v6 as supervised
+         errors = supervised.identity_errors(r,expected)
+         checker = inner.get('checker_collector') if isinstance(inner.get('checker_collector'),dict) else {}
+         invalid = r.get('integrity_status') == 'INVALID' or inner.get('integrity_status') == 'INVALID' or any('NOT VERIFIED' in str(v) for v in checker.get('status_lines',[]))
+--- v5/src/m2_native_staged_v5.py
++++ v6/src/m2_native_staged_v6.py
+@@ -17,12 +17,13 @@
+ from pathlib import Path
+ 
+ import encode_skel_b as ENC
+-import m2_supervised_runtime_v5 as R
++import m2_supervised_runtime_v6 as R
+ 
+ L = Path(__file__).resolve().parent.parent
+ CHUNK = 1 << 20
+ MAX_RAW = 1200*1024**2
+ MAX_ZBUF = 500*1024**2
++FEED_SETTLE_SECONDS = 30  # feeders poll stop every <=10ms on nonblocking FIFOs; longer means lifecycle failure
+ KISSAT,CADICAL,DT = '/opt/homebrew/bin/kissat','/opt/homebrew/bin/cadical',str(L/'tools/drat-trim/drat-trim')
+ P0 = [4,3,3,3,3,3]
+ 
+@@ -273,7 +274,7 @@
+ 
+ def pipeline(raw,job,commands=None,start_hook=None):
+     """commands/start_hook are library-only controlled fixtures; the production CLI supplies neither."""
+-    result = {'schema':'PA19-NATIVE-RESULT-v5','cnf_sha256':hashlib.sha256(raw).hexdigest(),'cnf_bytes':len(raw),
++    result = {'schema':'PA19-NATIVE-RESULT-v6','cnf_sha256':hashlib.sha256(raw).hexdigest(),'cnf_bytes':len(raw),
+               'cnf_feeds':{'solver':{},'checker':{}},'solver_collector':{},'checker_collector':{},
+               'proof_stream':{},'proof_delivery':{},'gates':[],'no_regular_cnf_or_proof':True}
+     folder = Path(job['workdir'])
+@@ -281,7 +282,7 @@
+     folder.mkdir(parents=True,exist_ok=False)
+     paths = {k:str(folder/k) for k in ('solver-cnf.fifo','checker-cnf.fifo','proof.fifo')}
+     for p in paths.values(): os.mkfifo(p,0o600)
+-    stop,threads = threading.Event(),[]
++    stop,threads,feeders = threading.Event(),[],[]
+     s = job['solver_seconds']
+     native = [KISSAT,'-q','-f','--seed=1','--time=%d' % s] if job['solver'] == 'kissat' else [CADICAL,'-q','-t',str(s)]
+     solver_command = native+[paths['solver-cnf.fifo'],paths['proof.fifo']]
+@@ -291,7 +292,7 @@
+     try:
+         sf = threading.Thread(target=feed_cnf,args=(paths['solver-cnf.fifo'],raw,result['cnf_feeds']['solver'],stop,job['lease']['item_deadline_monotonic']),daemon=True)
+         pr = threading.Thread(target=proof_reader,args=(paths['proof.fifo'],result['proof_stream'],stop),daemon=True)
+-        sf.start(); threads.append(sf)
++        sf.start(); threads.append(sf); feeders.append(('solver',sf))
+         pr.start(); threads.append(pr)
+         t0 = time.monotonic()
+         gate = R.full_gate(job['lease'],'solver')
+@@ -323,7 +324,7 @@
+         if not gate['admitted']: result['resource_refusal'] = gate['errors']; return result
+         dp,dt = start_native(checker_command,result['checker_collector'],False,stdin=True,start_hook=start_hook)
+         threads.append(dt)
+-        cf.start(); threads.append(cf)
++        cf.start(); threads.append(cf); feeders.append(('checker',cf))
+         rp = threading.Thread(target=replay,args=(result['proof_stream']['chunks'],dp.stdin,result['proof_delivery']),daemon=True)
+         rp.start(); threads.append(rp)
+         result['checker_rc'] = await_native(dp,job['checker_seconds'],threading.Event())
+@@ -338,7 +339,17 @@
+         result['lifecycle_error'] = repr(exc)
+     finally:
+         stop.set()
+-        # Freeze public metrics away from any daemon that is still unwinding after a failure.
++        # Settle EVERY started CNF feeder before freezing observations: a real failure published after the stop
++        # must still be classified. An unsettled feeder is an explicit lifecycle/integrity failure, never UNKNOWN.
++        unsettled = []
++        for name,thread in feeders:
++            thread.join(FEED_SETTLE_SECONDS)
++            if thread.is_alive(): unsettled.append(name)
++        result['feeders_settled'] = [name for name,_ in feeders if name not in unsettled]
++        if unsettled:
++            result['feeders_unsettled'] = unsettled
++            result['lifecycle_error'] = result.get('lifecycle_error') or 'CNF feeder did not settle after stop: '+','.join(unsettled)
++        # Freeze public metrics away from any non-feeder daemon that is still unwinding after a failure.
+         result['proof_stream'] = {k:v for k,v in result['proof_stream'].items() if k != 'chunks'}
+         result['solver_collector'] = dict(result['solver_collector'])
+         result['checker_collector'] = dict(result['checker_collector'])
+@@ -378,7 +389,7 @@
+     path,h = Path(sys.argv[1]),sys.argv[2]
+     assert R.digest(path) == h
+     job = json.loads(path.read_bytes())
+-    assert job['schema'] == 'PA19-NATIVE-JOB-v5' and job['solver'] in ('kissat','cadical')
++    assert job['schema'] == 'PA19-NATIVE-JOB-v6' and job['solver'] in ('kissat','cadical')
+     assert job['checker_seconds'] == 1200 and job['solver_seconds'] in (300,600)
+     assert os.getppid() == job['lease']['owner_pid'] == int(os.environ['K3_SUPERVISOR_PID'])
+     assert os.environ['K3_SUPERVISOR_SCRIPT'] == str(R.SUP_PATH) and R.digest(R.SUP_PATH) == R.SUP_SHA
+@@ -393,14 +404,14 @@
+     try:
+         pre = R.full_gate(job['lease'],'construct')
+         if not pre['admitted']:
+-            result = {'schema':'PA19-NATIVE-RESULT-v5','resource_refusal':pre['errors'],'worker_preconstruction_gate':pre}
++            result = {'schema':'PA19-NATIVE-RESULT-v6','resource_refusal':pre['errors'],'worker_preconstruction_gate':pre}
+             result.update(outcome(result))
+         else:
+             raw = recipe_cnf(job)
+             result = pipeline(raw,job)
+             result['worker_preconstruction_gate'] = pre
+     except BaseException as exc:
+-        result = {'schema':'PA19-NATIVE-RESULT-v5','status':'UNKNOWN','integrity_status':'INVALID','integrity_errors':[repr(exc)],
++        result = {'schema':'PA19-NATIVE-RESULT-v6','status':'UNKNOWN','integrity_status':'INVALID','integrity_errors':[repr(exc)],
+                   'sat_candidate':False,'halt_production':True,'construction_error':repr(exc)}
+     payload = (json.dumps(result,indent=1)+'\n').encode()
+     assert len(payload) <= 16*1024**2, 'halting worker diagnostic bound'
+--- v5/src/m2_supervised_evidence_v5.py
++++ v6/src/m2_supervised_evidence_v6.py
+@@ -6,11 +6,11 @@
+ import stat
+ from pathlib import Path
+ 
+-import m2_supervised_runtime_v5 as R
++import m2_supervised_runtime_v6 as R
+ 
+ 
+ def identity_errors(r,ex):
+-    if not isinstance(r,dict) or r.get('pipeline_schema') != 'PA19-SUPERVISED-DRAT-v5': return ['unsupported supervised schema']
++    if not isinstance(r,dict) or r.get('pipeline_schema') != 'PA19-SUPERVISED-DRAT-v6': return ['unsupported supervised schema']
+     errors = []
+     for key in ('multiset','b_index'):
+         if type(r.get(key)) is not int or r[key] != ex[key]: errors.append('wrong '+key)
+@@ -80,18 +80,18 @@
+         need(type(sr.get('leader_returncode')) is int and sr['leader_returncode'] == 0,'worker did not self-exit0')
+         jp = Path(lane)/r['job_path']; need(R.digest(jp) == r['job_sha256'],'job SHA differs')
+         job = json.loads(jp.read_bytes())
+-        need(job.get('schema') == 'PA19-NATIVE-JOB-v5' and job.get('source_sha256') == ex['source_sha256'] and job.get('recipe') == ex['recipe'],'job source/recipe differs')
++        need(job.get('schema') == 'PA19-NATIVE-JOB-v6' and job.get('source_sha256') == ex['source_sha256'] and job.get('recipe') == ex['recipe'],'job source/recipe differs')
+         need(job.get('binary_authority') == job.get('lease',{}).get('binary_authority') == authority,'job authority differs from contract')
+         need(job['cnf_sha256'] == ex['cnf_sha256'] and type(job['cnf_bytes']) is int and job['cnf_bytes'] == ex['cnf_bytes'],'job input differs')
+         need(job['solver_seconds'] == ex['native_limit'] and job['checker_seconds'] == 1200,'native/check limit differs')
+-        expected_command = [authority['python']['path'],'-B',str(Path(lane)/'src/m2_native_staged_v5.py'),str(jp),r['job_sha256']]
++        expected_command = [authority['python']['path'],'-B',str(Path(lane)/'src/m2_native_staged_v6.py'),str(jp),r['job_sha256']]
+         need(sr.get('command') == expected_command,'supervised worker argv differs')
+         files = sr.get('command_files_sha256') or {}
+         need(files.get(expected_command[0]) == authority['python']['sha256'] and files.get(str(jp)) == r['job_sha256']
+-             and files.get(expected_command[2]) == ex['source_sha256']['src/m2_native_staged_v5.py'],'supervised executable/source/job hashes differ')
++             and files.get(expected_command[2]) == ex['source_sha256']['src/m2_native_staged_v6.py'],'supervised executable/source/job hashes differ')
+         np = Path(lane)/r['worker_result_path']; need(R.digest(np) == r['worker_result_sha256'],'worker report SHA differs')
+         native = json.loads(np.read_bytes())
+-        need(native == r['native_result'] and native.get('schema') == 'PA19-NATIVE-RESULT-v5','worker report differs')
++        need(native == r['native_result'] and native.get('schema') == 'PA19-NATIVE-RESULT-v6','worker report differs')
+         need(native.get('status') == 'UNSAT' and native.get('integrity_status') == 'VALIDATED' and native.get('integrity_errors') == []
+              and native.get('sat_candidate') is False and native.get('halt_production') is False,'worker outcome unqualified')
+         need(native.get('cnf_sha256') == ex['cnf_sha256'] and native.get('cnf_bytes') == ex['cnf_bytes'],'worker regenerated CNF differs')
+--- v5/src/m2_supervised_runtime_v5.py
++++ v6/src/m2_supervised_runtime_v6.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""PA19 v5 admission/ownership. Single normal3.5GiB sampled group threshold, COUNT<=2; NO automatic retries.
++"""PA19 v6 admission/ownership. Single normal3.5GiB sampled group threshold, COUNT<=2; NO automatic retries.
+ Every admission gate and inventory share one persistent-veto registry (old m2k1 plus new m2k3 markers).
+ Local supervise_pa19_v3 copies the reviewed r3 with one ownership callback only; the exact Popen remains retained
+ until explicit wait/reaping AND group quiescence. Native groups contain no /bin/ps/setuid helper.
+--- v5/src/run_m2_ms06_direct_v5.py
++++ v6/src/run_m2_ms06_direct_v6.py
+@@ -14,22 +14,22 @@
+ from pathlib import Path
+ 
+ import encode_skel_b as ENC
+-import m2_item_owner_v5 as OWNER
+-import m2_ms09_contract_v5 as COMMON
+-import m2_ms09_evidence_v5 as E
+-import m2_supervised_runtime_v5 as R
+-import run_m2_ms09_k1_v5 as TX
++import m2_item_owner_v6 as OWNER
++import m2_ms09_contract_v6 as COMMON
++import m2_ms09_evidence_v6 as E
++import m2_supervised_runtime_v6 as R
++import run_m2_ms09_k1_v6 as TX
+ 
+ L = COMMON.LANE
+ QUEUE = 'cycle2/m2-jobs-hard-direct.txt'
+ SK = 'cycle2/skel-b/skeletons-b-ms06.json'
+-SCHEMA = 'PA19-MS06-INITIAL-DIRECT-v5'
++SCHEMA = 'PA19-MS06-INITIAL-DIRECT-v6'
+ 
+ 
+ def task(bi):
+-    base = 'cycle2/m2skel_drat/ms06_b%05d_v5' % bi
++    base = 'cycle2/m2skel_drat/ms06_b%05d_v6' % bi
+     return {'id':'ms06_b%05d' % bi,'indices':None,'new_record':base+'.json','pin':base+'.cnf-pin.json',
+-            'commit':base+'.receipt.json','claim':'cycle2/claims/ms06_direct_v5_b%05d.claim' % bi}
++            'commit':base+'.receipt.json','claim':'cycle2/claims/ms06_direct_v6_b%05d.claim' % bi}
+ 
+ 
+ def queue_ids():
+@@ -59,8 +59,8 @@
+         'rows':rows,'pending_order':[x['b_index'] for x in rows if x['original_record'] is None],
+         'native_seconds':300,'check_seconds':1200,'count_ceiling':2,'automatic_retry_allowed':False,
+         'no_helper_from_this_adapter':True,'original_outcomes_are_not_backfilled_or_final_qualified':True}
+-    dest = L/'cycle2'/('m2-ms06-initial-v5-contract-'+time.strftime('%Y%m%dT%H%M%S')+'.json')
+-    h = COMMON.publish_json(dest,out,L/'scratch/m2k1-v5-publish'/('ms06-freeze-'+str(time.time_ns())))
++    dest = L/'cycle2'/('m2-ms06-initial-v6-contract-'+time.strftime('%Y%m%dT%H%M%S')+'.json')
++    h = COMMON.publish_json(dest,out,L/'scratch/m2k1-v6-publish'/('ms06-freeze-'+str(time.time_ns())))
+     print(dest,h,'pending',len(out['pending_order']),flush=True)
+ 
+ 
+@@ -85,7 +85,7 @@
+     if not (L/it['new_record']).exists(): return {'state':'MISSING','record':None,'errors':[]}
+     try:
+         pin,k = COMMON.read(L/it['pin']),COMMON.read(L/it['commit'])
+-        assert pin['schema'] == 'PA19-K1-CNF-PIN-v5' and k['schema'] == 'PA19-K1-RECEIPT-v5'
++        assert pin['schema'] == 'PA19-K1-CNF-PIN-v6' and k['schema'] == 'PA19-K1-RECEIPT-v6'
+         assert pin['production_contract_sha256'] == k['production_contract_sha256'] == h
+         assert type(pin['multiset']) is int and pin['multiset'] == 6 and type(pin['b_index']) is int and pin['b_index'] == k['b_index'] == bi
+         assert pin['indices'] is None and pin['source_sha256'] == c['source_sha256'] and pin['binary_authority'] == c['binary_authority']
+@@ -102,7 +102,7 @@
+ 
+ 
+ def freeze_misses(c,h):
+-    dest = L/'cycle2/ms06-initial-v5-UNKNOWN-misses-ONCE.json'; assert not dest.exists()
++    dest = L/'cycle2/ms06-initial-v6-UNKNOWN-misses-ONCE.json'; assert not dest.exists()
+     rows = []
+     for x in c['rows']:
+         bi = x['b_index']
+@@ -114,11 +114,11 @@
+         if r.get('status') != 'UNSAT' or r.get('checked') is not True:
+             rows.append({'job':'6:%d' % bi,'b_index':bi,'record':rel,'record_sha256':E.digest(L/rel),
+                 'cnf_sha256':r['cnf_sha256'],'cnf_bytes':r['cnf_bytes'],'status':'UNKNOWN','already_enumerated':bi in (68,73)})
+-    out = {'schema':'PA19-MS06-UNKNOWN-SET-v5','host_clock':time.strftime('%Y-%m-%dT%H:%M:%S%z'),'initial_contract_sha256':h,
++    out = {'schema':'PA19-MS06-UNKNOWN-SET-v6','host_clock':time.strftime('%Y-%m-%dT%H:%M:%S%z'),'initial_contract_sha256':h,
+         'source_sha256':c['source_sha256'],'skeleton_sha256':c['skeleton_sha256'],'jobs':rows,
+         'scope':'exact accumulated initial-pass UNKNOWN set; NO helper admission/denominator supplied here',
+         'requires_new_source_denominator_growth_review_before_any_helper':True}
+-    rh = COMMON.publish_json(dest,out,L/'scratch/m2k1-v5-publish'/('ms06-misses-'+str(time.time_ns())))
++    rh = COMMON.publish_json(dest,out,L/'scratch/m2k1-v6-publish'/('ms06-misses-'+str(time.time_ns())))
+     print(dest,rh,'UNKNOWN',len(rows),flush=True)
+ 
+ 
+@@ -150,7 +150,7 @@
+                 'reason':'persistent veto or resource STOP present; no claim or native admission','veto_markers':vetoes,
+                 'resource_stops':stops,'admission_union':union,'record_vetoes':record_vetoes,
+                 'native_has_started':False,'contract_sha256':args.sha256,'host_clock':time.strftime('%Y-%m-%dT%H:%M:%S%z')},
+-                L/'scratch/m2k1-v5-publish'/('ms06-veto-'+str(time.time_ns())))
++                L/'scratch/m2k1-v6-publish'/('ms06-veto-'+str(time.time_ns())))
+             print('M6 initialization veto',vetoes,record_vetoes,flush=True)
+             return
+         assert args.max_attempts > 0 and all(v['matches'] for v in R.binary_observations(c['binary_authority']).values())
+@@ -159,7 +159,7 @@
+         admission = {'binary_authority':c['binary_authority'],'census_reference':reference,
+                      'whole_plan_remaining_bound_bytes':c['resource_policy']['whole_plan_remaining_bound_bytes']}
+         D = COMMON.read(L/SK); special = [p for p in D['profiles'] if list(p) != COMMON.P0]
+-    stage = L/'scratch/m2k1-v5-publish'/('ms06-'+str(time.time_ns())); attempts = 0
++    stage = L/'scratch/m2k1-v6-publish'/('ms06-'+str(time.time_ns())); attempts = 0
+     for bi in c['pending_order']:
+         if attempts >= args.max_attempts or R._CANCEL[0] or time.monotonic()+2550 > deadline: return
+         it = task(bi)
+@@ -183,9 +183,9 @@
+             TX.retire_unattempted_after_pin(it,paths,'refusal rule2: direct refused before worker; no record or HALT'); return
+         if not r.get('pre_child_pin_sha256'):
+             TX.release_unattempted(it['claim'],'v4 direct construction incomplete before immutable pin/native'); return
+-        r.update(runner='run_m2_ms06_direct_v5.py',count_for_scientific_coverage=True)
++        r.update(runner='run_m2_ms06_direct_v6.py',count_for_scientific_coverage=True)
+         raw = (json.dumps(r,indent=1)+'\n').encode(); rh = hashlib.sha256(raw).hexdigest()
+-        COMMON.publish_json(L/it['commit'],{'schema':'PA19-K1-RECEIPT-v5','production_contract_sha256':args.sha256,
++        COMMON.publish_json(L/it['commit'],{'schema':'PA19-K1-RECEIPT-v6','production_contract_sha256':args.sha256,
+             'b_index':bi,'record_sha256':rh,'pin_sha256':r['pre_child_pin_sha256']},stage)
+         COMMON.publish_bytes(L/it['new_record'],raw,stage)
+         attempts += 1
+--- v5/src/run_m2_ms09_k1_v5.py
++++ v6/src/run_m2_ms09_k1_v6.py
+@@ -11,10 +11,10 @@
+ import time
+ from pathlib import Path
+ 
+-import m2_item_owner_v5 as OWNER
+-import m2_ms09_contract_v5 as C
+-import m2_ms09_evidence_v5 as E
+-import m2_supervised_runtime_v5 as R
++import m2_item_owner_v6 as OWNER
++import m2_ms09_contract_v6 as C
++import m2_ms09_evidence_v6 as E
++import m2_supervised_runtime_v6 as R
+ 
+ L = C.LANE
+ 
+@@ -29,7 +29,7 @@
+ 
+ 
+ def release_unattempted(path,reason):
+-    src = L/path; dst = L/'archive/k1-v5-unattempted'/('%s.%d' % (src.name,time.time_ns()))
++    src = L/path; dst = L/'archive/k1-v6-unattempted'/('%s.%d' % (src.name,time.time_ns()))
+     dst.parent.mkdir(parents=True,exist_ok=True); assert not dst.exists()
+     h = E.digest(src); os.rename(src,dst)
+     with (L/'archive/MANIFEST.tsv').open('a') as f:
+@@ -50,20 +50,20 @@
+     return {'id':it['id'],'pin':L/it['pin'],'staging':stage,'job':Path(str(base)+'.job.json'),
+         'supervisor':Path(str(base)+'.supervisor.json'),'quarantine':Path(str(base)+'.quarantine.json'),
+         'worker_result':Path(str(base)+'.worker.json'),
+-        'workdir':L/'scratch/fifo'/('m2k1_v5_'+it['id'].replace(':','_').replace('-','_'))}
++        'workdir':L/'scratch/fifo'/('m2k1_v6_'+it['id'].replace(':','_').replace('-','_'))}
+ 
+ 
+ def publish_item(r,c,contract_sha,ca,it,stage):
+     idx = it['indices']
+     r.update(multiset=9,b_index=ca['b_index'],indices=idx,encoder='encode_skel_b.build_v2' if idx is None else 'encode_skel_b.build_partbatch',
+-             runner='run_m2_ms09_k1_v5.py',production_contract_sha256=contract_sha,count_for_scientific_coverage=True)
++             runner='run_m2_ms09_k1_v6.py',production_contract_sha256=contract_sha,count_for_scientific_coverage=True)
+     if idx is not None: r.update(list_sha256=ca['list']['sha256'],complete_denominator=ca['list']['n'],enumerator='extend_b.py')
+     if r.get('sat_candidate'): assert (L/'cycle2/m2k3-SAT.flag').exists()
+     elif r.get('integrity_status') == 'INVALID': assert (L/'cycle2/m2k3-INTEGRITY.flag').exists()
+     elif r.get('halt_production'): assert (L/'cycle2/m2k3-HALT.flag').exists() or (L/'cycle2/m2k3-QUARANTINE.flag').exists()
+     raw = (json.dumps(r,indent=1)+'\n').encode(); assert len(raw) <= 16*1024**2
+     rh = hashlib.sha256(raw).hexdigest()
+-    C.publish_json(L/it['commit'],{'schema':'PA19-K1-RECEIPT-v5','production_contract_sha256':contract_sha,
++    C.publish_json(L/it['commit'],{'schema':'PA19-K1-RECEIPT-v6','production_contract_sha256':contract_sha,
+         'b_index':ca['b_index'],'indices':idx,'record_sha256':rh,'pin_sha256':r.get('pre_child_pin_sha256'),
+         'host_clock':time.strftime('%Y-%m-%dT%H:%M:%S%z')},stage)
+     C.publish_bytes(L/it['new_record'],raw,stage)  # primary LAST, immutable pin and commit already exist
+@@ -85,7 +85,7 @@
+     cutoff = datetime.datetime.fromisoformat('2026-10-18T18:31:43-07:00').timestamp()
+     deadline = min(time.monotonic()+10800,time.monotonic()+max(0,cutoff-time.time()))
+     runid = '%s-%d-%d' % (time.strftime('%Y%m%dT%H%M%S'),os.getpid(),time.time_ns())
+-    stage,logs = L/'scratch/m2k1-v5-publish'/runid,L/'cycle2/m2k3-chunks'/runid
++    stage,logs = L/'scratch/m2k1-v6-publish'/runid,L/'cycle2/m2k3-chunks'/runid
+     logs.mkdir(parents=True,exist_ok=False)
+     init = {'stage':'capacity','veto_detail':None}
+     try:

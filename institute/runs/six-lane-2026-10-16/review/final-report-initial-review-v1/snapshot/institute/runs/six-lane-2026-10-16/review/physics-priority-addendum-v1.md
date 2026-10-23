@@ -1,0 +1,19 @@
+# Physics gates — priority and attribution addendum (new-surface audit)
+
+Recorded 2026-10-17 (PT) after a new-surface priority audit ([scout report](physics-prior-gap-audit-v1.md)). It searched DataCite/Zenodo, OpenAlex full text, arXiv and equivalent general theorems. The original verdicts are unchanged; this addendum adds missing attributions and re-decides the χ8/χ12 gate basis. No mathematical correctness is affected.
+
+## No earlier claim found in scope
+
+Exact statements checked: the Maximum Hypothesis / χ(G_{n,5}) = 3, the sharp dual/T-dual 15/16 bound, every four MOQLS(7) classical, and the exact statements χ(G_{n,8}) = 4 and χ(G_{n,12}) = 5. A miss is not novelty. The active AME(4,6) and five-MOQLS(8) targets also had no external claim.
+
+## χ(G_{n,8}) = 4 and χ(G_{n,12}) = 5: method precedent omitted
+
+The parent read the [DataCite record](https://api.datacite.org/dois/10.5281/zenodo.23430098) of Alper Ferudun, *Three-Colourability of Random Lifts of K_5*, Zenodo preprint v1.0, doi:10.5281/zenodo.23430098, registered 2026-10-17T04:20:58Z (2026-10-16 21:20 PDT), several hours before this run's χ8 route. Its abstract proves χ(L_n) = 3 a.a.s. for random lifts of K₅, with "an exact-marginal edge entropy inequality" and "a sharp three-coordinate fractional-power inequality" giving "the unique global maximum in the degree-four second-moment calculation". This is the same exact-marginal second-moment structure in a different model (K₅ lifts, k = 3, d = 4). Our colour lane had saved this record, but the χ8/χ12 verdicts did not cite it.
+
+**Decision:** the method half of the "materially new theorem/method" clause no longer supports the χ8/χ12 gate. The gate now rests only on the **new-theorem half**. No earlier proof of the exact uniform-model statements χ(G_{n,8}) = 4 and χ(G_{n,12}) = 5 was found, and they close KPW's degree-8 and degree-12 windows. None of COEH (k ≥ k₀), the G(n,p) condensation results, Nir–Pérez-Giménez (lifts; ℓ₄ = 7.42 < 8, ℓ₅ = 11.83 < 12) or Ferudun (k = 3, d = 4) covers these (k, d), per the audit's applicability table. Method novelty is narrowed to the hypercontractive quadratic-decay row inequality at (k, d) = (4, 8) and (5, 12) in the uniform model. The statements "no source proving a constrained global-decay step" and "no colouring paper exploits the constrained gap" in the earlier χ8/χ12 records are withdrawn. Labels: DERIVED-OPEN, gate under the new-theorem clause only, priority unresolved.
+
+## T7 (O₉ isolated among dual and T-dual gates, radius 1): general theorem near-implication
+
+R. Nicoară, *A finiteness result for commuting squares of matrix algebras*, [arXiv:math/0404301v1](https://arxiv.org/abs/math/0404301v1) (2004-04-16), J. Operator Theory (2006). The parent read the abstract: "We prove that the commuting squares satisfying the span condition are isolated among all commuting squares (modulo isomorphisms)." The audit read Theorem 3.4 and its proof, and found the result is for general non-degenerate commuting squares. It is not limited to the Hadamard/spin-model case, as the earlier audit labelled it.
+
+[INFERENCE, audit] A dual-unitary gate gives a vertex-model commuting square. If the span condition holds at P₉ — which is essentially the kernel/tangent computation (Geng 2022 numerically, our exact rank certificate) — then qualitative isolation of O₉ follows from Theorem 3.4. The convention mapping was not checked line by line. Ours: the exact check, the quantitative radius 1, the T-dual case and the e_p-gap corollary. The Rather 2023 thesis access hole is closed: it presents P₉'s isolation only as numerical evidence (ch. 2, ch. 5) and the 15/16 bound only as Conjecture 3.3.2. **The T7 gate stands** (the radius-1 statement is not implied); significance stays modest; Nicoară Theorem 3.4 is added to the imports/attributions.

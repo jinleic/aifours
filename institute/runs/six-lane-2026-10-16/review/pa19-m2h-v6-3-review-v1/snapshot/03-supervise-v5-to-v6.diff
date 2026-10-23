@@ -1,0 +1,33 @@
+--- src/supervise_pa19_v5.py
++++ src/supervise_pa19_v6.py
+@@ -1,6 +1,10 @@
+ #!/usr/bin/env python3
+ """supervise_r3.py: minimal single-threaded supervisor for one command and its process group (macOS libproc).
+-PA19 supervise_pa19_v5.py = supervise_pa19_v3.py (sha256 79c463589c9c...573b3) plus the delayed-reap repair (parent
++PA19 supervise_pa19_v6.py = supervise_pa19_v5.py (sha256 a7540cded7c4...bbf5) plus ONE repair (parent re-review of v5): the
++finalization window (final signal check, record build/write, handler restoration) runs with SIGTERM/SIGINT BLOCKED;
++a signal arriving in that window is delivered only after the outer handlers are restored, so the written record, the
++returned record and the observed_signal field are always identical; no record field is changed after the write.
++v5 text: PA19 supervise_pa19_v5.py = supervise_pa19_v3.py (sha256 79c463589c9c...573b3) plus the delayed-reap repair (parent
+ review of v4, 2026-10-18): when the monitor ends with reason None after its zombie-completion branch and the single
+ poll() has not reaped the leader, delayed_reap() re-checks the signal flag, wall, floor, RSS and strict-sample
+ problems BEFORE every poll for at most 5 s (no poll after the bound; sleeps bounded by the remaining time). Any trip
+@@ -416,6 +420,8 @@
+                 except Exception as exc2:
+                     rec["quarantine_write_error"] = repr(exc2)
+         finally:
++          blocked = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGTERM, signal.SIGINT})  # PA19 v6 finalization window
++          try:
+             if "signal" in flag and state["reason"] is None:  # PA19 v5: a flagged cancellation is never clean
+                 state["reason"] = "external %s before the completion record" % flag["signal"]
+             rec.update({"finished_at": now(), "seconds": round(time.monotonic() - t0, 3),
+@@ -443,7 +449,8 @@
+                     pass
+             for s_, handler in previous.items():
+                 signal.signal(s_, handler)
+-            rec["observed_signal"] = flag.get("signal")  # PA19 v5: returned to the owner, also for late signals
++          finally:
++            signal.pthread_sigmask(signal.SIG_SETMASK, blocked)  # PA19 v6: pending signals reach the restored outer handlers
+     return rec
+ 
+ 

@@ -1,0 +1,94 @@
+{
+ "format": "beta-consumer-controls-v5-change-map-v1",
+ "at": "2026-10-19T21:35:35-0700",
+ "status": "FROZEN_BEFORE_ANY_V5_PLAN_OR_SOURCE_BYTE_NOEXEC; SOURCE-ONLY FINDING-TO-CHANGE MAP; NOT A GO",
+ "authority": {
+  "parent_scope": {"path": "RUN/control/beta-consumer-controls-v5-repair-scope-v1.json", "sha256": "cffb544df54fc419749f0a8112df11081e810cd77c57841dc69ccfadda52363b"},
+  "parent_hold": {"path": "RUN/review/beta-controls-v4-five-slice-parent-HOLD-v1.json", "sha256": "87c4a1f8c6d926de60ca45c491c20022b97e3e4a167e8b0c9c7aea7045bf0bed", "counts": "2 FATAL / 4 MAJOR / 0 MINOR"},
+  "irc": "Main 2026-10-19 ~21:20: focused v5 scope; freeze scope first; keep 147 IDs/expected objects/retirements/deferred clauses identical; NO blind PRT recency copy (frozen R5 first-eligible priority differs); full candidate before packaging",
+  "grants": "none: no runtime, release, canonical-audit, admission, qualification or scientific authority"
+ },
+ "subject": {
+  "source_v4": {"path": "RUN/control/beta_consumer_controls_v4.py", "sha256": "a0734c493121709ad95375ed15071a696f9944d4f56435544753a260ad767728", "status": "immutable; superseded only by the new v5 file"},
+  "plan_v4": {"path": "RUN/control/beta-consumer-controls-plan-v4.json", "sha256": "73e32d6c9d1f86bcf46241195c5bba0c679fde5322aabb6df4d4f3d4780f15ac"},
+  "disposition_v4": {"path": "RUN/review/beta-consumer-controls-source-disposition-v4.json", "sha256": "90fada2b197e6120747dbef6da2344fbf76fb64130a02d071e7bc22fb40df7c5"},
+  "range_manifest_v4": {"path": "RUN/review/beta-consumer-controls-v4-range-manifest-v2.json", "sha256": "a7d3099e256386199b08d0618dd106c64d7d819e812b3f0426735d0450cb6281"}
+ },
+ "reviews": {
+  "P1A": {"output_sha256": "bc0f9b413fd824432706fd4f5dd3b31335f3ef4044127e85c1f5a1988638a5cb", "verdict": "HOLD FATAL=2 MAJOR=2"},
+  "P1B": {"output_sha256": "03243082b0732907ea56f3cbae02bb3a0c7a76bac4b5c467e742f975011873d3", "verdict": "SOURCE_READY_FOR_FINITE_CONTROL_REVIEW_CONDITIONAL 0/0/0"},
+  "P2": {"output_sha256": "c79e850cee30bcb6d318d43b41ddb0860bcc282e10e1007f5bb6829567d5b863", "verdict": "READY_WITH_FIXES MAJOR=1"},
+  "P3A": {"output_sha256": "bc0eb0921e350c0effd6ec9f0d63bdd7da5a7bef9bbaf07dd4c05458ef3b0aa2", "verdict": "READY_WITH_FIXES MAJOR=1"},
+  "P3B": {"output_sha256": "2e8cd4df22cd2178ce782a5c2bbe805b4a1842389ea13f18f87f0253b78883d6", "verdict": "SOURCE_READY_FOR_FINITE_CONTROL_REVIEW_CONDITIONAL 0/0/0"},
+  "packet_dir": "RUN/review/beta-controls-v4-packets-v1/ (receipt/prompt hashes as bound in the parent HOLD)"
+ },
+ "frozen_R5_priority": "An active (in-flight) non-Exception BaseException primary is never replaced by any cleanup, diagnostic, report, retention, emission or bookkeeping failure. With no primary or an ordinary-Exception primary, the FIRST eligible newly arising non-Exception BaseException (in arising order: close outcome, then its diagnostic, then sweep bookkeeping) propagates only after every remaining owned single attempt. Ordinary cleanup errors are latched and returned; an ordinary primary is preserved; without any primary a failed direct close fails its own operation. This is NOT the PRT newest-origin rule and nothing from PRT is copied.",
+ "finding_change_map": [
+  {"finding": "P1-F02", "severity": "FATAL", "v4_locus": [[1593, 1599], [1616, 1631], [1714, 1724], [1762, 1769]],
+   "planned_change": [
+    "Delete _secondary (its unprotected latch.append and the unprotected lambda construction at every call site).",
+    "New _secondary_failed(emergency, failure): sets the preallocated emergency['failed'] flag first (allocation-free), then appends type(failure).__name__ to the bounded (DIAG_ROWS) emergency['types'] list inside its own try; never raises (used only while a non-Exception primary is in flight).",
+    "run() preallocates emergency = {'failed': False, 'types': []} before bootstrap; the bootstrap BaseException handler and _base_exception_line perform report, report retention and compact emission each inside its own try/except BaseException -> _secondary_failed, with cleanup in finally.",
+    "Reader retention under the primary becomes one preallocated slot ctx.emergency_reader (set in _Context.__init__), replacing the unprotected retained_exception_readers.append; case-owned appends (RD08C/SC33/AD36, normal flow) are unchanged.",
+    "Cleanup under the primary goes through _cleanup_under(owned, index, primary): close_since inside try; any escaping fault sets owned.uncertain and is re-raised only if it is a non-Exception over an ordinary primary (R5)."
+   ],
+   "plan_v5": "run rule 5 emergency clause; v5_amendments P1-F02", "expected_change": "none"},
+  {"finding": "P1-F03/P1-F04", "severity": "FATAL", "v4_locus": [[230, 289], [482, 509], [583, 585], [610, 612], [302, 302], [335, 335], [1653, 1653], [1694, 1694], [1699, 1699], [1790, 1790], [1812, 1812]],
+   "planned_change": [
+    "_Owned gains allocation-free latches uncertain and diagnostics_incomplete; rows gain a preallocated diagnostic_failure key; new _close_once(row) performs the single native close and never raises: on failure it sets owned.uncertain and stores the actual exception in row['close_error'] BEFORE any repr/list growth, then appends a bounded (DIAG_ROWS=16 rows, DIAG_CHARS=200 characters) best-effort diagnostic inside its own try whose failure sets diagnostics_incomplete and is kept in row['diagnostic_failure'].",
+    "_Owned.close(row, primary): one attempt via _close_once; raises the first eligible non-Exception event (close error, then diagnostic failure) as _escalates allows, else the ordinary close error only when there is no primary at all, else returns the error. Direct _Fx finalizers are unchanged and now cannot be replaced by diagnostics.",
+    "_Owned.close_since: every remaining row gets its single attempt; events collected in arising order (close error, diagnostic failure); a sweep bookkeeping fault is latched, counted as an event and resumed once by a second sweep that skips attempted rows; if both sweeps fault the latch stays set; the first eligible non-Exception event is raised only after the sweeps; the first error is returned otherwise.",
+    "_FaultOS replaces the violations list by the allocation-free flag violated (the list was never output; only its emptiness fed accounting_ok); every violation site sets the flag; records gain cleanup_error; new _clear_one(rec) performs the identity-checked single close and never raises (latch first, actual exception kept on the record, no fallible diagnostic); clear_orphans sweeps like close_since and raises the first eligible non-Exception event after every record.",
+    "Every exit/refusal decision reads owned.uncertain instead of owned.errors (bootstrap 1653/1694/1699, exit selection 1790, final close 1812); owned.errors remains a bounded best-effort diagnostic in summaries.",
+    "_escalates stays the frozen rule function, unchanged; exception handlers use its allocation-free inline equivalent for non-Exception events."
+   ],
+   "plan_v5": "run rules 6-7 and new interpreter-boundary rule; v5_amendments P1-F03/F04", "expected_change": "none (accounting_ok is true exactly when it was true in v4 whenever no diagnostic failed)"},
+  {"finding": "P1A-M01", "severity": "MAJOR", "v4_locus": [[1773, 1784], [1784, 1822], [1823, 1825], [1584, 1590]],
+   "planned_change": [
+    "run() preallocates outcome = {'deadline': False, 'budget': False, 'error': False}; new _classify(outcome, failure) maps HarnessDeadlineExceeded -> deadline, HarnessBudgetExceeded -> budget, any other Exception -> error.",
+    "Case emission: one except Exception handler classifies the failure; deadline/budget keep the v4 stop statuses, any other ordinary failure makes the case status ERROR (undelivered record); one compact fallback line is attempted inside its own try and its failure is classified, never escaping.",
+    "Finalization: protected-state reads, provisional summary persistence, final close_since(0) and final summary emission are each classified; summary status/exit_code are recomputed by _summary_status; the exit code comes from one fixed precedence _code: deadline 5 > budget 6 > error/mismatch/ownership/protected/undelivered 3 > inconclusive 4 > 0.",
+    "Run-level except Exception after bootstrap: classify, _cleanup_under(owned, 0, failure), observe the deadline, emit one minimal summary only if no summary line was delivered, observe the deadline again, return the classified nonzero code; non-Exception BaseExceptions keep propagating after cleanup.",
+    "_emit reserves stdout bytes before the write (a failed or partial write still counts toward the 1 MiB bound) and records summary delivery in output_state['summary'].",
+    "New _late(deadline): original-deadline observation for finalization phases; an unreadable clock counts as crossed."
+   ],
+   "plan_v5": "run rules 4-5; v5_amendments P1A-M01", "expected_change": "none"},
+  {"finding": "P1A-M02", "severity": "MAJOR", "v4_locus": [[1707, 1713]],
+   "planned_change": [
+    "Pre-case refusal: code 5 for HarnessDeadlineExceeded else 7; close_since(0) guarded (bookkeeping fault latches uncertainty; a non-Exception event still propagates per R5); deadline re-observed after cleanup (code 5) and after the refusal summary (return 5); refusal-summary delivery failure cannot change 7/5; diagnostic text bounded to DIAG_CHARS."
+   ],
+   "plan_v5": "run rules 4-5; v5_amendments P1A-M02", "expected_change": "none"},
+  {"finding": "P2-M04", "severity": "MAJOR", "v4_locus": "source 1192-1195 unchanged; plan P149; disposition D058",
+   "planned_change": [
+    "Plan v5 CA92 procedure narrowed to malformed/incomplete-capture rejection of an incoherent oversized callback response; oversized-return guard attribution withdrawn.",
+    "New deferred_subcontrols entry CA92-OVERSIZED-RETURN-GUARD, status MANDATORY_UNEXERCISED_NOT_WAIVED, with expected_when_available, missing_genuine_artifact, unreachable_entrypoint and prerequisites.",
+    "Disposition coverage rows carry the narrowing and the new deferral. Fixture, harness source and expected object unchanged."
+   ],
+   "plan_v5": "case CA92 procedure; deferred_subcontrols; not_established; v5_amendments P2-M04", "expected_change": "none"},
+  {"finding": "P3A-V4-01", "severity": "MAJOR", "v4_locus": "source 1434-1436 unchanged; plan P163; disposition D075",
+   "planned_change": [
+    "Plan v5 AD01 procedure narrowed to missing-context fail-closed behavior; explicit input-key-set attribution withdrawn.",
+    "New deferred_subcontrols entry AD01-INPUT-KEYSET, status MANDATORY_UNEXERCISED_NOT_WAIVED, with the four fields.",
+    "Disposition coverage rows carry the narrowing and the new deferral. Fixture, harness source and expected object unchanged."
+   ],
+   "plan_v5": "case AD01 procedure; deferred_subcontrols; not_established; v5_amendments P3A-V4-01", "expected_change": "none"}
+ ],
+ "version_binding": "Docstring and PLAN_PATH/PLAN_SHA bound to plan v5; plan format check beta-consumer-controls-plan-v5; output formats beta-consumer-control-case-v4, beta-consumer-controls-summary-v4, beta-negative-controls-run-start-v4 (fields added; no expected object depends on them).",
+ "invariants": [
+  "147 case ids, order, types, expected and expected_when_available objects identical to plan v4 (jq-checked after writing plan v5).",
+  "Every deferred case clause (DF01-DF15, DP00-DP23, DL01) identical; every existing deferred_subcontrols entry identical; exact_removed_oracle_map (retirements) identical; v4_amendments retained verbatim as history.",
+  "All prior B0/N1/seven-negative/all-20-position/prefix/derivation deferrals and the DF11/DF12 S1/S2 oracle divergence remain open; no science, qualification or retirement waiver.",
+  "No count, private-ledger, source-wording, mock-echo, default or forwarding oracle; no changed outcome to suppress a finding; CA92 and AD01 harness fixture code unchanged.",
+  "Harness owned partition (P1A/P1B/P2/P3A) unchanged apart from the infrastructure statements named above; no unchanged-v4 retry."
+ ],
+ "deliverables_in_order": [
+  "1 this frozen change map",
+  "2 RUN/control/beta-consumer-controls-plan-v5.json, frozen before the source (its sha256 hard-coded in the source)",
+  "3 RUN/control/beta_consumer_controls_v5.py (new file)",
+  "4 RUN/review/beta_consumer_controls_v4_to_v5.diff and RUN/review/beta-consumer-controls-plan-v4-to-v5.diff: complete /usr/bin/diff -U0 --label output, cmp-verified",
+  "5 RUN/review/beta-consumer-controls-source-disposition-v5.json: finding -> change -> v5 lines, coverage/register updates, notes, interpreter boundary",
+  "6 RUN/review/beta-consumer-controls-v5-range-manifest-v1.json: raw range ownership (P1A/P1B/P2/P3A/P3B), statement hashes, changed statements, callers/callees, plan/disposition ranges",
+  "7 checkpoints RUN/review/beta-consumer-controls-checkpoint-013-v1.json onward; IRC receipt to Main; park (prompt packaging later, by the parent)"
+ ],
+ "constraints": "Every new file exclusive-create after an absence check; all prior files immutable. No subject execution, import, compile, AST, syntax check, lint, format, test, native or control run; jq for JSON validity; shasum/wc/grep/sed line extraction, /usr/bin/diff -U0 --label and cmp only. /bin/date before every timestamp; checkpoints at most 1800 s apart (target 1200 s). No installation or self-acceptance."
+}

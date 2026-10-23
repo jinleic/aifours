@@ -1,0 +1,5 @@
+# K7 A1/A2 repairs parent verdict — clarification erratum v1
+
+Recorded 2026-10-19T22:52:33-0700 (`/bin/date`). Governs immutable parent verdict 2a7c5b6c61b9e5df495cd15789af33fd017349572c3af2548d75245bd2def966. Prompted by Sun7 exposure X1 MINOR (conflicting section reference). No acceptance scope changes.
+
+Verdict LF47 "RICH §§6 and 9 not transferred" copies OV1 LF627–628 (0e477743c650e0db7d48b3b242f1e0a402e50117c28ff26c34bb3256a7b7e54e), which reads "RICH section 6 (navigation) and section 9 (residue description) are not transferred". In RICH (ba32d2829d62a684d82748994e2fd519d22b041d4d41ed00ecb44235f43f2bb3) §6 contains Theorem K7-D23-RICH (LF201–210) and a navigation paragraph (LF212–213), which CE1 (55cb66ca55008fa7219451d2e45458726282abce618cdcdba134a7d97a94d428) RF6 item 6a marks as navigation. LF47's "§6" means ONLY that navigation paragraph LF212–213 as replaced by CE1 RF6 item 6a. Theorem K7-D23-RICH itself transfers to (a2-no5) through Theorem K7-A2-BRIDGE in its enumerated A2.10 form (OV1 LF621–625), as already accepted at verdict LF36. §9 (residue description, with RF6 6b qualification) stays not transferred.

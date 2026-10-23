@@ -1,0 +1,1189 @@
+#!/usr/bin/env python3
+"""Parent replay desk for the weakened one-P4 (F_one) MOQLS(8) template leaves.
+
+Desk: institute/runs/six-lane-2026-10-16/review/moqls8-fone-parent-replay-v1 (parent-owned). Written for this
+desk; imports no lane code and no other desk code. Adapted by copying and editing parent code from
+  * review/moqls7-k2-parent-v1/scripts/k2lib.py lines 95-154 (libproc RSS, lane process scan) and 260-414
+    (solver -> named FIFO -> drat-trim pipeline: parent-held keepalive writer, pass_fds CNF pipes, writer
+    threads, os.wait4 polling, SIGTERM-only safety stops);
+  * review/moqls8-one-p4-parent-binding-v1/parent_binding_v1.py (pins, the four deleted ALO clauses, the leaf
+    header, the 42-unit order per template).
+
+Transport: leaf CNF bytes exist only in this process's memory and reach each child through its own anonymous
+pipe passed as /dev/fd/N. Each writer thread hashes exactly the bytes it writes (measured feed). The DRAT proof
+goes solver -> named FIFO -> drat-trim stdin (-i). No CNF or proof bytes are written to disk.
+Process control: native limits (cadical -t 1800, drat-trim -t 3600) plus cooperative SIGTERM safety stops with a
+bounded 120 s wait; never SIGKILL, never Popen.kill, never subprocess timeouts. A timeout, guard stop or deferral
+is never success.
+
+Usage (/usr/bin/python3 -I -B, environment TMPDIR=<desk>/tmp/):
+  replay_v1.py preexec OUT [--worker-prefix N SHA] ITEM...    ITEM = selftest:NAME | leaf:ID | control:ID
+  replay_v1.py run PREEXEC
+  replay_v1.py assemble OUT PREEXEC...
+"""
+import ctypes
+import datetime
+import fcntl
+import glob
+import hashlib
+import json
+import os
+import re
+import signal
+import struct
+import subprocess
+import sys
+import threading
+import time
+
+ROOT = "/Users/jinleic/repos/aifours"
+RUN = ROOT + "/institute/runs/six-lane-2026-10-16"
+REVIEW = RUN + "/review"
+LANE = ROOT + "/physics/evidence/six-lane-20261016/moqls8-problem16"
+DESK = REVIEW + "/moqls8-fone-parent-replay-v1"
+SCRIPT = os.path.realpath(__file__)
+SCRIPT_REL = "scripts/replay_v1.py"
+TMP = DESK + "/tmp"
+
+CADICAL = "/opt/homebrew/Cellar/cadical/3.0.1/bin/cadical"
+CADICAL_SHA = "601c9fa8ba5d09fd81bb00c89b3e54832f138bccc3422bd8652e8cda4d74d1fa"
+DRAT = REVIEW + "/moqls7-parent-proofcheck-v1/drat-trim"
+DRAT_RECEIPT = REVIEW + "/moqls7-parent-proofcheck-v1/parent-result.json"
+DRAT_SHA = "a46c0c717f702206a7fe345de5bcdc0b10112bca6bdbf04dd42cd9848ff08e37"  # that desk's drat_trim.binary_sha256
+DRAT_AFFIXES = ("a46c0c71", "8e37")
+BIND_DIR = REVIEW + "/moqls8-one-p4-parent-binding-v1"
+BIND_RESULT_AFFIXES = ("65311ab0", "28b0")
+OLD_ENCODER_BINDING = REVIEW + "/moqls8-encoder-binding-v1/binding-result.v2.json"
+OLD_ENCODER_BINDING_SHA = "dce638a92804bd04f2c3e9f64c61ba35e1d5e7c098df9323ebdac57c56bb6112"
+WORKER_RESULTS = LANE + "/evidence/n8_one_p4_template_runs_v1/RESULTS.jsonl"
+WORKER_PREFIX = (7, "acd5a585a373de8814feb34d01a396945673a0c066247cb279d195c6cbf0eff8")
+DELETIONS_REL = "evidence/UNIFIED_ONE_P4_DELETIONS_v1.json"
+MANIFEST_REL = "evidence/n8_one_p4_templates_v1/MANIFEST.json"
+RECIPE_REL = "evidence/n8_one_p4_templates_v1/BASE_RECIPE.json"
+TABLE_REL = "review/K5_COLUMN0_TEMPLATE_COVER.r1.md"
+MAP_REL = "evidence/gram_dev_v1/GA5L_K5_sb2.map.json"
+PINS = {  # identical to the PINS dict of parent_binding_v1.py (checked at load time)
+    DELETIONS_REL: "4509b3e7f26f75d63e35f1c3f8d57fcf33ad019c3ab4e19ada0f8372d991e3a6",
+    MANIFEST_REL: "355b33801640e39ab86946c51ab58c9c843370083ca896dd6d8ee5b09e90fc74",
+    RECIPE_REL: "264288f8aa3d9b10f4bae5d051d5b711e76e95dcaefd13dadc84f821adfa0c18",
+    TABLE_REL: "1ae1c81d5c2982ecf23b7a3f881e79786576bbed21efc456ba5b427b53907d9a",
+    MAP_REL: "7b4dd597894a7bbe39374f314bdb2016995216aa07bc03d7aad4a09f8e54b197",
+    "code/gram_a.py": "bf1aada12a04e7a0054c1e30c681dc81f32ba90c221d84dc982097d4cf14d05a",
+}
+SOURCE_HEADER = b"p cnf 509915 5740230\n"
+WEAK_HEADER = b"p cnf 509915 5740226\n"
+LEAF_HEADER = b"p cnf 509915 5740268\n"
+COUNTS = (5740230, 5740226, 4, 1576)  # source clauses, retained, deleted, deleted bytes
+
+SOLVER_SECONDS, CHECKER_SECONDS = 1800, 3600
+BACKSTOP = SOLVER_SECONDS + CHECKER_SECONDS + 120
+GIB, MIB = 1 << 30, 1 << 20
+LAUNCH_FLOOR = 12200000000 + 10 * MIB   # fresh check before each launch: 12.2e9 + projected retained growth
+FLOOR = 12000000000                     # in flight: free below this -> SIGTERM -> UNKNOWN
+LANE_BUSY_CAP, MINE = 4, 2
+GATE_RSS = 76 * GIB // 10               # launch: lane RSS + projected <= 7.6 GiB
+STOP_LANE_RSS = 785 * GIB // 100        # in flight: lane RSS > 7.85 GiB -> SIGTERM
+DESK_MARGIN = GIB // 2                  # in flight: desk aggregate > projected + 0.5 GiB -> SIGTERM
+LOW_MEMORY_IDS = ("P0-B4", "P0-B5")
+FLOOR_LOW, FLOOR_HIGH = 13 * GIB // 10, 46 * GIB // 10
+SELFTEST_PROJECTED = 512 * MIB
+WAIT_POLL, WAIT_BUDGET, GATE_STREAK = 60, 6 * 3600, 2
+SAMPLE, LANE_SCAN_PERIOD, SIGTERM_GRACE = 0.25, 1.0, 120
+HOT_CPU_FRACTION, HOT_WINDOW = 0.5, 2.0
+CHUNK = 1 << 20
+ENV = {"PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "TMPDIR": TMP + "/", "LC_ALL": "C",
+       "HOME": os.environ.get("HOME", DESK)}
+NATIVE = {"cadical", "kissat", "drat-trim", "lrat-check", "lrat-trim", "cake_lpr", "dpr-trim", "glucose",
+          "minisat", "lingeling", "plingeling", "treengeling", "cryptominisat5", "kissat_mab", "dpr2pr"}
+LANE_MARKERS = ("/moqls8-problem16", "/review/moqls8-")
+INFO_KEYS = (b"finished parsing", b"clauses in core", b"lemmas in core", b"RAT lemmas", b"verification time",
+             b"ERROR", b"empty clause", b"conflict", b"TIMEOUT", b"timeout", b"FAIL", b"failed")
+
+UNSAT3 = (b"p cnf 3 8\n1 2 3 0\n1 2 -3 0\n1 -2 3 0\n1 -2 -3 0\n-1 2 3 0\n-1 2 -3 0\n-1 -2 3 0\n"
+          b"-1 -2 -3 0\n")
+SAT3 = b"p cnf 3 7\n1 2 3 0\n1 2 -3 0\n1 -2 3 0\n1 -2 -3 0\n-1 2 3 0\n-1 2 -3 0\n-1 -2 3 0\n"
+SELFTESTS = {"unsat": (UNSAT3, UNSAT3, "refutation"), "sat-checker": (UNSAT3, SAT3, "negative")}
+
+SCOPE = ("Parent replay of individual F_one one-P4 leaves only (CaDiCaL 3.0.1 -> named FIFO -> parent drat-trim, "
+         "measured parent feeds). It establishes no F4 or n=8 conclusion and makes no theorem claim.")
+ACCEPTANCE = ("PASS iff all of: solver rc 20; solver status lines (log with only '\\r' removed, lines starting "
+              "with 's') exactly ['s UNSATISFIABLE']; checker rc 0; checker log with only '\\r' removed has a line "
+              "exactly 's VERIFIED' and contains neither 's NOT VERIFIED' nor 's TIMEOUT'; no safety stop; solver "
+              "and checker writer threads ok, written == leaf length, and sha256 of the bytes each actually wrote == "
+              "the expected leaf hash. Otherwise FAIL (complete run contradicting the candidate: SAT, proof rejected, "
+              "or measured feed hash mismatch) or UNKNOWN (incomplete: timeout, guard stop, writer error, other), "
+              "with reasons. No retries without parent approval.")
+GATE_RULE = ("Before each launch a fresh lane scan (native solver/checker processes plus python processes whose cwd "
+             "or argv lies in the lane or a review/moqls8-* desk, excluding this desk's driver and children; python "
+             "counts as busy if its CPU use over a 2 s libproc window is >= 50%; lane RSS conservatively includes "
+             "every such python, busy or not) and a fresh statvfs: launch only if lane busy + 2 <= 4, lane RSS + "
+             "projected <= 7.6 GiB and free >= 12,200,000,000 + 10 MiB. Stricter than the brief: two consecutive "
+             "passing checks 60 s apart are required, so a launch never rides a transient gap of the priority "
+             "worker pipeline. Otherwise sleep 60 s and re-check; total gate wait per run bounded by 6 h, then stop "
+             "and report deferral. Projected peak = max(1.5 x worker aggregate peak for the leaf if recorded, "
+             "1.3 GiB for P0-B4/P0-B5, 4.6 GiB otherwise).")
+STOPS = ("In flight, every 0.25 s: desk aggregate RSS (driver + live children, libproc) and free space; lane scan "
+         "every >= 1 s. SIGTERM own children if lane RSS (other lane processes + desk) > 7.85 GiB, desk aggregate > "
+         "projected + 0.5 GiB, free < 12,000,000,000, wall > 1800 + 3600 + 120 s, the checker exits while the "
+         "solver still runs, or the driver receives SIGTERM; then wait at most 120 s, never escalate; result UNKNOWN.")
+
+
+def die(msg):
+    raise SystemExit("ABORT: %s" % msg)
+
+
+def sha_bytes(b):
+    return hashlib.sha256(b).hexdigest()
+
+
+def sha_parts(parts):
+    h, n = hashlib.sha256(), 0
+    for part in parts:
+        h.update(part)
+        n += len(part)
+    return h.hexdigest(), n
+
+
+def sha_file(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def read_bytes(path):
+    with open(path, "rb") as f:
+        return f.read()
+
+
+def now():
+    return datetime.datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+def free_bytes():
+    st = os.statvfs(REVIEW)
+    return st.f_bavail * st.f_frsize
+
+
+def write_json_x(path, obj):
+    with open(path, "x") as f:
+        json.dump(obj, f, indent=1)
+        f.write("\n")
+    return sha_file(path)
+
+
+def rel(path):
+    return os.path.relpath(path, DESK)
+
+
+# --- libproc (macOS sys/proc_info.h: PROC_PIDTASKINFO = 4; struct proc_taskinfo is 96 bytes: pti_virtual_size,
+# pti_resident_size, pti_total_user, pti_total_system as the first four uint64; CPU times are mach ticks).
+_LIBPROC = ctypes.CDLL("/usr/lib/libproc.dylib", use_errno=True)
+_LIBPROC.proc_pidinfo.argtypes = (ctypes.c_int, ctypes.c_int, ctypes.c_uint64, ctypes.c_void_p, ctypes.c_int)
+_LIBPROC.proc_pidinfo.restype = ctypes.c_int
+
+
+class _Timebase(ctypes.Structure):
+    _fields_ = [("numer", ctypes.c_uint32), ("denom", ctypes.c_uint32)]
+
+
+_TB = _Timebase()
+ctypes.CDLL("/usr/lib/libSystem.B.dylib").mach_timebase_info(ctypes.byref(_TB))
+
+
+def taskinfo(pid):
+    """(resident bytes, total CPU ns) or None."""
+    buf = ctypes.create_string_buffer(96)
+    if _LIBPROC.proc_pidinfo(pid, 4, 0, buf, 96) != 96:
+        return None
+    _vsz, resident, user, system = struct.unpack_from("=QQQQ", buf.raw, 0)
+    return resident, (user + system) * _TB.numer // _TB.denom
+
+
+def rss(pid):
+    t = taskinfo(pid)
+    return t[0] if t else 0
+
+
+# --- phys-1 lane scan
+def lane_scan():
+    """Other lane processes; None if ps failed. Excludes this process and its children."""
+    me = os.getpid()
+    p = subprocess.run(["/bin/ps", "-axww", "-o", "pid=,ppid=,rss=,state=,comm="], capture_output=True, env=ENV)
+    if p.returncode != 0:
+        return None
+    cand = {}
+    for line in p.stdout.decode("utf-8", "replace").splitlines():
+        parts = line.split(None, 4)
+        if len(parts) < 5:
+            continue
+        try:
+            pid, ppid, rss_kb = int(parts[0]), int(parts[1]), int(parts[2])
+        except ValueError:
+            continue
+        if pid == me or ppid == me:
+            continue
+        base = os.path.basename(parts[4].strip())
+        native = base in NATIVE
+        if native or base.lower().startswith("python"):
+            cand[pid] = {"pid": pid, "ppid": ppid, "ps_rss_kb": rss_kb, "state": parts[3], "comm": base,
+                         "native": native}
+    if not cand:
+        return []
+    pids = ",".join(str(x) for x in cand)
+    lo = subprocess.run(["/usr/sbin/lsof", "-a", "-d", "cwd", "-p", pids, "-Fpn"], capture_output=True, env=ENV)
+    cwd, cur = {}, None
+    for line in lo.stdout.decode("utf-8", "replace").splitlines():
+        if line.startswith("p"):
+            try:
+                cur = int(line[1:])
+            except ValueError:
+                cur = None
+        elif line.startswith("n") and cur is not None:
+            cwd[cur] = line[1:]
+    a = subprocess.run(["/bin/ps", "-ww", "-o", "pid=,args=", "-p", pids], capture_output=True, env=ENV)
+    args = {}
+    for line in a.stdout.decode("utf-8", "replace").splitlines():
+        parts = line.strip().split(None, 1)
+        if len(parts) == 2:
+            try:
+                args[int(parts[0])] = parts[1]
+            except ValueError:
+                pass
+    lane = []
+    for pid, c in cand.items():
+        c["cwd"] = cwd.get(pid, "")
+        full_args = args.get(pid, "")
+        if any(mk in c["cwd"] or mk in full_args for mk in LANE_MARKERS):
+            t = taskinfo(pid)
+            c["rss_bytes"] = t[0] if t else c["ps_rss_kb"] * 1024
+            c["cpu_ns"] = t[1] if t else None
+            c["args"] = full_args[:240]
+            lane.append(c)
+    return lane
+
+
+def compact(c):
+    out = {k: c[k] for k in ("pid", "ppid", "comm", "native", "rss_bytes", "state", "cwd") if k in c}
+    for k in ("busy", "cpu_fraction"):
+        if k in c:
+            out[k] = c[k]
+    out["args"] = c.get("args", "")[:160]
+    return out
+
+
+def gate_scan():
+    scan = lane_scan()
+    if scan is None:
+        return None, None, None
+    c0 = {c["pid"]: c["cpu_ns"] for c in scan}
+    t0 = time.monotonic()
+    time.sleep(HOT_WINDOW)
+    dt = time.monotonic() - t0
+    busy = total = 0
+    for c in scan:
+        t = taskinfo(c["pid"])
+        if t:
+            c["rss_bytes"] = max(c["rss_bytes"], t[0])
+        if c["native"]:
+            c["busy"] = True
+        else:
+            frac = None
+            if t and c0.get(c["pid"]) is not None:
+                frac = (t[1] - c0[c["pid"]]) / (dt * 1e9)
+            c["cpu_fraction"] = None if frac is None else round(frac, 3)
+            c["busy"] = frac is not None and frac >= HOT_CPU_FRACTION
+        busy += 1 if c["busy"] else 0
+        total += c["rss_bytes"]
+    return busy, total, scan
+
+
+def gate(label, projected, budget, log, stop):
+    t_start = time.monotonic()
+    samples, streak = [], 0
+    while True:
+        fb = free_bytes()
+        busy, other, scan = gate_scan()
+        ok_disk = fb >= LAUNCH_FLOOR
+        ok_busy = scan is not None and busy + MINE <= LANE_BUSY_CAP
+        ok_rss = scan is not None and other + projected <= GATE_RSS
+        ok = ok_disk and ok_busy and ok_rss
+        streak = streak + 1 if ok else 0
+        samples.append({"at": now(), "free_bytes": fb, "lane_other_busy": busy, "lane_other_rss_bytes": other,
+                        "scan_failed": scan is None, "ok_disk": ok_disk, "ok_busy": ok_busy, "ok_rss": ok_rss,
+                        "streak": streak})
+        log("gate %s: free=%d other_busy=%s other_rss=%s projected=%d disk/busy/rss=%s/%s/%s streak=%d"
+            % (label, fb, busy, other, projected, ok_disk, ok_busy, ok_rss, streak))
+        waited = time.monotonic() - t_start
+        res = {"label": label, "projected_peak_bytes": projected, "rule": GATE_RULE, "samples": samples,
+               "waited_seconds": round(waited, 1)}
+        if streak >= GATE_STREAK:
+            budget["used"] += waited
+            res.update({"launch": True, "decided_at": now(), "free_bytes_at_launch": fb,
+                        "lane_other_busy_at_launch": busy, "lane_other_rss_at_launch": other,
+                        "launch_scan": [compact(c) for c in scan]})
+            return res
+        if stop.get("signal"):
+            budget["used"] += waited
+            res.update({"launch": False, "stopped": "driver received " + stop["signal"], "stopped_at": now()})
+            return res
+        if budget["used"] + waited + WAIT_POLL > WAIT_BUDGET:
+            budget["used"] += waited
+            res.update({"launch": False, "deferred": True, "deferred_at": now(),
+                        "wait_used_total_seconds": round(budget["used"], 1),
+                        "last_scan": [compact(c) for c in (scan or [])]})
+            return res
+        for _ in range(WAIT_POLL):
+            if stop.get("signal"):
+                break
+            time.sleep(1)
+
+
+# --- inputs: pins, parent binding, in-memory leaf regeneration (as parent_binding_v1.py hashes the leaves)
+def load_inputs(log):
+    t0 = time.monotonic()
+    raw = {}
+    for k, v in PINS.items():
+        raw[k] = read_bytes(os.path.join(LANE, k))
+        if sha_bytes(raw[k]) != v:
+            die("pin mismatch " + k)
+    d = json.loads(raw[DELETIONS_REL])
+    m = json.loads(raw[MANIFEST_REL])
+    recipe = json.loads(raw[RECIPE_REL])
+    bscript = read_bytes(BIND_DIR + "/parent_binding_v1.py")
+    bpre_raw = read_bytes(BIND_DIR + "/PRE-EXEC.json")
+    bres_raw = read_bytes(BIND_DIR + "/RESULT.json")
+    bscript_sha, bpre_sha, bres_sha = sha_bytes(bscript), sha_bytes(bpre_raw), sha_bytes(bres_raw)
+    if json.loads(bpre_raw)["script_sha256"] != bscript_sha:
+        die("parent binding script differs from its PRE-EXEC pin")
+    if not (bres_sha.startswith(BIND_RESULT_AFFIXES[0]) and bres_sha.endswith(BIND_RESULT_AFFIXES[1])):
+        die("parent binding RESULT.json sha256 " + bres_sha)
+    btext = bscript.decode()
+    block = re.search(r"\nPINS=\{\n(.*?)\n\}\n", btext, re.S)
+    if not block or dict(re.findall(r"'([^']+)':'([0-9a-f]{64})'", block.group(1))) != PINS:
+        die("PINS differ from parent_binding_v1.py")
+    for frag in ("weak_header=b'p cnf 509915 5740226\\n';leaf_header=b'p cnf 509915 5740268\\n'",
+                 "for i,S in enumerate(supports,2):", "for c in range(1,8):", "units.append(v if c in S else -v)",
+                 "hh=leaf.copy();hh.update(b''.join(('%d 0\\n'%u).encode('ascii') for u in units))"):
+        if frag not in btext:
+            die("parent binding construction fragment missing: " + frag)
+    bres = json.loads(bres_raw)
+    if bres.get("status") != "PASS":
+        die("parent binding status")
+    if sha_file(OLD_ENCODER_BINDING) != OLD_ENCODER_BINDING_SHA:
+        die("previous encoder binding")
+    source = os.path.join(LANE, d["source_base"])
+    deleted = {r["clause_index_zero_based"]: r["clause_bytes_sha256"] for r in d["delete"]}
+    keep = d["keep_q1"]
+    keep_i = keep["clause_index_zero_based"]
+    if keep_i in deleted:
+        die("kept clause listed as deleted")
+    body_len = recipe["weakened_body_bytes"]
+    body = bytearray(body_len)
+    mv = memoryview(body)
+    full = hashlib.sha256()
+    pos = nc = retained = removed = deleted_bytes = 0
+    keep_seen = False
+    with open(source, "rb") as f:
+        header = f.readline()
+        full.update(header)
+        if header != SOURCE_HEADER:
+            die("source header")
+        for i, line in enumerate(f):
+            full.update(line)
+            nc += 1
+            if not line.endswith(b" 0\n") or b"\r" in line or line.startswith(b"c"):
+                die("clause format at index %d" % i)
+            if i in deleted:
+                if sha_bytes(line) != deleted[i]:
+                    die("deleted clause %d" % i)
+                removed += 1
+                deleted_bytes += len(line)
+            else:
+                n = len(line)
+                if pos + n > body_len:
+                    die("retained body longer than recipe")
+                mv[pos:pos + n] = line
+                pos += n
+                retained += 1
+                if i == keep_i:
+                    if sha_bytes(line) != keep["clause_bytes_sha256"]:
+                        die("kept clause")
+                    keep_seen = True
+    mv.release()
+    full_hex = full.hexdigest()
+    if pos != body_len or not keep_seen:
+        die("retained body length / kept clause")
+    if (nc, retained, removed, deleted_bytes) != COUNTS:
+        die("counts %r" % ((nc, retained, removed, deleted_bytes),))
+    if not (full_hex == d["source_base_sha256"] == m["source_base_cnf_sha256"] == recipe["source_base_sha256"]
+            == bres["source_cnf_sha256"]):
+        die("source CNF hash " + full_hex)
+    body_hex = sha_bytes(body)
+    weak = hashlib.sha256(WEAK_HEADER)
+    weak.update(body)
+    weak_hex = weak.hexdigest()
+    if not (weak_hex == m["base_cnf_sha256"] == recipe["weakened_base_sha256"] == bres["weak_base_sha256"]):
+        die("weak base hash")
+    if not (body_hex == recipe["weakened_body_sha256"] == bres["body_sha256"]):
+        die("body hash")
+    if (m["base_vars"], m["base_clauses"]) != (509915, COUNTS[1]):
+        die("manifest base counts")
+    # Template table -> support lists -> unit literals (the parent binding's own derivation, replicated).
+    text = raw[TABLE_REL].decode()
+    B, C = {}, {}
+    for line in text.split("\n"):
+        if re.match(r"^\| [BC][1-6]=", line):
+            fields = line.split("|")
+            key = fields[1].strip().split("=")[0]
+            supports = [[int(x) for x in t.strip()] for t in fields[2].strip().split(";")]
+            if key.startswith("B"):
+                B[key] = supports
+            else:
+                C[key] = supports
+    if len(B) != 6 or len(C) != 4:
+        die("table parsed count")
+    lists = {}
+    for pre, tail in (("P0", [[1, 2, 3], [1, 2, 3]]), ("P1", [[2, 3], [1, 2, 3]])):
+        for key, vals in B.items():
+            lists[pre + "-" + key] = vals + tail
+    for key, vals in C.items():
+        lists["P2-" + key] = vals
+    gmap = json.loads(raw[MAP_REL])
+    lookup = {}
+    for key, v in gmap["vars"].items():
+        n = json.loads(key)
+        if n[0] == "g":
+            lookup[(n[1], tuple(n[2]), tuple(n[3]))] = v
+    if (len(lookup) != 7840 or gmap["meta"]["cnf_sha256"] != full_hex
+            or gmap["meta"]["script_sha256"] != PINS["code/gram_a.py"]):
+        die("map binding")
+    if len(m["cases"]) != 16 or set(lists) != {x["id"] for x in m["cases"]}:
+        die("manifest IDs")
+    bleaves = {x["id"]: x["cnf_sha256"] for x in bres["leaves"]}
+    if set(bleaves) != set(lists) or len(bres["leaves"]) != 16:
+        die("parent binding leaves")
+    leafpre = hashlib.sha256(LEAF_HEADER)
+    leafpre.update(body)
+    cases = {}
+    for case in m["cases"]:
+        cid = case["id"]
+        supports = lists[cid]
+        if supports != case["supports_row2to7"]:
+            die("support table identity " + cid)
+        units = []
+        for i, S in enumerate(supports, 2):
+            for c in range(1, 8):
+                v = lookup[(1, (0, c), (i, 0))]
+                if v != 49 * c + 7 * i - 6:
+                    die("map allocation")
+                units.append(v if c in S else -v)
+        if units != case["units"] or len(units) != 42:
+            die("unit map " + cid)
+        ub = b"".join(("%d 0\n" % u).encode("ascii") for u in units)
+        hh = leafpre.copy()
+        hh.update(ub)
+        hx = hh.hexdigest()
+        if hx != case["cnf_sha256"] or hx != bleaves[cid]:
+            die("leaf identity " + cid)
+        if (case["cnf_clauses"] != 5740268 or case["cnf_vars"] != 509915 or not case["run_required"]
+                or case["excluded_by_imported_c112"]):
+            die("leaf fields " + cid)
+        mut = [-units[0]] + units[1:]
+        mb = b"".join(("%d 0\n" % u).encode("ascii") for u in mut)
+        mh = leafpre.copy()
+        mh.update(mb)
+        if mh.hexdigest() == hx:
+            die("mutation not detected " + cid)
+        cases[cid] = {"units": units, "unit_bytes": ub, "supports": supports, "cnf_sha256": hx,
+                      "manifest_cnf_sha256": case["cnf_sha256"], "binding_cnf_sha256": bleaves[cid],
+                      "cnf_bytes": len(LEAF_HEADER) + body_len + len(ub), "mutant_units": mut,
+                      "mutant_unit_bytes": mb, "mutant_cnf_sha256": mh.hexdigest(),
+                      "mutant_cnf_bytes": len(LEAF_HEADER) + body_len + len(mb)}
+    info = {"pins_verified": dict(PINS), "lane": LANE, "source_cnf": source, "source_cnf_sha256": full_hex,
+            "source_header": SOURCE_HEADER.decode().strip(), "leaf_header": LEAF_HEADER.decode().strip(),
+            "weak_header": WEAK_HEADER.decode().strip(), "weak_base_sha256": weak_hex, "body_sha256": body_hex,
+            "body_bytes": body_len, "counts_source_retained_deleted_deletedbytes": list(COUNTS),
+            "deleted_clause_indices": sorted(deleted), "kept_q1_index": keep_i,
+            "parent_binding": {"result": BIND_DIR + "/RESULT.json", "result_sha256": bres_sha,
+                               "expected_affixes": list(BIND_RESULT_AFFIXES),
+                               "script": BIND_DIR + "/parent_binding_v1.py", "script_sha256": bscript_sha,
+                               "pre_exec_sha256": bpre_sha, "pins_dict_identical": True,
+                               "construction_fragments_present": True},
+            "previous_encoder_binding_sha256": OLD_ENCODER_BINDING_SHA,
+            "not_rederived_here": "ALO-domain/name-table identity of the four deleted clauses (inherited from the "
+                                  "parent binding RESULT above; leaf bytes do not depend on it)",
+            "load_seconds": round(time.monotonic() - t0, 2)}
+    log("inputs verified: source %s body %s weak %s binding RESULT %s (%.1f s)"
+        % (full_hex[:12], body_hex[:12], weak_hex[:12], bres_sha, time.monotonic() - t0))
+    return {"body": body, "body_view": memoryview(body).toreadonly(), "cases": cases, "info": info}
+
+
+def worker_prefix(n, expected):
+    b = read_bytes(WORKER_RESULTS)
+    if b.count(b"\n") < n:
+        die("worker RESULTS.jsonl has fewer than %d complete records" % n)
+    lines = b.split(b"\n")[:n]
+    prefix = b"".join(ln + b"\n" for ln in lines)
+    got = sha_bytes(prefix)
+    if got != expected:
+        die("worker RESULTS.jsonl prefix sha256 %s != %s" % (got, expected))
+    recs = {}
+    for ln in lines:
+        r = json.loads(ln)
+        recs[r["id"]] = {k: r.get(k) for k in ("tag", "secs", "aggregate_peak_rss_bytes", "strict_ok", "cnf_sha256",
+                                               "solver_returncode", "checker_status_lines")}
+    return {"path": WORKER_RESULTS, "prefix_records": n, "prefix_sha256": got, "prefix_bytes": len(prefix),
+            "complete_records_at_read": b.count(b"\n"), "read_at": now(), "records": recs,
+            "use": "read only to learn IDs, solve seconds and peaks; nothing else is taken from it"}
+
+
+def check_binaries():
+    receipt = json.loads(read_bytes(DRAT_RECEIPT))
+    exp = receipt["drat_trim"]["binary_sha256"]
+    if exp != DRAT_SHA or not (exp.startswith(DRAT_AFFIXES[0]) and exp.endswith(DRAT_AFFIXES[1])):
+        die("drat-trim receipt value " + exp)
+    got_d, got_c = sha_file(DRAT), sha_file(CADICAL)
+    if got_d != exp:
+        die("drat-trim sha256 " + got_d)
+    if got_c != CADICAL_SHA:
+        die("cadical sha256 " + got_c)
+    return {"cadical": {"path": CADICAL, "sha256": got_c, "expected": CADICAL_SHA},
+            "drat-trim": {"path": DRAT, "sha256": got_d,
+                          "expected_from": rel(DRAT_RECEIPT) + " drat_trim.binary_sha256",
+                          "receipt_sha256": sha_file(DRAT_RECEIPT),
+                          "upstream": receipt["drat_trim"].get("upstream")},
+            "checked_at": now()}
+
+
+def item_label(item):
+    if item["kind"] == "selftest":
+        return "selftest-" + item["name"]
+    if item["kind"] == "leaf":
+        return item["id"]
+    return "control-" + item["id"]
+
+
+def item_parts(item, ctx):
+    if item["kind"] == "selftest":
+        s, c, _mode = SELFTESTS[item["name"]]
+        return [s], [c]
+    case = ctx["cases"][item["id"]]
+    leaf = [LEAF_HEADER, ctx["body_view"], case["unit_bytes"]]
+    if item["kind"] == "leaf":
+        return leaf, leaf
+    return leaf, [LEAF_HEADER, ctx["body_view"], case["mutant_unit_bytes"]]
+
+
+# --- the solver -> FIFO -> drat-trim pipeline with measured feeds
+def _writer(fd, parts, res):
+    h, total = hashlib.sha256(), 0
+    try:
+        for part in parts:
+            mv = memoryview(part)
+            off, size = 0, len(mv)
+            while off < size:
+                n = os.write(fd, mv[off:off + CHUNK])
+                h.update(mv[off:off + n])
+                off += n
+                total += n
+        res["ok"] = True
+    except Exception as e:  # recorded, never hidden
+        res["ok"] = False
+        res["error"] = repr(e)
+    finally:
+        try:
+            os.close(fd)
+        except OSError as e:
+            res["close_error"] = repr(e)
+        res["written"] = total
+        res["sha256"] = h.hexdigest()
+
+
+def _start_writer(fd, parts):
+    res = {"ok": False, "expected_len": sum(len(p) for p in parts)}
+    t = threading.Thread(target=_writer, args=(fd, parts, res), daemon=True)
+    t.start()
+    return t, res
+
+
+def _lines(b):
+    text = b.replace(b"\r", b"")
+    return text, text.split(b"\n")
+
+
+def pipeline(label, solver_parts, checker_parts, projected, log, stop):
+    fifo = os.path.join(DESK, "fifo", label + ".drat.fifo")
+    slog = os.path.join(DESK, "logs", label + ".solver.log")
+    clog = os.path.join(DESK, "logs", label + ".checker.log")
+    for path in (fifo, slog, clog):
+        if os.path.lexists(path):
+            raise FileExistsError(path)
+    solver_argv = [CADICAL, "-q", "-t", str(SOLVER_SECONDS)]
+    rec = {"label": label, "fifo": rel(fifo), "solver_log": rel(slog), "checker_log": rel(clog),
+           "solver_argv": solver_argv + ["/dev/fd/<solver-cnf-pipe>", rel(fifo)],
+           "checker_argv": [DRAT, "/dev/fd/<checker-cnf-pipe>", "-i", "-t", str(CHECKER_SECONDS)],
+           "checker_stdin": "named FIFO %s (read end opened by the parent before any child starts; parent keeps a "
+                            "write end until the solver is reaped)" % rel(fifo),
+           "cwd": TMP, "env": ENV, "projected_peak_bytes": projected, "desk_stop_bytes": projected + DESK_MARGIN,
+           "lane_stop_bytes": STOP_LANE_RSS, "free_floor_bytes": FLOOR, "wall_backstop_seconds": BACKSTOP,
+           "stops": STOPS}
+    fds = {}
+
+    def close_fd(name):
+        fd = fds.pop(name, None)
+        if fd is not None:
+            os.close(fd)
+
+    os.mkfifo(fifo)
+    fds["fifo_read"] = os.open(fifo, os.O_RDONLY | os.O_NONBLOCK)
+    fcntl.fcntl(fds["fifo_read"], fcntl.F_SETFL, fcntl.fcntl(fds["fifo_read"], fcntl.F_GETFL) & ~os.O_NONBLOCK)
+    fds["keepalive"] = os.open(fifo, os.O_WRONLY)
+    fds["ccr"], fds["ccw"] = os.pipe()
+    procs, done, writers, events = {}, {}, {}, []
+    peak_desk = peak_lane = peak_other = 0
+    max_other_busy = lane_scans = lane_scan_failures = 0
+    min_free = None
+    reason, term_at, grace_exceeded = None, None, False
+    other_rss, last_scan_t, prev_cpu, prev_t = 0, None, None, None
+    rec["started_at"] = now()
+    t0 = time.monotonic()
+    with open(clog, "xb") as cl, open(slog, "xb") as sl:
+        try:
+            try:
+                check = subprocess.Popen([DRAT, "/dev/fd/%d" % fds["ccr"], "-i", "-t", str(CHECKER_SECONDS)],
+                                         stdin=fds["fifo_read"], stdout=cl, stderr=subprocess.STDOUT,
+                                         pass_fds=(fds["ccr"],), cwd=TMP, env=ENV)
+            except OSError as e:
+                rec["checker_spawn_error"] = repr(e)
+                check = None
+            if check is not None:
+                procs["checker"] = check
+                rec["checker_pid"] = check.pid
+                close_fd("fifo_read")
+                close_fd("ccr")
+                writers["checker_feed"] = _start_writer(fds.pop("ccw"), checker_parts)
+                fds["scr"], fds["scw"] = os.pipe()
+                try:
+                    solve = subprocess.Popen(solver_argv + ["/dev/fd/%d" % fds["scr"], fifo],
+                                             stdin=subprocess.DEVNULL, stdout=sl, stderr=subprocess.STDOUT,
+                                             pass_fds=(fds["scr"],), cwd=TMP, env=ENV)
+                except OSError as e:
+                    rec["solver_spawn_error"] = repr(e)
+                    solve = None
+                    close_fd("scw")
+                    close_fd("keepalive")
+                close_fd("scr")
+                if solve is not None:
+                    procs["solver"] = solve
+                    rec["solver_pid"] = solve.pid
+                    writers["solver_feed"] = _start_writer(fds.pop("scw"), solver_parts)
+                log("launched %s: checker pid %s, solver pid %s" % (label, rec.get("checker_pid"),
+                                                                     rec.get("solver_pid")))
+            while procs:
+                for name, p in procs.items():
+                    if name in done:
+                        continue
+                    pid, status, ru = os.wait4(p.pid, os.WNOHANG)
+                    if pid:
+                        rc = os.waitstatus_to_exitcode(status)
+                        p.returncode = rc
+                        done[name] = {"rc": rc, "maxrss_bytes": ru.ru_maxrss,
+                                      "wall_seconds": round(time.monotonic() - t0, 3),
+                                      "user_seconds": round(ru.ru_utime, 3), "sys_seconds": round(ru.ru_stime, 3),
+                                      "reaped_at": now()}
+                        if name == "solver":
+                            close_fd("keepalive")
+                if len(done) == len(procs):
+                    break
+                tnow = time.monotonic()
+                desk = rss(os.getpid()) + sum(rss(p.pid) for n, p in procs.items() if n not in done)
+                peak_desk = max(peak_desk, desk)
+                if last_scan_t is None or tnow - last_scan_t >= LANE_SCAN_PERIOD:
+                    scan = lane_scan()
+                    last_scan_t = tnow
+                    if scan is None:
+                        lane_scan_failures += 1
+                    else:
+                        lane_scans += 1
+                        other_rss = sum(c["rss_bytes"] for c in scan)
+                        busy, cpu = 0, {}
+                        for c in scan:
+                            cpu[c["pid"]] = c["cpu_ns"]
+                            if c["native"]:
+                                busy += 1
+                            elif (prev_cpu is not None and c["cpu_ns"] is not None
+                                  and prev_cpu.get(c["pid"]) is not None and tnow > prev_t):
+                                if (c["cpu_ns"] - prev_cpu[c["pid"]]) / ((tnow - prev_t) * 1e9) >= HOT_CPU_FRACTION:
+                                    busy += 1
+                        prev_cpu, prev_t = cpu, tnow
+                        max_other_busy = max(max_other_busy, busy)
+                        peak_other = max(peak_other, other_rss)
+                lane_total = other_rss + desk
+                peak_lane = max(peak_lane, lane_total)
+                fb = free_bytes()
+                min_free = fb if min_free is None else min(min_free, fb)
+                if reason is None:
+                    if stop.get("signal"):
+                        reason = "driver received %s" % stop["signal"]
+                    elif lane_total > STOP_LANE_RSS:
+                        reason = ("lane RSS %d > 7.85 GiB (%d): other lane %d + desk %d"
+                                  % (lane_total, STOP_LANE_RSS, other_rss, desk))
+                    elif desk > projected + DESK_MARGIN:
+                        reason = "desk aggregate RSS %d > projected + 0.5 GiB (%d)" % (desk, projected + DESK_MARGIN)
+                    elif fb < FLOOR:
+                        reason = "free bytes %d < in-flight floor %d" % (fb, FLOOR)
+                    elif tnow - t0 > BACKSTOP:
+                        reason = "wall %.1f s > solver+checker+120 s (%d s)" % (tnow - t0, BACKSTOP)
+                    elif "checker" in done and "solver" in procs and "solver" not in done:
+                        reason = "checker exited (rc %s) while the solver was still running" % done["checker"]["rc"]
+                    if reason is not None:
+                        term_at = time.monotonic()
+                        log("SAFETY STOP %s: %s" % (label, reason))
+                        for n, p in procs.items():
+                            if n not in done:
+                                try:
+                                    os.kill(p.pid, signal.SIGTERM)
+                                    events.append({"at": now(), "event": "SIGTERM", "target": n, "pid": p.pid,
+                                                   "reason": reason})
+                                except ProcessLookupError:
+                                    pass
+                elif time.monotonic() - term_at > SIGTERM_GRACE:
+                    grace_exceeded = True
+                    events.append({"at": now(), "event": "SIGTERM grace of 120 s exceeded; no escalation",
+                                   "alive": [n for n in procs if n not in done]})
+                    log("SIGTERM grace exceeded for %s; no escalation" % label)
+                    break
+                time.sleep(SAMPLE)
+        finally:
+            for name in list(fds):
+                close_fd(name)
+    for name, (t, res) in writers.items():
+        t.join(5.0 if grace_exceeded else None)
+        res["thread_finished"] = not t.is_alive()
+    rec["finished_at"] = now()
+    rec["pipeline_seconds"] = round(time.monotonic() - t0, 3)
+    rec["children"] = done
+    rec["writers"] = {k: dict(v[1]) for k, v in writers.items()}
+    rec["peak_desk_aggregate_rss_bytes"] = peak_desk
+    rec["peak_lane_other_rss_bytes"] = peak_other
+    rec["peak_lane_total_rss_bytes"] = peak_lane
+    rec["max_lane_other_busy_in_flight"] = max_other_busy
+    rec["lane_scans_in_flight"] = lane_scans
+    rec["lane_scan_failures_in_flight"] = lane_scan_failures
+    rec["min_free_bytes_in_flight"] = min_free
+    rec["safety_stop_reason"] = reason
+    rec["sigterm_grace_exceeded"] = grace_exceeded
+    rec["events"] = events
+    sbytes, cbytes = read_bytes(slog), read_bytes(clog)
+    _stext, slines = _lines(sbytes)
+    ctext, clines = _lines(cbytes)
+    rec["solver_log_sha256"], rec["solver_log_bytes"] = sha_bytes(sbytes), len(sbytes)
+    rec["solver_status_lines"] = [ln.decode("ascii", "replace") for ln in slines if ln.startswith(b"s")]
+    if len(sbytes) <= 4096:
+        rec["solver_log_text"] = sbytes.decode("ascii", "replace")
+    rec["checker_log_sha256"], rec["checker_log_bytes"] = sha_bytes(cbytes), len(cbytes)
+    rec["checker_status_lines"] = [ln.decode("ascii", "replace") for ln in clines if ln.startswith(b"s")]
+    rec["checker_has_verified_line"] = b"s VERIFIED" in clines
+    rec["checker_has_not_verified"] = b"s NOT VERIFIED" in clines or b"s NOT VERIFIED" in ctext
+    rec["checker_has_timeout"] = b"s TIMEOUT" in clines or b"s TIMEOUT" in ctext
+    rec["checker_info_lines"] = [ln.decode("ascii", "replace").strip() for ln in clines
+                                 if ln.startswith(b"c") and any(k in ln for k in INFO_KEYS)][:40]
+    return rec
+
+
+def evaluate(rec, item):
+    exp_s, len_s = item["expected_solver_feed_sha256"], item["expected_solver_feed_bytes"]
+    exp_c, len_c = item["expected_checker_feed_sha256"], item["expected_checker_feed_bytes"]
+    s = rec.get("children", {}).get("solver", {})
+    c = rec.get("children", {}).get("checker", {})
+    sw = rec.get("writers", {}).get("solver_feed", {})
+    cw = rec.get("writers", {}).get("checker_feed", {})
+    complete = (rec.get("safety_stop_reason") is None and not rec.get("sigterm_grace_exceeded")
+                and "solver_spawn_error" not in rec and "checker_spawn_error" not in rec)
+    crit = {
+        "solver_rc_20": s.get("rc") == 20,
+        "solver_status_lines_exact": rec.get("solver_status_lines") == ["s UNSATISFIABLE"],
+        "checker_rc_0": c.get("rc") == 0,
+        "checker_line_s_VERIFIED": bool(rec.get("checker_has_verified_line")),
+        "checker_no_s_NOT_VERIFIED": not rec.get("checker_has_not_verified", True),
+        "checker_no_s_TIMEOUT": not rec.get("checker_has_timeout", True),
+        "no_safety_stop": complete,
+        "solver_feed_measured_ok": sw.get("ok") is True and sw.get("written") == len_s and sw.get("sha256") == exp_s,
+        "checker_feed_measured_ok": cw.get("ok") is True and cw.get("written") == len_c and cw.get("sha256") == exp_c,
+    }
+    failed = [k for k, v in crit.items() if not v]
+    negative = item["kind"] == "control" or item.get("mode") == "negative"
+    if not negative:
+        if not failed:
+            return "PASS", [], crit
+        feeds_ok = crit["solver_feed_measured_ok"] and crit["checker_feed_measured_ok"]
+        if complete and (s.get("rc") == 10 or "s SATISFIABLE" in (rec.get("solver_status_lines") or [])):
+            return "FAIL", ["solver reported SATISFIABLE"] + failed, crit
+        if (complete and feeds_ok and crit["solver_rc_20"] and crit["solver_status_lines_exact"]
+                and rec.get("checker_has_not_verified")):
+            return "FAIL", ["checker printed s NOT VERIFIED for the solver's proof"] + failed, crit
+        if complete and any(w.get("ok") is True and w.get("written") == n and w.get("sha256") != e
+                            for w, n, e in ((sw, len_s, exp_s), (cw, len_c, exp_c))):
+            return "FAIL", ["a measured feed sha256 differs from the expected hash"] + failed, crit
+        return "UNKNOWN", failed, crit
+    need = ("no_safety_stop", "solver_feed_measured_ok", "checker_feed_measured_ok", "solver_rc_20",
+            "solver_status_lines_exact")
+    if not all(crit[k] for k in need):
+        return "INVALID_CONTROL", [k for k in need if not crit[k]], crit
+    if crit["checker_line_s_VERIFIED"]:
+        return "ANOMALY_VERIFIED", ["checker printed s VERIFIED for a checker-side formula that differs from the "
+                                    "solver's (pre-registered expectation: not s VERIFIED)"], crit
+    return "AS_PREREGISTERED_NOT_VERIFIED", [], crit
+
+
+# --- subcommands
+def check_env():
+    if os.environ.get("TMPDIR") != TMP + "/":
+        die("TMPDIR must be %s/" % TMP)
+    os.chdir(TMP)
+
+
+def cmd_preexec(argv):
+    check_env()
+    if not argv:
+        die("preexec OUT [--worker-prefix N SHA] ITEM...")
+    out = os.path.abspath(argv[0])
+    specs = argv[1:]
+    prefix_n, prefix_sha = WORKER_PREFIX
+    if specs and specs[0] == "--worker-prefix":
+        prefix_n, prefix_sha = int(specs[1]), specs[2]
+        specs = specs[3:]
+    if not out.startswith(DESK + "/") or os.path.lexists(out):
+        die("pre-exec path must be new and inside the desk")
+    started = now()
+    ctx = load_inputs(print)
+    worker = worker_prefix(prefix_n, prefix_sha)
+    binaries = check_binaries()
+    items, seen = [], set()
+    for spec in specs:
+        if spec in seen:
+            die("duplicate item " + spec)
+        seen.add(spec)
+        kind, _, name = spec.partition(":")
+        if kind == "selftest":
+            if name not in SELFTESTS:
+                die("unknown selftest " + name)
+            s, c, mode = SELFTESTS[name]
+            items.append({"item": spec, "kind": kind, "name": name, "mode": mode,
+                          "expected_solver_feed_sha256": sha_bytes(s), "expected_solver_feed_bytes": len(s),
+                          "expected_checker_feed_sha256": sha_bytes(c), "expected_checker_feed_bytes": len(c),
+                          "projected_peak_bytes": SELFTEST_PROJECTED,
+                          "preregistered_expectation": ("PASS under the leaf acceptance rules" if mode == "refutation"
+                                                        else "not s VERIFIED (checker formula is satisfiable)"),
+                          "purpose": "pipeline self-test on a synthetic 3-variable formula; not part of the replay"})
+            continue
+        if kind not in ("leaf", "control") or name not in ctx["cases"]:
+            die("bad item " + spec)
+        case = ctx["cases"][name]
+        w = worker["records"].get(name)
+        peak = w.get("aggregate_peak_rss_bytes") if w else None
+        floor = FLOOR_LOW if name in LOW_MEMORY_IDS else FLOOR_HIGH
+        projected = max(3 * peak // 2 if peak else 0, floor)
+        it = {"item": spec, "kind": kind, "id": name, "supports_row2to7": case["supports"], "units": case["units"],
+              "unit_lines_sha256": sha_bytes(case["unit_bytes"]),
+              "parent_binding_result_cnf_sha256": case["binding_cnf_sha256"],
+              "manifest_cnf_sha256": case["manifest_cnf_sha256"],
+              "expected_solver_feed_sha256": case["cnf_sha256"], "expected_solver_feed_bytes": case["cnf_bytes"],
+              "worker_record": w, "projected_peak_bytes": projected,
+              "projected_rule": "max(1.5 x worker aggregate peak %s, floor %d)" % (peak, floor)}
+        if kind == "leaf":
+            it.update({"expected_checker_feed_sha256": case["cnf_sha256"],
+                       "expected_checker_feed_bytes": case["cnf_bytes"], "acceptance": ACCEPTANCE})
+        else:
+            if name not in LOW_MEMORY_IDS:
+                die("controls are for the low-memory leaves only")
+            if "leaf:" + name not in seen:
+                die("control listed before its leaf")
+            it.update({"expected_checker_feed_sha256": case["mutant_cnf_sha256"],
+                       "expected_checker_feed_bytes": case["mutant_cnf_bytes"],
+                       "mutation": {"description": "checker feed only: the FIRST template unit line sign-flipped; "
+                                                   "the solver gets the correct leaf",
+                                    "unit_index": 0, "from": case["units"][0], "to": case["mutant_units"][0],
+                                    "mutant_unit_lines_sha256": sha_bytes(case["mutant_unit_bytes"])},
+                       "preregistered_expectation": "not s VERIFIED",
+                       "runs_only_if": "receipts/%s.json exists with verdict PASS" % name})
+        items.append(it)
+    fb = free_bytes()
+    busy, other, scan = gate_scan()
+    pre = {"schema": "moqls8-fone-parent-replay-preexec/1", "at": now(), "started_at": started, "desk": DESK,
+           "scope": SCOPE,
+           "script": {"path": SCRIPT_REL, "sha256": sha_file(SCRIPT)},
+           "python": {"executable": sys.executable, "version": sys.version.split()[0], "flags": "-I -B"},
+           "binaries": binaries, "inputs": ctx["info"], "worker_results": worker, "items": items,
+           "acceptance": ACCEPTANCE, "gate": GATE_RULE, "in_flight_stops": STOPS,
+           "limits": {"solver_seconds": SOLVER_SECONDS, "checker_seconds": CHECKER_SECONDS,
+                      "wall_backstop_seconds": BACKSTOP, "launch_floor_bytes": LAUNCH_FLOOR, "floor_bytes": FLOOR,
+                      "gate_lane_rss_bytes": GATE_RSS, "stop_lane_rss_bytes": STOP_LANE_RSS,
+                      "desk_margin_bytes": DESK_MARGIN, "lane_busy_cap": LANE_BUSY_CAP, "mine": MINE,
+                      "wait_poll_seconds": WAIT_POLL, "wait_budget_seconds": WAIT_BUDGET,
+                      "gate_consecutive_passes": GATE_STREAK, "sigterm_grace_seconds": SIGTERM_GRACE,
+                      "projected_retained_growth_bytes": 10 * MIB},
+           "transport": "CNF bytes in parent memory -> anonymous pipes (/dev/fd/N) with per-writer sha256 of the "
+                        "bytes written; proof: cadical -> named FIFO in fifo/ -> drat-trim stdin (-i). No CNF or "
+                        "proof file on disk.",
+           "sequencing": "one pipeline at a time, items in the listed order; a control runs only after its leaf "
+                         "PASSes; a failed self-test aborts the run before any leaf",
+           "fresh_check": {"free_bytes": fb, "lane_other_busy": busy, "lane_other_rss_bytes": other,
+                           "lane_scan": [compact(c) for c in (scan or [])]}}
+    digest = write_json_x(out, pre)
+    print("PRE-EXEC %s sha256 %s" % (out, digest))
+    for it in items:
+        print(it["item"], it["expected_solver_feed_sha256"][:12], it["expected_checker_feed_sha256"][:12],
+              it["projected_peak_bytes"])
+
+
+def cmd_run(argv):
+    check_env()
+    if len(argv) != 1:
+        die("run PREEXEC")
+    pre_path = os.path.abspath(argv[0])
+    pre_raw = read_bytes(pre_path)
+    pre, pre_sha = json.loads(pre_raw), sha_bytes(pre_raw)
+    script_sha = sha_file(SCRIPT)
+    if pre["script"]["sha256"] != script_sha:
+        die("script sha256 differs from the pre-exec pin")
+    runtag = datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
+    log_path = os.path.join(DESK, "logs", "driver-%s.log" % runtag)
+    logf = open(log_path, "x", buffering=1)
+
+    def log(msg):
+        line = "%s %s" % (now(), msg)
+        logf.write(line + "\n")
+        print(line, flush=True)
+
+    stop = {}
+
+    def on_term(signum, _frame):
+        stop["signal"] = signal.Signals(signum).name
+
+    signal.signal(signal.SIGTERM, on_term)
+    summary = {"schema": "moqls8-fone-parent-replay-run/1", "run_tag": runtag, "started_at": now(),
+               "pre_exec": {"path": rel(pre_path), "sha256": pre_sha}, "script_sha256": script_sha,
+               "driver_log": rel(log_path), "items": [], "events": [], "stopped_reason": None}
+    log("run %s start; pre-exec %s sha256 %s; driver pid %d" % (runtag, rel(pre_path), pre_sha, os.getpid()))
+    ctx = load_inputs(log)
+    summary["inputs_verified"] = ctx["info"]
+    summary["driver_rss_after_load_bytes"] = rss(os.getpid())
+    for it in pre["items"]:
+        s_parts, c_parts = item_parts(it, ctx)
+        if (sha_parts(s_parts) != (it["expected_solver_feed_sha256"], it["expected_solver_feed_bytes"])
+                or sha_parts(c_parts) != (it["expected_checker_feed_sha256"], it["expected_checker_feed_bytes"])):
+            die("regenerated bytes differ from the pre-exec for " + it["item"])
+    log("all %d items regenerated in memory and equal to the pre-exec hashes" % len(pre["items"]))
+    budget = {"used": 0.0}
+    remaining = list(pre["items"])
+    while remaining:
+        it = remaining.pop(0)
+        label = item_label(it)
+        rpath = os.path.join(DESK, "receipts", label + ".json")
+        entry = {"item": it["item"], "label": label}
+        summary["items"].append(entry)
+        if os.path.lexists(rpath):
+            entry.update({"status": "SKIPPED", "reason": "receipt already exists; a re-run needs parent approval "
+                                                         "and a new version name"})
+            log("skip %s: receipt exists" % label)
+            continue
+        if it["kind"] == "control":
+            lpath = os.path.join(DESK, "receipts", it["id"] + ".json")
+            lv = json.loads(read_bytes(lpath))["verdict"] if os.path.exists(lpath) else None
+            if lv != "PASS":
+                entry.update({"status": "SKIPPED", "reason": "real replay verdict %s, not PASS" % lv})
+                log("skip %s: real replay verdict %s" % (label, lv))
+                continue
+        s_parts, c_parts = item_parts(it, ctx)
+        hs, ns = sha_parts(s_parts)
+        hc, nc = sha_parts(c_parts)
+        pre_launch = {"at": now(), "solver_feed_sha256": hs, "solver_feed_bytes": ns, "checker_feed_sha256": hc,
+                      "checker_feed_bytes": nc}
+        if it["kind"] != "selftest":
+            case = ctx["cases"][it["id"]]
+            ok = (hs == it["expected_solver_feed_sha256"] == case["binding_cnf_sha256"] == case["manifest_cnf_sha256"]
+                  and ns == it["expected_solver_feed_bytes"])
+            pre_launch["solver_buffer_equals_binding_and_manifest"] = ok
+            if not ok:
+                die("pre-launch leaf hash for " + label)
+        if (hs, ns, hc, nc) != (it["expected_solver_feed_sha256"], it["expected_solver_feed_bytes"],
+                                it["expected_checker_feed_sha256"], it["expected_checker_feed_bytes"]):
+            die("pre-launch buffer hash for " + label)
+        bins = check_binaries()
+        if sha_file(SCRIPT) != script_sha:
+            die("script changed during the run")
+        projected = it["projected_peak_bytes"]
+        log("gate %s: projected %d" % (label, projected))
+        g = gate(label, projected, budget, log, stop)
+        if not g["launch"]:
+            ev = {"at": now(), "event": "deferred" if g.get("deferred") else "stopped", "item": it["item"],
+                  "wait_used_total_seconds": round(budget["used"], 1),
+                  "last_sample": g["samples"][-1] if g["samples"] else None}
+            summary["events"].append(ev)
+            entry.update({"status": "DEFERRED" if g.get("deferred") else "STOPPED", "gate": g})
+            summary["stopped_reason"] = ("total gate wait budget of 6 h exhausted at %s" % label
+                                         if g.get("deferred") else g.get("stopped"))
+            log("%s %s" % (entry["status"], label))
+            break
+        rec = pipeline(label, s_parts, c_parts, projected, log, stop)
+        verdict, reasons, crit = evaluate(rec, it)
+        receipt = {"schema": "moqls8-fone-parent-replay-receipt/1", "label": label, "kind": it["kind"],
+                   "id": it.get("id"), "name": it.get("name"),
+                   "scope": SCOPE if it["kind"] != "selftest" else it["purpose"],
+                   "desk": DESK, "script": {"path": SCRIPT_REL, "sha256": script_sha},
+                   "pre_exec": {"path": rel(pre_path), "sha256": pre_sha}, "run_tag": runtag,
+                   "binaries": bins, "item": it, "pre_launch_buffer_check": pre_launch, "gate": g, "pipeline": rec,
+                   "criteria": crit, "verdict": verdict, "reasons": reasons, "written_at": now()}
+        rsha = write_json_x(rpath, receipt)
+        entry.update({"status": "RECEIPT", "verdict": verdict, "reasons": reasons, "receipt": rel(rpath),
+                      "receipt_sha256": rsha, "pipeline_seconds": rec["pipeline_seconds"],
+                      "gate_waited_seconds": g["waited_seconds"],
+                      "peak_desk_aggregate_rss_bytes": rec["peak_desk_aggregate_rss_bytes"],
+                      "safety_stop_reason": rec["safety_stop_reason"]})
+        for ev in rec["events"]:
+            summary["events"].append(dict(ev, item=it["item"]))
+        log("%s verdict %s reasons %s receipt sha256 %s" % (label, verdict, reasons, rsha))
+        if rec["sigterm_grace_exceeded"]:
+            summary["stopped_reason"] = "SIGTERM grace exceeded at %s; children may still be alive" % label
+            break
+        if stop.get("signal"):
+            summary["stopped_reason"] = "driver received %s" % stop["signal"]
+            break
+        if it["kind"] == "selftest":
+            want = "PASS" if it["mode"] == "refutation" else "AS_PREREGISTERED_NOT_VERIFIED"
+            if verdict != want:
+                summary["stopped_reason"] = "self-test %s gave %s, expected %s" % (label, verdict, want)
+                break
+    for it in remaining:
+        summary["items"].append({"item": it["item"], "label": item_label(it), "status": "NOT_ATTEMPTED",
+                                 "reason": summary["stopped_reason"]})
+    summary["wait_budget_seconds"] = WAIT_BUDGET
+    summary["wait_used_seconds"] = round(budget["used"], 1)
+    summary["finished_at"] = now()
+    log("run %s finished; stopped_reason %s" % (runtag, summary["stopped_reason"]))
+    logf.close()
+    summary["driver_log_sha256_at_close"] = sha_file(log_path)
+    digest = write_json_x(os.path.join(DESK, "runs", "run-%s.json" % runtag), summary)
+    print("RUN SUMMARY runs/run-%s.json sha256 %s" % (runtag, digest))
+
+
+def _summ(r, rpath):
+    p = r["pipeline"]
+    s = p["children"].get("solver", {})
+    c = p["children"].get("checker", {})
+    sw = p["writers"].get("solver_feed", {})
+    cw = p["writers"].get("checker_feed", {})
+    it = r["item"]
+    return {"label": r["label"], "id": r.get("id"), "kind": r["kind"], "verdict": r["verdict"],
+            "reasons": r["reasons"], "receipt": rel(rpath), "receipt_sha256": sha_file(rpath),
+            "expected_solver_feed_sha256": it["expected_solver_feed_sha256"],
+            "expected_checker_feed_sha256": it["expected_checker_feed_sha256"],
+            "expected_feed_bytes": [it["expected_solver_feed_bytes"], it["expected_checker_feed_bytes"]],
+            "measured_solver_feed": {k: sw.get(k) for k in ("ok", "written", "sha256", "error")},
+            "measured_checker_feed": {k: cw.get(k) for k in ("ok", "written", "sha256", "error")},
+            "solver": {"rc": s.get("rc"), "status_lines": p.get("solver_status_lines"),
+                       "wall_seconds": s.get("wall_seconds"), "user_seconds": s.get("user_seconds"),
+                       "maxrss_bytes": s.get("maxrss_bytes")},
+            "checker": {"rc": c.get("rc"), "status_lines": p.get("checker_status_lines"),
+                        "wall_seconds": c.get("wall_seconds"), "user_seconds": c.get("user_seconds"),
+                        "maxrss_bytes": c.get("maxrss_bytes"), "info_lines": p.get("checker_info_lines")},
+            "started_at": p.get("started_at"), "finished_at": p.get("finished_at"),
+            "pipeline_seconds": p.get("pipeline_seconds"),
+            "peak_desk_aggregate_rss_bytes": p.get("peak_desk_aggregate_rss_bytes"),
+            "peak_lane_total_rss_bytes": p.get("peak_lane_total_rss_bytes"),
+            "projected_peak_bytes": it.get("projected_peak_bytes"),
+            "worker_record": it.get("worker_record"),
+            "gate": {"decided_at": r["gate"].get("decided_at"), "waited_seconds": r["gate"].get("waited_seconds"),
+                     "lane_other_busy_at_launch": r["gate"].get("lane_other_busy_at_launch"),
+                     "lane_other_rss_at_launch": r["gate"].get("lane_other_rss_at_launch"),
+                     "free_bytes_at_launch": r["gate"].get("free_bytes_at_launch")},
+            "safety_stop_reason": p.get("safety_stop_reason"), "events": p.get("events"),
+            "preregistered_expectation": it.get("preregistered_expectation"), "mutation": it.get("mutation")}
+
+
+def cmd_assemble(argv):
+    if len(argv) < 2:
+        die("assemble OUT PREEXEC...")
+    out = os.path.abspath(argv[0])
+    if not out.startswith(DESK + "/") or os.path.lexists(out):
+        die("result path must be new and inside the desk")
+    pres = []
+    for p in argv[1:]:
+        p = os.path.abspath(p)
+        pres.append((p, sha_file(p), json.loads(read_bytes(p))))
+    runs = []
+    for f in sorted(glob.glob(os.path.join(DESK, "runs", "*.json"))):
+        runs.append((f, sha_file(f), json.loads(read_bytes(f))))
+    receipts = {}
+    for f in sorted(glob.glob(os.path.join(DESK, "receipts", "*.json"))):
+        r = json.loads(read_bytes(f))
+        receipts[r["label"]] = (r, f)
+    groups = {"selftest": [], "leaf": [], "control": []}
+    not_run = []
+    for _p, _s, pre in pres:
+        for it in pre["items"]:
+            label = item_label(it)
+            if label in receipts:
+                r, f = receipts[label]
+                groups[it["kind"]].append(_summ(r, f))
+                continue
+            why = [dict(e, run=rn["run_tag"]) for _f, _h, rn in runs for e in rn["items"] if e["label"] == label]
+            not_run.append({"item": it["item"], "label": label,
+                            "run_entries": [{k: e.get(k) for k in ("run", "status", "reason")} for e in why]})
+    counts = {}
+    for e in groups["leaf"]:
+        counts[e["verdict"]] = counts.get(e["verdict"], 0) + 1
+    deferrals = [dict(e, run=rn["run_tag"]) for _f, _h, rn in runs for e in rn["events"]
+                 if e.get("event") in ("deferred", "stopped")]
+    guards = [dict(e, run=rn["run_tag"]) for _f, _h, rn in runs for e in rn["events"]
+              if e.get("event") not in ("deferred", "stopped")]
+    allx = groups["selftest"] + groups["leaf"] + groups["control"]
+    first = pres[0][2]
+    result = {"schema": "moqls8-fone-parent-replay-result/1", "assembled_at": now(), "desk": DESK,
+              "scope": SCOPE,
+              "statement": "Parent replay of individual leaves only; it establishes no F4/n=8 conclusion and no "
+                           "theorem claim.",
+              "script": {"path": SCRIPT_REL, "sha256": sha_file(SCRIPT)},
+              "pre_exec": [{"path": rel(p), "sha256": h} for p, h, _ in pres],
+              "binaries": first["binaries"], "inputs": first["inputs"],
+              "worker_results_prefix": {k: first["worker_results"][k] for k in
+                                        ("path", "prefix_records", "prefix_sha256", "use")},
+              "runs": [{"path": rel(f), "sha256": h, "run_tag": rn["run_tag"], "started_at": rn["started_at"],
+                        "finished_at": rn.get("finished_at"), "wait_used_seconds": rn.get("wait_used_seconds"),
+                        "stopped_reason": rn.get("stopped_reason"), "driver_log": rn.get("driver_log"),
+                        "driver_log_sha256": rn.get("driver_log_sha256_at_close")} for f, h, rn in runs],
+              "started_at": min([rn["started_at"] for _f, _h, rn in runs], default=None),
+              "finished_at": max([rn.get("finished_at") or "" for _f, _h, rn in runs], default=None),
+              "leaf_verdict_counts": counts, "leaves": groups["leaf"], "controls": groups["control"],
+              "selftests": groups["selftest"], "not_run": not_run, "deferrals": deferrals,
+              "guard_events": guards,
+              "peak_rss": {"max_desk_aggregate_sampled_bytes": max([e["peak_desk_aggregate_rss_bytes"] or 0
+                                                                    for e in allx], default=None),
+                           "max_lane_total_sampled_bytes": max([e["peak_lane_total_rss_bytes"] or 0 for e in allx],
+                                                               default=None),
+                           "max_child_maxrss_bytes": max([max(e["solver"]["maxrss_bytes"] or 0,
+                                                              e["checker"]["maxrss_bytes"] or 0) for e in allx],
+                                                         default=None)}}
+    digest = write_json_x(out, result)
+    print("RESULT %s sha256 %s" % (out, digest))
+
+
+def main(argv):
+    if len(argv) < 2:
+        die(__doc__)
+    cmd, rest = argv[1], argv[2:]
+    if cmd == "preexec":
+        cmd_preexec(rest)
+    elif cmd == "run":
+        cmd_run(rest)
+    elif cmd == "assemble":
+        cmd_assemble(rest)
+    else:
+        die("unknown subcommand " + cmd)
+
+
+if __name__ == "__main__":
+    main(sys.argv)

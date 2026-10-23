@@ -1,0 +1,61 @@
+--- adapter245e4e4f-r3
++++ adapter-r4
+@@ -2,7 +2,7 @@
+ owns/stops the process group. This process holds the capacity flock THROUGH
+ supervisor cleanup/quarantine and producer post-qualification. No raw PID
+ signals, no SIGKILL, no edits/copies of the supervisor or legacy R.certify.
+-Heavy F.build/du/ps and ALL native work occur in the supervised worker.
++Heavy F.build/du/nonprivileged metrics and ALL native work occur in the supervised worker.
+ The worker requests a stop by an immutable tiny file. The probe adapter only
+ checks that file (no ps/Popen/unbounded work in the owner), raises ONCE into
+ the supervisor's tested exception path, then delegates cleanup probes unchanged.
+@@ -119,9 +119,11 @@
+     mode.add_argument('--reuse-family', action='store_true')
+     ap.add_argument('--init-root', action='store_true')
+     ap.add_argument('--release', action='store_true')
++    ap.add_argument('--continue-from')
++    ap.add_argument('--continue-sha256')
+     a = ap.parse_args()
+     t0 = time.monotonic()
+-    # Tiny entry preflight only; no F.build, du, ps or native child here.
++    # Tiny entry preflight only; no F.build, du, selectors or native child here.
+     if sha(SUPERVISOR.read_bytes()) != SUP_SHA:
+         raise RuntimeError('approved supervisor source pin changed')
+     T = load_file('n8_refinement_worker', ROOT / 'code/run_n8_fone_refine.py')
+@@ -143,11 +145,16 @@
+     out = T.REFINES / a.template
+     before, _ = T.latest(out)
+     active_before = before['active_seconds'] if before else 0.0
++    if a.continue_from:
++        raw_anchor = Path(a.continue_from).read_bytes()
++        if before is not None or not a.init_family or sha(raw_anchor) != a.continue_sha256:
++            raise RuntimeError('invalid explicit source-epoch continuation')
++        active_before = json.loads(raw_anchor)['active_seconds']
+     remaining = min(T.CAP - active_before, T.DEADLINE - time.time())
+     if remaining < 1232:
+         raise SystemExit('STOP_BUDGET: no fresh full child allowance; no cap reset')
+     serial = str(time.time_ns())
+-    record = ROOT / 'evidence' / ('N8_FONE_R3.' + a.template + '.' + serial + '.json')
++    record = ROOT / 'evidence' / ('N8_FONE_R4.' + a.template + '.' + serial + '.json')
+     command = [sys.executable, '-B', str(ROOT / 'code/run_n8_fone_refine.py'),
+                '--template', a.template, '--admission', str(Path(a.admission).resolve()),
+                '--admission-sha256', a.admission_sha256, '--rss-cap', str(own_cap),
+@@ -156,6 +163,9 @@
+         command.append('--init-root')
+     if a.release:
+         command.append('--release')
++    if a.continue_from:
++        command.extend(['--continue-from', str(Path(a.continue_from).resolve()),
++                        '--continue-sha256', a.continue_sha256])
+     S = load_file('n8_approved_supervisor', SUPERVISOR, SUP_SHA)
+     stop_request = Path(str(record) + '.stop.json')
+     observations = {'stop_requested': False, 'request_file': str(stop_request)}
+@@ -203,7 +213,7 @@
+                    'ledger_sha256': lh, 'admission_sha256': a.admission_sha256,
+                    'own_cap': own_cap, 'other_declared_caps': other_caps, 'quarantine': rec['quarantine_record'],
+                    'shared_observations': observations, 'no_parent_refutation_count_claim': True}
+-        T.new_json(ROOT / 'evidence' / ('N8_FONE_R3.' + a.template + '.' + serial + '.qualified.json'), summary)
++        T.new_json(ROOT / 'evidence' / ('N8_FONE_R4.' + a.template + '.' + serial + '.qualified.json'), summary)
+         print(json.dumps(summary), flush=True)
+     except BaseException as ex:
+         # Group is already quiescent OR the supervisor's quarantine persists.

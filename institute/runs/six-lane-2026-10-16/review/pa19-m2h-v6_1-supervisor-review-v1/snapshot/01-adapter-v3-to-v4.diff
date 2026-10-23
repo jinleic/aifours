@@ -1,0 +1,25 @@
+--- src/supervise_pa19_v3.py
++++ src/supervise_pa19_v4.py
+@@ -1,5 +1,10 @@
+ #!/usr/bin/env python3
+ """supervise_r3.py: minimal single-threaded supervisor for one command and its process group (macOS libproc).
++PA19 supervise_pa19_v4.py = supervise_pa19_v3.py (sha256 79c463589c9c...573b3) plus ONE change and nothing else:
++when the monitor ends with reason None (leader classified exited, completion check passed) and the single poll()
++has not reaped the leader (macOS: libproc ESRCH can precede waitpid reapability; observed 2026-10-18 08:45), poll()
++is repeated every 10 ms for at most 5 s. Afterwards the record is built exactly as in v3; completed_cleanly still
++requires returncode == 0, and no other path (any trip, stop, exception) re-polls.
+ 
+ New version of supervise_r2.py (0b023e2c...8c37), whose controls FAILED on this host (receipt
+ evidence/k3cubes/supervise_controls_r2.json, 8313d092...18a1). Observed macOS facts behind this version:
+@@ -350,6 +355,11 @@
+                     state["uncertain"] = True
+             if child is not None:
+                 child.poll()
++                if state["reason"] is None and state["final"] is not None and child.returncode is None:
++                    repoll_until = time.monotonic() + 5.0  # PA19 v4: bounded re-poll, 10 ms period
++                    while child.returncode is None and time.monotonic() < repoll_until:
++                        time.sleep(0.01)
++                        child.poll()
+             survivors = stop is not None and (stop["survivors"] or not stop["listing_ok"])
+             if child is not None and (state["uncertain"] or survivors):
+                 quarantined = write_quarantine(quarantine_path, {

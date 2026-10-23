@@ -1,0 +1,165 @@
+--- scripts/launch_B_v7.py
++++ scripts/launch_B_v8.py
+@@ -1,9 +1,16 @@
+ #!/usr/bin/env python3
+-"""Capacity-gated launcher of the parent B-side K3 cube replay desk (review/moqls7-k3-B-cube-parent-replay-v1), v7.
++"""Capacity-gated launcher of the parent B-side K3 cube replay desk (review/moqls7-k3-B-cube-parent-replay-v1), v8.
++
++v8 = launch_B_v7.py with one change, Main's long-job stability rule (07:16 PDT) in the admission. Between the first
++admitting scan and the second fresh scan (immediately before launch), the 62 s pause becomes a stability window. For
++300 s, free bytes are read by statvfs every 30 s (no new processes). Admission requires every reading >= 13.5e9 B and
++no drop above 300,000,000 B from any earlier reading to any later one within the window. The second scan must still
++pass all v6 conditions, including free >= 12.2e9 + growth. A window that fails or is interrupted restarts the cycle.
++v8 serves both items, because bklib_v2 pins B_C321 exactly as bklib_v1 did and adds B_C411; the driver is
++replay_B_v3.py. Everything else is byte-identical to v7, including the optional --regen-tag.
+ 
+ v7 = launch_B_v6.py with an import bump for B/C411: bklib_v2 (B_C411 item pin) instead of bklib_v1, and the driver
+ replay_B_v3.py. One addition: 'run ITEM --label LABEL [--regen-tag TAG]' takes the regeneration precheck from
+ receipts/regen-ITEM-TAG.json instead of receipts/regen-ITEM.json, which a 07:12:31 free-space deferral spent for B_C411.
+-Gate, slot condition, cap, readings, run_owned and everything else are byte-identical to v6.
+ 
+ v6 = launch_B_v5.py with one change, the admission gate (Main's a3 GO, about 07:05 PDT):
+@@ -70,10 +77,11 @@
+ SUP_GRACE = 180
+ CAP_FIXED = 2797076480                          # Main, about 07:05 PDT
+-SECOND_READING_DELAY = 62                       # >= 60 s between the two free-space readings
+-ATTEMPT_RULE = ("Main messages 05:00-07:05 PDT 2026-10-18: attempts are UNKNOWN on any stop and never relabelled. "
+-                "B_C321-a3 is a NEW attempt in SLOT 2 (after B/C411 r7 reaped and end-recorded) with its own receipts "
+-                "and a fresh gate: two free readings >= 12.2e9 + projected growth, 60 s apart; lane caps (<= 2 busy "
+-                "lane natives by ancestry, lane RSS <= 8 GiB); RSS cap 2,797,076,480 B unless an ancestry scan shows "
+-                "more headroom; no stacking; floor 12e9 in flight; no new launches after 17:30 PDT.")
++STABILITY = {"window_seconds": 300, "every_seconds": 30, "min_free": 13500000000, "max_drop": 300000000}
++ATTEMPT_RULE = ("Main messages 05:00-07:17 PDT 2026-10-18: attempts are UNKNOWN on any stop and never relabelled. "
++                "B_C321-a3 (slot 2) and B/C411 (slot 1, after PhysEpQutrit's hand-over) are NEW attempts with their "
++                "own receipts, each launched only on Main's explicit GO, with a fresh gate: free >= 12.2e9 + projected "
++                "growth at both scans; long-job stability (>= 13.5e9 B and no drop > 300 MB within 5 min); lane caps "
++                "(<= 2 busy lane natives by ancestry, lane RSS <= 8 GiB); RSS cap 2,797,076,480 B with ancestry "
++                "headroom; no stacking; floor 12e9 in flight; no new launches after 17:30 PDT.")
+ B411_R7 = re.compile(r"B_C411|k3_direct_B_r\d+\.py C411")
+ B411_R7_END_RECORD = os.path.join(K.K3DIR, "cert_B_r7", "B_C411.json")
+@@ -308,4 +316,28 @@
+ 
+ 
++def stability_window():
++    """Main's long-job rule: 300 s of statvfs readings every 30 s, all >= 13.5e9 B, no earlier-to-later drop > 300 MB.
++    Stops early (not ok) on a low reading, a signal or the deadline."""
++    t0, readings, why = time.monotonic(), [], None
++    while True:
++        readings.append({"t": round(time.monotonic() - t0, 1), "at": K.now(), "free_bytes": K.free_bytes()})
++        if readings[-1]["free_bytes"] < STABILITY["min_free"]:
++            why = "reading below %d" % STABILITY["min_free"]
++            break
++        if STATE["signals"] or not deadline_ok():
++            why = "signal or deadline"
++            break
++        if time.monotonic() - t0 >= STABILITY["window_seconds"]:
++            break
++        time.sleep(STABILITY["every_seconds"])
++    vals = [r["free_bytes"] for r in readings]
++    max_drop = max([0] + [vals[i] - vals[j] for i in range(len(vals)) for j in range(i + 1, len(vals))])
++    if why is None and max_drop > STABILITY["max_drop"]:
++        why = "drop %d above %d" % (max_drop, STABILITY["max_drop"])
++    if why is None and readings[-1]["t"] < STABILITY["window_seconds"]:
++        why = "window shorter than %d s" % STABILITY["window_seconds"]
++    return {"ok": why is None, "why": why, "rule": STABILITY, "readings": readings, "max_drop": max_drop}
++
++
+ def wait_for_admission(logfd, purpose):
+     while True:
+@@ -316,5 +348,7 @@
+         if adm["ok"] and not STATE["signals"]:
+             t1 = time.monotonic()
+-            time.sleep(SECOND_READING_DELAY)
++            stab = stability_window()
++            os.write(logfd, (json.dumps({"at": K.now(), "stability": {k: stab[k] for k in ("ok", "why", "max_drop")},
++                                         "readings": len(stab["readings"])}) + "\n").encode())
+             scan2 = lane_scan_ancestry(os.getpid())
+             fb2 = K.free_bytes()
+@@ -325,5 +359,6 @@
+                                     "free_bytes": fb2}, "gap_seconds": gap, "gate": K.GATE,
+                                     "both_at_least_gate": fb >= K.GATE and fb2 >= K.GATE}
+-            if adm2["ok"] and gap >= 60 and fb >= K.GATE and fb2 >= K.GATE:
++            adm2["stability"] = stab
++            if adm2["ok"] and stab["ok"] and gap >= 60 and fb >= K.GATE and fb2 >= K.GATE:
+                 return scan2, fb2, adm2
+             adm, scan, fb = adm2, scan2, fb2
+@@ -537,5 +572,5 @@
+         if ((len(a) != 4 and not tagged) or a[1] not in K.ITEMS or a[2] != "--label"
+                 or not (re.fullmatch(r"[A-Za-z0-9_.-]+", a[3]) and a[3].startswith(a[1] + "-"))):
+-            raise SystemExit("usage: launch_B_v7.py run ITEM --label ITEM-<suffix> [--regen-tag TAG]")
++            raise SystemExit("usage: launch_B_v8.py run ITEM --label ITEM-<suffix> [--regen-tag TAG]")
+         signal.signal(signal.SIGTERM, on_term)
+         signal.signal(signal.SIGINT, on_term)
+--- scripts/assemble_B_v7.py
++++ scripts/assemble_B_v8.py
+@@ -1,5 +1,8 @@
+ #!/usr/bin/env python3
+ """Assemble the attempt receipt, deviations, RESULT and REPORT of a labelled replay attempt of the parent B-side K3
+-cube replay desk (review/moqls7-k3-B-cube-parent-replay-v1), v7.
++cube replay desk (review/moqls7-k3-B-cube-parent-replay-v1), v8.
++
++v8 = assemble_B_v7.py with the deviation texts updated for launch_B_v8.py (stability rule; one launcher for both
++items). Nothing else changes.
+ 
+ v7 = assemble_B_v6.py with an import bump for B/C411 (bklib_v2, B_C411 item pin) and one addition matching
+@@ -29,12 +32,12 @@
+ DEVIATIONS = [
+     {"id": "D16-versioned-scripts",
+-     "what": "Runs are launched by launch_B_v6.py (B_C321, bklib_v1, driver replay_B_v2.py) or by its import-only "
+-             "bump launch_B_v7.py (B_C411, bklib_v2, driver replay_B_v3.py). History: v2 attempt labels "
++     "what": "Both B_C321 attempt a3 and B/C411 are launched by launch_B_v8.py (bklib_v2, driver replay_B_v3.py; "
++             "bklib_v2 pins B_C321 exactly as bklib_v1 and adds B_C411). History: v2 attempt labels "
+              "(scripts-v1-to-v2.r2.diff); v3 slot-2-only rule (scripts-v2-to-v3.diff); v4 flag-only signal handling "
+              "and owned-child loop (scripts-v3-to-v4.diff); v5 cleanup obligation (scripts-v4-to-v5.diff); v6 "
+-             "ancestry gate (scripts-v5-to-v6.diff); v7/bklib_v2/replay_B_v3/assemble_B_v7 import-only B/C411 bumps "
+-             "(scripts-v6-to-v7-B_C411.diff). compose_B_v1.py and supervise_r3.py are unchanged; native limits "
+-             "(kissat --time=5400, drat-trim -t 9000) and supervisor arguments (wall 10200 s, grace 180 s, floor 12e9) "
+-             "are unchanged."},
++             "ancestry gate (scripts-v5-to-v6.diff); v7 import bumps and --regen-tag (scripts-v6-to-v7-B_C411.diff); "
++             "v8 long-job stability rule (scripts-v7-to-v8.diff). compose_B_v1.py and supervise_r3.py are unchanged; "
++             "native limits (kissat --time=5400, drat-trim -t 9000) and supervisor arguments (wall 10200 s, grace "
++             "180 s, floor 12e9) are unchanged."},
+     {"id": "D17-selfcheck-reused-and-regen-precheck",
+      "what": "Self-checks were not rerun: every attempt reuses receipts/selfcheck-summary.json (ec246769...739b, "
+@@ -43,11 +46,12 @@
+              "the CNF again before any native launch."},
+     {"id": "D18-v6-gate",
+-     "what": "launch_B_v6/v7 admission: lane identity by cwd/ancestry (cwd inside moqls7-maximum or a review/moqls7-* "
+-             "desk, or a descendant); <= 2 busy lane natives; lane RSS + 2 GiB <= 8 GiB; fixed RSS cap 2,797,076,480 B "
+-             "(Main) with ancestry headroom min(3.5 GiB, 8 GiB - ancestry reservations - 128 MiB) >= that cap; the "
+-             "slot-2 condition (B/C411 r7 reaped and end-recorded); two fresh free readings >= 12,201,048,576 B "
+-             ">= 60 s apart, the second with a fresh scan immediately before launch; no launch after 17:30 PDT. "
+-             "Processes that merely use M7 binary/script paths (ME3's supervise_r3 runs, PA19's drat-trim) are listed "
+-             "as foreign_marker_matches_excluded in the gate receipt."},
++     "what": "launch_B_v8 admission (v6 gate plus the v8 stability rule): lane identity by cwd/ancestry (cwd inside "
++             "moqls7-maximum or a review/moqls7-* desk, or a descendant); <= 2 busy lane natives; lane RSS + 2 GiB <= "
++             "8 GiB; fixed RSS cap 2,797,076,480 B (Main) with ancestry headroom min(3.5 GiB, 8 GiB - ancestry "
++             "reservations - 128 MiB) >= that cap; the slot-2 condition (B/C411 r7 reaped and end-recorded); free >= "
++             "12,201,048,576 B at the first scan and at a fresh second scan immediately before launch; between them "
++             "a 300 s stability window (statvfs every 30 s, every reading >= 13.5e9 B, no earlier-to-later drop > "
++             "300 MB); no launch after 17:30 PDT. Processes that merely use M7 binary/script paths are listed as "
++             "foreign_marker_matches_excluded in the gate receipt; the stability readings are in its admission."},
+     {"id": "D19-v1-deviations-carried",
+      "what": "D1-D12 and D14 of deviations-v1.json (1ec0309c...4afb) apply unchanged."},
+@@ -57,6 +61,6 @@
+              "floor-stopped attempt is UNKNOWN and never relabelled."},
+     {"id": "D21-assembler-before-run",
+-     "what": "assemble_B_v6.py and assemble_B_v7.py were created before the attempts they assemble were launched; "
+-             "their SHA-256s are part of every recording made by those runs."},
++     "what": "assemble_B_v8.py was created before the attempts it assembles were launched; its SHA-256 is part of "
++             "every recording made by those runs."},
+     {"id": "D25-armed-after-go",
+      "what": "Each launcher was armed only after Main's explicit GO; the arming time is the first line of "
+@@ -82,5 +86,5 @@
+                         "was deferred by the driver's free-space gate at 07:12:31 (12,012,662,784 < 12,201,048,576 B) "
+                         "with all producer pin checks consistent and no compose run. The precheck was repeated "
+-                        "under replay_B_v3.py 'regen B_C411 --tag TAG'; launch_B_v7.py and assemble_B_v7.py read that "
++                        "under replay_B_v3.py 'regen B_C411 --tag TAG'; launch_B_v8.py and assemble_B_v8.py read that "
+                         "tagged receipt (--regen-tag)."}]}
+ 
+@@ -476,4 +480,5 @@
+         "scripts_diff_v5_to_v6": file_entry("scripts-v5-to-v6.diff"),
+         "scripts_diff_v6_to_v7_B_C411": file_entry("scripts-v6-to-v7-B_C411.diff"),
++        "scripts_diff_v7_to_v8": file_entry("scripts-v7-to-v8.diff"),
+         "signal_smoke": dict(file_entry("receipts/smoke-v4-signal.smoke.json"),
+                              all_ok=json.loads(K.read_regular(os.path.join(

@@ -1,0 +1,308 @@
+--- scripts-v12/launch_B_v12.py
++++ scripts-v14/launch_B_v14.py
+@@ -1,5 +1,20 @@
+ #!/usr/bin/env python3
+-"""Capacity-gated launcher of the parent B-side K3 cube replay desk (review/moqls7-k3-B-cube-parent-replay-v1), v12.
++"""Capacity-gated launcher of the parent B-side K3 cube replay desk (review/moqls7-k3-B-cube-parent-replay-v1), v14.
++
++v14 = launch_B_v12.py (not v13) with one change, specified by Main at about 09:33 PDT. Two persistent own-uid
++zombies were identified by Main's read-only lookup as unrelated GUI children: pid 57860 under WeChat.app and pid
++59426 under Signal.app. They are exempted from the unresolved-argv veto, and only those two complete identity tuples
++(KNOWN_UNRELATED_ZOMBIES) are exempted. A zombie is exempted only if all of these hold:
++  * it is in state Z in BOTH bracketing identity snapshots;
++  * its pid, ppid, pgid, uid and lstart equal the tuple in both snapshots;
++  * its parent is present in both snapshots, live, with the tuple's pid, uid and lstart, and its comm contains the
++    tuple's app bundle path;
++  * the parent's lsof cwd equals the tuple's cwd and its identity is consistent.
++If any field differs, the original fail-closed rule applies (retry, then refuse). There is no general zombie
++heuristic. Each census records every compared identity (expected, both snapshots, parent, cwd) under
++known_zombie_comparisons; matches are listed under known_zombie_exclusions. Exempted zombies take no part in the
++B/C411 veto, the desk attempts or the lane classification. 'selftest-v14' replaces 'selftest-v12' and adds the
++match/mismatch cases. The monitor is the same restored path as v12. Everything else is byte-identical to v12.
+ 
+ v12 = launch_B_v11.py with Main's approvals and Codex's v11 MINOR (review/m7-launch-v11-codex-v1.note.md
+ d7ed4c3a...c61a, GO-WITH-FIXES):
+@@ -149,11 +164,11 @@
+ receipts/*.QUARANTINE.json exists, the wait-start watcher, pins, limits, supervisor arguments and the RSS-cap rule are
+ as in v2/v3.
+ 
+-Usage: launch_B_v12.py run ITEM --label ITEM-<suffix> --slot {1,2} [--regen-tag TAG]
+-       launch_B_v12.py wait-start LABEL
+-       launch_B_v12.py test-exception-path LABEL         (LABEL: test-...; the v5 test mode, unchanged)
+-       launch_B_v12.py selftest-v12 LABEL                (LABEL: test-...; helper bounds, parsers, slots, lock, census,
+-                                                          monitor; no launch)
++Usage: launch_B_v14.py run ITEM --label ITEM-<suffix> --slot {1,2} [--regen-tag TAG]
++       launch_B_v14.py wait-start LABEL
++       launch_B_v14.py test-exception-path LABEL         (LABEL: test-...; the v5 test mode, unchanged)
++       launch_B_v14.py selftest-v14 LABEL                (LABEL: test-...; helper bounds, parsers, slots, lock, zombie
++                                                          tuples, census, monitor; no launch)
+ 
+ run waits, with bounded sleeps of 90 s (never spinning), until admission (rules above plus v6's <= 2 busy lane
+ natives, lane RSS headroom for the projected peak, fixed cap with ancestry headroom and the slot-2 condition). If
+@@ -200,6 +215,13 @@
+                           r"supervise_r\d+\.py ")
+ LAUNCHER_SLOT = re.compile(r"launch_B_v(\d+)\.py run \S+ --label (\S+)(?: --slot ([12]))?")
+ LEGACY_SLOTS = {"B_C321-a3": 2, "B_C411-p1": 1}   # pre-v12 launchers (no --slot): a3 (v8) slot 2; B_C411-p1 (v11) slot 1
++KNOWN_UNRELATED_ZOMBIES = {   # v14, Main's read-only lookup about 09:33 PDT; exact tuples only, never a pattern
++    57860: {"ppid": 43939, "pgid": 43939, "uid": 501, "lstart": "Tue Oct 13 19:50:17 2026",
++            "parent": {"lstart": "Sat Oct 10 09:09:21 2026", "app": "/WeChat.app/",
++                       "cwd": "/Users/jinleic/Library/Containers/com.tencent.xinWeChat/Data"}},
++    59426: {"ppid": 50856, "pgid": 50856, "uid": 501, "lstart": "Sun Oct 18 09:25:51 2026",
++            "parent": {"lstart": "Thu Oct 15 21:52:41 2026", "app": "/Signal.app/", "cwd": "/"}},
++}
+ LOCK_PATH = os.path.join(K.DESK, "locks", "admission.lock")
+ LOCK_SETTLE = 90                                # seconds the admission lock is held after a spawn
+ MONITOR = os.path.join(K.REVIEW, "disk-monitor-v1-20261018T0722-to-1810.jsonl")
+@@ -527,6 +549,25 @@
+     return "unknown"
+ 
+ 
++def known_zombie_match(pid, A, C, procs):
++    """v14: compare one KNOWN_UNRELATED_ZOMBIES tuple with both identity snapshots and its parent. match is True only
++    if every field agrees; the full compared identity is returned for the gate receipt."""
++    k = KNOWN_UNRELATED_ZOMBIES[pid]
++    a, c, pa, pc = A.get(pid), C.get(pid), A.get(k["ppid"]), C.get(k["ppid"])
++    parent = procs.get(k["ppid"])
++    zombie_ok = all(x is not None and x["state"].startswith("Z") and x["pid"] == pid and x["ppid"] == k["ppid"]
++                    and x["pgid"] == k["pgid"] and x["uid"] == k["uid"] and x["lstart"] == k["lstart"]
++                    for x in (a, c))
++    parent_ok = (all(x is not None and not x["state"].startswith("Z") and x["pid"] == k["ppid"]
++                     and x["uid"] == k["uid"] and x["lstart"] == k["parent"]["lstart"]
++                     and k["parent"]["app"] in x["comm"] for x in (pa, pc))
++                 and parent is not None and parent["same"] and parent["cwd"] == k["parent"]["cwd"])
++    return {"pid": pid, "expected": k, "first": a, "second": c, "parent_first": pa, "parent_second": pc,
++            "parent_cwd": parent["cwd"] if parent is not None else None,
++            "parent_consistent": parent["same"] if parent is not None else None,
++            "zombie_fields_match": zombie_ok, "parent_identity_match": parent_ok, "match": zombie_ok and parent_ok}
++
++
+ def census_once(own_root):
+     """One census: ps identity, ps args, lsof cwd, ps identity again. The second identity snapshot is classified; a
+     process is consistent only if present in both identity snapshots with equal ppid/pgid/uid/lstart/comm and with args
+@@ -574,7 +615,7 @@
+         procs[pid] = dict(c, args=b["args"] if b is not None and b["lstart"] == c["lstart"] else None,
+                           cwd=L.get(pid) if c["uid"] == me else None, zombie=c["state"].startswith("Z"), same=same)
+     skip = own | ancestors
+-    unresolved, veto_unresolved, foreign_native = [], [], []
++    unresolved, veto_unresolved, foreign_native, zcmp = [], [], [], []
+     for pid, p in procs.items():
+         if pid in skip:
+             continue
+@@ -584,16 +625,22 @@
+         if p["uid"] == me and not p["zombie"] and (not argv_ok or p["cwd"] is None):
+             unresolved.append(note)                 # own-uid live identity unresolved
+         elif not argv_ok:
+-            veto_unresolved.append(note)            # any uid or zombie: the B/C411 veto cannot see its argv
++            cmpr = known_zombie_match(pid, A, C, procs) if pid in KNOWN_UNRELATED_ZOMBIES else None
++            if cmpr is not None:
++                zcmp.append(cmpr)
++            if cmpr is None or not cmpr["match"]:
++                veto_unresolved.append(note)        # any uid or zombie: the B/C411 veto cannot see its argv
+         if p["uid"] != me and not p["zombie"] and os.path.basename(p["comm"]) in K.NATIVE:
+             foreign_native.append(note)
++    excluded = {z["pid"] for z in zcmp if z["match"]}
+     counts = {"first": len(A), "args": len(B), "lsof": len(L), "second": len(C)}
+     if foreign_native:
+         return {"at": at, "error": "live native(s) of another uid, identity unresolvable (fail-closed)",
+-                "foreign_uid_natives": foreign_native, "helpers": helpers, "census_counts": counts}
++                "foreign_uid_natives": foreign_native, "helpers": helpers, "census_counts": counts,
++                "known_zombie_comparisons": zcmp}
+     if unresolved or veto_unresolved:
+         return {"at": at, "retry": True, "unresolved": unresolved[:50], "veto_unresolved": veto_unresolved[:50],
+-                "helpers": helpers, "census_counts": counts}
++                "helpers": helpers, "census_counts": counts, "known_zombie_comparisons": zcmp}
+ 
+     def brief(p, n):
+         return dict({k: p[k] for k in ("pid", "ppid", "pgid", "uid", "state", "rss_bytes", "lstart", "comm", "cwd")},
+@@ -629,7 +676,8 @@
+     reserved = (sum(s["rss_cap"] for s in supervised) + sum(u["reserve"] for u in unsup) + others_rss
+                 + K.OTHER_LANE_MARGIN)
+     headroom = min(K.CAP_MAX, K.LANE_RSS_LIMIT - reserved - K.SAFETY_MARGIN)
+-    b411 = [p for p in procs.values() if p["pid"] not in skip and not in_desk(p["cwd"]) and B411_R7.search(p["args"])]
++    b411 = [p for p in procs.values() if p["pid"] not in skip and p["pid"] not in excluded and not in_desk(p["cwd"])
++            and B411_R7.search(p["args"])]
+     desk = [p for p in procs.values() if p["pid"] not in skip and not p["zombie"] and in_desk(p["cwd"])
+             and (os.path.basename(p["comm"]) in K.NATIVE or DESK_ATTEMPT.search(p["args"] or ""))]
+     foreign = [p for p in procs.values() if p["pid"] not in ids and p["pid"] not in own
+@@ -664,7 +712,8 @@
+             "desk_slots_occupied": sorted({str(s) for s in desk_slot.values()}),
+             "foreign_marker_matches_excluded": [brief(p, 160) for p in foreign],
+             "foreign_lane_natives": foreign_lane,
+-            "foreign_lane_natives_outside_route_A5": [f for f in foreign_lane if not f["route_A5"]]}
++            "foreign_lane_natives_outside_route_A5": [f for f in foreign_lane if not f["route_A5"]],
++            "known_zombie_comparisons": zcmp, "known_zombie_exclusions": sorted(excluded)}
+ 
+ 
+ def census(own_root):
+@@ -1130,8 +1179,9 @@
+ 
+ 
+ def mode_selftest(label):
+-    """v12 self-test; launches nothing. run_helper() bounds, signals, session isolation and reader EOF with short
++    """v14 self-test; launches nothing. run_helper() bounds, signals, session isolation and reader EOF with short
+     python children; reader-exception recording; parser cases (v11); slot-attribution and admission-lock cases (v12);
++    known-zombie tuple match/mismatch cases (v14);
+     then one census, informational admissions for both slots and one monitor-stability evaluation (read-only)."""
+     receipt = os.path.join(K.RECEIPTS, label + ".selftest.json")
+     if os.path.lexists(receipt):
+@@ -1241,6 +1291,32 @@
+         os.close(fd1)
+         os.close(fd2)
+     checks["admission_lock_exclusive_then_released"] = lock_steps == [True, False, True]
++    zt = KNOWN_UNRELATED_ZOMBIES[57860]
++    zrow = {"pid": 57860, "ppid": 43939, "pgid": 43939, "uid": 501, "state": "Z", "rss_bytes": 0,
++            "lstart": zt["lstart"], "comm": "<defunct>"}
++    prow = {"pid": 43939, "ppid": 1, "pgid": 43939, "uid": 501, "state": "S", "rss_bytes": 1,
++            "lstart": zt["parent"]["lstart"], "comm": "/Applications/WeChat.app/Contents/MacOS/WeChat"}
++    good_procs = {43939: dict(prow, args="/Applications/WeChat.app/Contents/MacOS/WeChat", cwd=zt["parent"]["cwd"],
++                              zombie=False, same=True)}
++    variants = {"exact": ({57860: zrow, 43939: prow}, {57860: zrow, 43939: prow}, good_procs, True),
++                "zombie_lstart_differs_in_second": ({57860: zrow, 43939: prow},
++                                                    {57860: dict(zrow, lstart="Sun Oct 18 09:30:00 2026"),
++                                                     43939: prow}, good_procs, False),
++                "not_zombie_in_first": ({57860: dict(zrow, state="S"), 43939: prow}, {57860: zrow, 43939: prow},
++                                        good_procs, False),
++                "missing_from_first": ({43939: prow}, {57860: zrow, 43939: prow}, good_procs, False),
++                "parent_restarted": ({57860: zrow, 43939: dict(prow, lstart="Sun Oct 18 09:31:00 2026")},
++                                     {57860: zrow, 43939: dict(prow, lstart="Sun Oct 18 09:31:00 2026")},
++                                     good_procs, False),
++                "parent_other_app": ({57860: zrow, 43939: dict(prow, comm="/usr/bin/python3")},
++                                     {57860: zrow, 43939: dict(prow, comm="/usr/bin/python3")}, good_procs, False),
++                "parent_cwd_differs": ({57860: zrow, 43939: prow}, {57860: zrow, 43939: prow},
++                                       {43939: dict(good_procs[43939], cwd="/tmp")}, False),
++                "pgid_differs": ({57860: dict(zrow, pgid=1), 43939: prow}, {57860: dict(zrow, pgid=1), 43939: prow},
++                                 good_procs, False)}
++    zombie_results = {k: known_zombie_match(57860, v[0], v[1], v[2])["match"] for k, v in variants.items()}
++    checks.update({"zombie_tuple_" + k: zombie_results[k] is v[3] for k, v in variants.items()})
++    checks["zombie_tuples_exactly_two_known"] = sorted(KNOWN_UNRELATED_ZOMBIES) == [57860, 59426]
+     scan = census(os.getpid())
+     fb = K.free_bytes()
+     adm = {"slot_1": admission_v12(scan, fb, 1), "slot_2": admission_v12(scan, fb, 2)}
+@@ -1284,7 +1360,7 @@
+               and a[4] == "--slot" and a[5] in ("1", "2")
+               and (len(a) == 6 or (a[6] == "--regen-tag" and bool(re.fullmatch(r"[A-Za-z0-9]+", a[7])))))
+         if not ok:
+-            raise SystemExit("usage: launch_B_v12.py run ITEM --label ITEM-<suffix> --slot {1,2} [--regen-tag TAG]")
++            raise SystemExit("usage: launch_B_v14.py run ITEM --label ITEM-<suffix> --slot {1,2} [--regen-tag TAG]")
+         signal.signal(signal.SIGTERM, on_term)
+         signal.signal(signal.SIGINT, on_term)
+         sys.exit(mode_run(a[1], a[3], int(a[5]), a[7] if len(a) == 8 else None))
+@@ -1292,7 +1368,7 @@
+         sys.exit(mode_wait_start(a[1]))
+     if a and a[0] == "test-exception-path" and len(a) == 2 and re.fullmatch(r"test-[A-Za-z0-9_.-]+", a[1]):
+         sys.exit(mode_test_exception_path(a[1]))
+-    if a and a[0] == "selftest-v12" and len(a) == 2 and re.fullmatch(r"test-[A-Za-z0-9_.-]+", a[1]):
++    if a and a[0] == "selftest-v14" and len(a) == 2 and re.fullmatch(r"test-[A-Za-z0-9_.-]+", a[1]):
+         sys.exit(mode_selftest(a[1]))
+     raise SystemExit(__doc__)
+ 
+--- scripts-v12/assemble_B_v12.py
++++ scripts-v14/assemble_B_v14.py
+@@ -1,6 +1,13 @@
+ #!/usr/bin/env python3
+ """Assemble the attempt receipt, deviations, RESULT and REPORT of a labelled replay attempt of the parent B-side K3
+-cube replay desk (review/moqls7-k3-B-cube-parent-replay-v1), v12.
++cube replay desk (review/moqls7-k3-B-cube-parent-replay-v1), v14.
++
++v14 = assemble_B_v12.py for attempts launched by launch_B_v14.py from scripts-v14/. It makes three changes:
++  * the Codex v12 MINOR is fixed: REPORT names the scripts directory this assembler runs from
++    (os.path.basename(K.SCRIPTS)) instead of a literal 'scripts/';
++  * deviation D40 records the 09:25:51 interruption, the disarmed v12 arms and the v14 known-zombie exemption;
++  * result entries for the v12-to-v14 diff, the v14 selftest and the two disarm records.
++Acceptance conditions, measured feeds, strict parsing, output names and the regen binding are unchanged.
+ 
+ v12 = assemble_B_v11.py for attempts launched by launch_B_v12.py from scripts-v12/ (bklib_v4). Changes:
+   * the route-A item A_C311cuts;
+@@ -38,7 +45,7 @@
+ and title taken from the item pins, the item's attempt-1 summary only where it exists, and the deviation set for the
+ v6 gate. assemble_B_v7.py is the import-only bump (bklib_v2) for B/C411.
+ 
+-Usage: assemble_B_v12.py ITEM LABEL [--regen-tag TAG]     (e.g. B_C311cuts B_C311cuts-p1)
++Usage: assemble_B_v14.py ITEM LABEL [--regen-tag TAG]     (e.g. B_C411 B_C411-p3 --regen-tag r2)
+ 
+ Reads the desk's receipts and logs (never modifies them), re-hashes every referenced file, checks the hash bindings
+ recorded at run time, and re-hashes the read-only lane inputs and both binaries. No native or other subprocess launch.
+@@ -58,7 +65,9 @@
+     {"id": "D16-versioned-scripts",
+      "what": "B_C321 attempt a3 was launched by launch_B_v8.py (bklib_v2, driver replay_B_v3.py) and B_C411-p1 by "
+              "launch_B_v11.py from scripts/ (bklib_v3, replay_B_v4.py). B/C311+cuts and A/C311+cuts are launched by "
+-             "launch_B_v12.py from scripts-v12/ (bklib_v4, replay_B_v5.py, compose_Bcuts_v1.py / compose_Acuts_v1.py). "
++             "launch_B_v12.py from scripts-v12/ (bklib_v4, replay_B_v5.py, compose_Bcuts_v1.py / compose_Acuts_v1.py); "
++             "after the 09:25:51 interruption their successors are launched by launch_B_v14.py from scripts-v14/ (same "
++             "bklib_v4, replay_B_v5.py and composition scripts). "
+              "bklib_v3 pins B_C321 and B_C411 exactly as bklib_v2 did. History: v2 attempt labels "
+              "(scripts-v1-to-v2.r2.diff); v3 slot-2-only rule (scripts-v2-to-v3.diff); v4 flag-only signal handling "
+              "and owned-child loop (scripts-v3-to-v4.diff); v5 cleanup obligation (scripts-v4-to-v5.diff); v6 "
+@@ -68,7 +77,8 @@
+              "(scripts-v9-to-v10.diff). compose_B_v1.py and supervise_r3.py are unchanged; native limits (kissat "
+              "--time=5400, drat-trim -t 9000) and supervisor arguments (wall 10200 s, grace 180 s, floor 12e9) are "
+              "unchanged. v11 Codex v10-HOLD repairs and the single-admitter invariant: scripts-v10-to-v11.diff; v12 "
+-             "slots, admission lock, Codex v11 MINOR and the route-A item: scripts-v11-to-v12.diff."},
++             "slots, admission lock, Codex v11 MINOR and the route-A item: scripts-v11-to-v12.diff; v14 two-tuple "
++             "known-zombie exemption: scripts-v12-to-v14.diff."},
+     {"id": "D17-selfcheck-reused-and-regen-precheck",
+      "what": "Self-checks were not rerun: every attempt reuses receipts/selfcheck-summary.json (ec246769...739b, "
+              "all_ok; same binaries, same bklib transport code). The regeneration-only precheck is "
+@@ -154,6 +164,18 @@
+              "admissions; (c) the Codex v11 MINOR: the unrounded monitor age is compared at the pre-spawn guard; "
+              "(d) the set runs from scripts-v12/ (bklib_v4 SCRIPTS = its own directory), so the live v11 run's "
+              "scripts/ recording is untouched. Evidence: receipts/test-v12-selftest.selftest.json."},
++    {"id": "D40-0925-interruption-disarm-and-v14",
++     "what": "At 09:25:51 PDT an external SIGTERM reached both of this desk's launchers and, per Main, many independent "
++             "jobs. Cause NOT ESTABLISHED; this desk sent no signal. B_C411-p1 (receipts/B_C411-p1.json 12ae7cd5...7b93) "
++             "and B_C311cuts-p1 (receipts/B_C311cuts-p1.json ae0e4655...bf18) were stopped cooperatively and stay "
++             "UNKNOWN, never relabelled, despite kissat rc 20. The restored monitor kept its frozen path. The v12 arms "
++             "A_C311cuts-p1 and B_C411-p2 were refused at every census by two persistent unrelated GUI zombies (57860 "
++             "under WeChat.app, 59426 under Signal.app) and were disarmed on Main's instruction by SIGTERM to their own "
++             "launcher PIDs, before any spawn: gate-only / NOT_STARTED / no CNF result (receipts/A_C311cuts-p1.disarm.json, "
++             "receipts/B_C411-p2.disarm.json). launch_B_v14.py exempts exactly those two zombie identity tuples. Each "
++             "is exempted only if pid/ppid/pgid/uid/lstart and state Z match in both snapshots and the parent's pid, "
++             "lstart, app path and cwd match; otherwise the fail-closed rule applies. The successors are A_C311cuts-p2 "
++             "(slot 1), B_C411-p3 (slot 2) and B_C311cuts-p2."},
+ ]
+ ITEM_DEVIATIONS = {
+     "B_C411": [{"id": "D29-B_C411-pins-and-slot",
+@@ -401,8 +423,8 @@
+             r["item"], K.ITEMS[r["item"]]["encoder"], r["label"]), "",
+         "Desk: `review/moqls7-k3-B-cube-parent-replay-v1/`, 2026-10-18 PDT. RESULT.%s.json sha256 `%s`." % (
+             r["label"], result_sha),
+-        "Generated by `scripts/%s` from the same data as RESULT.%s.json. Attempt 1 of this item: %s." % (
+-            os.path.basename(__file__), r["label"],
++        "Generated by `%s/%s` from the same data as RESULT.%s.json. Attempt 1 of this item: %s." % (
++            os.path.basename(K.SCRIPTS), os.path.basename(__file__), r["label"],
+             ("%s, item receipt `%s`, RESULT.json `%s`" % (result["attempt_1"]["status"],
+                                                          result["attempt_1"]["item_receipt_sha256"],
+                                                          result["attempt_1"]["result_json_sha256"])
+@@ -486,7 +508,7 @@
+         lines.append("- `%s` `%s`" % (p, h))
+     lines += ["", "## Scripts (sha256 now)", ""]
+     for n, h in result["scripts_sha256_now"].items():
+-        lines.append("- `scripts/%s` `%s`" % (n, h))
++        lines.append("- `%s/%s` `%s`" % (os.path.basename(K.SCRIPTS), n, h))
+     lines.append("- Run scripts recorded at %s; all recordings equal: %s; equal now: %s; v1 run scripts unchanged "
+                  "since attempt 1: %s." % (", ".join(result["run_scripts"]["recording_points"]),
+                                            result["run_scripts"]["all_recordings_equal"],
+@@ -504,7 +526,7 @@
+     lines += ["", "## Integrity", "",
+               "Receipts, logs, RESULT.%s.json, REPORT.%s.md and deviations-%s.json were created exclusively (mode "
+               "'x' / O_EXCL). The versioned scripts were copied with cp -n and edited before their first recorded use; "
+-              "diffs scripts-v1-to-v2.r2.diff through scripts-v11-to-v12.diff. No earlier attempt's files were "
++              "diffs scripts-v1-to-v2.r2.diff through scripts-v12-to-v14.diff. No earlier attempt's files were "
+               "modified, deleted or renamed. No lane file "
+               "was written. There were no /tmp writes and no Git, network or model CLI. __pycache__ present: %s. "
+               "Desk regular files before RESULT.%s.json: %d, %s bytes in total. FIFO nodes, never opened outside the "
+@@ -617,6 +639,14 @@
+                              all_ok=json.loads(K.read_regular(os.path.join(
+                                  K.RECEIPTS, "test-v12-selftest.selftest.json"))).get("all_ok")),
+         "review_packet_v12": file_entry("review-packet-v12.md"),
++        "scripts_diff_v12_to_v14": file_entry("scripts-v12-to-v14.diff"),
++        "v14_selftest": dict(file_entry("receipts/test-v14-selftest.selftest.json"),
++                             all_ok=json.loads(K.read_regular(os.path.join(
++                                 K.RECEIPTS, "test-v14-selftest.selftest.json"))).get("all_ok")),
++        "disarmed_v12_arms": {lab: {"disarm_record": file_entry("receipts/%s.disarm.json" % lab),
++                                    "gate_receipt": file_entry("receipts/%s.gate.json" % lab),
++                                    "arm_log": file_entry("logs/launch-run-%s.log" % lab)}
++                              for lab in ("A_C311cuts-p1", "B_C411-p2")},
+         "admitter_invariant": gate0.get("admitter_invariant"),
+         "slot": gate0.get("slot"),
+         "signal_smoke": dict(file_entry("receipts/smoke-v4-signal.smoke.json"),

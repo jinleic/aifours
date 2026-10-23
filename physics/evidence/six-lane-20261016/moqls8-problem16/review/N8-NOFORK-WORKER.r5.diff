@@ -1,0 +1,85 @@
+--- run_n8_fone_refine.py-7d28ecbe
++++ run_n8_fone_refine_r5.py
+@@ -3,7 +3,7 @@
+ All outputs are producer candidates; parent measured-feed replay alone counts
+ final refutations. Source16 pass finishes first; pilot closure gates later
+ families. L1 then L2 BFS, no L3/retry, shared10400active-s/80MB family budget.
+-This worker is never launched directly: launch_n8_fone_refine_r4.py holds the
++This worker is never launched directly: launch_n8_fone_refine_r5.py holds the
+ capacity lock and the pinned external supervisor around ALL preparation and
+ native work. Its post-qualification alone can close a producer tree.
+ """
+@@ -16,20 +16,19 @@
+ import json
+ import os
+ import shutil
+-import subprocess
+ import stat
+ import threading
+ import time
+ from datetime import datetime
+ from pathlib import Path
+-import darwin_process_metrics as metrics
++import darwin_process_metrics_r2 as metrics
+ 
+ ROOT = Path(__file__).resolve().parent.parent
+ RUNS = ROOT / 'evidence/n8_one_p4_template_runs_v1'
+-REFINES = RUNS / 'refine_v4'
++REFINES = RUNS / 'refine_v5'
+ SOURCE_SHA = '374d6fb46ab2a1f7a77bdf6699aa67792c126b2e2dcdf65ad37074be9fc5eeb9'
+ DESIGN_SHA = 'bf9f71937d7fcc98fceb26b3aaf05505d8df68bdc5005fe90b61c9fb74422d1a'
+-R_SHA = '00435386034f9b1e60bbdf21d113ded9947cf2455c7b5f679e1734ed86bae3e9'
++R_SHA = '4648536dfdb1dbfdb6053ac3aa8258a24a09cc833011fa2558479bf8e245f896'
+ C_SHA = '9326589645ce7d871b4b1595d3c465577d1aee9f27143d43a2b8000c14d022c7'
+ F_SHA = '61eda23ce7174e7cee77ee873ff06e5f22a2beaf0c197b8282f41dc8ddded400'
+ DEADLINE = datetime.fromisoformat('2026-10-18T18:31:43-07:00').timestamp()
+@@ -62,16 +61,16 @@
+ 
+ 
+ def disk_bytes(path):
+-    r = subprocess.run(['du', '-sk', str(path)], capture_output=True, text=True, check=True)
+-    return int(r.stdout.split()[0]) * 1024
++    return metrics.allocated_bytes(path)
+ 
+ 
+ def family_bytes(out, template):
+     total = disk_bytes(out)
+-    prior = RUNS / 'refine_v3' / template
+-    if prior != out and prior.is_dir():
+-        total += disk_bytes(prior)
+-    patterns = ('N8_FONE_R[34].' + template + '.*', 'N8_PREFLIGHT_R4.' + template + '.*',
++    for epoch in ('refine_v3', 'refine_v4'):
++        prior = RUNS / epoch / template
++        if prior != out and prior.is_dir():
++            total += disk_bytes(prior)
++    patterns = ('N8_FONE_R[345].' + template + '.*', 'N8_PREFLIGHT_R[45].' + template + '.*',
+                 'N8_PREFLIGHT_R3.pilot-' + template.replace('-', '') + '-*')
+     for pattern in patterns:
+         for path in (ROOT / 'evidence').glob(pattern):
+@@ -201,7 +200,7 @@
+ 
+ def import_source_epoch(path, expected, template, source_hash, units42, pins):
+     raw = Path(path).read_bytes()
+-    if sha(raw) != expected or expected != '295da85e9ea32a738dc57096d16c900854cd55de7165e107d781928f659753a0':
++    if sha(raw) != expected or expected != '628d64a3ff275777a8ae7f16c289b00d0313c66a561f5398896a10a23a510310':
+         raise RuntimeError('source-epoch continuation anchor mismatch')
+     L = json.loads(raw)
+     if (L['template'] != template or L['base_sha256'] != SOURCE_SHA or L['design_sha256'] != DESIGN_SHA
+@@ -255,7 +254,7 @@
+     source_pins = {'controller_sha256': sha(Path(__file__).read_bytes()),
+                    'helper_sha256': sha((ROOT / 'code/n8_fone_refine_bytes.py').read_bytes()),
+                    'legacy_executor_sha256': R_SHA, 'strict_predicate_sha256': C_SHA, 'producer_sha256': F_SHA,
+-                   'process_metrics_sha256': sha((ROOT / 'code/darwin_process_metrics.py').read_bytes())}
++                   'process_metrics_sha256': sha((ROOT / 'code/darwin_process_metrics_r2.py').read_bytes())}
+     if B.DESIGN_SHA != DESIGN_SHA:
+         raise RuntimeError('helper design identity differs')
+     if a.init_family and (shutil.disk_usage(ROOT).free - FAMILY_BYTES < FLOOR
+@@ -354,7 +353,7 @@
+         return
+ 
+     F = load('n8_one_p4_formula', F_SHA)
+-    R = load('k5_resplit_r3', R_SHA)
++    R = load('k5_resplit_r4', R_SHA)
+     solver_path = shutil.which('cadical')
+     runtime_binaries = {'solver_path': solver_path, 'solver_sha256': sha(Path(solver_path).read_bytes()),
+                         'checker_path': R.DT, 'checker_sha256': sha(Path(R.DT).read_bytes())}

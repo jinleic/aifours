@@ -1,0 +1,7 @@
+# K7 A2 unit2: mandatory OV2 premise completion
+
+Recorded at 2026-10-19T16:14:54-0700. Unit2 proof1bef6d8c stays unchanged. The first Codex review `56da9d76957d7731cc868970f3cf2fd0cee2ee9ef0046dba13aa1f5b67eecbaa` returned conditional mathematical pass with1 MAJOR packet-completeness finding, not unconditional acceptance. The original unit2 snapshot omitted OV2 despite asserting its applicable text was present.
+
+The complete [OV2](/Users/jinleic/repos/aifours/mathematics/evidence/six-lane-20261018-96h/sun-coset7/continuations/k7-k62-residue/K7-A1-A2-delta-erratum-v2.md) `9580ef7996d92d94f3f68c0df8934ab4889aeed227406e670cfd413281443181` is now appended and applied after OV1. Its V2.1-V2.4 concern A1/TC; V2.5 corrects the L1 divisor wording in A2.11; V2.6 replaces the adapted no5 chain; V2.7 narrows the no5 TRANSFER and makes all needed hypotheses explicit; V2.8-V2.11 replace TC-P proof/table scope. None replaces the directly imported F, FG-a2, D23-a2 or normalised S1-S5 statements. Unit2 re-proves its zt5 light/subset, no-three, tree and split arguments; it imports no no5 TRANSFER or TC-P conclusion. Its literal S-data/FG interfaces must still be checked against amended authority, not presumed correct from this note.
+
+No theorem accepted by this addendum; no runtime or full K7/Sun7 conclusion. Earlier snapshot/manifest remain immutable. The new snapshot contains the entire310-line OV2, including the scope and exact Old/New replacements.

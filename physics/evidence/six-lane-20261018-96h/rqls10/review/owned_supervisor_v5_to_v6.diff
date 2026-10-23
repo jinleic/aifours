@@ -1,0 +1,100 @@
+--- code/owned_supervisor_v5.py	2026-10-19 06:14:43
++++ code/owned_supervisor_v6.py	2026-10-19 06:18:12
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""owned_supervisor_v5: run ONE child process under a fail-closed guard; launch record and GO boundary; bounded
++"""owned_supervisor_v6: run ONE child process under a fail-closed guard; launch record and GO boundary; bounded
+ observation; full owned-descendant and lane accounting; settlement only with complete evidence. Standard library only
+ (ctypes for read-only macOS libproc/sysctl process metadata). code/owned_supervisor_v2.py is untouched. v5 = v4 plus the
+ unattributed-new-lane-process rule (see end of list); v4 and the v3 draft were never run. v4 supersedes
+@@ -56,13 +56,17 @@
+ the baseline, not owned and not this supervisor ("new_lane_live") blocks the clear condition and, if still alive at the
+ final census, makes the run UNSETTLED (UNATTRIBUTED_NEW_LANE_PROCESSES). Unrelated work started in the lane during a
+ supervised run therefore also blocks settlement (fail-closed).
++v6 addition (evidence mutation): the supervisor keeps running sha256 digests of every byte it writes to the samples file
++and to the stdout/stderr sinks, and the published sha256 of the launch record; at settlement each file must still hash
++to exactly that value (EVIDENCE_MUTATED otherwise, run UNSETTLED). Pins are re-hashed as before (PIN_CHANGED...).
++Child-written outputs have no supervisor-side expectation; they are hashed and named in the receipt and settlement.
+ Exit codes: 0 SETTLED, 10 NOT_LAUNCHED, 11 UNSETTLED, 12 receipt publication failed, 13 settlement record failed,
+ 2 unusable config (nothing written).
+ Config keys: CONFIG_KEYS, ADMISSION_KEYS, HELPER_KEYS below; example evidence/owned_supervisor_v4.config-example-v1.json.
+ """
+ import ctypes, datetime, errno, hashlib, json, os, re, signal, stat, struct, subprocess, sys, threading, time
+ 
+-VERSION = "owned_supervisor_v5"
++VERSION = "owned_supervisor_v6"
+ CANCEL = [None]
+ CONFIG_KEYS = {
+     "item": str, "owner": str, "purpose": str, "lane": str, "argv": list, "env": dict, "stdout": str, "stderr": str,
+@@ -335,6 +339,7 @@
+         self.lane_bytes = None
+         self.next_walk = 0.0
+         self.baseline = None
++        self.samples_hash = hashlib.sha256()
+ 
+     def fault(self, name):
+         return self.cfg.get("purpose") == "guard-qualification" and bool(self.cfg["fault_injection"].get(name))
+@@ -554,13 +559,16 @@
+             self.trip("SAMPLES_CAP")
+             return
+         self.samples_fh.write(line)
++        self.samples_hash.update(line)
+         self.samples_fh.flush()
+         self.samples_bytes += len(line)
+         self.samples_n += 1
+ 
+ 
+ def sink_thread(name, pipe, path, cap, sup):
+-    st = {"bytes_seen": 0, "bytes_written": 0, "overflow": False, "closed": False, "error": None, "eof": False}
++    st = {"bytes_seen": 0, "bytes_written": 0, "overflow": False, "closed": False, "error": None, "eof": False,
++          "sha256_written": None}
++    digest = hashlib.sha256()
+     sup.streams[name] = st
+ 
+     def run():
+@@ -577,6 +585,7 @@
+                 if room > 0:
+                     part = chunk[:room]
+                     fh.write(part)
++                    digest.update(part)
+                     fh.flush()
+                     st["bytes_written"] += len(part)
+                 if len(chunk) > max(room, 0):
+@@ -595,6 +604,7 @@
+                     os.fsync(fh.fileno())
+                     fh.close()
+                 pipe.close()
++                st["sha256_written"] = digest.hexdigest()
+                 st["closed"] = True
+             except Exception as ex:
+                 st["error"] = (st["error"] or "") + " close: %r" % ex
+@@ -817,6 +827,20 @@
+             arts[p] = {"error": repr(ex)}
+             reasons.append("ARTIFACT_HASH_FAILED %s" % p)
+     R["artifacts"] = arts
++    expected = {}
++    if sup.rec.get("launch_record_sha256"):
++        expected[cfg["launch_record"]] = sup.rec["launch_record_sha256"]
++    if sup.samples_fh is not None:
++        expected[cfg["samples"]] = sup.samples_hash.hexdigest()
++    for name, p in (("stdout", cfg["stdout"]), ("stderr", cfg["stderr"])):
++        st_ = sup.streams.get(name)
++        if st_ is not None and st_.get("sha256_written"):
++            expected[p] = st_["sha256_written"]
++    R["evidence_expected_sha256"] = expected
++    for p, h in sorted(expected.items()):
++        a = arts.get(p)
++        if not isinstance(a, dict) or a.get("sha256") != h:
++            reasons.append("EVIDENCE_MUTATED %s" % p)
+     if ch is not None:
+         for o in cfg["outputs"]:
+             if o["required"] and arts.get(o["path"]) is None:
+@@ -870,7 +894,7 @@
+     for s in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+         signal.signal(s, _cancel)
+     if len(sys.argv) != 2:
+-        sys.stderr.write("usage: owned_supervisor_v5.py CONFIG.json\n")
++        sys.stderr.write("usage: owned_supervisor_v6.py CONFIG.json\n")
+         return 2
+     cfg_path = os.path.abspath(sys.argv[1])
+     try:

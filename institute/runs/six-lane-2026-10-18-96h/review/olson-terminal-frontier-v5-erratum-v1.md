@@ -1,0 +1,5 @@
+# Terminal frontier v5 — provider-name erratum
+
+Recorded 2026-10-21T07:42:11-0700 (`/bin/date`). Applies to unchanged [olson-terminal-frontier-v5-UPAR2.md](/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/review/olson-terminal-frontier-v5-UPAR2.md) — SHA256`4b0404922e7a48c49ff9dd8fec1d163e790f4b56e4ed960b52585ce0bc5b94c6`. Independent binding audit returned0F/0M/1m, solely naming.
+
+At frontier v5 LF18, replace the shorthand `R7` by the explicit reference: **the p=7 row of frontier v3 LF22 — 0K0T; 1–2P7L; 3–5BOTTOM; 6PP1**. `R7` was an undefined alias for that row's acceptance (olson-R7-parent-verdict-v1.md), not a distinct provider or new range. No numerical endpoint, cutoff, quantifier or open cell changes. All six open-cell lists, the general even/odd complement with no off-by-one, and provider preservation are confirmed by [olson-terminal-frontier-v5-audit-codex-v1.prompt.stdout.txt](/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/review/olson-terminal-frontier-v5-audit-codex-v1.prompt.stdout.txt).

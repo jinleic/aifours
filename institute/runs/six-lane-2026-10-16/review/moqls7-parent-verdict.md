@@ -1,0 +1,43 @@
+# Ball–Simoens Problem 16 at n = 7: parent verdict
+
+## Result
+
+**Every set of four mutually orthogonal quantum Latin squares of order 7 is classical.** Hence M(7) ≤ 3, and with Ball–Simoens Corollary 7 (or Huang–Li Theorem 5.2), **2 ≤ M(7) ≤ 3**. This answers the n = 7 instance of Problem 16 of Ball–Simoens, [arXiv:2607.12933v2](https://arxiv.org/abs/2607.12933v2) (27 Jul 2026), p.7: "Problem 16. Is a set of n − 3 MOQLS(n), n ≠ 4, necessarily classical?" Their Table 2 gives M(7) as 2–4; n = 7 is the smallest open instance. Problem 16 stays open for every n ≥ 8, and whether M(7) is 2 or 3 stays open. [Frozen contract](../screening/phys-1-moqls7-problem16-contract.json).
+
+Definitions (source §2.2–2.3, read by the parent): a QLS(7) is a 7×7 array of unit vectors in C⁷ whose rows and columns are orthonormal bases; two are orthogonal when the 49 tensor products form an orthonormal basis of C⁷⊗C⁷; a set is classical if, up to phases, simultaneous row/column permutations and a separate unitary per square, all entries lie in one fixed basis.
+
+## Proof structure (computer-assisted)
+
+1. **Normalization and supports** (written argument): normalize row 0 of each square by its own unitary. At every cell off row 0 the four supports are disjoint and avoid the column coordinate, so every weight is ≤ 3, and a weight-3 entry forces singletons in the other three squares.
+2. **Theorem A**: if every entry has weight ≤ 2, the set is classical (source Lemma 10 classicalizes such squares while shrinking supports and preserving all orthogonalities; the completed classical net is affine of order 7; the parent's analytic Fact C closes the argument).
+3. **Theorem B**: three classical squares force the fourth to be classical (parent's analytic Fact L: every free triple of directions leaves exactly two linear classes).
+4. **Reduction**: replace every square without a weight-3 entry by its Lemma-10 classicalization. The squares with weight-3 entries survive unchanged and stay non-classical; by A and B their number m is 2, 3 or 4 (classes K2, K3, K4). The reduced set need not be isotopic to the original; only its existence is used.
+5. **Finite exclusion**: necessary support-pattern conditions P1–P4 (nonempty disjoint supports; unitary support patterns on every row, column and classical symbol line in both directions; no cross-square double single-coordinate overlap; a weight-3 entry in every quantum square) plus a lossless symmetry normalization SB2 at cell (1,0), with all classical MOLS as free variables (no classification of classical pairs). Two independently written encoders produce CNFs for each class; all six are UNSAT.
+
+## Verification
+
+| Gate | Result | Evidence |
+|---|---|---|
+| Parent CNF regeneration and proof checking | The parent regenerated all six K2/K3/K4 CNFs (encoders A and B) from the pinned encoder copies with the exact argument sets: every CNF is byte-identical to the lane solver input. A parent-compiled upstream drat-trim (source SHA `d834b649…c2ee`, identical to github.com/marijnheule/drat-trim master 2e3b2dc0) verified all six lane proofs: exit 0, explicit `s VERIFIED`, proof hashes unchanged during checking. Checks ran three at a time (wall 719 s; check times 16–516 s) | [driver](moqls7_parent_proofcheck.py), [receipt](moqls7-parent-proofcheck-v1/parent-result.json), [tool source](moqls7-parent-proofcheck-tools-v1/) |
+| Parent positive controls | Every relaxed K2/K3/K4 instance (both encoders, no P4/SB2) accepts four explicit classical MOLS(7). The parent fixes the primary variables to the known configuration, solves only auxiliaries and checks every original CNF clause; all six pass. A colliding-slope control is rejected. This replaces the slow unseeded attempt whose K2B solve timed out | [K2A](moqls7-parent-classical-controls-v2/parent-result.json) (that run subsequently failed on encoder B's map filename; retained), [remaining five](moqls7-parent-classical-controls-v3/parent-result.json), [driver](moqls7_parent_classical_controls.py) |
+| Parent analytic lemmas | Facts C and L proved analytically, replacing two finite computations; a direct classification bridge from Egan–Wanless Table 6 (one paratopy class each for 3- and 4-MOLS(7)) removes the need for Hall/Shrikhande/Bose in the n = 7 argument | [Facts C/L](moqls7-parent-affine-lemmas-v1.md), [bridge](moqls7-parent-classification-bridge-v1.md) |
+| Mathematical reduction review | Task-agent reviewer MoqlsMathReview: ACCEPT, conditional on certificates (normalization, Lemmas 2–4, A, B, C, R3 survival, exhaustiveness, P1–P4 necessity, SB2 losslessness, Facts C/L) | `agent://MoqlsMathReview`, [snapshot](moqls7-review-snapshot-v1/manifest.json) |
+| Static encoder review | Task-agent reviewer MoqlsEncodingReview: ACCEPT-WITH-FIXES; every clause family traced to P1–P4/SB2 for all three classes; two evidence-pipeline defects (controls counting solver errors as agreement; encoder-B metadata omits p3/fixpat) | `agent://MoqlsEncodingReview` |
+| Codex CLI (`gpt-6.1-sol`) hostile review | ACCEPT-WITH-FIXES: no mathematical gap or over-restriction; in-memory canonical substitutions and exhaustive gadget checks; independently regenerated all six CNF hash prefixes. Its one major finding (certificates then pending) is discharged by the parent proof check | [note](moqls7-codex-hostile-review-v1.note.md), [receipt](moqls7-codex-hostile-review-v1.receipt.json) |
+| Claude CLI (`claude-opus-5-5`, no tools) complete-claim review | ACCEPT-WITH-FIXES, no blocking defect; verifies Lemma 10's properties from its printed proof, all six translations clause by clause, the imported tables, and the M(7) bounds; readiness fixes F1–F12 are documentation and control hygiene | [note](moqls7-claude-complete-claim-review.note.md) |
+| Priority | Bounded audit: no earlier resolution of n = 7 found | [audit](moqls7-priority-audit.md) |
+| Readiness r2 and fail-closed controls | All 16 r2 manifest files pinned; all six metadata-only encoder outputs equal the parent proof-checked CNFs. Both sets of 11 real worker controls have exact expected-status agreement. Parent checks four additional generic SAT assignments against every clause and exercises the real aggregation with injected ERR/encoder/timeout statuses; each returns the intended control failure | [r2 pin and receipt](moqls7-parent-inputs-r2/parent-result.json), [proof-check provenance addendum](moqls7-parent-inputs-r2/proofcheck-provenance-addendum.json) |
+
+## Trust boundary
+
+- **Machine facts:** the six UNSAT certificates (drat-trim C code, compiler, CPython and the parent harness are trusted). The logic needs one verified UNSAT per class; two independent encodings per class were checked. LRAT export with a verified checker would further shrink this base (optional).
+- **Imports:** the correctness and completeness of the Egan–Wanless MOLS(7) classification (Tables 5/6). Shrikhande, Bose and Hall (with its 1954 correction) are redundant at n = 7 given those tables. Ball–Simoens Lemma 10 is used through its printed proof, whose support-shrinking properties were checked.
+- **Encoders A and B** are independent implementations of the same specification; specification soundness rests on the written Lemma P and SB2 arguments and the reviews above.
+
+## Status
+
+**FRONTIER:** CORRECTNESS-ACCEPTED (computer-assisted: written reduction plus parent-regenerated, proof-checked UNSAT certificates; reviewed by two task-agent reviewers, the Codex CLI and the Claude CLI, each named by model above). NOVELTY-UNCLEAR after a bounded audit; no human peer review. **The frozen phys-1 Problem 16 (n = 7) gate is met** (2026-10-17 PT): the explicitly posed n = 7 case is decided.
+
+Required wording for any external use: "resolves the n = 7 instance of Problem 16; 2 ≤ M(7) ≤ 4 becomes 2 ≤ M(7) ≤ 3". Never "solves Problem 16" or "determines M(7)".
+
+Readiness fixes are now bound to [the r2 package](moqls7-parent-inputs-r2/manifest.json): revised proof and imports, fail-closed controls, encoder metadata/docstrings and indexing corrections. F9's legal tautological/duplicate DIMACS literals are intentionally unchanged so the certified CNF bytes remain stable. F11's command vectors and concurrency are reconstructed from the preserved executed driver; the original host was not recorded and cannot be retrospectively certified. Optional LRAT export with a verified checker remains undone. The separate SB2-relaxed runs produced no SAT positive and are not counted. Process deviations (out-of-repository files, restoration of edited source originals and the 03:37 relocation of four incomplete DRAT files) remain recorded in the r2 errata and run checkpoints.

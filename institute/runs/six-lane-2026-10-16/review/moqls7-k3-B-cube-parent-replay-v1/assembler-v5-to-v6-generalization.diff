@@ -1,0 +1,334 @@
+--- scripts/assemble_B_v5.py
++++ scripts/assemble_B_v6.py
+@@ -1,14 +1,13 @@
+ #!/usr/bin/env python3
+-"""Assemble the attempt receipt, deviations, RESULT.v2.json and REPORT.v2.md of a labelled replay attempt of the
+-parent B-side K3 cube replay desk (review/moqls7-k3-B-cube-parent-replay-v1), v5.
+-
+-v5 = assemble_B_v4.py with the deviation set updated for launch_B_v5.py (cleanup obligation of run_owned), the
+-launcher-marker and slot-release conditions, and the v5 exception-path test receipt in the result. It reads the LABEL
+-receipts and logs written by launch_B_v5.py and replay_B_v2.py, and writes receipts/LABEL.json, deviations-v2.json,
+-RESULT.v2.json and REPORT.v2.md, each created exclusively. Attempt 1 (label ITEM, files from v1) is summarised by its
+-existing receipts, never rewritten.
+-
+-Usage: assemble_B_v5.py ITEM LABEL          (e.g. B_C321 B_C321-a2b)
++"""Assemble the attempt receipt, deviations, RESULT and REPORT of a labelled replay attempt of the parent B-side K3
++cube replay desk (review/moqls7-k3-B-cube-parent-replay-v1), v6.
++
++v6 = assemble_B_v5.py made item-generic for launch_B_v6/v7 attempts: outputs named by label
++(receipts/LABEL.json, deviations-LABEL.json, RESULT.LABEL.json, REPORT.LABEL.md, each created exclusively), scope
++and title taken from the item pins, the item's attempt-1 summary only where it exists, and the deviation set for the
++v6 gate. assemble_B_v7.py is the import-only bump (bklib_v2) for B/C411.
++
++Usage: assemble_B_v6.py ITEM LABEL          (e.g. B_C321 B_C321-a3)
+ 
+ Reads the desk's receipts and logs (never modifies them), re-hashes every referenced file, checks the hash bindings
+ recorded at run time, and re-hashes the read-only lane inputs and both binaries. No native or other subprocess launch.
+@@ -24,76 +23,55 @@
+ 
+ DEVIATIONS = [
+     {"id": "D16-versioned-scripts",
+-     "what": "New versioned scripts. replay_B_v2.py (diff scripts-v1-to-v2.r2.diff) adds only the attempt label, "
+-             "from which every run receipt, log, FIFO and the expected supervisor record are named. launch_B_v5.py "
+-             "is launch_B_v2.py (labels, refusal while any receipts/*.QUARANTINE.json exists, wait-start watcher, "
+-             "no selfcheck mode) plus, in v3, Main's corrected slot-2-only rule and a pre-launch signal check "
+-             "(scripts-v2-to-v3.diff), plus, in v4, the signal-handling fix (scripts-v3-to-v4.diff, deviation D26), "
+-             "plus, in v5, the cleanup obligation (scripts-v4-to-v5.diff, deviation D27). assemble_B_v5.py is "
+-             "assemble_B_v2.py with this deviation set and the launcher conditions. bklib_v1.py, compose_B_v1.py and "
+-             "supervise_r3.py are unchanged. Pins, native limits (kissat --time=5400, drat-trim -t 9000), supervisor "
+-             "arguments (wall 10200 s, grace 180 s, floor 12e9) and the RSS-cap rule are unchanged."},
+-    {"id": "D17-selfcheck-and-precheck-reused",
+-     "what": "Attempt 2 reran neither the self-checks nor the regeneration-only precheck. It reuses "
+-             "receipts/selfcheck-summary.json (ec246769...739b, all_ok) and receipts/regen-B_C321.json "
+-             "(12a07694...66f8, MATCH): same binaries, same bklib_v1 transport code (Main: do not rerun passed "
+-             "checks). The attempt-2 run regenerated the CNF again and checked its SHA-256 before any native launch."},
+-    {"id": "D18-slot-2-only-launch-rule",
+-     "what": "launch_B_v3.py admission = bklib_v1.admission (<= 2 busy lane natives, lane RSS + 2 GiB <= 8 GiB, cap "
+-             ">= 2.5 GiB, free >= 12,201,048,576 B, before 15:30 PDT) AND slot 2 freed: no live lane process "
+-             "matching 'B_C411|k3_direct_B_r\\d+\\.py C411' (B/C411 r7 driver and natives fully reaped) AND its end "
+-             "record evidence/k3cubes/cert_B_r7/B_C411.json exists as a regular file. A low busy count alone never "
+-             "admits; the withdrawn route-B option is gone. Scans run every 90 s."},
++     "what": "Runs are launched by launch_B_v6.py (B_C321, bklib_v1, driver replay_B_v2.py) or by its import-only "
++             "bump launch_B_v7.py (B_C411, bklib_v2, driver replay_B_v3.py). History: v2 attempt labels "
++             "(scripts-v1-to-v2.r2.diff); v3 slot-2-only rule (scripts-v2-to-v3.diff); v4 flag-only signal handling "
++             "and owned-child loop (scripts-v3-to-v4.diff); v5 cleanup obligation (scripts-v4-to-v5.diff); v6 "
++             "ancestry gate (scripts-v5-to-v6.diff); v7/bklib_v2/replay_B_v3/assemble_B_v7 import-only B/C411 bumps "
++             "(scripts-v6-to-v7-B_C411.diff). compose_B_v1.py and supervise_r3.py are unchanged; native limits "
++             "(kissat --time=5400, drat-trim -t 9000) and supervisor arguments (wall 10200 s, grace 180 s, floor 12e9) "
++             "are unchanged."},
++    {"id": "D17-selfcheck-reused-and-regen-precheck",
++     "what": "Self-checks were not rerun: every attempt reuses receipts/selfcheck-summary.json (ec246769...739b, "
++             "all_ok; same binaries, same bklib transport code). The regeneration-only precheck is "
++             "receipts/regen-<ITEM>.json (MATCH required by the launcher), and each run regenerates and hash-checks "
++             "the CNF again before any native launch."},
++    {"id": "D18-v6-gate",
++     "what": "launch_B_v6/v7 admission: lane identity by cwd/ancestry (cwd inside moqls7-maximum or a review/moqls7-* "
++             "desk, or a descendant); <= 2 busy lane natives; lane RSS + 2 GiB <= 8 GiB; fixed RSS cap 2,797,076,480 B "
++             "(Main) with ancestry headroom min(3.5 GiB, 8 GiB - ancestry reservations - 128 MiB) >= that cap; the "
++             "slot-2 condition (B/C411 r7 reaped and end-recorded); two fresh free readings >= 12,201,048,576 B "
++             ">= 60 s apart, the second with a fresh scan immediately before launch; no launch after 17:30 PDT. "
++             "Processes that merely use M7 binary/script paths (ME3's supervise_r3 runs, PA19's drat-trim) are listed "
++             "as foreign_marker_matches_excluded in the gate receipt."},
+     {"id": "D19-v1-deviations-carried",
+-     "what": "D1-D12 and D14 of deviations-v1.json (1ec0309c...4afb) apply unchanged to attempt 2. D13 (the attempt-1 "
+-             "floor stop) and D15 (attempt-1 assembler timing) are attempt-1 specific."},
++     "what": "D1-D12 and D14 of deviations-v1.json (1ec0309c...4afb) apply unchanged."},
+     {"id": "D20-disk-cause-unestablished",
+-     "what": "Per Main's correction (about 05:05 PDT), observed floor crossings, snapshot-list changes and later "
+-             "free-space recovery do not establish which process caused a decline or a reclaim, nor any thinning "
+-             "trigger. Cause and recurrence period are UNESTABLISHED. The observations in deviation D13 of attempt 1 "
+-             "are not causal attributions."},
++     "what": "Per Main, observed floor crossings, snapshot-list changes and later free-space recovery do not establish "
++             "which process caused a decline or a reclaim; cause and recurrence period are UNESTABLISHED. Every "
++             "floor-stopped attempt is UNKNOWN and never relabelled."},
+     {"id": "D21-assembler-before-run",
+-     "what": "assemble_B_v5.py was created before the attempt-2 launch; its SHA-256 is part of every recording "
+-             "made by that run."},
+-    {"id": "D23-launcher-guard-fix-and-noop-start",
+-     "what": "The first scripts-v1-to-v2.diff (db6d375b...61df) captured launch_B_v2.py without its "
+-             "'if __name__ == \"__main__\": main()' guard, which a block replacement had dropped. At about 05:08 PDT "
+-             "'launch_B_v2.py run B_C321 --label B_C321-a2' and 'wait-start B_C321-a2' were started once against "
+-             "that file. Both exited rc 0 at once, executing nothing: no file written, no scan, no process spawned. "
+-             "The guard was restored, and scripts-v1-to-v2.r2.diff is the complete v1-to-v2 diff. Both diff files "
+-             "are kept."},
+-    {"id": "D24-v2-launcher-disarmed",
+-     "what": "launch_B_v2.py (label B_C321-a2, withdrawn 'B/C411 r7 or route B ended' rule) was armed at 05:09:18 "
+-             "PDT. On Main's HOLD and scheduling correction it was disarmed by a cooperative SIGTERM at 05:10:34. Its "
+-             "last scan, at 05:10:48, was not admitted: 4 busy natives, both runs live. It exited rc 2 without "
+-             "starting any child. Deferral evidence: receipts/B_C321-a2.gate.json (c28b2e63...61e0, not_launched) "
+-             "and logs/launch-run-B_C321-a2.log. Its wait-start watcher exited on that record. The B_C321-a2 names "
+-             "are spent, so the attempt-2 launch uses label B_C321-a2b."},
++     "what": "assemble_B_v6.py and assemble_B_v7.py were created before the attempts they assemble were launched; "
++             "their SHA-256s are part of every recording made by those runs."},
+     {"id": "D25-armed-after-go",
+-     "what": "launch_B_v5.py was armed only after Main's GO following its source review (HOLD received about "
+-             "05:10 PDT; launcher signal issue raised about 05:16 PDT; cleanup obligation raised about 05:23 PDT). "
+-             "The arming time is the first line of logs/launch-run-<LABEL>.log."},
+-    {"id": "D26-launcher-signal-handling-v4",
+-     "what": "launch_B_v4.py: on_term is flag-only. run_owned() checks the flag first in every iteration from the "
+-             "moment the supervisor is registered after Popen. It forwards SIGTERM only while the child is owned "
+-             "(unreaped, so its PID is reserved), clears ownership at the same point as the successful wait4 and "
+-             "never signals after it. On an exception after Popen it forwards SIGTERM to the owned child and waits a "
+-             "bounded 300 s. A signal racing Popen gives a prompt cooperative stop and an UNKNOWN attempt, not a "
+-             "guarantee that no supervisor was created. The targeted signal-interval smoke "
+-             "(receipts/smoke-v4-signal.smoke.json) ran the pinned supervisor around '/bin/sleep 117': no solver, "
+-             "checker or CNF; no self-check or regeneration rerun."},
+-    {"id": "D27-launcher-cleanup-obligation-v5",
+-     "what": "launch_B_v5.py: every operation after a successful Popen is inside try/except/finally. The finally block "
+-             "never lets run_owned() return or raise while the supervisor is owned and unreaped. After the bounded "
+-             "SIGTERM wait of the exception path, remaining ownership leads to a best-effort marker "
+-             "receipts/<LABEL>.launcher.QUARANTINE.json, whose write failure never skips the wait, and then to a "
+-             "blocking wait4 for that known child with no further signals or escalation. A lost child (wait4 ECHILD) "
+-             "also writes the marker. The outcome receipt reports slot_released only for a cleanly reaped child "
+-             "with no marker and no lost child. Exception-path test, run once (receipts/test-v5-exception-path."
+-             "test.json): a SIGTERM-ignoring python child that exits by itself after 6 s, an injected exception after "
+-             "Popen, a 2 s bounded wait and an injected marker-write error. No solver, checker, CNF or supervisor; no "
+-             "self-check or regeneration rerun."},
++     "what": "Each launcher was armed only after Main's explicit GO; the arming time is the first line of "
++             "logs/launch-run-<LABEL>.log."},
++    {"id": "D26-D27-launcher-logic-carried",
++     "what": "The v4 flag-only signal handling with an owned-child loop (signal smoke receipts/smoke-v4-signal."
++             "smoke.json) and the v5 cleanup obligation (exception-path test receipts/test-v5-exception-path."
++             "test.json) are carried unchanged."},
++    {"id": "D28-v5-marker-attribution",
++     "what": "The v5 path-marker scan at the B_C321-a2b gate counted drat-trim pid 11629 as M7; per Main it was PA19's "
++             "(shared parent drat-trim path). That overcount was conservative; v6 replaces path markers by "
++             "cwd/ancestry identity."},
+ ]
++ITEM_DEVIATIONS = {
++    "B_C411": [{"id": "D29-B_C411-pins-and-slot",
++                "what": "B/C411 pins (bklib_v2) come from PhysEpQutrit's r7 producer receipt cert_B_r7/B_C411.json "
++                        "(644b5b23...6f75; VERIFIED_UNSAT_CASE with the lane drat-trim build): CNF 01acf464...8bf8, "
++                        "metadata B_C411.meta.json c0f769bb...8a12, base 42a5f304...0aac, encoder c7583efe...2b45. "
++                        "Main assigned this replay to slot 1 after PhysEpQutrit hands it over; launch only on "
++                        "Main's explicit GO."}]}
+ 
+ 
+ def load(rel):
+@@ -277,10 +255,10 @@
+                                                                  "checker_binary_sha256", "solver_log_sha256",
+                                                                  "checker_log_sha256",
+                                                                  "peak_sampled_aggregate_rss_bytes")}},
+-        "scope": ("Attempt-level replay record (label %s) for the exact B/C321 CNF only (SHA-256 8b7b8124...12c6). "
+-                  "PASS means this CNF is UNSAT by a freshly streamed kissat binary DRAT proof accepted by the parent "
+-                  "drat-trim; UNKNOWN means this attempt neither confirms nor refutes the producer's certificate. No "
+-                  "K3, M(7), coverage, bridge or theorem verdict." % label),
++        "scope": ("Attempt-level replay record (label %s) for the exact B/%s CNF only (SHA-256 %s). PASS means this CNF "
++                  "is UNSAT by a freshly streamed kissat binary DRAT proof accepted by the parent drat-trim; UNKNOWN "
++                  "means this attempt neither confirms nor refutes the producer's certificate. No K3, M(7), coverage, "
++                  "bridge or theorem verdict." % (label, it["cube"], it["cnf_sha256"])),
+     }
+ 
+ 
+@@ -293,17 +271,22 @@
+     sf = r["strict_fields"]
+     t = r["times"]
+     lines = [
+-        "# Parent replay of the phys-2 K3 cube certificate B/C321 (MOQLS(7), encoder B), attempt %s" % r["label"], "",
+-        "Desk: `review/moqls7-k3-B-cube-parent-replay-v1/`, 2026-10-18 PDT. RESULT.v2.json sha256 `%s`." % result_sha,
+-        "Generated by `scripts/assemble_B_v5.py` from the same data as RESULT.v2.json. Attempt 1 (label B_C321): "
+-        "%s, item receipt `%s`, RESULT.json `%s`." % (result["attempt_1"]["status"],
+-                                                       result["attempt_1"]["item_receipt_sha256"],
+-                                                       result["attempt_1"]["result_json_sha256"]), "",
++        "# Parent replay of the phys-2 K3 cube certificate %s (MOQLS(7), encoder B), attempt %s" % (
++            r["item"], r["label"]), "",
++        "Desk: `review/moqls7-k3-B-cube-parent-replay-v1/`, 2026-10-18 PDT. RESULT.%s.json sha256 `%s`." % (
++            r["label"], result_sha),
++        "Generated by `scripts/%s` from the same data as RESULT.%s.json. Attempt 1 of this item: %s." % (
++            os.path.basename(__file__), r["label"],
++            ("%s, item receipt `%s`, RESULT.json `%s`" % (result["attempt_1"]["status"],
++                                                         result["attempt_1"]["item_receipt_sha256"],
++                                                         result["attempt_1"]["result_json_sha256"])
++             if result["attempt_1"] else "none in this desk")), "",
+         "## Verdict", "",
+         "| item | status | regenerated CNF sha256 = pin | solver rc / status lines | checker rc / status lines | stop |",
+         "|---|---|---|---|---|---|",
+-        "| B_C321 | **%s** | `%s` %s | %s / `%s` | %s / `%s` | %s |" % (
+-            r["status"], sf["regenerated_cnf_sha256"], "yes" if sf["cnf_hash_match"] else "NO", sf["solver_rc"],
++        "| %s | **%s** | `%s` %s | %s / `%s` | %s / `%s` | %s |" % (
++            r["item"], r["status"], sf["regenerated_cnf_sha256"], "yes" if sf["cnf_hash_match"] else "NO",
++            sf["solver_rc"],
+             sf["solver_status_lines"], sf["checker_rc"], sf["checker_status_lines"],
+             (r["stop"] or {}).get("reason", "none")), "",
+         "Attempt receipt `receipts/%s.json` sha256 `%s`." % (r["label"], item_sha), "",
+@@ -348,13 +331,14 @@
+             r["capacity_at_launch"]["lane_native_busy"],
+             [(n["pid"], os.path.basename(n["comm"])) for n in r["capacity_at_launch"]["lane_natives"]],
+             fmt(r["capacity_at_launch"]["lane_rss_bytes"]), fmt(r["rss"]["cap_bytes"])),
+-        "- Producer r6 for comparison: %s s, solver rc %s, checker rc %s, %s, peak %s B." % (
++        "- Producer receipt for comparison: %s s, solver rc %s, checker rc %s, %s, peak %s B." % (
+             r["producer_receipt"]["fields"]["seconds"], r["producer_receipt"]["fields"]["solver_rc"],
+             r["producer_receipt"]["fields"]["checker_rc"], r["producer_receipt"]["fields"]["checker_status_lines"],
+             fmt(r["producer_receipt"]["fields"]["peak_sampled_aggregate_rss_bytes"])), "",
+-        "## Checks reused from attempt 1 (deviation D17)", "",
+-        "- Regeneration-only precheck: %s (`receipts/regen-B_C321.json` `%s`)." % (
+-            result["regeneration_precheck"]["result"], result["regeneration_precheck"]["sha256"]),
++        "## Checks reused (deviation D17)", "",
++        "- Regeneration-only precheck: %s (`%s` `%s`)." % (
++            result["regeneration_precheck"]["result"], result["regeneration_precheck"]["receipt"],
++            result["regeneration_precheck"]["sha256"]),
+         "- Transport self-checks (`receipts/selfcheck-summary.json` `%s`, all_ok %s):" % (
+             result["transport_selfcheck"]["summary_sha256"], result["transport_selfcheck"]["all_ok"]),
+     ]
+@@ -387,20 +371,20 @@
+         lines.append("- %s `%s` `%s`" % (k, v["path"], v["sha256"]))
+     for k, v in r["logs"].items():
+         lines.append("- %s `%s` %s B `%s`" % (k, v["path"], fmt(v["bytes"]), v["sha256"]))
+-    lines += ["", "## Deviations of attempt 2 (full text: `deviations-v2.json`; D1-D12, D14 of `deviations-v1.json` "
+-                  "carried)", ""]
++    lines += ["", "## Deviations (full text: `deviations-%s.json`; D1-D12, D14 of `deviations-v1.json` carried)"
++              % r["label"], ""]
+     for d in result["deviations"]["items"]:
+         lines.append("- %s: %s" % (d["id"], d["what"]))
+     lines += ["", "## Integrity", "",
+-              "Receipts, logs, RESULT.v2.json, REPORT.v2.md and deviations-v2.json were created exclusively (mode "
++              "Receipts, logs, RESULT.%s.json, REPORT.%s.md and deviations-%s.json were created exclusively (mode "
+               "'x' / O_EXCL). The versioned scripts were copied with cp -n and edited before their first recorded use; "
+-              "diffs scripts-v1-to-v2.r2.diff and scripts-v2-to-v3.diff. Nothing from attempt 1 or from the disarmed "
+-              "B_C321-a2 launcher was modified, deleted or renamed. No lane file "
++              "diffs scripts-v1-to-v2.r2.diff through scripts-v6-to-v7-B_C411.diff. No earlier attempt's files were "
++              "modified, deleted or renamed. No lane file "
+               "was written. There were no /tmp writes and no Git, network or model CLI. __pycache__ present: %s. "
+-              "Desk regular files before RESULT.v2.json: %d, %s bytes in total. FIFO nodes, never opened outside the "
+-              "pipeline: %s." % (
+-                  result["pycache_present"], len(result["desk_files_before_result"]),
+-                  fmt(result["desk_bytes_before_result"]), ", ".join(result["fifo_nodes"])), ""]
++              "Desk regular files before RESULT.%s.json: %d, %s bytes in total. FIFO nodes, never opened outside the "
++              "pipeline: %s." % (r["label"], r["label"], r["label"], result["pycache_present"], r["label"],
++                                 len(result["desk_files_before_result"]),
++                                 fmt(result["desk_bytes_before_result"]), ", ".join(result["fifo_nodes"])), ""]
+     lines += ["| file | bytes | sha256 |", "|---|---|---|"]
+     for e in result["desk_files_before_result"]:
+         lines.append("| `%s` | %s | `%s` |" % (e["path"], fmt(e.get("bytes")), e.get("sha256")))
+@@ -427,17 +411,18 @@
+     if len(sys.argv) != 3 or sys.argv[1] not in K.ITEMS or not sys.argv[2].startswith(sys.argv[1] + "-"):
+         raise SystemExit(__doc__)
+     item, label = sys.argv[1], sys.argv[2]
+-    paths = {"item": os.path.join(K.RECEIPTS, label + ".json"), "dev": os.path.join(K.DESK, "deviations-v2.json"),
+-             "result": os.path.join(K.DESK, "RESULT.v2.json"), "report": os.path.join(K.DESK, "REPORT.v2.md")}
++    names = {"result": "RESULT.%s.json" % label, "report": "REPORT.%s.md" % label, "dev": "deviations-%s.json" % label}
++    paths = {"item": os.path.join(K.RECEIPTS, label + ".json"), "dev": os.path.join(K.DESK, names["dev"]),
++             "result": os.path.join(K.DESK, names["result"]), "report": os.path.join(K.DESK, names["report"])}
+     for p in paths.values():
+         if os.path.lexists(p):
+             raise SystemExit("exists: " + p)
+     row = item_receipt(item, label)
+     item_sha = K.write_json_x(paths["item"], row)
+-    dev = DEVIATIONS + ([{"id": "D22-attempt-2-stop", "what": "Attempt 2 was stopped: %s (supervisor record %s). "
+-                          "Status UNKNOWN; not retried without parent GO." % (row["stop"]["reason"],
+-                                                                               row["receipts"]["supervisor"]["sha256"])}]
+-                        if row["stop"] else [])
++    dev = DEVIATIONS + ITEM_DEVIATIONS.get(item, []) + (
++        [{"id": "D30-attempt-stop", "what": "This attempt was stopped: %s (supervisor record %s). Status UNKNOWN; not "
++          "retried without parent GO." % (row["stop"]["reason"], row["receipts"]["supervisor"]["sha256"])}]
++        if row["stop"] else [])
+     dev_sha = K.write_json_x(paths["dev"], dev)
+     regen_r, regen_sha = load("receipts/regen-%s.json" % item)
+     summ, summ_sha = load("receipts/selfcheck-summary.json")
+@@ -445,30 +430,37 @@
+     ro = [os.path.join(K.CODE, n) for n in ("gram_enc.py", "k3_cubes.py", "gram_encB.py", "supervise_r3.py")]
+     ro += [K.ITEMS[item]["producer_receipt"], K.ITEMS[item]["meta"], K.ORACLE_RECEIPT,
+            K.ITEMS[item]["producer_checker_log"], K.ITEMS[item]["producer_solver_log"], K.ITEMS[item]["lane_cnf"]]
+-    files, fifos, total = desk_listing(exclude=("RESULT.v2.json", "REPORT.v2.md"))
++    files, fifos, total = desk_listing(exclude=(names["result"], names["report"]))
+     seen = {"run.gate": load("receipts/%s.gate.json" % label)[0].get("scripts_sha256"),
+             "run.pre": load("receipts/%s.pre.json" % label)[0].get("scripts_sha256"),
+             "run.end": load("receipts/%s.driver.json" % label)[0].get("scripts_sha256_end")}
+-    a1 = load("receipts/%s.pre.json" % item)[0].get("scripts_sha256")
++    a1_pre = os.path.join(K.RECEIPTS, item + ".pre.json")
++    a1 = load("receipts/%s.pre.json" % item)[0].get("scripts_sha256") if os.path.isfile(a1_pre) else None
+     run_scripts = {"recorded": seen["run.pre"],
+                    "all_recordings_equal": all(v == seen["run.pre"] for v in seen.values()),
+                    "equal_now": K.script_hashes() == seen["run.pre"],
+-                   "v1_run_scripts_unchanged_since_attempt_1": all((seen["run.pre"] or {}).get(n) == h
+-                                                                   for n, h in a1.items()),
++                   "v1_run_scripts_unchanged_since_attempt_1": (all((seen["run.pre"] or {}).get(n) == h
++                                                                    for n, h in a1.items()) if a1 else None),
+                    "recording_points": sorted(seen)}
+-    a1_item, a1_item_sha = load("receipts/%s.json" % item)
++    a1_path = os.path.join(K.RECEIPTS, item + ".json")
++    attempt_1 = None
++    if os.path.isfile(a1_path):
++        a1_item, a1_item_sha = load("receipts/%s.json" % item)
++        attempt_1 = {"label": item, "status": a1_item.get("status"), "item_receipt": "receipts/%s.json" % item,
++                     "item_receipt_sha256": a1_item_sha, "stop_reason": (a1_item.get("stop") or {}).get("reason"),
++                     "result_json_sha256": file_entry("RESULT.json")["sha256"],
++                     "deviations_v1_sha256": file_entry("deviations-v1.json")["sha256"]}
+     result = {
+         "desk": "review/moqls7-k3-B-cube-parent-replay-v1",
+         "scope": row["scope"],
+         "verdicts": {label: row["status"]},
+-        "attempt_1": {"label": item, "status": a1_item.get("status"), "item_receipt": "receipts/%s.json" % item,
+-                      "item_receipt_sha256": a1_item_sha, "stop_reason": (a1_item.get("stop") or {}).get("reason"),
+-                      "result_json_sha256": file_entry("RESULT.json")["sha256"],
+-                      "deviations_v1_sha256": file_entry("deviations-v1.json")["sha256"]},
++        "attempt_1": attempt_1,
+         "scripts_diff_v1_to_v2": file_entry("scripts-v1-to-v2.r2.diff"),
+         "scripts_diff_v2_to_v3": file_entry("scripts-v2-to-v3.diff"),
+         "scripts_diff_v3_to_v4": file_entry("scripts-v3-to-v4.diff"),
+         "scripts_diff_v4_to_v5": file_entry("scripts-v4-to-v5.diff"),
++        "scripts_diff_v5_to_v6": file_entry("scripts-v5-to-v6.diff"),
++        "scripts_diff_v6_to_v7_B_C411": file_entry("scripts-v6-to-v7-B_C411.diff"),
+         "signal_smoke": dict(file_entry("receipts/smoke-v4-signal.smoke.json"),
+                              all_ok=json.loads(K.read_regular(os.path.join(
+                                  K.RECEIPTS, "smoke-v4-signal.smoke.json"))).get("all_ok")),
+@@ -502,7 +494,7 @@
+                                 "receipts_rehashed_equal": all(
+                                     file_entry("receipts/%s.json" % x["label"])["sha256"] == x["receipt_sha256"]
+                                     for x in summ.get("rows", []))},
+-        "deviations": {"path": "deviations-v2.json", "sha256": dev_sha, "count": len(dev),
++        "deviations": {"path": names["dev"], "sha256": dev_sha, "count": len(dev),
+                        "carried_from": "deviations-v1.json D1-D12, D14", "items": dev},
+         "binaries_at_assembly": {"kissat": K.binary_record(K.KISSAT), "drat-trim": K.binary_record(K.DRAT),
+                                  "python3": K.binary_record(K.PY)},
+@@ -516,8 +508,8 @@
+     text = report(result, result_sha, row, item_sha)
+     with open(paths["report"], "x") as f:
+         f.write(text)
+-    print(json.dumps({"attempt_receipt_sha256": item_sha, "status": row["status"], "deviations_v2_sha256": dev_sha,
+-                      "RESULT.v2.json": result_sha, "REPORT.v2.md": K.sha_file(paths["report"]),
++    print(json.dumps({"attempt_receipt_sha256": item_sha, "status": row["status"], "deviations_sha256": dev_sha,
++                      names["result"]: result_sha, names["report"]: K.sha_file(paths["report"]),
+                       "failed_conditions": row["failed_conditions"]}))
+ 
+ 

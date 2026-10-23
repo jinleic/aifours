@@ -1,0 +1,694 @@
+--- code/owned_supervisor_v15.py
++++ code/owned_supervisor_v16.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""owned_supervisor_v15: terminal-14 successor, preserving v14's fixed owned guard core.
++"""owned_supervisor_v16: telemetry/typed-binding successor, preserving v15's fixed owned guard core.
+ 
+ BINDING correction: RUN/review/rqls10-supervisor-v10-scope-parent-correction-v1.json
+ fabe57ab4aeacc416f22bdf334c2cc3bbd5fda1d0e777d7279187ae0564155a2. V10's scope weakening is withdrawn,
+@@ -52,7 +52,7 @@
+ 
+ Exit:0 acknowledged SETTLED;10 acknowledged NOT_LAUNCHED;11 acknowledged UNSETTLED;12 publication refused/receipt
+ failed;13 settlement/sync/finalization failed;14 ACK refused/overran;2 unusable config/anchors. NOEXEC until separately
+-accepted source/package and an exact item GO. Usage: owned_supervisor_v15.py CONFIG.json
++accepted source/package and an exact item GO. Usage: owned_supervisor_v16.py CONFIG.json
+ V12 preserves v11 helper/clearance/identity/root machinery and fabe57ab. Repairs all nine v11 review findings plus
+ three package integration blockers: enforce main runtime before/after every reap (late observation cannot erase it),
+ restore bounded spawn-to-GO age, fresh ACK census, actual conservative /bin/date stability age, authorization last
+@@ -82,7 +82,7 @@
+ import threading
+ import time
+ 
+-VERSION = "owned_supervisor_v15"
++VERSION = "owned_supervisor_v16"
+ CANCEL_SIGNALS = {signal.SIGTERM, signal.SIGINT, signal.SIGHUP}
+ CANCEL = {"signal": None, "mono": None}
+ POLICY = {"disk": 10737418240, "free": 12000000000, "launch_free": 12200000000,
+@@ -140,9 +140,13 @@
+ 
+ class Deadline:
+     def __init__(self, seconds, until=None):
+-        self.end = time.monotonic() + seconds
++        self.mono_created, self.seconds, self.until = time.monotonic(), seconds, until
++        self.end = self.mono_created + seconds
+         if until is not None:
+             self.end = min(self.end, until)
++
++    def telemetry(self):
++        return {"mono_created": self.mono_created, "seconds": self.seconds, "until": self.until, "end": self.end}
+ 
+     def check(self, operation):
+         if time.monotonic() > self.end:
+@@ -208,6 +212,11 @@
+ 
+ def fingerprint(p):
+     return tuple(p[k] for k in ("pid", "uniqueid", "idversion", "euid", "ruid", "ppid", "pgid", "traced"))
++
++
++def identity_form(p):
++    """Full acquired identity metadata except the separately recorded native status."""
++    return tuple(p[k] for k in ("pid", "uniqueid", "idversion", "euid", "ruid", "ppid", "pgid", "traced", "comm"))
+ 
+ 
+ def identify(pid):
+@@ -513,6 +522,17 @@
+ 
+ def hex64(x):
+     return isinstance(x, str) and len(x) == 64 and all(c in "0123456789abcdef" for c in x)
++
++
++def typed_equal(left, right):
++    """Exact JSON structure and scalar types; bool never aliases an integer authority field."""
++    if type(left) is not type(right):
++        return False
++    if isinstance(left, dict):
++        return set(left) == set(right) and all(typed_equal(left[k], right[k]) for k in left)
++    if isinstance(left, list):
++        return len(left) == len(right) and all(typed_equal(a, b) for a, b in zip(left, right))
++    return left == right
+ 
+ 
+ def validate(cfg):
+@@ -644,6 +664,7 @@
+             pid = os.posix_spawn(argv[0], argv, env, file_actions=actions, setsid=True, setsigmask=(),
+                                  setsigdef=tuple(CANCEL_SIGNALS | {signal.SIGPIPE, signal.SIGCHLD}))
+             record["pid"] = pid
++            record["mono_pid_registered"] = time.monotonic()
+             if role == "helper":
+                 s.helper_calls += 1
+             if role != "helper":
+@@ -676,11 +697,16 @@
+         self.start_epoch, self.start_mono = time.time(), time.monotonic()
+         self.fit_epoch = min(self.start_epoch + cfg["max_chunk_seconds"] - 120, cfg["owned_compute_settled_by_epoch"] - 180)
+         self.fit_mono = self.start_mono + self.fit_epoch - self.start_epoch
++        initial_fit = {"start_epoch": self.start_epoch, "start_mono": self.start_mono,
++                       "chunk_epoch_bound": self.start_epoch + cfg["max_chunk_seconds"] - 120,
++                       "owned_epoch_bound": cfg["owned_compute_settled_by_epoch"] - 180,
++                       "fit_epoch": self.fit_epoch, "fit_mono": self.fit_mono}
+         self.rec = {"supervisor": VERSION, "supervisor_sha256": self.self_sha, "config_sha256": digest,
+                     "config_path": path, "supervisor_pid": MY_PID, "uid": MY_UID,
+                     "clock_note": "*_date: owned /bin/date output or null, never invented; mono_* and epoch_*: raw telemetry",
+                     "parent_correction_sha256": "fabe57ab4aeacc416f22bdf334c2cc3bbd5fda1d0e777d7279187ae0564155a2",
+                     "ownership_residual": "all post-baseline unproved identities block; sampled coverage is not an OS sandbox"}
++        self.rec["initial_fit"] = initial_fit
+         self.failures, self.failure_keys, self.trips = [], set(), {}
+         self.child, self.keep = None, []
+         self.pid, self.ident, self.rc = None, None, None
+@@ -711,6 +737,8 @@
+         self.ack_output_started = False
+         self.publication_resources, self.ack_resources = None, None
+         self.publication_payload_bytes, self.last_accounting_observation = None, None
++        self.identity_events, self.identity_refs = [], {}
++        self.accounting_observations, self.min_free_witness = [], None
+ 
+     def deadline(self, seconds, phase=None):
+         cut = min([self.fit_mono] + [x[1] for x in self.cutoffs()])
+@@ -783,8 +811,10 @@
+             return
+         try:
+             dl = self.deadline(IO_S)
++            begin = time.monotonic()
+             now = identify(self.pid)
+-            s["identity_observed"] = dict(now)  # Once-only stop witness survives even a full history ledger.
++            end = time.monotonic()
++            s.update(identity_observed=dict(now), mono_identity_begin=begin, mono_identity_observed=end)
+             dl.check("after main stop identity")
+             ok = fingerprint(now) == fingerprint(self.ident)
+             s["identity_ok"] = ok
+@@ -798,6 +828,9 @@
+         except BaseException as e:
+             s["error"] = repr(e)
+             self.fail("IDENTITY_UNVERIFIED", repr(e))
++        finally:
++            if "identity_observed" in s:
++                self.retain_signal_observation(s, "main_signal")
+ 
+     def cutoffs(self):
+         cuts = []
+@@ -826,36 +859,82 @@
+             self.history_abort("HISTORY_BYTE_CAP", witness)
+         self.history_charge += charge
+ 
+-    def retain_identity(self, p, source, known=False):
+-        stamp, uid = time.monotonic(), p["uniqueid"]
+-        old = self.identity_history.get(uid)
+-        if old is None:
+-            if len(self.identity_history) >= 8192:
+-                self.history_abort("IDENTITY_HISTORY_CAP", dict(p))
+-            new = {"first_identity": dict(p), "last_identity": dict(p), "mono_first_seen": stamp,
+-                   "mono_last_seen": stamp, "source": source, "observations": 1, "variants": [dict(p)]}
+-        else:
+-            variants = old["variants"]
+-            if fingerprint(p) != fingerprint(old["last_identity"]) and not any(fingerprint(p) == fingerprint(x) for x in variants):
+-                if len(variants) >= 64:
+-                    self.history_abort("IDENTITY_VARIANT_CAP", dict(p))
+-                variants = variants + [dict(p)]
+-            new = dict(old, last_identity=dict(p), mono_last_seen=stamp, observations=old["observations"] + 1,
+-                       variants=variants)
+-        self.reserve_history("identity", new, old, dict(p))
+-        self.identity_history[uid] = new
+-        # Do this NOW, before any later PID, edge proof or deadline can abort the scan.
+-        if not known and self.baseline is not None and uid not in self.baseline and uid not in self.owned:
+-            previous = self.unproved_history.get(uid)
+-            if previous is None:
+-                if len(self.unproved_history) >= 8192:
+-                    self.history_abort("UNPROVED_HISTORY_CAP", dict(p))
+-                unknown = {"first_identity": dict(p), "last_identity": dict(p),
+-                           "mono_first_seen": stamp, "mono_last_seen": stamp}
++    def retain_identity(self, p, source, known=False, interval=None):
++        """Retain one completed native acquisition. Event index is its one-based immutable reference."""
++        if interval is None:
++            raise GuardError("IDENTITY_OBSERVATION_INTERVAL_MISSING")
++        begin, end = interval
++        uid, old = p["uniqueid"], self.identity_history.get(p["uniqueid"])
++        observed = {"identity": dict(p), "mono_begin": begin, "mono_end": end, "source": source}
++        try:
++            if old is None:
++                if len(self.identity_history) >= 8192:
++                    self.history_abort("IDENTITY_HISTORY_CAP", observed)
++                variants, index = [dict(p)], 0
+             else:
+-                unknown = dict(previous, last_identity=dict(p), mono_last_seen=stamp)
+-            self.reserve_history("unproved", unknown, previous, dict(p))
+-            self.unproved_history[uid] = unknown
++                variants = old["variants"]
++                index = next((i for i, v in enumerate(variants) if identity_form(v) == identity_form(p)), None)
++                if index is None:
++                    if len(variants) >= 64:
++                        self.history_abort("IDENTITY_VARIANT_CAP", observed)
++                    index, variants = len(variants), variants + [dict(p)]
++            ref = len(self.identity_events) + 1
++            unproved = not known and self.baseline is not None and uid not in self.baseline and uid not in self.owned
++            event = [uid, index, p["status"], begin, end, unproved]
++            if old is None:
++                new = {"first_identity": dict(p), "last_identity": dict(p), "mono_first_begin": begin,
++                       "mono_first_seen": end, "mono_last_begin": begin, "mono_last_seen": end,
++                       "first_event_ref": ref, "last_event_ref": ref, "source": source, "observations": 1, "variants": variants}
++            else:
++                new = dict(old, observations=old["observations"] + 1, variants=variants)
++                if end < old["mono_first_seen"]:
++                    new.update(first_identity=dict(p), mono_first_begin=begin, mono_first_seen=end, first_event_ref=ref)
++                if end >= old["mono_last_seen"]:
++                    new.update(last_identity=dict(p), mono_last_begin=begin, mono_last_seen=end, last_event_ref=ref)
++            self.reserve_history("identity", new, old, observed)
++            self.reserve_history("identity_event", event, [], observed, extra=4)
++            self.identity_events.append(event)
++            self.identity_history[uid] = new
++            self.identity_refs[(uid, index, p["status"])] = ref
++            # Unproved classification is retained NOW, even if a later PID/edge/measurement aborts.
++            if unproved:
++                previous = self.unproved_history.get(uid)
++                if previous is None:
++                    if len(self.unproved_history) >= 8192:
++                        self.history_abort("UNPROVED_HISTORY_CAP", observed)
++                    unknown = {"first_identity": dict(p), "last_identity": dict(p), "mono_first_begin": begin,
++                               "mono_first_seen": end, "mono_last_begin": begin, "mono_last_seen": end,
++                               "first_event_ref": ref, "last_event_ref": ref}
++                else:
++                    unknown = dict(previous)
++                    if end < previous["mono_first_seen"]:
++                        unknown.update(first_identity=dict(p), mono_first_begin=begin, mono_first_seen=end, first_event_ref=ref)
++                    if end >= previous["mono_last_seen"]:
++                        unknown.update(last_identity=dict(p), mono_last_begin=begin, mono_last_seen=end, last_event_ref=ref)
++                self.reserve_history("unproved", unknown, previous, observed)
++                self.unproved_history[uid] = unknown
++            return ref
++        except BaseException:
++            if self.history_halted and self.history_overflow is not None:
++                self.history_overflow["completed_identity_observation"] = observed
++            raise
++
++    def identity_ref(self, p):
++        entry = self.identity_history[p["uniqueid"]]
++        index = next(i for i, v in enumerate(entry["variants"]) if identity_form(v) == identity_form(p))
++        return self.identity_refs[(p["uniqueid"], index, p["status"])]
++
++    def retain_signal_observation(self, record, source):
++        """Signal safety never waits for telemetry. Preserve the raw bounded witness even after a cap."""
++        record["identity_event_ref"] = None
++        if self.history_halted:
++            return
++        try:
++            record["identity_event_ref"] = self.retain_identity(
++                record["identity_observed"], source, record.get("identity_ok") is True,
++                (record["mono_identity_begin"], record["mono_identity_observed"]))
++        except BaseException as e:
++            record["identity_event_error"] = repr(e)[:600]
+ 
+     @contextlib.contextmanager
+     def observation_attempt(self, kind, resources=None):
+@@ -892,6 +971,9 @@
+     def reconciliation_evidence(self):
+         return {"owned_identities": list(self.owned.values()), "unproved_history": list(self.unproved_history.values()),
+                 "identity_history": list(self.identity_history.values()), "coverage_history": self.coverage_history,
++                "identity_events": list(self.identity_events), "initial_fit": self.rec["initial_fit"],
++                "authorization": self.authorization, "accounting_observations": list(self.accounting_observations),
++                "min_free_witness": self.min_free_witness,
+                 "census_observations": self.census_history, "observation_attempts": self.attempt_history,
+                 "helpers": self.helper_reports(), "helper_log": self.helper_log, "failures": self.failures,
+                 "main_identity": self.ident, "main_signal": self.signal, "main_stop": self.stop,
+@@ -902,23 +984,26 @@
+                 "publication_resources": self.publication_resources, "ack_resources": self.ack_resources,
+                 "publication_payload_bytes": self.publication_payload_bytes,
+                 "last_accounting_observation": self.last_accounting_observation,
+-                "maxima": dict(self.maxima), "min_free": self.min_free}
++                "maxima": dict(self.maxima), "min_free": self.min_free,
++                "streams": {k: dict(v) for k, v in self.streams.items()}, "mono_snapshot": time.monotonic()}
+ 
+     def observed_identity(self, pid, source, known=False):
++        begin = time.monotonic()
+         p = identify(pid)
+-        self.retain_identity(p, source, known)
++        end = time.monotonic()
++        self.retain_identity(p, source, known, (begin, end))
+         return p
+ 
+     def identity_stable(self, pid, before):
+         p = self.observed_identity(pid, "measurement_bracket")
+         return fingerprint(p) == fingerprint(before)
+ 
+-    def register_owned(self, p, via, root=None):
++    def register_owned(self, p, via, root=None, proof=None):
+         u = p["uniqueid"]
+-        self.retain_identity(p, "owned_registration", True)
++        ref = self.identity_ref(p)  # Registration reuses its actual acquisition, never invents another observation.
+         if u not in self.owned:
+-            entry = {"identity": dict(p), "via": via, "root": u if root is None else root,
+-                     "first_seen_mono": time.monotonic()}
++            entry = {"identity": dict(p), "identity_event_ref": ref, "via": via, "root": u if root is None else root,
++                     "first_seen_mono": time.monotonic(), "proof": proof}
+             self.reserve_history("owned", entry, witness=dict(p))
+             self.owned[u] = entry
+             if via not in ("child", "helper"):
+@@ -963,12 +1048,16 @@
+                         continue
+                     try:
+                         a = self.observed_identity(parent["pid"], "edge_parent_before")
++                        a_ref = self.identity_ref(a)
+                         b = self.observed_identity(p["pid"], "edge_child")
++                        b_ref = self.identity_ref(b)
+                         c = self.observed_identity(parent["pid"], "edge_parent_after")
++                        c_ref = self.identity_ref(c)
+                         if fingerprint(a) != fingerprint(parent) or fingerprint(c) != fingerprint(parent) or fingerprint(b) != fingerprint(p):
+                             raise GuardError("CURRENT_PARENT_EDGE_CHANGED")
+                         root = self.owned[parent["uniqueid"]]["root"]
+-                        self.register_owned(p, "current_parent:%d" % parent["uniqueid"], root)
++                        self.register_owned(p, "current_parent:%d" % parent["uniqueid"], root,
++                                            {"parent_before_ref": a_ref, "child_ref": b_ref, "parent_after_ref": c_ref})
+                         live_owned.add(p["uniqueid"])
+                         changed = True
+                     except OSError as e:
+@@ -996,8 +1085,9 @@
+             procs, missing, _, _ = self.scan_identities(dl)
+             if not missing:
+                 self.baseline = {p["uniqueid"] for p in procs.values()}
+-                self.rec["baseline"] = {"mono_complete": time.monotonic(),
+-                                        "identities": sorted(procs.values(), key=lambda p: p["pid"])}
++                ordered = sorted(procs.values(), key=lambda p: p["pid"])
++                self.rec["baseline"] = {"mono_complete": time.monotonic(), "identities": ordered,
++                                        "event_refs": [self.identity_ref(p) for p in ordered]}
+                 dl.check("after baseline")
+                 return
+             time.sleep(0.05)
+@@ -1009,6 +1099,7 @@
+         record = {"phase": self.phase, "inside_helper": self.in_helper, "complete": False, "aborted": False,
+                   "mono_start": time.monotonic(), "mono_complete": None, "incomplete_n": 0, "incomplete": [],
+                   "pids": 0, "owned_live": [], "unproved_live": [], "group_live": [], "owned_zombies": [],
++                  "owned_event_refs": [], "unproved_event_refs": [],
+                   "lane_pids": [], "lane_rss": 0, "lane_busy_pids": [], "lane_busy": 0, "measurements": []}
+         self.reserve_history("resource_attempt", record, extra=2048)
+         self.census_history.append(record)  # Retained BEFORE identity or resource I/O can abort.
+@@ -1017,6 +1108,8 @@
+             header = dict(record, pids=len(procs), incomplete_n=len(missing), incomplete=missing[:30],
+                           owned_live=[dict(p) for p in procs.values() if p["uniqueid"] in live_owned],
+                           unproved_live=[dict(p) for p in procs.values() if p["uniqueid"] in unproved],
++                          owned_event_refs=[self.identity_ref(p) for p in procs.values() if p["uniqueid"] in live_owned],
++                          unproved_event_refs=[self.identity_ref(p) for p in procs.values() if p["uniqueid"] in unproved],
+                           group_live=sorted(p["pid"] for p in procs.values() if self.group is not None and p["pgid"] == self.group),
+                           owned_zombies=sorted(p["pid"] for p in procs.values() if p["uniqueid"] in live_owned and p["status"] == SZOMB))
+             self.reserve_history("resource_header", header, record, {"phase": self.phase})
+@@ -1041,11 +1134,16 @@
+                         raise GuardError("MEMBERSHIP_IDENTITY_CHANGED")
+                     if not member:
+                         continue
++                    before_task_ref = self.identity_ref(self.identity_history[p["uniqueid"]]["last_identity"])
++                    task_begin = time.monotonic()
+                     rss, ticks = task_of(pid)
++                    task_end = time.monotonic()
+                     key = (p["uniqueid"], p["idversion"])
+                     prior = self.prev_cpu.get(key)
+                     start = start_of(pid) if prior is None else None
+-                    final_identity = identify(pid)  # Acquire/verify first; history charging cannot erase a completed bracket.
++                    final_begin = time.monotonic()
++                    final_identity = identify(pid)  # Acquire/verify first; charging cannot erase the completed bracket.
++                    final_end = time.monotonic()
+                     if fingerprint(final_identity) != fingerprint(p):
+                         raise GuardError("TASK_IDENTITY_CHANGED")
+                     now_m, now_e = time.monotonic(), time.time()
+@@ -1055,7 +1153,10 @@
+                     else:
+                         seconds = now_m - prior[0]
+                         busy = seconds <= 0 or (ticks - prior[1]) * self.num_tb >= seconds * 1e9 * self.cfg["busy_cpu_fraction"]
+-                    measured = {"identity": dict(p), "identity_after": dict(final_identity),
++                    measured = {"identity": dict(p), "identity_event_ref": self.identity_ref(p),
++                                "before_task_event_ref": before_task_ref, "identity_after": dict(final_identity),
++                                "identity_after_event_ref": None, "identity_after_interval": [final_begin, final_end],
++                                "mono_task_begin": task_begin, "mono_task_end": task_end,
+                                 "rss": rss, "cpu_ticks": ticks, "busy": busy, "mono_observed": now_m}
+                     # Totals and observed excesses are latched BEFORE another I/O or any possible abort.
+                     record["lane_pids"].append(pid)
+@@ -1068,7 +1169,8 @@
+                     cpu[key] = (now_m, ticks)
+                     try:
+                         self.enforce_observed_resources(record)
+-                        self.retain_identity(final_identity, "measurement_final_bracket")
++                        measured["identity_after_event_ref"] = self.retain_identity(final_identity, "measurement_final_bracket",
++                                                                                  interval=(final_begin, final_end))
+                         self.reserve_history("measurement", measured, witness=measured, extra=256)
+                     except BaseException:
+                         if self.history_halted and self.history_overflow is not None:
+@@ -1146,6 +1248,7 @@
+         if h.get("identity") is None and not h["leader_reaped"]:
+             h["identity"] = self.observed_identity(h["pid"], "helper_initial", True)
+             p = h["identity"]
++            h["identity_event_ref"] = self.identity_ref(p)
+             h["initial_identity_valid"] = p["pgid"] == h["pid"] and p["euid"] == MY_UID and p["ruid"] == MY_UID
+             if not h["initial_identity_valid"]:
+                 raise GuardError("HELPER_IDENTITY_INVALID")
+@@ -1215,28 +1318,37 @@
+             return
+         h["signal"] = {"sent": False, "mono_check": time.monotonic()}
+         try:
++            begin = time.monotonic()
+             p = identify(h["pid"])
+-            h["signal"]["identity_observed"] = dict(p)
+-            h["signal"]["mono_identity_observed"] = time.monotonic()
++            end = time.monotonic()
++            h["signal"].update(identity_observed=dict(p), mono_identity_begin=begin, mono_identity_observed=end)
+             dl.check("after helper stop identity")
+-            if fingerprint(p) != fingerprint(ident):
++            h["signal"]["identity_ok"] = fingerprint(p) == fingerprint(ident)
++            if not h["signal"]["identity_ok"]:
+                 raise GuardError("HELPER_SIGNAL_IDENTITY_CHANGED")
+             os.killpg(ident["pgid"], signal.SIGTERM)
+             h["signal"].update(sent=True, identity_ok=True, mono_sent=time.monotonic())
+             dl.check("after helper group SIGTERM")
+         except BaseException as e:
+             h["signal"]["reason"] = repr(e)
++        finally:
++            if "identity_observed" in h["signal"]:
++                self.retain_signal_observation(h["signal"], "helper_signal")
+ 
+     def helper_cleanup(self, h):
+         """Exception/overrun path: one verified TERM at most; proof/reap/EOF/group stay owned through bounded grace."""
+         h["mono_cleanup_start"] = time.monotonic()
+         dl = self.deadline(self.cfg["helper_budget"]["term_grace_s"])
+         h["mono_cleanup_deadline"] = dl.end
++        h["cleanup_deadline"] = dl.telemetry()
+         if h.get("identity") is None and not h["leader_reaped"]:
+             try:
++                begin = time.monotonic()
+                 p = identify(h["pid"])
++                end = time.monotonic()
+                 h["identity"] = p
+                 h["initial_identity_valid"] = p["pgid"] == h["pid"] and p["euid"] == MY_UID and p["ruid"] == MY_UID
++                h["identity_event_ref"] = self.retain_identity(p, "helper_cleanup_initial", h["initial_identity_valid"], (begin, end))
+                 if h["initial_identity_valid"]:
+                     self.register_owned(p, "helper")
+             except BaseException as e:
+@@ -1294,6 +1406,7 @@
+                      fault_group=bool(self.cfg["fault_injection"].get("helper_group_unproved")),
+                      fault_eof=bool(self.cfg["fault_injection"].get("helper_eof_unproved")),
+                      mono_call_start=entry["mono_start"], mono_call_deadline=call.end, date=None)
++            h["call_deadline"] = call.telemetry()
+             entry["pid"] = h["pid"]
+             if self.cfg["fault_injection"].get("helper_observation_overrun"):
+                 h["mono_injection_start"] = time.monotonic()
+@@ -1340,6 +1453,7 @@
+                                    "fault_group": bool(self.cfg["fault_injection"].get("helper_group_unproved")),
+                                    "fault_eof": bool(self.cfg["fault_injection"].get("helper_eof_unproved")),
+                                    "mono_call_start": entry["mono_start"], "mono_call_deadline": call.end,
++                                   "call_deadline": call.telemetry(),
+                                    "date": None}.items():
+                     h.setdefault(key, value)
+                 h["clock_failed"] = True
+@@ -1361,9 +1475,10 @@
+                     self.fail("HELPER_OWNERSHIP_UNSETTLED", h["pid"])
+ 
+     def helper_reports(self):
+-        keys = ("pid", "identity", "leader_reaped", "rc", "wait_lost", "term_attempted", "settled",
++        keys = ("pid", "identity", "identity_event_ref", "leader_reaped", "rc", "wait_lost", "term_attempted", "settled",
+                 "initial_identity_valid", "stdout_closed", "eof_proved", "group_clear", "descendants_clear",
+                 "coverage_complete", "clock_failed", "date", "signal", "proof", "spawn_error", "launch_commit",
++                "mono_spawn", "epoch_spawn", "mono_pid_registered", "call_deadline", "cleanup_deadline",
+                 "mono_call_start", "mono_call_deadline", "mono_cleanup_start", "mono_cleanup_deadline",
+                 "mono_proof_complete", "mono_reaped", "mono_injection_start", "mono_injection_end",
+                 "stability_expiry_before", "stability_expiry_candidate", "stability_expiry_effective")
+@@ -1427,6 +1542,7 @@
+         return value
+ 
+     def accounting(self, dl, lane=True):
++        begin = time.monotonic()
+         self.verify_anchors(dl)
+         seen = set()
+         charge = sum(walk_fd(fd, self.lane_id[0], dl, seen) for fd, _ in self.root_fds.values())
+@@ -1437,9 +1553,23 @@
+         self.min_free = free if self.min_free is None else min(self.min_free, free)
+         self.maxima["charged_bytes"] = max(charge, self.maxima["charged_bytes"])
+         resources = {"charged_bytes": charge, "lane_bytes": total, "free": free}
+-        self.last_accounting_observation = {"resources": dict(resources), "mono_observed": time.monotonic()}
+-        dl.check("after accounting")
+-        return resources
++        event = {"id": len(self.accounting_observations) + 1, "phase": self.phase, "inside_helper": self.in_helper,
++                 "mono_begin": begin, "mono_observed": time.monotonic(), "resources": dict(resources),
++                 "retained": False, "returned": False}
++        self.last_accounting_observation = event
++        if self.min_free_witness is None or free < self.min_free_witness["resources"]["free"]:
++            self.min_free_witness = event
++        try:
++            self.reserve_history("accounting_observation", event, [], event, extra=4)
++            self.accounting_observations.append(event)
++            event["retained"] = True
++            dl.check("after accounting")
++            event["returned"] = True
++            return resources
++        except BaseException:
++            if self.history_halted and self.history_overflow is not None:
++                self.history_overflow["completed_accounting_observation"] = event
++            raise
+ 
+     def reservation_fits(self, a, payload=0):
+         adm = self.cfg["admission"]
+@@ -1490,7 +1620,7 @@
+         entries = go.get("configs")
+         if not isinstance(entries, dict) or self.config_sha not in entries:
+             raise GuardError("GO_DOES_NOT_NAME_THIS_CONFIG")
+-        if entries != {self.config_sha: expected}:
++        if not typed_equal(entries, {self.config_sha: expected}):
+             raise GuardError("GO_BINDING_MISMATCH")
+         channel = self.cfg["creation_channel"]
+         if channel:
+@@ -1509,7 +1639,7 @@
+         out = {"go_sha256": ga["sha256"], "stability_receipt_sha256": sa["sha256"],
+                "not_after_epoch": go["not_after_epoch"], "stability_epoch": stability_epoch,
+                "stability_date": sr["now_date"]}
+-        if self.authorization is not None and self.authorization != out:
++        if self.authorization is not None and not typed_equal(self.authorization, out):
+             raise GuardError("AUTHORIZATION_CHANGED")
+         self.authorization = out
+         dl.check("after authorization I/O")
+@@ -1543,20 +1673,20 @@
+         pins = prep["source_pins"]
+         if not isinstance(pins, dict) or set(pins) != {"supervisor", "child", "writer", "checker"} or any(
+                 not isinstance(v, dict) or set(v) != {"path", "sha256"} or not norm_abs(v["path"]) or not hex64(v["sha256"])
+-                for v in pins.values()) or pins["supervisor"] != {"path": SELF, "sha256": self.self_sha}:
++                for v in pins.values()) or not typed_equal(pins["supervisor"], {"path": SELF, "sha256": self.self_sha}):
+             raise GuardError("CREATION_PREPARATION_SOURCE_PINS")
+         expected_allocation = {"bytes": self.cfg["admission"]["reservation_bytes"], "cpu_slots": self.cfg["cpu_slots"],
+                                "outstanding_reservations_bytes": self.cfg["admission"]["outstanding_reservations_bytes"],
+                                "lane_outstanding_reservations_bytes": self.cfg["admission"]["lane_outstanding_reservations_bytes"]}
+-        if prep["allocation"] != expected_allocation or not isinstance(prep["python"], dict) or set(prep["python"]) != {"path", "sha256"} or \
++        if not typed_equal(prep["allocation"], expected_allocation) or not isinstance(prep["python"], dict) or set(prep["python"]) != {"path", "sha256"} or \
+                 prep["python"]["path"] != self.cfg["argv"][0] or not hex64(prep["python"]["sha256"]):
+             raise GuardError("CREATION_PREPARATION_ALLOCATION_OR_INTERPRETER")
+         out = self.cfg["output_roots"][0]
+         run = os.path.dirname(out)
+         rfd = directory_at(self.lane_fd, os.path.relpath(run, self.cfg["lane_disk_root"]), dl)
+         try:
+-            if prep["run"] != {"path": run, "inode": list(stat_id(rfd))} or \
+-                    prep["output_root"] != {"path": out, "inode": list(self.root_fds[out][1])}:
++            if not typed_equal(prep["run"], {"path": run, "inode": list(stat_id(rfd))}) or \
++                    not typed_equal(prep["output_root"], {"path": out, "inode": list(self.root_fds[out][1])}):
+                 raise GuardError("CREATION_RUN_ANCHOR_CHANGED")
+             if channel["scenario"] == "mutate_pin":
+                 expected = prep["fixture"]
+@@ -1676,7 +1806,12 @@
+     fd, base = sup.location(path)
+     out, ident = create_file(fd, base)
+     sup.created[path] = ident
+-    rec = {"bytes_seen": 0, "bytes_written": 0, "overflow": False, "closed": False, "error": None, "sha256_written": None}
++    created = time.monotonic()
++    rec = {"bytes_seen": 0, "bytes_written": 0, "cap_bytes": cap, "overflow": False,
++           "write_inflight": False, "pending_bytes": 0, "closed": False, "error": None,
++           "sha256_prefix": hashlib.sha256().hexdigest(), "sha256_written": None,
++           "mono_created": created, "mono_last_update": created, "mono_last_read": None,
++           "mono_last_write": None, "mono_eof": None, "mono_close_completed": None}
+     sup.streams[name] = rec
+ 
+     def run():
+@@ -1684,19 +1819,25 @@
+         try:
+             while True:
+                 chunk = pipe.read1(65536)
++                observed = time.monotonic()
+                 if not chunk:
++                    rec.update(mono_eof=observed, mono_last_update=observed)
+                     break
+-                rec["bytes_seen"] += len(chunk)
++                total = rec["bytes_seen"] + len(chunk)
+                 room = max(0, cap - rec["bytes_written"])
+-                if room:
+-                    b = chunk[:room]
+-                    write_all(out, b, sup.deadline(IO_S))
+-                    h.update(b)
+-                    rec["bytes_written"] += len(b)
+-                if len(chunk) > room:
+-                    rec["overflow"] = True
++                kept = chunk[:room]
++                # One atomic row update describes a completed read, including any in-flight capped write.
++                rec.update(bytes_seen=total, overflow=total > cap, write_inflight=bool(kept),
++                           pending_bytes=len(kept), mono_last_read=observed, mono_last_update=observed)
++                if kept:
++                    write_all(out, kept, sup.deadline(IO_S))
++                    h.update(kept)
++                    completed = time.monotonic()
++                    rec.update(bytes_written=rec["bytes_written"] + len(kept), sha256_prefix=h.hexdigest(),
++                               write_inflight=False, pending_bytes=0,
++                               mono_last_write=completed, mono_last_update=completed)
+         except BaseException as e:
+-            rec["error"] = repr(e)
++            rec.update(error=repr(e), write_inflight=False, mono_last_update=time.monotonic())
+         finally:
+             dl = sup.deadline(IO_S)
+             errors = []
+@@ -1706,11 +1847,11 @@
+                     dl.check("sink " + label)
+                 except BaseException as e:
+                     errors.append(repr(e))
+-            if errors:
+-                rec["error"] = (rec["error"] or "") + ";".join(errors)
+-            rec["sha256_written"] = h.hexdigest()
+-            rec["mono_close_completed"] = time.monotonic()
+-            rec["closed"] = rec["error"] is None
++            error = (rec["error"] or "") + ";".join(errors) if errors else rec["error"]
++            completed = time.monotonic()
++            rec.update(error=error, sha256_prefix=h.hexdigest(), sha256_written=h.hexdigest(),
++                       write_inflight=False, mono_close_completed=completed,
++                       mono_last_update=completed, closed=error is None)
+     # Every sink permanently inherits blocked cancellation signals; only the main thread receives them.
+     with protected():
+         t = threading.Thread(target=run, name="capture-" + name, daemon=True)
+@@ -1735,6 +1876,7 @@
+             raise GuardError("DATE_HELPER_UNAVAILABLE")
+         a = s.accounting(dl)
+         rec["resources"] = a
++        rec["accounting_ref"] = s.last_accounting_observation["id"]
+         res = s.cfg["admission"]["reservation_bytes"]
+         if a["free"] < s.cfg["launch_free_min_bytes"] + res or a["free"] - res - s.cfg["admission"]["outstanding_reservations_bytes"] < POLICY["free"]:
+             raise GuardError("LAUNCH_FREE_FAILED")
+@@ -1774,6 +1916,7 @@
+     if not c["complete"] or c["owned_live"] or c["unproved_live"] or not s.limits(c, True) or s.failures:
+         raise GuardError("LAUNCH_CENSUS_INCOMPLETE_OWNERSHIP_OR_LIMITS")
+     a = s.accounting(dl)
++    s.rec["launch_resources"], s.rec["launch_accounting_ref"] = a, s.last_accounting_observation["id"]
+     if a["free"] < s.cfg["launch_free_min_bytes"] + s.cfg["admission"]["reservation_bytes"] or not s.reservation_fits(a):
+         raise GuardError("LAUNCH_RESOURCES_FAILED")
+     s.resource_age(c)
+@@ -1782,13 +1925,16 @@
+                              s.cfg["max_wall_s"] + s.cfg["settle_s"] + FINALIZE_S)
+     s.rec["launch_commit"] = child["launch_commit"]
+     try:
++        initial_begin = time.monotonic()
+         initial = identify(s.pid)
++        initial_end = time.monotonic()
+         s.rec["main_initial_identity_observed"] = dict(initial)
+-        s.rec["mono_main_initial_identity_observed"] = time.monotonic()
++        s.rec["mono_main_initial_identity_observed"] = initial_end
++        s.rec["main_initial_identity_interval"] = [initial_begin, initial_end]
+         if initial["pgid"] != s.pid or initial["euid"] != MY_UID or initial["ruid"] != MY_UID:
+             raise GuardError("CHILD_IDENTITY_OR_GROUP_INVALID")
+         s.ident, s.group = initial, initial["pgid"]  # Safe cleanup state precedes any fallible ledger retention.
+-        s.retain_identity(initial, "main_initial", True)
++        s.rec["main_initial_identity_event_ref"] = s.retain_identity(initial, "main_initial", True, (initial_begin, initial_end))
+         s.register_owned(initial, "child")
+         if child["spawn_error"] is not None:
+             raise GuardError(child["spawn_error"])
+@@ -1817,6 +1963,7 @@
+         if not c["complete"] or c["unproved_live"] or live != [s.ident["uniqueid"]] or not s.limits(c, True):
+             raise GuardError("GO_CENSUS_INCOMPLETE_OWNERSHIP_OR_LIMITS")
+         a = s.accounting(gd)
++        s.rec["pre_go_resources"], s.rec["pre_go_accounting_ref"] = a, s.last_accounting_observation["id"]
+         if a["free"] < s.cfg["launch_free_min_bytes"] + s.cfg["admission"]["reservation_bytes"] or not s.reservation_fits(a):
+             raise GuardError("GO_RESOURCES_FAILED")
+         gd.check("after GO preparation")
+@@ -1881,8 +2028,9 @@
+             s.reap()
+             if s.rc is None and time.monotonic() >= s.mono_spawn + s.cfg["max_wall_s"]:
+                 s.trip("DEADLINE")
++            stream_sample = {k: dict(v) for k, v in s.streams.items()}
+             s.sample({"mono": time.monotonic(), "epoch": time.time(), "rc": s.rc, "census": c,
+-                      "resources": a, "streams": {k: dict(v) for k, v in s.streams.items()},
++                      "resources": a, "accounting_ref": s.last_accounting_observation["id"], "streams": stream_sample,
+                       "stop": None if s.stop is None else s.stop["reason"], "failure_codes": sorted(s.failure_keys),
+                       "trips": list(s.trips)})
+             if s.clearance():
+@@ -1983,6 +2131,8 @@
+         stray = sorted(set(names) - s.allow[root])
+         if stray:
+             s.fail("UNDECLARED_ENTRIES", [root, stray])
++    stream_snapshot = {k: dict(v) for k, v in s.streams.items()}
++    stream_snapshot_mono = time.monotonic()
+     arts, expected = {}, {}
+     paths = [s.cfg[k] for k in ("stdout", "stderr", "samples", "launch_record")] + [o["path"] for o in s.cfg["outputs"]]
+     for path in paths:
+@@ -2004,8 +2154,8 @@
+     if s.pid is not None:
+         expected[s.cfg["samples"]] = s.sample_hash.hexdigest()
+     for k in ("stdout", "stderr"):
+-        if s.streams.get(k, {}).get("sha256_written") is not None:
+-            expected[s.cfg[k]] = s.streams[k]["sha256_written"]
++        if stream_snapshot.get(k, {}).get("sha256_written") is not None:
++            expected[s.cfg[k]] = stream_snapshot[k]["sha256_written"]
+     for p, h in expected.items():
+         if not isinstance(arts.get(p), dict) or arts[p].get("sha256") != h:
+             s.fail("EVIDENCE_MUTATED", p)
+@@ -2030,14 +2180,17 @@
+                  unproved_history=list(s.unproved_history.values()), coverage_history=list(s.coverage_history),
+                  census_observations=list(s.census_history), runtime_observations=s.runtime_observations,
+                  identity_history=list(s.identity_history.values()), observation_attempts=list(s.attempt_history),
++                 identity_events=list(s.identity_events), accounting_observations=list(s.accounting_observations),
++                 min_free_witness=s.min_free_witness, authorization=s.authorization,
+                  history_charge_bytes=s.history_charge, history_overflow=s.history_overflow,
+                  stability_expiry_mono=s.stability_expiry_mono,
+                  clock_observation=s.clock_observation,
+                  helper_calls=s.helper_calls, helper_log=s.helper_log, helpers=s.helper_reports(),
+-                 streams=s.streams, loop_status=s.loop_status, samples_written=s.sample_count,
++                 streams=stream_snapshot, loop_status=s.loop_status, samples_written=s.sample_count,
+                  samples_bytes=s.sample_bytes, maxima=s.maxima, min_free=s.min_free, artifacts=arts,
+                  evidence_expected_sha256=expected, pins_at_end=pin_end, output_root_inventory=inventory,
+-                 publication_precheck=a, reservation_bytes=s.cfg["admission"]["reservation_bytes"],
++                 publication_precheck=a, publication_precheck_ref=s.last_accounting_observation["id"],
++                 stream_snapshot_mono=stream_snapshot_mono, reservation_bytes=s.cfg["admission"]["reservation_bytes"],
+                  mono_decision=time.monotonic(), epoch_decision=time.time(), cancel=dict(CANCEL))
+     # Serialize ONCE. No budget fields or failures are appended after these exact buffers have been budgeted.
+     rb = bytes_json(s.rec)
+@@ -2143,7 +2296,7 @@
+     signal.signal(signal.SIGCHLD, signal.SIG_DFL)
+     signal.pthread_sigmask(signal.SIG_UNBLOCK, CANCEL_SIGNALS)
+     if len(sys.argv) != 2:
+-        sys.stderr.write("usage: owned_supervisor_v15.py CONFIG.json\n")
++        sys.stderr.write("usage: owned_supervisor_v16.py CONFIG.json\n")
+         return 2
+     s = None
+     try:

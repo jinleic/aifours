@@ -1,0 +1,80 @@
+--- src/m2_supervised_runtime_v6_2.py
++++ src/m2_supervised_runtime_v6_3.py [v6_3->v6_2 normalized]
+@@ -1,11 +1,12 @@
+ #!/usr/bin/env python3
+ """PA19 v6_2 admission/ownership. Single normal3.5GiB sampled group threshold, COUNT<=2; NO automatic retries.
+-v6_2 = v6 with: SUP_PATH/SUP_SHA pin supervise_pa19_v5.py (v3 plus the safety-checked delayed reap); every full_gate
++v6_2 = v6 with: SUP_PATH/SUP_SHA pin supervise_pa19_v6.py (v3 plus the safety-checked delayed reap); every full_gate
+ refuses at/after the lease's frozen policy admission cutoff (missing cutoff refuses); Capacity.supervise refuses
+ a group whose 2400 s budget does not fit before the chunk deadline (frozen native end minus cleanup); a signal
+ observed by the supervisor sets the owner cancel flag.
++v6_2 = v6_2 with the SUP pin on supervise_pa19_v6.py (signal-blocked finalization); runtime logic otherwise unchanged.
+ Every admission gate and inventory share one persistent-veto registry (old m2k1 plus new m2k3 markers).
+-Local supervise_pa19_v5 copies the reviewed r3 with one ownership callback only; the exact Popen remains retained
++Local supervise_pa19_v6 copies the reviewed r3 with one ownership callback only; the exact Popen remains retained
+ until explicit wait/reaping AND group quiescence. Native groups contain no /bin/ps/setuid helper.
+ Accounting amendment: immutable exact census age<=600s, refreshed at chunk start/expiry/waits>600s; reserve all
+ planned remaining outputs plus256MiB. Residual: the bound covers this route's writes and assumes no other lane
+@@ -26,8 +27,8 @@
+ from pathlib import Path
+ 
+ LANE = Path(__file__).resolve().parent.parent
+-SUP_PATH = LANE/'src'/'supervise_pa19_v5.py'
+-SUP_SHA = 'a7540cded7c485491d30e364afd09663b5d02b315232ec38d8f50f3d82a6bbf5'
++SUP_PATH = LANE/'src'/'supervise_pa19_v6.py'
++SUP_SHA = 'adc5cc0656b73670fa9003a609a90f271255822f24e194c31df7250efb18e075'
+ BASE_GATE = 12200000000
+ FLOOR = 12000000000
+ LANE_CAP = 8*1024**3
+--- src/m2_item_owner_v6_2.py
++++ src/m2_item_owner_v6_3.py [v6_3->v6_2 normalized]
+@@ -1,5 +1,7 @@
+ #!/usr/bin/env python3
+ """V3: one attempt, contract-authoritative binaries, retained Popen reaping, safety-first UNKNOWN/integrity veto.
++v6_2: a supervisor-observed signal or an owner cancellation at any point up to outcome composition makes the item
++UNKNOWN with a persistent HALT (never qualified).
+ No automatic RSS retry. A safety trip always dominates a worker's bounded-UNKNOWN/proof-cap report. Every veto is
+ persistent before token release; group quiescence AND explicit owned-leader wait are prerequisites for release.
+ """
+@@ -159,6 +161,9 @@
+                 if errors: result.update(status='UNKNOWN',checked=False,integrity_status='INVALID',integrity_errors=errors,halt_production=True)
+             if result['status'] == 'UNSAT' and (Path(paths['supervisor']).stat().st_size > 8192 or len((json.dumps(result,indent=1)+'\n').encode()) > 65536):
+                 result.update(status='UNKNOWN',checked=False,halt_production=True,metadata_bound_error='ordinary supervisor/owner8KiB/64KiB bound')
++            if rec.get('observed_signal') or R._CANCEL[0]:  # v6_2: a signal/cancellation in the item lifecycle never qualifies
++                result.update(status='UNKNOWN',checked=False,owner_cancelled=True,observed_signal=rec.get('observed_signal'),halt_production=True,
++                    chunk_stop=True,safety_veto=list(result.get('safety_veto') or [])+['signal/cancellation during the item lifecycle'])
+             return result
+         except BaseException as exc:
+             result.update(status='UNKNOWN',checked=False,integrity_status='INVALID',integrity_errors=[repr(exc)],halt_production=True)
+--- src/m2_supervised_evidence_v6_2.py
++++ src/m2_supervised_evidence_v6_3.py [v6_3->v6_2 normalized]
+@@ -72,6 +72,8 @@
+         need(sr == r['supervisor'] and sr.get('supervisor_sha256') == R.SUP_SHA,'supervisor record/source differs')
+         need(sr.get('completed_cleanly') is True and sr.get('uncertain') is False and not any(sr.get(k) for k in
+              ('trip_reason','exception','quarantine_record','quarantine_write_error','cleanup_exception','record_write_error','stop_error','stop')),'supervisor safety trip/anomaly')
++        need(not sr.get('observed_signal'),'supervisor observed a signal')  # v6_2
++        need(r.get('owner_cancelled') is not True and not r.get('observed_signal'),'owner cancellation/signal during the item lifecycle')  # v6_2
+         final = sr.get('final_check') or {}
+         need(final.get('problems') == [] and final.get('alive_others') == [] and isinstance(final.get('members'),list),'final group check missing/nonclean')
+         settle = r['owner_settlement']
+--- src/m2_ms09_contract_v6_2.py
++++ src/m2_ms09_contract_v6_3.py [v6_3->v6_2 normalized]
+@@ -28,7 +28,7 @@
+                 'src/m2_ms09_contract_v6_2.py','src/freeze_m2_ms09_k1_v6_2.py','src/run_m2_ms09_k1_v6_2.py','src/final_m2_ms09_inventory_v6_2.py',
+                 'src/m2_supervised_runtime_v6_2.py','src/m2_native_staged_v6_2.py','src/m2_item_owner_v6_2.py','src/m2_supervised_evidence_v6_2.py',
+                 'src/lane_new_data_accounting.py','src/structural_b3_acceptance.py','src/run_m2_ms06_direct_v6_2.py','src/check_m2_ms09_k1_v6_2.py',
+-                'src/supervise_pa19_v5.py')
++                'src/supervise_pa19_v6.py')
+ 
+ 
+ def key(bi,lo,hi):
+--- src/check_m2_ms09_k1_v6_2.py
++++ src/check_m2_ms09_k1_v6_3.py [v6_3->v6_2 normalized]
+@@ -1,5 +1,6 @@
+ #!/usr/bin/env python3
+-"""check_m2_ms09_k1_v6_2.py = check_m2_ms09_k1_v6_1.py renamed v6_1->v6_2 (gates now need a policy cutoff; NOT run, not used by M2H).
++"""check_m2_ms09_k1_v6_2.py = check_m2_ms09_k1_v6_2.py renamed v6_2->v6_2 (NOT run, not used by M2H).
++check_m2_ms09_k1_v6_2.py = check_m2_ms09_k1_v6_1.py renamed v6_1->v6_2 (gates now need a policy cutoff; NOT run, not used by M2H).
+ check_m2_ms09_k1_v6_1.py = check_m2_ms09_k1_v8.py (sha256 74194dde16e10d47ff84f545cb4b3904511e6ac8cad56a6932300e553afd86ce) with the v6->v6_2 module rename and its two
+ receipt labels renamed v8->v6_2; nothing else changed. Not used by M2H production.
+ v8 control harness (production v6_2 sources/contracts unchanged; v7 path-classification bug fixed). PRIVATE controls; excluded from scientific coverage and executed only after parent GO.

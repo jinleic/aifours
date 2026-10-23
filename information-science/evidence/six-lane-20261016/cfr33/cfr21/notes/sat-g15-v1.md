@@ -1,0 +1,7 @@
+# Exact normal-form SAT model for g15
+
+Recorded 2026-10-17 19:32:42 PDT. Generator on DM rows is (13,(3 4)(5 6)), fixing rows0,1,2. Normalise DM row0 tozero and use row1 as column index. This pair is generator-fixed, hence columns transform as x->13x. The unknown five position maps obey f_j(13x)=13 f_sigma(j)(x), sigma=(1,3,2,5,4). Every normal form with these identities is equivalent to the g15 column-orbit model. The action has3 fixed columns (Fix13={0,7,14}); translating by one of those columns gives f_j(0)=0 while preserving the action, so this normal form covers all g15-invariant matrices. There is no no-fixed-column case at odd order for an order2 group.
+
+Byte-identical copies of the previously controlled cfr33 CNF encoder and decoder are used. Variables are one-hot function values plus pair-difference auxiliaries, with both directions of the channel clauses; all pairwise differences are permutations. Calibrations: unplanted CFR6,7 odd SAT passes A/B, planted Kirtchakov CFR5,25 odd SAT decodes byte-identically and passes A/B; CFR3,9 UNSAT has a verified DRAT proof, and an empty-clause proof on the satisfiable positive is rejected by the pinned DRAT checker. No LRAT checker is used.
+
+Production: seed1, kissat1800s initial chunk, no proof file in the first attempt. A SAT claim is decoded and gated. UNSAT without a proof remains an uncertified solver claim; if reported as an exclusion it must be rerun with DRAT and checked or independently confirmed. This is only the g15 symmetry submodel, never unrestricted CFR6,21.

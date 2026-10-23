@@ -1,0 +1,50 @@
+You are an independent cross-vendor verifier. Write ONE self-contained Python 3.13 program, `checker_c.py`, that rigorously re-checks branch-and-bound certificates for an inequality on a 4-dimensional polytope. You are writing it from the mathematical specification below ONLY.
+
+INDEPENDENCE RULES (mandatory): Do NOT open, read, grep or list anything under
+  /Users/jinleic/repos/aifours/physics/evidence/six-lane-20261016/random5reg-colour/code/
+  /Users/jinleic/repos/aifours/physics/evidence/six-lane-20261016/random5reg-colour/outer/code/
+  /Users/jinleic/repos/aifours/physics/evidence/six-lane-20261016/random5reg-colour/checkerB*  (any checker B directory)
+and do not read any *.py file in that lane. You MAY read the certificate JSON files and the lane README.md files for context. Do not modify any file (read-only sandbox). Do not delegate. Testing by running your draft program with the interpreter below is allowed and encouraged (pass your source via `python - <<'EOF'` or `-c`, since you cannot write files).
+
+Interpreter with libraries: /Users/jinleic/repos/aifours/physics/evidence/six-lane-20261016/random5reg-colour/.venv/bin/python (CPython 3.13.9, python-flint 0.9.0, mpmath 1.3.0, numpy). Use rigorous outward-rounded arithmetic (python-flint arb ball arithmetic at >= 128 bits, or mpmath.iv); all inputs are exact rationals; never decide an inequality from floating point.
+
+=== Mathematical specification ===
+Points p = (n1,n2,n3,n4) in Q^4. Nine affine "class values" n^u, u = 0..8 (u = 3i+j for (i,j) in {0,1,2}^2):
+  n^0=n1, n^1=n2, n^2=1/3-n1-n2, n^3=n3, n^4=n4, n^5=1/3-n3-n4, n^6=1/3-n1-n3, n^7=1/3-n2-n4, n^8=n1+n2+n3+n4-1/3.
+Delta = {p : all n^u >= 0}. n* = (1/9,1/9,1/9,1/9).
+Entries k = 0..3 correspond to (r,t) = (-1,-1), (-1,1), (1,-1), (1,1).
+Edges: iterate u = 0..8 (u=3i+j) and k = 0..3 with (r,t) as above; partner class v = 3*((i+r) mod 3) + ((j+t) mod 3), partner entry kv = the index of (-r,-t). If (u,k) has not been used yet, append edge e = (u,k,v,kv) and mark both (u,k) and (v,kv) used. This yields exactly 18 edges, indexed e = 0..17 in creation order.
+For y in Q^18 and class u: z^u in Q^4 with z^u_k = sum over edges e=(u,k,*,*) of y_e  minus  sum over edges e=(*,*,u,k) of y_e.
+Spectra S: all (a,b,c,d) in Z_{>=0}^4 (entry order k=0..3) with a+b+c+d = 5, a+b >= 1, c+d >= 1, a+c >= 1, b+d >= 1. |S| = 36. Weight w_s = 120/(a! b! c! d!).
+For mu in Q_{>0}^4: Phi(mu) = sum_{s in S} w_s prod_k mu_k^{s_k};  m0 = (sum_s w_s (prod_k mu_k^{s_k}) s) / Phi(mu) in R^4;
+  psi0 = (1/2) sum_k m0_k ln m0_k + ln Phi(mu) - sum_k m0_k ln mu_k;
+  g_k = (1/2) ln m0_k - ln mu_k + z_k;
+  a(z,mu) = psi0 + sum_k z_k m0_k + max_{s in S} sum_k g_k (s_k - m0_k).
+For a dual leaf with data (y, mu^0..mu^8): a_u = a(z^u, mu^u). For a point p in Delta:
+  U(p) = sum over u with n^u > 0 of [ n^u a_u + (3/2) n^u ln n^u ]   (terms with n^u = 0 contribute 0; n^u < 0 is an error).
+Target constant L* = (5/2) ln 5 + ln(25/24).
+
+=== Certificate format (JSON) ===
+Top-level object with keys: "facet": [fi, fj] (integers in 0..2), "r0": a string "P/Q" (must equal 1/10000 exactly; fail otherwise), "tree": a list of nodes in PREORDER, plus other keys you may ignore.
+Root simplex (5 vertices, in this order): vertex 0 = n*; then, for each permutation sigma of (0,1,2) in Python itertools.permutations(range(3)) order with sigma[fi] != fj (exactly 4 of them), the vertex (1/3)*([sigma[0]==0], [sigma[0]==1], [sigma[1]==0], [sigma[1]==1]).
+Node kinds:
+  ["S", i, j]: split. mid = (V_i + V_j)/2 exactly. First child = current vertex list with V_i replaced by mid; second child = current list with V_j replaced by mid. Preorder: the split node, then the whole first-child subtree, then the whole second-child subtree.
+  ["C"]: central leaf. Accept iff every one of its 5 vertices has |p_k - 1/9| <= r0 for all k = 1..4.
+  ["D", y, mus]: dual leaf. y = list of 18 strings, mus = list of 9 lists of 4 strings; each string is a Python float.hex() literal (e.g. "-0x1.41846c57a4545p-11") and denotes that EXACT binary rational. Accept iff every mu entry is > 0 and U(V) < L* holds rigorously at each of the 5 vertices V of the leaf (compute the a_u once per leaf).
+The certificate is valid iff the replay consumes the tree exactly (no truncation, no trailing nodes), every node is well formed, and every leaf is accepted.
+
+=== Required program behaviour ===
+  python checker_c.py CERT.json [--expect-facet FI FJ] [--prec BITS]   (default prec 200, reject < 128)
+Print one JSON object: {"cert": path, "cert_sha256": ..., "facet": [...], "r0": "...", "verdict": "PASS"|"FAIL", "nodes": N, "splits": .., "dual_leaves": .., "central_leaves": .., "failed_leaves": .., "first_failures": [up to 10 (preorder index, kind, reason)], "min_margin_lower_bound": (rigorous lower bound of min over dual-leaf vertices of L* - U, as a decimal string), "prec": .., "started": .., "finished": ..}. Exit code 0 iff PASS. Use an explicit stack (trees are ~67k nodes, depth <= 60). It must be reasonably fast: ~30k dual leaves per certificate; target well under 30 minutes per certificate on one core (precompute spectra/weights; reuse per-leaf a_u across the 5 vertices).
+Also include a `--selftest` mode that checks: |S| = 36; 18 edges each entry used once; with y = 0 and every mu^u = (1,1,1,1), U(n*) equals L* (so its margin is not > 0 and a 'D' leaf whose cell contains n* must be REJECTED); the exact identity a = (5/2) ln(5/4) + ln 900 in that case; and that a(z,mu) is invariant under mu -> 2 mu.
+
+=== Test data you may read (do not modify) ===
+  /Users/jinleic/repos/aifours/physics/evidence/six-lane-20261016/random5reg-colour/outer/evidence/mutations/base_cone00_r1_1over20.json  (a small certificate with r0 = 1/20; use --allow-r0 1/20 testing flag ONLY for this test; the real runs must require 1/10000)
+  /Users/jinleic/repos/aifours/physics/evidence/six-lane-20261016/random5reg-colour/outer/evidence/cone00.json  (real, ~41 MB)
+Add the testing-only option `--allow-r0 P/Q` that replaces the required r0 (must be printed in the output JSON when used).
+
+=== Output format of YOUR final message ===
+First a short report: what you tested and the observed results (exact numbers you saw), including runtime on base_cone00_r1_1over20.json and, if you had time, on cone00.json. Then the complete program between the exact marker lines
+BEGIN_CHECKER_C
+<full python source>
+END_CHECKER_C

@@ -1,0 +1,50 @@
+[
+  {
+    "id": "D16-versioned-scripts",
+    "what": "New versioned scripts. replay_B_v2.py (diff scripts-v1-to-v2.r2.diff) adds only the attempt label, from which every run receipt, log, FIFO and the expected supervisor record are named. launch_B_v5.py is launch_B_v2.py (labels, refusal while any receipts/*.QUARANTINE.json exists, wait-start watcher, no selfcheck mode) plus, in v3, Main's corrected slot-2-only rule and a pre-launch signal check (scripts-v2-to-v3.diff), plus, in v4, the signal-handling fix (scripts-v3-to-v4.diff, deviation D26), plus, in v5, the cleanup obligation (scripts-v4-to-v5.diff, deviation D27). assemble_B_v5.py is assemble_B_v2.py with this deviation set and the launcher conditions. bklib_v1.py, compose_B_v1.py and supervise_r3.py are unchanged. Pins, native limits (kissat --time=5400, drat-trim -t 9000), supervisor arguments (wall 10200 s, grace 180 s, floor 12e9) and the RSS-cap rule are unchanged."
+  },
+  {
+    "id": "D17-selfcheck-and-precheck-reused",
+    "what": "Attempt 2 reran neither the self-checks nor the regeneration-only precheck. It reuses receipts/selfcheck-summary.json (ec246769...739b, all_ok) and receipts/regen-B_C321.json (12a07694...66f8, MATCH): same binaries, same bklib_v1 transport code (Main: do not rerun passed checks). The attempt-2 run regenerated the CNF again and checked its SHA-256 before any native launch."
+  },
+  {
+    "id": "D18-slot-2-only-launch-rule",
+    "what": "launch_B_v3.py admission = bklib_v1.admission (<= 2 busy lane natives, lane RSS + 2 GiB <= 8 GiB, cap >= 2.5 GiB, free >= 12,201,048,576 B, before 15:30 PDT) AND slot 2 freed: no live lane process matching 'B_C411|k3_direct_B_r\\d+\\.py C411' (B/C411 r7 driver and natives fully reaped) AND its end record evidence/k3cubes/cert_B_r7/B_C411.json exists as a regular file. A low busy count alone never admits; the withdrawn route-B option is gone. Scans run every 90 s."
+  },
+  {
+    "id": "D19-v1-deviations-carried",
+    "what": "D1-D12 and D14 of deviations-v1.json (1ec0309c...4afb) apply unchanged to attempt 2. D13 (the attempt-1 floor stop) and D15 (attempt-1 assembler timing) are attempt-1 specific."
+  },
+  {
+    "id": "D20-disk-cause-unestablished",
+    "what": "Per Main's correction (about 05:05 PDT), observed floor crossings, snapshot-list changes and later free-space recovery do not establish which process caused a decline or a reclaim, nor any thinning trigger. Cause and recurrence period are UNESTABLISHED. The observations in deviation D13 of attempt 1 are not causal attributions."
+  },
+  {
+    "id": "D21-assembler-before-run",
+    "what": "assemble_B_v5.py was created before the attempt-2 launch; its SHA-256 is part of every recording made by that run."
+  },
+  {
+    "id": "D23-launcher-guard-fix-and-noop-start",
+    "what": "The first scripts-v1-to-v2.diff (db6d375b...61df) captured launch_B_v2.py without its 'if __name__ == \"__main__\": main()' guard, which a block replacement had dropped. At about 05:08 PDT 'launch_B_v2.py run B_C321 --label B_C321-a2' and 'wait-start B_C321-a2' were started once against that file. Both exited rc 0 at once, executing nothing: no file written, no scan, no process spawned. The guard was restored, and scripts-v1-to-v2.r2.diff is the complete v1-to-v2 diff. Both diff files are kept."
+  },
+  {
+    "id": "D24-v2-launcher-disarmed",
+    "what": "launch_B_v2.py (label B_C321-a2, withdrawn 'B/C411 r7 or route B ended' rule) was armed at 05:09:18 PDT. On Main's HOLD and scheduling correction it was disarmed by a cooperative SIGTERM at 05:10:34. Its last scan, at 05:10:48, was not admitted: 4 busy natives, both runs live. It exited rc 2 without starting any child. Deferral evidence: receipts/B_C321-a2.gate.json (c28b2e63...61e0, not_launched) and logs/launch-run-B_C321-a2.log. Its wait-start watcher exited on that record. The B_C321-a2 names are spent, so the attempt-2 launch uses label B_C321-a2b."
+  },
+  {
+    "id": "D25-armed-after-go",
+    "what": "launch_B_v5.py was armed only after Main's GO following its source review (HOLD received about 05:10 PDT; launcher signal issue raised about 05:16 PDT; cleanup obligation raised about 05:23 PDT). The arming time is the first line of logs/launch-run-<LABEL>.log."
+  },
+  {
+    "id": "D26-launcher-signal-handling-v4",
+    "what": "launch_B_v4.py: on_term is flag-only. run_owned() checks the flag first in every iteration from the moment the supervisor is registered after Popen. It forwards SIGTERM only while the child is owned (unreaped, so its PID is reserved), clears ownership at the same point as the successful wait4 and never signals after it. On an exception after Popen it forwards SIGTERM to the owned child and waits a bounded 300 s. A signal racing Popen gives a prompt cooperative stop and an UNKNOWN attempt, not a guarantee that no supervisor was created. The targeted signal-interval smoke (receipts/smoke-v4-signal.smoke.json) ran the pinned supervisor around '/bin/sleep 117': no solver, checker or CNF; no self-check or regeneration rerun."
+  },
+  {
+    "id": "D27-launcher-cleanup-obligation-v5",
+    "what": "launch_B_v5.py: every operation after a successful Popen is inside try/except/finally. The finally block never lets run_owned() return or raise while the supervisor is owned and unreaped. After the bounded SIGTERM wait of the exception path, remaining ownership leads to a best-effort marker receipts/<LABEL>.launcher.QUARANTINE.json, whose write failure never skips the wait, and then to a blocking wait4 for that known child with no further signals or escalation. A lost child (wait4 ECHILD) also writes the marker. The outcome receipt reports slot_released only for a cleanly reaped child with no marker and no lost child. Exception-path test, run once (receipts/test-v5-exception-path.test.json): a SIGTERM-ignoring python child that exits by itself after 6 s, an injected exception after Popen, a 2 s bounded wait and an injected marker-write error. No solver, checker, CNF or supervisor; no self-check or regeneration rerun."
+  },
+  {
+    "id": "D22-attempt-2-stop",
+    "what": "Attempt 2 was stopped: free bytes 11956592640 below floor 12000000000 (supervisor record 5a23a979f9ed2855f820cf1e7f51ec1616840a15363f3bd4343ac9f6f10d6dac). Status UNKNOWN; not retried without parent GO."
+  }
+]

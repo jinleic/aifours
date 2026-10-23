@@ -1,0 +1,220 @@
+--- scripts-v12/launch_B_v12.py
++++ scripts-v13/launch_B_v13.py
+@@ -1,5 +1,13 @@
+ #!/usr/bin/env python3
+-"""Capacity-gated launcher of the parent B-side K3 cube replay desk (review/moqls7-k3-B-cube-parent-replay-v1), v12.
++"""Capacity-gated launcher of the parent B-side K3 cube replay desk (review/moqls7-k3-B-cube-parent-replay-v1), v13.
++
++v13 = launch_B_v12.py with one change, made after the 09:25:51 PDT signal incident: the parent disk monitor is a
++required argument, '--monitor NAME'. NAME must be a bare file name matching disk-monitor-*.jsonl; it is resolved only
++as review/NAME and must be a regular file there. It replaces v12's hard-coded
++review/disk-monitor-v1-20261018T0722-to-1810.jsonl, which went stale at 09:25:51 (Main: no admission from the stale
++files). The name is recorded in every gate receipt and selftest. 'run' takes
++'--slot {1,2} --monitor NAME [--regen-tag TAG]', and 'selftest-v13 LABEL --monitor NAME' replaces 'selftest-v12'.
++Everything else is byte-identical to v12.
+ 
+ v12 = launch_B_v11.py with Main's approvals and Codex's v11 MINOR (review/m7-launch-v11-codex-v1.note.md
+ d7ed4c3a...c61a, GO-WITH-FIXES):
+@@ -149,10 +157,10 @@
+ receipts/*.QUARANTINE.json exists, the wait-start watcher, pins, limits, supervisor arguments and the RSS-cap rule are
+ as in v2/v3.
+ 
+-Usage: launch_B_v12.py run ITEM --label ITEM-<suffix> --slot {1,2} [--regen-tag TAG]
+-       launch_B_v12.py wait-start LABEL
+-       launch_B_v12.py test-exception-path LABEL         (LABEL: test-...; the v5 test mode, unchanged)
+-       launch_B_v12.py selftest-v12 LABEL                (LABEL: test-...; helper bounds, parsers, slots, lock, census,
++Usage: launch_B_v13.py run ITEM --label ITEM-<suffix> --slot {1,2} --monitor NAME [--regen-tag TAG]
++       launch_B_v13.py wait-start LABEL
++       launch_B_v13.py test-exception-path LABEL         (LABEL: test-...; the v5 test mode, unchanged)
++       launch_B_v13.py selftest-v13 LABEL --monitor NAME (LABEL: test-...; helper bounds, parsers, slots, lock, census,
+                                                           monitor; no launch)
+ 
+ run waits, with bounded sleeps of 90 s (never spinning), until admission (rules above plus v6's <= 2 busy lane
+@@ -202,7 +210,22 @@
+ LEGACY_SLOTS = {"B_C321-a3": 2, "B_C411-p1": 1}   # pre-v12 launchers (no --slot): a3 (v8) slot 2; B_C411-p1 (v11) slot 1
+ LOCK_PATH = os.path.join(K.DESK, "locks", "admission.lock")
+ LOCK_SETTLE = 90                                # seconds the admission lock is held after a spawn
+-MONITOR = os.path.join(K.REVIEW, "disk-monitor-v1-20261018T0722-to-1810.jsonl")
++MONITOR_NAME = re.compile(r"disk-monitor-[A-Za-z0-9_.-]+\.jsonl")
++CFG = {"monitor": None}                         # set once by set_monitor() from '--monitor NAME'
++
++
++def set_monitor(name):
++    """v13: the parent monitor is named on the command line. Only a bare name matching disk-monitor-*.jsonl is
++    accepted; it is resolved as review/NAME and must be a regular file (lstat, never followed)."""
++    if not MONITOR_NAME.fullmatch(name):
++        raise SystemExit("--monitor must be a bare review/disk-monitor-*.jsonl file name: %r" % name)
++    path = os.path.join(K.REVIEW, name)
++    st = os.lstat(path)
++    if not stat.S_ISREG(st.st_mode):
++        raise SystemExit("--monitor is not a regular file: %s" % path)
++    CFG["monitor"] = path
++
++
+ MON = {"source": "Main 07:32 PDT amendment (long jobs >= 60 min)", "min_free": 13500000000, "window_seconds": 300,
+        "min_samples": 25, "min_span_seconds": 290, "max_age_seconds": 30, "drop_floor": 300000000,
+        "runway_divisor": 12, "tail_bytes": 262144}
+@@ -745,16 +768,16 @@
+ 
+ def monitor_stability():
+     """Main's 07:32 PDT amendment (long jobs), evaluated on the parent monitor; fail-closed on any doubt (v10 (6))."""
+-    out = {"rule": MON, "monitor": MONITOR, "ok": False, "why": None}
++    out = {"rule": MON, "monitor": CFG["monitor"], "ok": False, "why": None}
+     if not deadline_ok():
+         out["why"] = "deadline"
+         return out
+     try:
+-        st = os.lstat(MONITOR)
++        st = os.lstat(CFG["monitor"])
+         if not stat.S_ISREG(st.st_mode):
+             raise ValueError("not a regular file")
+         start = max(0, st.st_size - MON["tail_bytes"])
+-        with open(MONITOR, "rb") as f:
++        with open(CFG["monitor"], "rb") as f:
+             f.seek(start)
+             data = f.read(MON["tail_bytes"])
+     except (OSError, ValueError) as e:
+@@ -845,7 +868,7 @@
+            "regen_receipt": os.path.relpath(regen_path, K.DESK), "regen_receipt_sha256": regen_sha,
+            "regen_receipt_unchanged_since_start": regen_sha == regen_sha0,
+            "selfcheck_summary_sha256": K.sha_file(summary_path),
+-           "rules": {"gate": K.GATE, "floor": K.FLOOR, "monitor_stability": MON,
++           "rules": {"gate": K.GATE, "floor": K.FLOOR, "monitor_stability": MON, "monitor": CFG["monitor"],
+                      "no_launch_after": NO_LAUNCH_AFTER.isoformat(), "end_by": END_BY.isoformat(),
+                      "first_to_final_min_seconds": FIRST_TO_FINAL, "helper_limit_seconds": HELPER_LIMIT,
+                      "helper_term_wait_seconds": HELPER_TERM_WAIT, "census_tries": CENSUS_TRIES}}
+@@ -1279,20 +1302,24 @@
+ def main():
+     a = sys.argv[1:]
+     if a and a[0] == "run":
+-        ok = (len(a) in (6, 8) and a[1] in K.ITEMS and a[2] == "--label"
++        ok = (len(a) in (8, 10) and a[1] in K.ITEMS and a[2] == "--label"
+               and bool(re.fullmatch(r"[A-Za-z0-9_.-]+", a[3])) and a[3].startswith(a[1] + "-")
+-              and a[4] == "--slot" and a[5] in ("1", "2")
+-              and (len(a) == 6 or (a[6] == "--regen-tag" and bool(re.fullmatch(r"[A-Za-z0-9]+", a[7])))))
++              and a[4] == "--slot" and a[5] in ("1", "2") and a[6] == "--monitor"
++              and (len(a) == 8 or (a[8] == "--regen-tag" and bool(re.fullmatch(r"[A-Za-z0-9]+", a[9])))))
+         if not ok:
+-            raise SystemExit("usage: launch_B_v12.py run ITEM --label ITEM-<suffix> --slot {1,2} [--regen-tag TAG]")
++            raise SystemExit("usage: launch_B_v13.py run ITEM --label ITEM-<suffix> --slot {1,2} --monitor NAME "
++                             "[--regen-tag TAG]")
++        set_monitor(a[7])
+         signal.signal(signal.SIGTERM, on_term)
+         signal.signal(signal.SIGINT, on_term)
+-        sys.exit(mode_run(a[1], a[3], int(a[5]), a[7] if len(a) == 8 else None))
++        sys.exit(mode_run(a[1], a[3], int(a[5]), a[9] if len(a) == 10 else None))
+     if a and a[0] == "wait-start" and len(a) == 2 and re.fullmatch(r"[A-Za-z0-9_.-]+", a[1]):
+         sys.exit(mode_wait_start(a[1]))
+     if a and a[0] == "test-exception-path" and len(a) == 2 and re.fullmatch(r"test-[A-Za-z0-9_.-]+", a[1]):
+         sys.exit(mode_test_exception_path(a[1]))
+-    if a and a[0] == "selftest-v12" and len(a) == 2 and re.fullmatch(r"test-[A-Za-z0-9_.-]+", a[1]):
++    if (a and a[0] == "selftest-v13" and len(a) == 4 and re.fullmatch(r"test-[A-Za-z0-9_.-]+", a[1])
++            and a[2] == "--monitor"):
++        set_monitor(a[3])
+         sys.exit(mode_selftest(a[1]))
+     raise SystemExit(__doc__)
+ 
+--- scripts-v12/assemble_B_v12.py
++++ scripts-v13/assemble_B_v13.py
+@@ -1,6 +1,14 @@
+ #!/usr/bin/env python3
+ """Assemble the attempt receipt, deviations, RESULT and REPORT of a labelled replay attempt of the parent B-side K3
+-cube replay desk (review/moqls7-k3-B-cube-parent-replay-v1), v12.
++cube replay desk (review/moqls7-k3-B-cube-parent-replay-v1), v13.
++
++v13 = assemble_B_v12.py for attempts launched by launch_B_v13.py from scripts-v13/. It makes three changes:
++  * Codex v12 MINOR fixed: REPORT names the scripts directory this assembler runs from (os.path.basename(K.SCRIPTS))
++    instead of a literal 'scripts/';
++  * D16 and D40 texts cover the 09:25:51 PDT interruption of B_C411-p1 and B_C311cuts-p1 (both UNKNOWN) and the
++    v13 '--monitor' argument;
++  * result entries for the v12-to-v13 diff and the v13 selftest.
++Acceptance conditions, measured feeds, strict parsing, output names and the regen binding are unchanged.
+ 
+ v12 = assemble_B_v11.py for attempts launched by launch_B_v12.py from scripts-v12/ (bklib_v4). Changes:
+   * the route-A item A_C311cuts;
+@@ -38,7 +46,7 @@
+ and title taken from the item pins, the item's attempt-1 summary only where it exists, and the deviation set for the
+ v6 gate. assemble_B_v7.py is the import-only bump (bklib_v2) for B/C411.
+ 
+-Usage: assemble_B_v12.py ITEM LABEL [--regen-tag TAG]     (e.g. B_C311cuts B_C311cuts-p1)
++Usage: assemble_B_v13.py ITEM LABEL [--regen-tag TAG]     (e.g. B_C411 B_C411-p2 --regen-tag r2)
+ 
+ Reads the desk's receipts and logs (never modifies them), re-hashes every referenced file, checks the hash bindings
+ recorded at run time, and re-hashes the read-only lane inputs and both binaries. No native or other subprocess launch.
+@@ -58,7 +66,9 @@
+     {"id": "D16-versioned-scripts",
+      "what": "B_C321 attempt a3 was launched by launch_B_v8.py (bklib_v2, driver replay_B_v3.py) and B_C411-p1 by "
+              "launch_B_v11.py from scripts/ (bklib_v3, replay_B_v4.py). B/C311+cuts and A/C311+cuts are launched by "
+-             "launch_B_v12.py from scripts-v12/ (bklib_v4, replay_B_v5.py, compose_Bcuts_v1.py / compose_Acuts_v1.py). "
++             "launch_B_v12.py from scripts-v12/ (bklib_v4, replay_B_v5.py, compose_Bcuts_v1.py / compose_Acuts_v1.py); "
++             "their p2/p1 re-attempts after the 09:25:51 interruption by launch_B_v13.py from scripts-v13/ (same "
++             "bklib_v4, replay_B_v5.py and composition scripts). "
+              "bklib_v3 pins B_C321 and B_C411 exactly as bklib_v2 did. History: v2 attempt labels "
+              "(scripts-v1-to-v2.r2.diff); v3 slot-2-only rule (scripts-v2-to-v3.diff); v4 flag-only signal handling "
+              "and owned-child loop (scripts-v3-to-v4.diff); v5 cleanup obligation (scripts-v4-to-v5.diff); v6 "
+@@ -68,7 +78,8 @@
+              "(scripts-v9-to-v10.diff). compose_B_v1.py and supervise_r3.py are unchanged; native limits (kissat "
+              "--time=5400, drat-trim -t 9000) and supervisor arguments (wall 10200 s, grace 180 s, floor 12e9) are "
+              "unchanged. v11 Codex v10-HOLD repairs and the single-admitter invariant: scripts-v10-to-v11.diff; v12 "
+-             "slots, admission lock, Codex v11 MINOR and the route-A item: scripts-v11-to-v12.diff."},
++             "slots, admission lock, Codex v11 MINOR and the route-A item: scripts-v11-to-v12.diff; v13 '--monitor' "
++             "argument: scripts-v12-to-v13.diff."},
+     {"id": "D17-selfcheck-reused-and-regen-precheck",
+      "what": "Self-checks were not rerun: every attempt reuses receipts/selfcheck-summary.json (ec246769...739b, "
+              "all_ok; same binaries, same bklib transport code). The regeneration-only precheck is "
+@@ -154,6 +165,15 @@
+              "admissions; (c) the Codex v11 MINOR: the unrounded monitor age is compared at the pre-spawn guard; "
+              "(d) the set runs from scripts-v12/ (bklib_v4 SCRIPTS = its own directory), so the live v11 run's "
+              "scripts/ recording is untouched. Evidence: receipts/test-v12-selftest.selftest.json."},
++    {"id": "D40-0925-interruption-and-v13-monitor",
++     "what": "At 09:25:51 PDT an external SIGTERM reached both of this desk's launchers and, per Main, several "
++             "parent-owned jobs, including both disk monitors. Cause NOT ESTABLISHED; this desk sent no signal. "
++             "B_C411-p1 (receipts/B_C411-p1.json 12ae7cd5...7b93) and B_C311cuts-p1 (receipts/B_C311cuts-p1.json "
++             "ae0e4655...bf18) were stopped cooperatively and are UNKNOWN, never relabelled, even though kissat had "
++             "returned rc 20. Their supervisors recorded 'external SIGTERM', survivors [] and no quarantine. Main "
++             "forbade admission from the stale monitor files, so launch_B_v13.py takes the parent monitor as "
++             "'--monitor NAME' (a bare review/disk-monitor-*.jsonl name). Re-attempts carry new labels and their own "
++             "receipts; the interrupted attempts' files are kept unchanged."},
+ ]
+ ITEM_DEVIATIONS = {
+     "B_C411": [{"id": "D29-B_C411-pins-and-slot",
+@@ -401,8 +421,8 @@
+             r["item"], K.ITEMS[r["item"]]["encoder"], r["label"]), "",
+         "Desk: `review/moqls7-k3-B-cube-parent-replay-v1/`, 2026-10-18 PDT. RESULT.%s.json sha256 `%s`." % (
+             r["label"], result_sha),
+-        "Generated by `scripts/%s` from the same data as RESULT.%s.json. Attempt 1 of this item: %s." % (
+-            os.path.basename(__file__), r["label"],
++        "Generated by `%s/%s` from the same data as RESULT.%s.json. Attempt 1 of this item: %s." % (
++            os.path.basename(K.SCRIPTS), os.path.basename(__file__), r["label"],
+             ("%s, item receipt `%s`, RESULT.json `%s`" % (result["attempt_1"]["status"],
+                                                          result["attempt_1"]["item_receipt_sha256"],
+                                                          result["attempt_1"]["result_json_sha256"])
+@@ -486,7 +506,7 @@
+         lines.append("- `%s` `%s`" % (p, h))
+     lines += ["", "## Scripts (sha256 now)", ""]
+     for n, h in result["scripts_sha256_now"].items():
+-        lines.append("- `scripts/%s` `%s`" % (n, h))
++        lines.append("- `%s/%s` `%s`" % (os.path.basename(K.SCRIPTS), n, h))
+     lines.append("- Run scripts recorded at %s; all recordings equal: %s; equal now: %s; v1 run scripts unchanged "
+                  "since attempt 1: %s." % (", ".join(result["run_scripts"]["recording_points"]),
+                                            result["run_scripts"]["all_recordings_equal"],
+@@ -504,7 +524,7 @@
+     lines += ["", "## Integrity", "",
+               "Receipts, logs, RESULT.%s.json, REPORT.%s.md and deviations-%s.json were created exclusively (mode "
+               "'x' / O_EXCL). The versioned scripts were copied with cp -n and edited before their first recorded use; "
+-              "diffs scripts-v1-to-v2.r2.diff through scripts-v11-to-v12.diff. No earlier attempt's files were "
++              "diffs scripts-v1-to-v2.r2.diff through scripts-v12-to-v13.diff. No earlier attempt's files were "
+               "modified, deleted or renamed. No lane file "
+               "was written. There were no /tmp writes and no Git, network or model CLI. __pycache__ present: %s. "
+               "Desk regular files before RESULT.%s.json: %d, %s bytes in total. FIFO nodes, never opened outside the "
+@@ -617,6 +637,10 @@
+                              all_ok=json.loads(K.read_regular(os.path.join(
+                                  K.RECEIPTS, "test-v12-selftest.selftest.json"))).get("all_ok")),
+         "review_packet_v12": file_entry("review-packet-v12.md"),
++        "scripts_diff_v12_to_v13": file_entry("scripts-v12-to-v13.diff"),
++        "v13_selftest": dict(file_entry("receipts/test-v13-selftest.selftest.json"),
++                             all_ok=json.loads(K.read_regular(os.path.join(
++                                 K.RECEIPTS, "test-v13-selftest.selftest.json"))).get("all_ok")),
+         "admitter_invariant": gate0.get("admitter_invariant"),
+         "slot": gate0.get("slot"),
+         "signal_smoke": dict(file_entry("receipts/smoke-v4-signal.smoke.json"),

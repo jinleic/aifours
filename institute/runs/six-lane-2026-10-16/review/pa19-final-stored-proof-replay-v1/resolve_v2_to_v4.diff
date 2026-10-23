@@ -1,0 +1,217 @@
+--- resolve_v2.py
++++ resolve_v4.py
+@@ -2 +2,12 @@
+-"""PA19StoredProofReplay resolve v2 (narrow delta of resolve v1 9c6f0a15... after parent source review HOLD A-D:
++"""PA19StoredProofReplay resolve v4 = reviewed resolve v2 (b5700af1...) with ONLY two changes (resolve_v3.py is a
++non-executable placeholder copy of v2 and is never used): (1) solver transport: the solver reads its CNF from and
++writes its proof to OWN 0-byte FIFOs (os.mkfifo, exclusive, in DESK/tmp/fifo-<chunk>/, never deleted, no data at
++rest) because kissat/cadical refuse /dev/fd paths (resolve-controls-v1 7fc14391...); the CNF FIFO writer thread
++opens its write end (blocking until the solver opens to read), then a retained non-blocking read end (FIONREAD after
++the solver exits, as before), writes, closes; the proof FIFO read end (relay) is opened non-blocking before the solver
++starts, plus a driver-held dummy write end closed only after the solver is reaped (no premature relay EOF, no hang);
++the checker path (/dev/fd/3 CNF pipe + stdin proof) is unchanged; (2) plan v2 (resolve-plan-v2.*) accepts, besides R5
++status PASS, ONLY status PENDING with reasons exactly ['lrat_check_only_direct_records'], live_spec_identical true,
++mismatching [] and rebuilt cnf_sha256+cnf_bytes equal to the record, and must equal frozen plan v1 (d51b5555...)
++line by line except plan_state/plan_reasons of exactly 15 entries. v2 header follows.
++resolve v2 (narrow delta of resolve v1 9c6f0a15... after parent source review HOLD A-D:
+@@ -13,2 +24,2 @@
+-in driver memory and reach each child through an anonymous pipe; the proof flows solver -> pipe -> driver relay
+-(sha/count) -> pipe -> drat-trim stdin. Not a theorem, gate, M1 or M2 verdict.
++in driver memory and reach the checker through an anonymous pipe and the solver through an own FIFO; the proof flows
++solver -> FIFO -> driver relay (sha/count) -> pipe -> drat-trim stdin. Not a theorem, gate, M1 or M2 verdict.
+@@ -17,2 +28,2 @@
+-  plan     --lane L                         -> DESK/resolve-plan-v1.jsonl + resolve-plan-v1.json (metadata only)
+-  controls --lane L --script-sha X          -> DESK/resolve-controls-v1/ (own in-memory tiny CNFs; RC1-RC4)
++  plan     --lane L                         -> DESK/resolve-plan-v2.jsonl + resolve-plan-v2.json (metadata only)
++  controls --lane L --script-sha X          -> DESK/resolve-controls-v2/ (own in-memory tiny CNFs; RC1-RC4)
+@@ -29,2 +40,2 @@
+-Solver argv exactly as recorded (kissat -q -f --seed=1 --time=L CNF PROOF | cadical -q -t L CNF PROOF, CNF=/dev/fd/3,
+-PROOF=/dev/fd/4); checker = parent drat-trim a46c0c71... with [/dev/fd/3, -i, -t T], T as recorded, proof on stdin.
++Solver argv exactly as recorded (kissat -q -f --seed=1 --time=L CNF PROOF | cadical -q -t L CNF PROOF, CNF and PROOF =
++own FIFO paths); checker = parent drat-trim a46c0c71... with [/dev/fd/3, -i, -t T], T as recorded, proof on stdin.
+@@ -457,0 +469,40 @@
++PLAN_V1 = DESK + "/resolve-plan-v1.jsonl"
++PLAN_V1_SHA = "d51b5555b0ef2c8f6a4b86443cd83d70239fbee4cc47077ec3cdac9ef7ec5e23"
++FIFO_DIR = [None]
++
++
++def r5_bound(p5, j):
++    """R5 parent rebuild binds the record: status PASS, or exactly the approved PENDING form; sha+bytes equal."""
++    same = p5.get("cnf_sha256") == j.get("cnf_sha256") and p5.get("cnf_bytes") == j.get("cnf_bytes")
++    pending_ok = (p5.get("status") == "PENDING" and p5.get("reasons") == ["lrat_check_only_direct_records"] and
++                  p5.get("live_spec_identical") is True and p5.get("mismatching") == [])
++    return same and (p5.get("status") == "PASS" or pending_ok)
++
++
++def plan_v1_diff(recs):
++    """Plan v2 must equal frozen plan v1 line by line except plan_state/plan_reasons of exactly 15 entries that were
++    UNKNOWN ['R5 base binding != record'] in v1 and are READY [] now."""
++    b = open(PLAN_V1, "rb").read()
++    if sha_bytes(b) != PLAN_V1_SHA:
++        raise SystemExit("plan v1 pin mismatch")
++    old = [json.loads(x) for x in b.splitlines() if x.strip()]
++    if len(old) != len(recs):
++        raise SystemExit("plan v1/v2 length differ")
++    strip = lambda d: {k: v for k, v in d.items() if k not in ("plan_state", "plan_reasons")}
++    changed, identical = [], 0
++    for o, n in zip(old, recs):
++        if jdump(o) == jdump(n):
++            identical += 1
++            continue
++        if not (strip(o) == strip(n) and o["plan_state"] == "UNKNOWN" and
++                o["plan_reasons"] == ["R5 base binding != record"] and n["plan_state"] == "READY" and
++                n["plan_reasons"] == []):
++            raise SystemExit("plan v2 differs from v1 beyond the approved R5 fix at i=%r" % n.get("i"))
++        changed.append([n["i"], n["tag"], n["record"]])
++    if len(changed) != 15 or identical != len(recs) - 15:
++        raise SystemExit("plan v2 vs v1: %d changed, %d identical (expected 15 / %d)" % (len(changed), identical,
++                                                                                         len(recs) - 15))
++    return {"plan_v1": os.path.basename(PLAN_V1), "plan_v1_sha256": PLAN_V1_SHA, "byte_identical_lines": identical,
++            "changed_only_plan_state_reasons": changed}
++
++
+@@ -459 +510 @@
+-    out_p, out_j = DESK + "/resolve-plan-v1.jsonl", DESK + "/resolve-plan-v1.json"
++    out_p, out_j = DESK + "/resolve-plan-v2.jsonl", DESK + "/resolve-plan-v2.json"
+@@ -525,2 +576 @@
+-                    if p5.get("status") != "PASS" or p5.get("cnf_sha256") != j.get("cnf_sha256") or \
+-                            p5.get("cnf_bytes") != j.get("cnf_bytes"):
++                    if not r5_bound(p5, j):
+@@ -565,0 +616 @@
++        diff = plan_v1_diff(recs)
+@@ -572 +623,6 @@
+-        summ = {"schema": "pa19-resolve-plan-v1", "started": t0, "finished": now_iso(), "script_sha256": own_sha(),
++        summ = {"schema": "pa19-resolve-plan-v2", "started": t0, "finished": now_iso(), "script_sha256": own_sha(),
++                "diff_vs_plan_v1": diff,
++                "r5_pending_accepted": [[e["i"], e["tag"], r5[e["tag"]].get("status"), r5[e["tag"]].get("reasons"),
++                                         r5[e["tag"]].get("live_spec_identical"), r5[e["tag"]].get("mismatching")]
++                                        for e in recs if e["source"] == "base-file" and
++                                        r5[e["tag"]].get("status") != "PASS"],
+@@ -611,0 +668,31 @@
++            self.done = True
++
++
++class FifoFeeder(threading.Thread):
++    """Solver CNF FIFO writer: blocking open for writing (returns once the solver opened the FIFO to read), then a
++    retained non-blocking read end (self.keep, for FIONREAD after the solver exits), then all bytes are written,
++    counting only after each write returns, and the write end is closed (the solver sees EOF)."""
++
++    def __init__(self, path, data):
++        super().__init__(daemon=True)
++        self.path, self.data = path, data
++        self.written, self.error, self.closed, self.done, self.keep, self.opened_at = 0, None, False, False, None, None
++
++    def run(self):
++        fd = None
++        try:
++            fd = os.open(self.path, os.O_WRONLY)
++            self.opened_at = now_iso()
++            self.keep = high_fd(os.open(self.path, os.O_RDONLY | os.O_NONBLOCK))
++            mv = memoryview(self.data)
++            while self.written < len(mv):
++                self.written += os.write(fd, mv[self.written:self.written + (1 << 16)])
++        except OSError as e:
++            self.error = repr(e)
++        finally:
++            if fd is not None:
++                try:
++                    os.close(fd)
++                    self.closed = True
++                except OSError as e:
++                    self.error = (self.error or "") + " close:" + repr(e)
+@@ -666 +753,4 @@
+-            break
++            if feeder.done:
++                break
++            time.sleep(0.01)
++            continue
+@@ -668,0 +759,9 @@
++
++
++def drain_fifo(path, feeder, deadline):
++    """Opening a read end also releases a feeder still blocked in open(); everything read is undelivered."""
++    fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
++    try:
++        return drain(fd, feeder, deadline)
++    finally:
++        os.close(fd)
+@@ -767,0 +867,2 @@
++    cnf_fifo = os.path.join(FIFO_DIR[0], "r%d-cnf" % e["i"])
++    prf_fifo = os.path.join(FIFO_DIR[0], "r%d-prf" % e["i"])
+@@ -769 +870 @@
+-        s_argv = [sx, "-q", "-f", "--seed=1", "--time=%d" % e["time_limit"], "/dev/fd/3", "/dev/fd/4"]
++        s_argv = [sx, "-q", "-f", "--seed=1", "--time=%d" % e["time_limit"], cnf_fifo, prf_fifo]
+@@ -771 +872 @@
+-        s_argv = [sx, "-q", "-t", str(e["time_limit"]), "/dev/fd/3", "/dev/fd/4"]
++        s_argv = [sx, "-q", "-t", str(e["time_limit"]), cnf_fifo, prf_fifo]
+@@ -783 +884 @@
+-    cs_keep = cd_keep = None
++    cd_keep = pf_dummy = None
+@@ -804,2 +905,3 @@
+-        cs_r, cs_w = (high_fd(x) for x in os.pipe())
+-        fds += [cs_r, cs_w]
++        os.mkfifo(cnf_fifo, 0o600)
++        os.mkfifo(prf_fifo, 0o600)
++        rec["fifos"] = [cnf_fifo, prf_fifo]
+@@ -808,2 +909,0 @@
+-        pf_r, pf_w = (high_fd(x) for x in os.pipe())
+-        fds += [pf_r, pf_w]
+@@ -812 +912,5 @@
+-        cs_keep = fcntl.fcntl(cs_r, fcntl.F_DUPFD_CLOEXEC, 20)
++        pf_r = high_fd(os.open(prf_fifo, os.O_RDONLY | os.O_NONBLOCK))
++        fds.append(pf_r)
++        os.set_blocking(pf_r, True)
++        pf_dummy = high_fd(os.open(prf_fifo, os.O_WRONLY))  # held until the solver is reaped
++        fds.append(pf_dummy)
+@@ -825 +928,0 @@
+-                                                (os.POSIX_SPAWN_DUP2, cs_r, 3), (os.POSIX_SPAWN_DUP2, pf_w, 4),
+@@ -831 +934 @@
+-        for k in pids:  # both children block on their CNF pipe until the feeders start
++        for k in pids:  # checker blocks on its CNF pipe, solver in open() of its CNF FIFO, until the feeders start
+@@ -834 +937 @@
+-        for fd in (cs_r, cd_r, pf_w, pi_r):
++        for fd in (cd_r, pi_r):
+@@ -837,2 +940 @@
+-        fs = Feeder(cs_w, cnf)
+-        fds.remove(cs_w)
++        fs = FifoFeeder(cnf_fifo, cnf)
+@@ -856 +958 @@
+-            for k, keep, fe in (("solver", cs_keep, fs), ("checker", cd_keep, fd_)):
++            for k, fe in (("solver", fs), ("checker", fd_)):
+@@ -857,0 +960,4 @@
++                    if k == "solver" and pf_dummy is not None:
++                        os.close(pf_dummy)
++                        fds.remove(pf_dummy)
++                        pf_dummy = None
+@@ -859 +965,2 @@
+-                        drained[k] += drain(keep, fe, time.time() + GRACE)
++                        drained[k] += (drain_fifo(cnf_fifo, fe, time.time() + GRACE) if k == "solver"
++                                       else drain(cd_keep, fe, time.time() + GRACE))
+@@ -861 +968,2 @@
+-                    remainder[k] = fionread(keep) if fe.done else None
++                    kp = fe.keep if k == "solver" else cd_keep
++                    remainder[k] = fionread(kp) if (fe.done and kp is not None) else None
+@@ -942 +1050 @@
+-    for k, keep, fe in (("solver", cs_keep, fs), ("checker", cd_keep, fd_)):
++    for k, fe in (("solver", fs), ("checker", fd_)):
+@@ -945,3 +1053,8 @@
+-                drained[k] += drain(keep, fe, time.time() + GRACE)
+-            remainder[k] = fionread(keep) if fe.done else None
+-        os.close(keep)
++                drained[k] += (drain_fifo(cnf_fifo, fe, time.time() + GRACE) if k == "solver"
++                               else drain(cd_keep, fe, time.time() + GRACE))
++            fe.join(GRACE)
++            kp = fe.keep if k == "solver" else cd_keep
++            remainder[k] = fionread(kp) if (fe.done and kp is not None) else None
++    for kp in (fs.keep, cd_keep):
++        if kp is not None:
++            os.close(kp)
+@@ -1148,0 +1262,2 @@
++    FIFO_DIR[0] = TMP + "/fifo-%s" % chunk
++    os.mkdir(FIFO_DIR[0])
+@@ -1267 +1382 @@
+-    out = DESK + "/resolve-controls-v1"
++    out = DESK + "/resolve-controls-v2"
+@@ -1268,0 +1384,2 @@
++    FIFO_DIR[0] = TMP + "/fifo-controls-v2"
++    os.mkdir(FIFO_DIR[0])

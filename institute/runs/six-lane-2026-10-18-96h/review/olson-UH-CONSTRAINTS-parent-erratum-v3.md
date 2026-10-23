@@ -1,0 +1,16 @@
+# UH-CONSTRAINTS second-family precision erratum v3
+
+Recorded at 2026-10-19T16:27:57-0700. Apply after proof `56327b678bf9f7fe62d6f518499ab692f00897a3ecff2c62ddecac4a42a5115c`, obstruction `f2f1a232c98b3ef6eb45fa0486912bd54170521e5adc00e09c436b1fb8c7849d`, parent erratav1(8f1ea491) and v2(ac2a7f26). [Claude](/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/review/olson-UH-CONSTRAINTS-claude-v2.prompt.note.md) `58d9dd134b0137d0599e0fc335b9ef6d4025ecc0edcc2dae575fe7f9631232d5` accepts six scoped results at outcomeO3 with0F/0M; ten MINOR items appear across its result, general and obstruction tables. No full UH-EXCL or whole cell closure.
+
+1. **S1 P35-36:** “every **nonempty** set of runs avoiding h is low”. This is the domain of W and the actual proved statement at P188.
+2. **S2 P177-182:** the SH-only low/high threshold names are L_e,U_e (formerly L,U), and the number of runs is N=p+1 (formerly n). Read those local occurrences consistently; no formula changes. Other local D/q names retain their section scopes; optional unrelated renames declined.
+3. **L1 P201:** in the U(P)=p-1 branch the interval size is e+epsilon<=p-2, since epsilon<=2kappa-p+1<=kappa-2 and e+kappa=p.
+4. **G1 P20-23:** replace the claimed equivalence/direction explanation by “It suffices to prove the results for every avoider u with the displayed cyclic odd-block representation and empty-run rule. The NF antecedent supplies such u because the accepted NF preserves avoidance and rotation multiset.” No converse-normalization assertion is needed.
+5. **G2 P10/P12/P242:** these cited predecessor results are “not used, whatever their status”; reused steps are proved in-file. Administrative note: ROT-PP1 is still pending its second-family review; its erratumv2 was never approval. PP1/KP2 have separate later verdicts. This does not change the allowed premises.
+6. **OB1 O47-48:** “This packet does not reduce R-UH to any numerical evaluation or external datum; none is used, and nothing is claimed either way about whether one could suffice.” No impossibility-of-method assertion.
+7. **OB2 O89:** c=1 uses the restricted non-free length n=A+1; c=2 uses only free lengths. Do not conflate their filler accounting.
+8. **OB3 O92-94:** “Two possible completions of this route are an exclusion of the specified actual word-realized data and an argument using nonempty runs to find another pattern. Other routes are not excluded.” No exhaustive list or minimality claim.
+9. **OB4 O119:** in the pure case the ordinary window is d<=p-2 or d>=p. Hence no proper nonempty set of runs has exactly p-1 letters; “every run<p” and the stated surviving “all runs<=p-2” introduce no gap.
+10. **OB5 O129-130:** read “o_F<=p is not supplied by any accepted interface used here at terminal k=p+1”; no unsupported impossibility assertion. No REFL extension is inferred.
+
+All previous corrections, especially lambda=c-1 at O32/O52 and automatic lower filler bounds for the displayed one/two-empty-run residual families, remain mandatory. General LemmaE retains both selection bounds; three-empty-run patterns are not covered by that automatic-bound observation. Optional stronger numerical bounds are not substituted for the frozen statements.

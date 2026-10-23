@@ -1,0 +1,1160 @@
+--- code/owned_supervisor_v16.py
++++ code/owned_supervisor_v17.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""owned_supervisor_v16: telemetry/typed-binding successor, preserving v15's fixed owned guard core.
++"""owned_supervisor_v17: acquisition-first recovery successor; missing timing is null and HOLD.
+ 
+ BINDING correction: RUN/review/rqls10-supervisor-v10-scope-parent-correction-v1.json
+ fabe57ab4aeacc416f22bdf334c2cc3bbd5fda1d0e777d7279187ae0564155a2. V10's scope weakening is withdrawn,
+@@ -52,7 +52,7 @@
+ 
+ Exit:0 acknowledged SETTLED;10 acknowledged NOT_LAUNCHED;11 acknowledged UNSETTLED;12 publication refused/receipt
+ failed;13 settlement/sync/finalization failed;14 ACK refused/overran;2 unusable config/anchors. NOEXEC until separately
+-accepted source/package and an exact item GO. Usage: owned_supervisor_v16.py CONFIG.json
++accepted source/package and an exact item GO. Usage: owned_supervisor_v17.py CONFIG.json
+ V12 preserves v11 helper/clearance/identity/root machinery and fabe57ab. Repairs all nine v11 review findings plus
+ three package integration blockers: enforce main runtime before/after every reap (late observation cannot erase it),
+ restore bounded spawn-to-GO age, fresh ACK census, actual conservative /bin/date stability age, authorization last
+@@ -82,7 +82,7 @@
+ import threading
+ import time
+ 
+-VERSION = "owned_supervisor_v16"
++VERSION = "owned_supervisor_v17"
+ CANCEL_SIGNALS = {signal.SIGTERM, signal.SIGINT, signal.SIGHUP}
+ CANCEL = {"signal": None, "mono": None}
+ POLICY = {"disk": 10737418240, "free": 12000000000, "launch_free": 12200000000,
+@@ -122,7 +122,12 @@
+ 
+ def cancel(signum, frame):
+     if CANCEL["signal"] is None:
+-        CANCEL.update(signal=signum, mono=time.monotonic())
++        CANCEL["signal"] = signum
++        try:
++            CANCEL["mono"] = time.monotonic()
++        except BaseException as e:
++            CANCEL["mono"] = None
++            CANCEL["clock_error"] = type(e).__name__
+ 
+ 
+ @contextlib.contextmanager
+@@ -149,7 +154,11 @@
+         return {"mono_created": self.mono_created, "seconds": self.seconds, "until": self.until, "end": self.end}
+ 
+     def check(self, operation):
+-        if time.monotonic() > self.end:
++        try:
++            now = time.monotonic()
++        except BaseException as e:
++            raise GuardError("CLOCK_UNAVAILABLE " + operation) from e
++        if now > self.end:
+             raise GuardError("DEADLINE_EXCEEDED " + operation)
+ 
+ 
+@@ -330,13 +339,15 @@
+             "birth_epoch": st.st_birthtime}, b"".join(parts) if keep else None
+ 
+ 
+-def write_all(fd, data, dl):
++def write_all(fd, data, dl, on_progress=None):
+     view = memoryview(data)
+     while view:
+         dl.check("before write")
+         n = os.write(fd, view)
+         if n <= 0:
+             raise GuardError("ZERO_PROGRESS_WRITE")
++        if on_progress is not None:
++            on_progress(view[:n])  # Native progress is captured before the next deadline/clock check.
+         view = view[n:]
+     dl.check("after write")
+ 
+@@ -664,11 +675,11 @@
+             pid = os.posix_spawn(argv[0], argv, env, file_actions=actions, setsid=True, setsigmask=(),
+                                  setsigdef=tuple(CANCEL_SIGNALS | {signal.SIGPIPE, signal.SIGCHLD}))
+             record["pid"] = pid
+-            record["mono_pid_registered"] = time.monotonic()
+             if role == "helper":
+                 s.helper_calls += 1
+             if role != "helper":
+                 s.child, s.pid = record, pid
++            s.aux_clock(record, "mono_pid_registered")
+         try:
+             for fd in close_parent:
+                 os.close(fd)
+@@ -739,24 +750,92 @@
+         self.publication_payload_bytes, self.last_accounting_observation = None, None
+         self.identity_events, self.identity_refs = [], {}
+         self.accounting_observations, self.min_free_witness = [], None
++        self.timing_failed, self.raw_sequence, self.raw_acquisitions = False, 0, {}
++        self.last_native_free = None
++        self.capture_fds = {}
+ 
+     def deadline(self, seconds, phase=None):
++        if (self.stop is not None and self.stop["mono"] is None) or \
++                (self.child is not None and self.child["leader_reaped"] and self.exit_mono is None):
++            raise GuardError("CLEANUP_DEADLINE_UNVERIFIABLE")
+         cut = min([self.fit_mono] + [x[1] for x in self.cutoffs()])
+         if phase is not None:
+             cut = min(cut, phase.end)
+         return Deadline(seconds, cut)
+ 
++    def latch_failure(self, key, detail=None):
++        if key not in self.failure_keys:
++            self.failure_keys.add(key)
++            self.failures.append({"code": key, "detail": str(detail)[:600] if detail is not None else None, "mono": None})
++        return next(f for f in self.failures if f["code"] == key)
++
++    def aux_clock(self, record, field, epoch=False, sink=False):
++        """Optional evidence only. Never manufacture time or let it erase an already returned native value."""
++        try:
++            value = time.time() if epoch else time.monotonic()
++            record[field] = value
++            return value
++        except BaseException as e:
++            record[field], record[field + "_error"] = None, type(e).__name__
++            self.timing_failed = True
++            if not sink:
++                self.latch_failure("TIMING_EVIDENCE_UNAVAILABLE", [field, type(e).__name__])
++            return None
++
++    def raw_acquisition(self, kind, source):
++        if len(self.raw_acquisitions) >= 128:
++            self.latch_failure("RAW_ACQUISITION_CAP")
++            raise GuardError("RAW_ACQUISITION_CAP")
++        self.raw_sequence += 1
++        raw = {"id": self.raw_sequence, "kind": kind, "source": source, "native_returned": False,
++               "mono_begin": None, "mono_end": None, "identity": None, "event_ref": None}
++        self.raw_acquisitions[raw["id"]] = raw
++        return raw
++
++    def acquire_identity(self, pid, source, install=None):
++        raw = self.raw_acquisition("identity", source)
++        self.aux_clock(raw, "mono_begin")
++        try:
++            raw["identity"] = identify(pid)  # Preserve the returned native value BEFORE the end clock.
++        except BaseException:
++            if not self.timing_failed:
++                del self.raw_acquisitions[raw["id"]]  # No complete identity was returned; coverage records the failure.
++            raise
++        raw["native_returned"] = True
++        if install is not None:
++            install(raw["identity"])
++        self.aux_clock(raw, "mono_end")
++        return raw
++
++    def retain_acquisition(self, raw, known=False):
++        if raw["mono_begin"] is None or raw["mono_end"] is None:
++            self.timing_failed = True
++            self.fail("IDENTITY_TIMING_UNAVAILABLE", raw["id"])
++            raise GuardError("IDENTITY_TIMING_UNAVAILABLE")
++        ref = self.retain_identity(raw["identity"], raw["source"], known, (raw["mono_begin"], raw["mono_end"]))
++        raw["event_ref"] = ref
++        del self.raw_acquisitions[raw["id"]]  # The complete canonical event now retains this same acquisition.
++        return ref
++
+     def fail(self, key, detail=None):
+-        if key in self.failure_keys:
+-            return
+-        self.failure_keys.add(key)
+-        self.failures.append({"code": key, "detail": str(detail)[:600] if detail is not None else None, "mono": time.monotonic()})
++        fresh = key not in self.failure_keys
++        row = self.latch_failure(key, detail)
++        if fresh:
++            self.aux_clock(row, "mono")
+         if self.pid is not None and self.stop is None:
+             self.request_stop("FAILURE")
+ 
++    def latch_trip(self, key, detail=None):
++        if key not in self.trips:
++            self.trips[key] = {"trip": key, "detail": detail, "mono": None, "epoch": None}
++        return self.trips[key]
++
+     def trip(self, key, detail=None):
+-        if key not in self.trips:
+-            self.trips[key] = {"trip": key, "detail": detail, "mono": time.monotonic(), "epoch": time.time()}
++        row = self.latch_trip(key, detail)  # Preserve the known excess BEFORE any auxiliary clock can fail.
++        if row["mono"] is None:
++            self.aux_clock(row, "mono")
++        if row["epoch"] is None:
++            self.aux_clock(row, "epoch", epoch=True)
+         self.request_stop(key)
+ 
+     def enforce_runtime(self, where):
+@@ -771,35 +850,62 @@
+             if late:
+                 self.fail("MAIN_DEADLINE_ENFORCEMENT_LATE", {"mono_observed": now, "mono_deadline": cutoff})
+ 
++    def reap_record(self, record, main=False):
++        if record.get("pid") is None or record["leader_reaped"] or record["wait_lost"]:
++            return
++        try:
++            result = os.waitpid(record["pid"], os.WNOHANG)
++            record["native_wait_result"] = result  # Destructive result is latched before clocks or conversions.
++        except ChildProcessError:
++            record["wait_lost"] = True
++            if main:
++                self.lost_wait = True
++            self.fail("WAIT_STATUS_LOST" if main else "HELPER_WAIT_STATUS_LOST")
++            return
++        pid, status = result
++        if pid:
++            record["raw_wait_status"] = status
++            if not (os.WIFEXITED(status) or os.WIFSIGNALED(status)):
++                self.fail("WAIT_RESULT_NOT_TERMINAL", [pid, status])
++                return
++            record["leader_reaped"] = True
++            record["rc"] = os.waitstatus_to_exitcode(status)
++            if main:
++                self.rc = record["rc"]
++            self.aux_clock(record, "mono_reaped")
++            self.aux_clock(record, "epoch_reaped", epoch=True)
++            if main:
++                self.exit_mono, self.exit_epoch = record["mono_reaped"], record["epoch_reaped"]
++
+     def reap(self):
+-        if self.pid is None or self.rc is not None or self.lost_wait:
++        if self.pid is None or self.rc is not None or self.lost_wait or self.child.get("leader_reaped"):
+             return
+-        self.enforce_runtime("before_waitpid")
+         try:
+-            p, st = os.waitpid(self.pid, os.WNOHANG)
+-        except ChildProcessError:
+-            self.lost_wait = True
+-            self.fail("WAIT_STATUS_LOST")
+-            return
+-        if p:
+-            # Publish the reaped state BEFORE any stop path can consider signalling this PID.
+-            self.rc, self.exit_mono, self.exit_epoch = os.waitstatus_to_exitcode(st), time.monotonic(), time.time()
+-        self.enforce_runtime("after_waitpid_including_success")
++            self.enforce_runtime("before_waitpid")
++        except BaseException as e:
++            self.timing_failed = True
++            self.fail("MAIN_RUNTIME_CLOCK_UNAVAILABLE", type(e).__name__)
++        self.reap_record(self.child, main=True)
++        if not self.timing_failed:
++            self.enforce_runtime("after_waitpid_including_success")
+ 
+     def request_stop(self, reason):
+         if self.stop is not None:
+             return
+-        self.stop = {"reason": reason, "mono": time.monotonic(), "epoch": time.time()}
++        self.stop = {"reason": reason, "mono": None, "epoch": None, "date": None}
++        self.aux_clock(self.stop, "mono")
++        self.aux_clock(self.stop, "epoch", epoch=True)
+         self.signal_main_group()
+         self.stop["date"] = self.date_now("stop")
+ 
+     def signal_main_group(self):
+-        s = {"sent": False, "mono_check": time.monotonic()}
++        s = {"sent": False, "mono_check": None}
+         self.signal = s
++        self.aux_clock(s, "mono_check")
+         if self.ident is None:
+             s["why_not"] = "NO_IDENTITY"
+             return
+-        if self.rc is not None:
++        if self.rc is not None or (self.child is not None and self.child["leader_reaped"]):
+             s["why_not"] = "CHILD_ALREADY_REAPED"
+             return
+         if self.lost_wait:
+@@ -811,17 +917,18 @@
+             return
+         try:
+             dl = self.deadline(IO_S)
+-            begin = time.monotonic()
+-            now = identify(self.pid)
+-            end = time.monotonic()
+-            s.update(identity_observed=dict(now), mono_identity_begin=begin, mono_identity_observed=end)
++            raw = self.acquire_identity(self.pid, "main_signal",
++                                        lambda p: s.update(identity_observed=dict(p)))
++            s.update(mono_identity_begin=raw["mono_begin"], mono_identity_observed=raw["mono_end"],
++                     raw_identity_ref=raw["id"])
+             dl.check("after main stop identity")
+-            ok = fingerprint(now) == fingerprint(self.ident)
++            ok = fingerprint(raw["identity"]) == fingerprint(self.ident)
+             s["identity_ok"] = ok
+             if not ok:
+                 raise GuardError("identity mismatch")
+             os.killpg(self.group, signal.SIGTERM)
+-            s.update(sent=True, mono_sent=time.monotonic())
++            s["sent"] = True  # Native side effect is latched before its auxiliary timestamp.
++            self.aux_clock(s, "mono_sent")
+             dl.check("after main group SIGTERM")
+         except ProcessLookupError as e:
+             s["error"] = repr(e)
+@@ -834,7 +941,7 @@
+ 
+     def cutoffs(self):
+         cuts = []
+-        if self.stop is not None:
++        if self.stop is not None and self.stop["mono"] is not None:
+             cuts.append(("GRACE_EXPIRED_AFTER_STOP_REQUEST", self.stop["mono"] + self.cfg["settle_s"]))
+         if self.exit_mono is not None:
+             cuts.append(("GRACE_EXPIRED_AFTER_CHILD_EXIT", self.exit_mono + self.cfg["settle_s"]))
+@@ -842,8 +949,9 @@
+ 
+     def history_abort(self, kind, witness=None):
+         if not self.history_halted:
+-            self.history_overflow = {"kind": kind, "mono": time.monotonic(), "witness": witness}
+-        self.history_halted = True
++            self.history_overflow = {"kind": kind, "mono": None, "witness": witness}
++        self.history_halted = True  # The refusal boundary is latched before auxiliary timing.
++        self.aux_clock(self.history_overflow, "mono")
+         self.fail(kind, witness)
+         raise GuardError(kind)
+ 
+@@ -927,12 +1035,16 @@
+     def retain_signal_observation(self, record, source):
+         """Signal safety never waits for telemetry. Preserve the raw bounded witness even after a cap."""
+         record["identity_event_ref"] = None
+-        if self.history_halted:
++        if self.history_halted or record.get("mono_identity_begin") is None or record.get("mono_identity_observed") is None:
+             return
+         try:
+-            record["identity_event_ref"] = self.retain_identity(
+-                record["identity_observed"], source, record.get("identity_ok") is True,
+-                (record["mono_identity_begin"], record["mono_identity_observed"]))
++            raw = self.raw_acquisitions.get(record.get("raw_identity_ref"))
++            if raw is not None:
++                record["identity_event_ref"] = self.retain_acquisition(raw, record.get("identity_ok") is True)
++            else:
++                record["identity_event_ref"] = self.retain_identity(
++                    record["identity_observed"], source, record.get("identity_ok") is True,
++                    (record["mono_identity_begin"], record["mono_identity_observed"]))
+         except BaseException as e:
+             record["identity_event_error"] = repr(e)[:600]
+ 
+@@ -951,12 +1063,12 @@
+         except BaseException as e:
+             attempt.update(aborted=True, error=repr(e)[:600])
+             if resources is not None:
+-                resources.update(complete=False, aborted=True, abort_error=repr(e)[:600],
+-                                 mono_aborted=time.monotonic())
++                resources.update(complete=False, aborted=True, abort_error=repr(e)[:600], mono_aborted=None)
++                self.aux_clock(resources, "mono_aborted")
+                 self.enforce_observed_resources(resources)
+             raise
+         finally:
+-            attempt["mono_end"] = time.monotonic()
++            self.aux_clock(attempt, "mono_end")
+             if resources is not None:
+                 resources["mono_end"] = attempt["mono_end"]
+ 
+@@ -969,7 +1081,7 @@
+             self.limits(c)
+ 
+     def reconciliation_evidence(self):
+-        return {"owned_identities": list(self.owned.values()), "unproved_history": list(self.unproved_history.values()),
++        view = {"owned_identities": list(self.owned.values()), "unproved_history": list(self.unproved_history.values()),
+                 "identity_history": list(self.identity_history.values()), "coverage_history": self.coverage_history,
+                 "identity_events": list(self.identity_events), "initial_fit": self.rec["initial_fit"],
+                 "authorization": self.authorization, "accounting_observations": list(self.accounting_observations),
+@@ -985,14 +1097,21 @@
+                 "publication_payload_bytes": self.publication_payload_bytes,
+                 "last_accounting_observation": self.last_accounting_observation,
+                 "maxima": dict(self.maxima), "min_free": self.min_free,
+-                "streams": {k: dict(v) for k, v in self.streams.items()}, "mono_snapshot": time.monotonic()}
++                "streams": {k: dict(v) for k, v in self.streams.items()}, "mono_snapshot": None,
++                "timing_failed": self.timing_failed, "raw_acquisitions": list(self.raw_acquisitions.values()),
++                "last_native_free": self.last_native_free,
++                "main_wait": None if self.child is None else {k: self.child.get(k) for k in
++                    ("pid", "native_wait_result", "raw_wait_status", "leader_reaped", "rc", "mono_reaped", "epoch_reaped")}}
++        self.aux_clock(view, "mono_snapshot")
++        view["timing_failed"] = self.timing_failed
++        return view
+ 
+     def observed_identity(self, pid, source, known=False):
+-        begin = time.monotonic()
+-        p = identify(pid)
+-        end = time.monotonic()
+-        self.retain_identity(p, source, known, (begin, end))
+-        return p
++        if self.timing_failed:
++            raise GuardError("TIMING_EVIDENCE_UNAVAILABLE_NO_SCAN_RETRY")
++        raw = self.acquire_identity(pid, source)
++        self.retain_acquisition(raw, known)
++        return raw["identity"]
+ 
+     def identity_stable(self, pid, before):
+         p = self.observed_identity(pid, "measurement_bracket")
+@@ -1003,13 +1122,16 @@
+         ref = self.identity_ref(p)  # Registration reuses its actual acquisition, never invents another observation.
+         if u not in self.owned:
+             entry = {"identity": dict(p), "identity_event_ref": ref, "via": via, "root": u if root is None else root,
+-                     "first_seen_mono": time.monotonic(), "proof": proof}
++                     "first_seen_mono": None, "proof": proof}
++            self.aux_clock(entry, "first_seen_mono")
+             self.reserve_history("owned", entry, witness=dict(p))
+             self.owned[u] = entry
+             if via not in ("child", "helper"):
+                 self.violations.append(dict(p))
+ 
+     def scan_identities(self, dl):
++        if self.timing_failed:
++            raise GuardError("TIMING_EVIDENCE_UNAVAILABLE_NO_SCAN_RETRY")
+         with self.observation_attempt("identity_scan") as attempt:
+             procs, missing = {}, []
+             for pid in all_pids(dl):
+@@ -1019,11 +1141,11 @@
+                     procs[pid] = p
+                     attempt["identified_count"] = len(procs)
+                 except OSError as e:
+-                    if self.history_halted:
++                    if self.history_halted or self.timing_failed:
+                         raise
+                     error = [pid, "identify", repr(e)[:600]]
+                     missing.append(error)
+-                    self.retain_coverage([error], time.monotonic())
++                    self.retain_coverage([error], None)
+             live_owned = {p["uniqueid"] for p in procs.values() if p["uniqueid"] in self.owned}
+             groups = {self.group: self.ident["uniqueid"]} if self.group is not None and self.ident is not None else {}
+             for h in self.helpers:
+@@ -1061,21 +1183,23 @@
+                         live_owned.add(p["uniqueid"])
+                         changed = True
+                     except OSError as e:
+-                        if self.history_halted:
++                        if self.history_halted or self.timing_failed:
+                             raise
+                         error = [p["pid"], "parent_edge", repr(e)[:600]]
+                         missing.append(error)
+-                        self.retain_coverage([error], time.monotonic())
++                        self.retain_coverage([error], None)
+             unproved = {p["uniqueid"] for p in procs.values()
+                         if self.baseline is not None and p["uniqueid"] not in self.baseline and p["uniqueid"] not in live_owned}
+             dl.check("after identity/ownership scan")
+             return procs, missing, live_owned, unproved
+ 
+-    def retain_coverage(self, missing, stamp):
++    def retain_coverage(self, missing, stamp=None):
+         for item in missing:
+             if len(self.coverage_history) >= 16384:
+                 self.history_abort("COVERAGE_HISTORY_CAP", {"observation": item})
+             entry = {"mono": stamp, "observation": list(item)}
++            if stamp is None:
++                self.aux_clock(entry, "mono")
+             self.reserve_history("coverage", entry, witness={"observation": item})
+             self.coverage_history.append(entry)
+ 
+@@ -1120,6 +1244,7 @@
+                 if p["status"] == SZOMB or not (p["euid"] == MY_UID or p["ruid"] == MY_UID):
+                     continue
+                 owned = p["uniqueid"] in live_owned or p["uniqueid"] in unproved
++                task = None
+                 try:
+                     if not self.identity_stable(pid, p):
+                         raise GuardError("BEFORE_MEASUREMENT_CHANGED")
+@@ -1135,54 +1260,84 @@
+                     if not member:
+                         continue
+                     before_task_ref = self.identity_ref(self.identity_history[p["uniqueid"]]["last_identity"])
+-                    task_begin = time.monotonic()
+-                    rss, ticks = task_of(pid)
+-                    task_end = time.monotonic()
++                    task = self.raw_acquisition("task", "lane_measurement")
++                    task["identity"] = dict(p)
++                    self.aux_clock(task, "mono_begin")
++                    task["native_result"] = task_of(pid)  # Raw RSS/ticks are retained BEFORE task-end timing.
++                    task["native_returned"] = True
++                    rss, ticks = task["native_result"]
++                    self.aux_clock(task, "mono_end")
+                     key = (p["uniqueid"], p["idversion"])
+                     prior = self.prev_cpu.get(key)
+-                    start = start_of(pid) if prior is None else None
+-                    final_begin = time.monotonic()
+-                    final_identity = identify(pid)  # Acquire/verify first; charging cannot erase the completed bracket.
+-                    final_end = time.monotonic()
+-                    if fingerprint(final_identity) != fingerprint(p):
+-                        raise GuardError("TASK_IDENTITY_CHANGED")
+-                    now_m, now_e = time.monotonic(), time.time()
++                    task["native_start_epoch"] = start_of(pid) if prior is None else None
++                    measured = {"identity": dict(p), "identity_event_ref": self.identity_ref(p),
++                                "before_task_event_ref": before_task_ref, "identity_after": None,
++                                "identity_after_event_ref": None, "identity_after_interval": [None, None],
++                                "mono_task_begin": task["mono_begin"], "mono_task_end": task["mono_end"],
++                                "rss": rss, "cpu_ticks": ticks, "busy": None, "mono_observed": None,
++                                "bracket_verified": False}
++                    task["measurement"] = measured
++                    record.setdefault("raw_measurements", []).append(measured)
++                    def install_final(after):
++                        measured["identity_after"] = dict(after)
++                        if fingerprint(after) != fingerprint(p):
++                            raise GuardError("TASK_IDENTITY_CHANGED")
++                        measured["bracket_verified"] = True
++                        record["lane_pids"].append(pid)
++                        record["lane_rss"] += rss
++                        record["measurements"].append(measured)
++                        # Latch the verified excess itself before any end-clock or telemetry can fail.
++                        if self.phase not in ("ADMISSION", "PRE_GO") and record["lane_rss"] > self.cfg["rss_trip_bytes"]:
++                            self.latch_trip("RSS", record["lane_rss"])
++                        if self.phase in ("ADMISSION", "PRE_GO") and \
++                                record["lane_rss"] + self.cfg["rss_projection_bytes"] > self.cfg["rss_trip_bytes"]:
++                            self.latch_failure("ADMISSION_RESOURCE_VIOLATION", {"rss": record["lane_rss"], "partial": True})
++                    final = self.acquire_identity(pid, "measurement_final_bracket", install_final)
++                    measured["identity_after_interval"] = [final["mono_begin"], final["mono_end"]]
++                    self.aux_clock(measured, "mono_observed")
++                    self.aux_clock(measured, "epoch_observed", epoch=True)
++                    times = (task["mono_begin"], task["mono_end"], final["mono_begin"], final["mono_end"],
++                             measured["mono_observed"], measured["epoch_observed"])
++                    if any(value is None for value in times):
++                        self.timing_failed = True
++                        self.enforce_observed_resources(record)  # The known RSS latch survives missing BUSY timing.
++                        self.fail("RESOURCE_TIMING_UNAVAILABLE", task["id"])
++                        raise GuardError("RESOURCE_TIMING_UNAVAILABLE")
++                    now_m, now_e = measured["mono_observed"], measured["epoch_observed"]
+                     if prior is None:
+-                        seconds = now_e - start
++                        seconds = now_e - task["native_start_epoch"]
+                         busy = seconds <= 0.05 or ticks * self.num_tb >= seconds * 1e9 * self.cfg["busy_cpu_fraction"]
+                     else:
+                         seconds = now_m - prior[0]
+                         busy = seconds <= 0 or (ticks - prior[1]) * self.num_tb >= seconds * 1e9 * self.cfg["busy_cpu_fraction"]
+-                    measured = {"identity": dict(p), "identity_event_ref": self.identity_ref(p),
+-                                "before_task_event_ref": before_task_ref, "identity_after": dict(final_identity),
+-                                "identity_after_event_ref": None, "identity_after_interval": [final_begin, final_end],
+-                                "mono_task_begin": task_begin, "mono_task_end": task_end,
+-                                "rss": rss, "cpu_ticks": ticks, "busy": busy, "mono_observed": now_m}
+-                    # Totals and observed excesses are latched BEFORE another I/O or any possible abort.
+-                    record["lane_pids"].append(pid)
+-                    record["lane_rss"] += rss
++                    measured["busy"] = busy
+                     if busy:
+                         record["lane_busy_pids"].append(pid)
+                         record["lane_busy"] += 1
+                     record["mono_last_observation"] = now_m
+-                    record["measurements"].append(measured)  # At most one bounded composite beyond a history cap, then abort.
+                     cpu[key] = (now_m, ticks)
+                     try:
+                         self.enforce_observed_resources(record)
+-                        measured["identity_after_event_ref"] = self.retain_identity(final_identity, "measurement_final_bracket",
+-                                                                                  interval=(final_begin, final_end))
++                        measured["identity_after_event_ref"] = self.retain_acquisition(final)
+                         self.reserve_history("measurement", measured, witness=measured, extra=256)
++                        record["raw_measurements"].remove(measured)
++                        del self.raw_acquisitions[task["id"]]
+                     except BaseException:
+                         if self.history_halted and self.history_overflow is not None:
+                             self.history_overflow["completed_measurement"] = measured
+                         self.enforce_observed_resources(record)
+                         raise
+                 except OSError as e:
+-                    if self.history_halted:
++                    if task is not None:
++                        if task.get("native_returned"):
++                            self.fail("RESOURCE_ACQUISITION_INCOMPLETE", task["id"])
++                            raise  # A later retry must not erase this returned native observation.
++                        self.raw_acquisitions.pop(task["id"], None)
++                    if self.history_halted or self.timing_failed:
+                         raise
+                     error = [pid, "real_or_effective_uid_measurement", repr(e)[:600]]
+                     missing.append(error)
+-                    self.retain_coverage([error], time.monotonic())
++                    self.retain_coverage([error], None)
+                     record["incomplete_n"] = len(missing)
+                     record["incomplete"] = missing[:30]
+             self.prev_cpu = cpu
+@@ -1212,24 +1367,66 @@
+         dl.check("after census retries")
+         return c
+ 
++    def close_record_endpoints(self, record, readers=False):
++        errors = record.setdefault("endpoint_errors", [])
++        for fd in list(record["parent_close_fds"]):
++            try:
++                os.close(fd)
++                record["parent_close_fds"].remove(fd)
++            except OSError as e:
++                errors.append([fd, type(e).__name__])
++        names = ("stdin_fd", "stdout_fd", "stderr_fd") if readers else ("stdin_fd",)
++        for name in names:
++            fd = record.get(name)
++            if fd is not None:
++                try:
++                    os.close(fd)
++                    record[name] = None
++                except OSError as e:
++                    errors.append([name, type(e).__name__])
++
++    def helper_clockless_once(self, h):
++        """Finite reap/drain/endpoint attempt, never a clockless ownership proof or extra TERM."""
++        count = h.get("clockless_probe_count", 0)
++        if count >= 3:
++            h["settled"] = False
++            return
++        h["clockless_probe_count"] = count + 1
++        h["clockless_probe_done"] = True
++        self.close_record_endpoints(h)
++        self.reap_record(h)
++        fd = h.get("stdout_fd")
++        if fd is not None:
++            try:
++                os.set_blocking(fd, False)
++                data = os.read(fd, max(1, 257 - len(h.get("capture", b""))))
++                h["capture"] = h.get("capture", b"") + data
++                h["raw_eof"] = data == b""
++                h["capture_overflow"] = len(h["capture"]) > 256
++                if h["raw_eof"] or h["capture_overflow"]:
++                    os.close(fd)
++                    h["stdout_fd"], h["stdout_closed"] = None, True
++            except BlockingIOError:
++                pass
++            except BaseException as e:
++                h["clockless_capture_error"] = type(e).__name__
++        h["settled"] = False
++
+     def helper_probe(self, h, dl):
+         """Refresh ALL ownership predicates; REAPED alone never marks a helper settled."""
+         if h["pid"] is None:
+             return
++        if self.timing_failed:
++            self.helper_clockless_once(h)
++            raise GuardError("HELPER_TIMING_EVIDENCE_UNAVAILABLE")
+         for fd in list(h["parent_close_fds"]):
+             os.close(fd)
+             h["parent_close_fds"].remove(fd)
+             dl.check("helper parent endpoint close")
+         if self.history_halted:
+             # Still reap/drain within the bounded cleanup; never claim group/coverage proof from a full ledger.
+-            if not h["leader_reaped"] and not h["wait_lost"]:
+-                try:
+-                    pid, status = os.waitpid(h["pid"], os.WNOHANG)
+-                    if pid:
+-                        h["leader_reaped"], h["rc"], h["mono_reaped"] = True, os.waitstatus_to_exitcode(status), time.monotonic()
+-                except ChildProcessError:
+-                    h["wait_lost"] = True
+-                dl.check("after cap-path helper reap")
++            self.reap_record(h)
++            dl.check("after cap-path helper reap")
+             if h.get("stdout_fd") is not None:
+                 os.set_blocking(h["stdout_fd"], False)
+                 try:
+@@ -1246,24 +1443,20 @@
+             h["settled"] = False
+             raise GuardError("HISTORY_HALTED_HELPER_PROOF_UNAVAILABLE")
+         if h.get("identity") is None and not h["leader_reaped"]:
+-            h["identity"] = self.observed_identity(h["pid"], "helper_initial", True)
++            def install(p):
++                h["identity"] = p
++                h["initial_identity_valid"] = p["pgid"] == h["pid"] and p["euid"] == MY_UID and p["ruid"] == MY_UID
++            raw = self.acquire_identity(h["pid"], "helper_initial", install)
+             p = h["identity"]
+-            h["identity_event_ref"] = self.identity_ref(p)
+-            h["initial_identity_valid"] = p["pgid"] == h["pid"] and p["euid"] == MY_UID and p["ruid"] == MY_UID
++            h["raw_identity_ref"] = raw["id"]
++            h["identity_event_ref"] = self.retain_acquisition(raw, h["initial_identity_valid"])
+             if not h["initial_identity_valid"]:
+                 raise GuardError("HELPER_IDENTITY_INVALID")
+             self.register_owned(p, "helper")
+         if not h["leader_reaped"] and not self.identity_stable(h["pid"], h["identity"]):
+             raise GuardError("HELPER_EXEC_OR_CREDENTIAL_CHANGE")
+         if not h["leader_reaped"] and not h["wait_lost"]:
+-            try:
+-                pid, status = os.waitpid(h["pid"], os.WNOHANG)
+-                if pid:
+-                    h["leader_reaped"], h["rc"] = True, os.waitstatus_to_exitcode(status)
+-                    h["mono_reaped"] = time.monotonic()
+-            except ChildProcessError:
+-                h["wait_lost"] = True
+-                raise GuardError("HELPER_WAIT_STATUS_LOST")
++            self.reap_record(h)
+             dl.check("after helper reap, including a successful reap")
+         fd = h.get("stdout_fd")
+         if fd is not None:
+@@ -1277,13 +1470,13 @@
+                     b = os.read(fd, room)
+                 except BlockingIOError:
+                     break
+-                dl.check("after helper stdout read")
++                h["capture"] += b  # Native bytes/EOF survive a subsequent deadline clock failure.
+                 if b == b"":
+                     h["raw_eof"] = True
+-                    break
+-                h["capture"] += b
+                 if len(h["capture"]) > 256:
+                     h["capture_overflow"] = True
++                dl.check("after helper stdout read")
++                if h["raw_eof"] or h["capture_overflow"]:
+                     break
+             if h["raw_eof"] or h["capture_overflow"]:
+                 os.close(fd)
+@@ -1303,8 +1496,8 @@
+         if h["fault_eof"]:
+             h["eof_proved"] = False
+         dl.check("after full helper ownership proof")
+-        h["mono_proof_complete"] = time.monotonic()
+-        h["settled"] = bool(h.get("initial_identity_valid") and h["leader_reaped"] and not h["wait_lost"] and
++        self.aux_clock(h, "mono_proof_complete")
++        h["settled"] = bool(not self.timing_failed and h.get("initial_identity_valid") and h["leader_reaped"] and not h["wait_lost"] and
+                             h["group_clear"] and h["descendants_clear"] and h["coverage_complete"] and
+                             h["eof_proved"] and h["stdout_closed"])
+ 
+@@ -1316,18 +1509,21 @@
+         if ident is None or not h.get("initial_identity_valid"):
+             h["signal"] = {"sent": False, "reason": "NO_VERIFIED_IDENTITY"}
+             return
+-        h["signal"] = {"sent": False, "mono_check": time.monotonic()}
++        h["signal"] = {"sent": False, "mono_check": None}
++        self.aux_clock(h["signal"], "mono_check")
+         try:
+-            begin = time.monotonic()
+-            p = identify(h["pid"])
+-            end = time.monotonic()
+-            h["signal"].update(identity_observed=dict(p), mono_identity_begin=begin, mono_identity_observed=end)
++            raw = self.acquire_identity(h["pid"], "helper_signal",
++                                        lambda p: h["signal"].update(identity_observed=dict(p)))
++            p = raw["identity"]
++            h["signal"].update(mono_identity_begin=raw["mono_begin"], mono_identity_observed=raw["mono_end"],
++                               raw_identity_ref=raw["id"])
+             dl.check("after helper stop identity")
+             h["signal"]["identity_ok"] = fingerprint(p) == fingerprint(ident)
+             if not h["signal"]["identity_ok"]:
+                 raise GuardError("HELPER_SIGNAL_IDENTITY_CHANGED")
+             os.killpg(ident["pgid"], signal.SIGTERM)
+-            h["signal"].update(sent=True, identity_ok=True, mono_sent=time.monotonic())
++            h["signal"].update(sent=True, identity_ok=True)
++            self.aux_clock(h["signal"], "mono_sent")
+             dl.check("after helper group SIGTERM")
+         except BaseException as e:
+             h["signal"]["reason"] = repr(e)
+@@ -1336,45 +1532,70 @@
+                 self.retain_signal_observation(h["signal"], "helper_signal")
+ 
+     def helper_cleanup(self, h):
+-        """Exception/overrun path: one verified TERM at most; proof/reap/EOF/group stay owned through bounded grace."""
+-        h["mono_cleanup_start"] = time.monotonic()
+-        dl = self.deadline(self.cfg["helper_budget"]["term_grace_s"])
+-        h["mono_cleanup_deadline"] = dl.end
+-        h["cleanup_deadline"] = dl.telemetry()
++        """One fresh checked TERM at most; missing clock evidence permits only finite raw cleanup and HOLD."""
++        h["mono_cleanup_start"] = None
++        self.aux_clock(h, "mono_cleanup_start")
++        try:
++            dl = self.deadline(self.cfg["helper_budget"]["term_grace_s"])
++            h["mono_cleanup_deadline"], h["cleanup_deadline"] = dl.end, dl.telemetry()
++        except BaseException as e:
++            h["mono_cleanup_deadline"], h["cleanup_deadline"] = None, None
++            h["cleanup_error"] = type(e).__name__
++            self.timing_failed = True
++            self.helper_clockless_once(h)
++            self.fail("HELPER_OWNERSHIP_UNSETTLED", h["pid"])
++            return
+         if h.get("identity") is None and not h["leader_reaped"]:
+             try:
+-                begin = time.monotonic()
+-                p = identify(h["pid"])
+-                end = time.monotonic()
+-                h["identity"] = p
+-                h["initial_identity_valid"] = p["pgid"] == h["pid"] and p["euid"] == MY_UID and p["ruid"] == MY_UID
+-                h["identity_event_ref"] = self.retain_identity(p, "helper_cleanup_initial", h["initial_identity_valid"], (begin, end))
++                def install(p):
++                    h["identity"] = p
++                    h["initial_identity_valid"] = p["pgid"] == h["pid"] and p["euid"] == MY_UID and p["ruid"] == MY_UID
++                raw = self.acquire_identity(h["pid"], "helper_cleanup_initial", install)
++                h["raw_identity_ref"] = raw["id"]
++                h["identity_event_ref"] = self.retain_acquisition(raw, h["initial_identity_valid"])
+                 if h["initial_identity_valid"]:
+-                    self.register_owned(p, "helper")
++                    self.register_owned(h["identity"], "helper")
+             except BaseException as e:
+                 h["identity_error"] = repr(e)
+-        if time.monotonic() <= dl.end:
++        try:
++            dl.check("before cleanup signal")
+             self.helper_term(h, dl)
+-        while time.monotonic() <= dl.end:
++        except BaseException as e:
++            h["cleanup_error"] = repr(e)
++        while not self.timing_failed:
+             try:
++                dl.check("before cleanup probe")
+                 self.helper_probe(h, dl)
+                 if h["settled"]:
+                     return
+             except BaseException as e:
+                 h["cleanup_error"] = repr(e)
+-                if time.monotonic() > dl.end:
++                if isinstance(e, GuardError) and str(e).startswith("CLOCK_UNAVAILABLE"):
++                    self.timing_failed = True
++                    self.latch_failure("TIMING_EVIDENCE_UNAVAILABLE", str(e))
+                     break
+-            time.sleep(min(0.005, max(0, dl.end - time.monotonic())))
++            try:
++                remaining = dl.end - time.monotonic()
++            except BaseException as e:
++                self.timing_failed = True
++                self.latch_failure("TIMING_EVIDENCE_UNAVAILABLE", type(e).__name__)
++                break
++            if remaining < 0:
++                break
++            time.sleep(min(0.005, remaining))
++        if self.timing_failed:
++            self.helper_clockless_once(h)
+         self.fail("HELPER_OWNERSHIP_UNSETTLED", {"pid": h["pid"], "reaped": h["leader_reaped"],
+                                                 "group_clear": h.get("group_clear"), "eof": h.get("eof_proved")})
+ 
+     def date_now(self, purpose):
+         """Actual /bin/date output only. Logical refusals return null; no synthetic timestamp."""
+-        entry = {"purpose": purpose, "mono_start": time.monotonic()}
++        entry = {"purpose": purpose, "mono_start": None, "mono_end": None}
++        self.aux_clock(entry, "mono_start")
+         h = None
+         hb = self.cfg["helper_budget"]
+         try:
+-            if self.failures or pending_cancel() or self.in_helper:
++            if self.failures or self.timing_failed or pending_cancel() or self.in_helper:
+                 entry["outcome"] = "REFUSED_FAILURE_CANCEL_OR_REENTRANCY"
+                 return None
+             if self.authorization is None:
+@@ -1461,7 +1682,7 @@
+             return None
+         finally:
+             self.in_helper = False
+-            entry["mono_end"] = time.monotonic()
++            self.aux_clock(entry, "mono_end")
+             self.helper_log.append(entry)
+ 
+     def refresh_helpers(self, dl):
+@@ -1479,6 +1700,7 @@
+                 "initial_identity_valid", "stdout_closed", "eof_proved", "group_clear", "descendants_clear",
+                 "coverage_complete", "clock_failed", "date", "signal", "proof", "spawn_error", "launch_commit",
+                 "mono_spawn", "epoch_spawn", "mono_pid_registered", "call_deadline", "cleanup_deadline",
++                "native_wait_result", "raw_wait_status", "epoch_reaped", "raw_identity_ref", "clockless_probe_done", "clockless_probe_count", "endpoint_errors",
+                 "mono_call_start", "mono_call_deadline", "mono_cleanup_start", "mono_cleanup_deadline",
+                 "mono_proof_complete", "mono_reaped", "mono_injection_start", "mono_injection_end",
+                 "stability_expiry_before", "stability_expiry_candidate", "stability_expiry_effective")
+@@ -1536,13 +1758,19 @@
+ 
+     def free(self, dl):
+         dl.check("before fstatvfs")
+-        s = os.fstatvfs(self.lane_fd)
++        self.last_native_free = os.fstatvfs(self.lane_fd)  # Native result retained before any completion clock.
++        s = self.last_native_free
+         value = s.f_bavail * s.f_frsize
+-        dl.check("after fstatvfs")
++        self.last_native_free = {"f_bavail": s.f_bavail, "f_frsize": s.f_frsize, "free": value}
+         return value
+ 
+     def accounting(self, dl, lane=True):
+-        begin = time.monotonic()
++        if self.timing_failed:
++            raise GuardError("TIMING_EVIDENCE_UNAVAILABLE_NO_ACCOUNTING_RETRY")
++        start = {"mono_begin": None}
++        begin = self.aux_clock(start, "mono_begin")
++        if begin is None:
++            raise GuardError("ACCOUNTING_BEGIN_UNAVAILABLE")
+         self.verify_anchors(dl)
+         seen = set()
+         charge = sum(walk_fd(fd, self.lane_id[0], dl, seen) for fd, _ in self.root_fds.values())
+@@ -1554,16 +1782,19 @@
+         self.maxima["charged_bytes"] = max(charge, self.maxima["charged_bytes"])
+         resources = {"charged_bytes": charge, "lane_bytes": total, "free": free}
+         event = {"id": len(self.accounting_observations) + 1, "phase": self.phase, "inside_helper": self.in_helper,
+-                 "mono_begin": begin, "mono_observed": time.monotonic(), "resources": dict(resources),
++                 "mono_begin": begin, "mono_observed": None, "resources": dict(resources),
+                  "retained": False, "returned": False}
+         self.last_accounting_observation = event
+         if self.min_free_witness is None or free < self.min_free_witness["resources"]["free"]:
+             self.min_free_witness = event
++        self.aux_clock(event, "mono_observed")
+         try:
+-            self.reserve_history("accounting_observation", event, [], event, extra=4)
++            self.reserve_history("accounting_observation", event, [], event, extra=128)
+             self.accounting_observations.append(event)
+             event["retained"] = True
+             dl.check("after accounting")
++            if event["mono_observed"] is None:
++                raise GuardError("ACCOUNTING_COMPLETION_TIME_UNAVAILABLE")
+             event["returned"] = True
+             return resources
+         except BaseException:
+@@ -1736,6 +1967,8 @@
+                 "stability_age_upper_s": age}
+ 
+     def completion_check(self, phase, dl):
++        if self.timing_failed:
++            raise GuardError("TIMING_EVIDENCE_UNAVAILABLE")
+         if phase == "GO":
+             observed = time.monotonic()
+             age = observed - self.mono_spawn
+@@ -1805,54 +2038,83 @@
+     path, cap = sup.cfg[name], sup.cfg[name + "_cap_bytes"]
+     fd, base = sup.location(path)
+     out, ident = create_file(fd, base)
++    sup.capture_fds[name] = out  # Own the native descriptor before any auxiliary timestamp.
+     sup.created[path] = ident
+-    created = time.monotonic()
+     rec = {"bytes_seen": 0, "bytes_written": 0, "cap_bytes": cap, "overflow": False,
+            "write_inflight": False, "pending_bytes": 0, "closed": False, "error": None,
+-           "sha256_prefix": hashlib.sha256().hexdigest(), "sha256_written": None,
+-           "mono_created": created, "mono_last_update": created, "mono_last_read": None,
+-           "mono_last_write": None, "mono_eof": None, "mono_close_completed": None}
++           "sha256_prefix": hashlib.sha256().hexdigest(), "prefix_bytes": 0, "hash_pending": False, "sha256_written": None,
++           "mono_created": None, "mono_last_update": None, "mono_last_read": None,
++           "mono_last_write": None, "mono_eof": None, "mono_close_completed": None,
++           "eof_seen": False, "fsync_returned": False, "out_closed": False, "pipe_closed": False}
+     sup.streams[name] = rec
++    created = sup.aux_clock(rec, "mono_created", sink=True)
++    rec["mono_last_update"] = created
++    if created is None:
++        rec["error"] = "TIMING_EVIDENCE_UNAVAILABLE"
+ 
+     def run():
+         h = hashlib.sha256()
++        def written(part):
++            pending = rec["pending_bytes"] - len(part)
++            count = rec["bytes_written"] + len(part)
++            rec.update(bytes_written=count, pending_bytes=pending, write_inflight=pending > 0, hash_pending=True)
++            h.update(part)
++            rec.update(sha256_prefix=h.hexdigest(), prefix_bytes=count, hash_pending=False)
++            completed = sup.aux_clock(rec, "mono_last_write", sink=True)
++            rec["mono_last_update"] = completed
++            if completed is None:
++                raise GuardError("TIMING_EVIDENCE_UNAVAILABLE")
+         try:
++            if rec["error"] is not None:
++                raise GuardError("TIMING_EVIDENCE_UNAVAILABLE")
+             while True:
+                 chunk = pipe.read1(65536)
+-                observed = time.monotonic()
+                 if not chunk:
+-                    rec.update(mono_eof=observed, mono_last_update=observed)
++                    rec["eof_seen"] = True  # Native EOF is retained before its clock.
++                    rec["mono_last_update"] = sup.aux_clock(rec, "mono_eof", sink=True)
++                    if rec["mono_eof"] is None:
++                        raise GuardError("TIMING_EVIDENCE_UNAVAILABLE")
+                     break
+                 total = rec["bytes_seen"] + len(chunk)
+                 room = max(0, cap - rec["bytes_written"])
+                 kept = chunk[:room]
+-                # One atomic row update describes a completed read, including any in-flight capped write.
+                 rec.update(bytes_seen=total, overflow=total > cap, write_inflight=bool(kept),
+-                           pending_bytes=len(kept), mono_last_read=observed, mono_last_update=observed)
++                           pending_bytes=len(kept))  # Returned read bytes are latched before timing.
++                rec["mono_last_update"] = sup.aux_clock(rec, "mono_last_read", sink=True)
++                if rec["mono_last_read"] is None:
++                    raise GuardError("TIMING_EVIDENCE_UNAVAILABLE")
+                 if kept:
+-                    write_all(out, kept, sup.deadline(IO_S))
+-                    h.update(kept)
+-                    completed = time.monotonic()
+-                    rec.update(bytes_written=rec["bytes_written"] + len(kept), sha256_prefix=h.hexdigest(),
+-                               write_inflight=False, pending_bytes=0,
+-                               mono_last_write=completed, mono_last_update=completed)
++                    write_all(out, kept, sup.deadline(IO_S), on_progress=written)
+         except BaseException as e:
+-            rec.update(error=repr(e), write_inflight=False, mono_last_update=time.monotonic())
++            rec.update(error=repr(e), write_inflight=False)
+         finally:
+-            dl = sup.deadline(IO_S)
+             errors = []
++            try:
++                dl = sup.deadline(IO_S)
++            except BaseException as e:
++                dl = None
++                errors.append(type(e).__name__)
+             for label, action in (("fsync", lambda: os.fsync(out)), ("close", lambda: os.close(out)), ("pipe_close", pipe.close)):
+                 try:
+                     action()
+-                    dl.check("sink " + label)
++                    if label == "fsync":
++                        rec["fsync_returned"] = True
++                    elif label == "close":
++                        rec["out_closed"], sup.capture_fds[name] = True, None
++                    else:
++                        rec["pipe_closed"] = True
++                    if dl is not None:
++                        dl.check("sink " + label)
+                 except BaseException as e:
+                     errors.append(repr(e))
+             error = (rec["error"] or "") + ";".join(errors) if errors else rec["error"]
+-            completed = time.monotonic()
+-            rec.update(error=error, sha256_prefix=h.hexdigest(), sha256_written=h.hexdigest(),
+-                       write_inflight=False, mono_close_completed=completed,
+-                       mono_last_update=completed, closed=error is None)
+-    # Every sink permanently inherits blocked cancellation signals; only the main thread receives them.
++            digest = h.hexdigest()
++            rec.update(error=error, sha256_prefix=digest, sha256_written=digest, write_inflight=False, closed=False)
++            completed = sup.aux_clock(rec, "mono_close_completed", sink=True)
++            rec["mono_last_update"] = completed
++            if completed is None:
++                rec["error"] = (rec["error"] or "") + ";TIMING_EVIDENCE_UNAVAILABLE"
++            rec["closed"] = rec["error"] is None and rec["eof_seen"] and rec["out_closed"] and rec["pipe_closed"]
+     with protected():
+         t = threading.Thread(target=run, name="capture-" + name, daemon=True)
+         t.start()
+@@ -1901,6 +2163,40 @@
+     return rec
+ 
+ 
++def install_main_identity(s, p):
++    s.rec["main_initial_identity_observed"] = dict(p)
++    if p["pgid"] != s.pid or p["euid"] != MY_UID or p["ruid"] != MY_UID:
++        raise GuardError("CHILD_IDENTITY_OR_GROUP_INVALID")
++    s.ident, s.group = p, p["pgid"]  # Mandatory cleanup state precedes ALL auxiliary end timing/history.
++
++
++def recover_registered_main(s, error):
++    record = s.child
++    if record is None:
++        record = next((r for r in s.keep if r["role"] == "child" and r.get("pid") is not None), None)
++    if record is None:
++        return False
++    s.child, s.pid = record, record["pid"]
++    if s.mono_spawn is None:
++        s.mono_spawn, s.epoch_spawn = record.get("mono_spawn"), record.get("epoch_spawn")
++    s.rec["main_recovery"] = {"pid": record["pid"], "error": repr(error), "identity_error": None}
++    try:
++        if s.ident is None and not record["leader_reaped"]:
++            raw = s.acquire_identity(s.pid, "main_recovery", lambda p: install_main_identity(s, p))
++            s.rec["main_initial_identity_interval"] = [raw["mono_begin"], raw["mono_end"]]
++            s.rec["mono_main_initial_identity_observed"] = raw["mono_end"]
++            s.rec["main_initial_identity_event_ref"] = s.retain_acquisition(raw, True)
++            s.register_owned(s.ident, "child")
++    except BaseException as identity_error:
++        s.rec["main_recovery"]["identity_error"] = repr(identity_error)
++    try:
++        s.fail("POST_SPAWN_FAILURE", repr(error))
++    finally:
++        s.close_record_endpoints(record, readers=True)
++        s.reap_record(record, main=True)
++    return True
++
++
+ def launch_and_go(s):
+     s.phase = "PRE_GO"
+     s.rec["start_date"] = s.date_now("start")
+@@ -1921,21 +2217,22 @@
+         raise GuardError("LAUNCH_RESOURCES_FAILED")
+     s.resource_age(c)
+     dl.check("after launch preparation")
+-    child = spawn_registered(s, s.cfg["argv"], dict(s.cfg["env"]), "child", dl,
+-                             s.cfg["max_wall_s"] + s.cfg["settle_s"] + FINALIZE_S)
++    try:
++        child = spawn_registered(s, s.cfg["argv"], dict(s.cfg["env"]), "child", dl,
++                                 s.cfg["max_wall_s"] + s.cfg["settle_s"] + FINALIZE_S)
++    except BaseException as e:
++        if not recover_registered_main(s, e):
++            raise
++        s.phase = "RUNNING"
++        observe(s)
++        return
+     s.rec["launch_commit"] = child["launch_commit"]
+     try:
+-        initial_begin = time.monotonic()
+-        initial = identify(s.pid)
+-        initial_end = time.monotonic()
+-        s.rec["main_initial_identity_observed"] = dict(initial)
+-        s.rec["mono_main_initial_identity_observed"] = initial_end
+-        s.rec["main_initial_identity_interval"] = [initial_begin, initial_end]
+-        if initial["pgid"] != s.pid or initial["euid"] != MY_UID or initial["ruid"] != MY_UID:
+-            raise GuardError("CHILD_IDENTITY_OR_GROUP_INVALID")
+-        s.ident, s.group = initial, initial["pgid"]  # Safe cleanup state precedes any fallible ledger retention.
+-        s.rec["main_initial_identity_event_ref"] = s.retain_identity(initial, "main_initial", True, (initial_begin, initial_end))
+-        s.register_owned(initial, "child")
++        raw = s.acquire_identity(s.pid, "main_initial", lambda p: install_main_identity(s, p))
++        s.rec["mono_main_initial_identity_observed"] = raw["mono_end"]
++        s.rec["main_initial_identity_interval"] = [raw["mono_begin"], raw["mono_end"]]
++        s.rec["main_initial_identity_event_ref"] = s.retain_acquisition(raw, True)
++        s.register_owned(s.ident, "child")
+         if child["spawn_error"] is not None:
+             raise GuardError(child["spawn_error"])
+         for name in ("stdout", "stderr"):
+@@ -2007,8 +2304,15 @@
+ def observe(s):
+     s.loop_status = "RUNNING"
+     while True:
++        if s.timing_failed:
++            if s.child is not None:
++                s.close_record_endpoints(s.child)
++                s.reap_record(s.child, main=True)
++            return
+         try:
+             s.reap()
++            if s.timing_failed:
++                return
+             if CANCEL["signal"] is not None:
+                 s.cancel_handled = True
+                 s.trip("SUPERVISOR_CANCEL", CANCEL["signal"])
+@@ -2037,7 +2341,10 @@
+                 return
+         except BaseException as e:
+             s.fail("OBSERVATION_FAILED", repr(e))
+-            s.enforce_runtime("observation_exception_after_native_return")
++            if not s.timing_failed:
++                s.enforce_runtime("observation_exception_after_native_return")
++        if s.timing_failed:
++            return
+         for name, cut in s.cutoffs():
+             if time.monotonic() > cut:
+                 s.fail(name)
+@@ -2072,14 +2379,31 @@
+ 
+ 
+ def finalize(s):
+-    phase = Deadline(FINALIZE_S, s.fit_mono)
+     try:
++        if s.timing_failed:
++            if s.child is not None and not s.child["leader_reaped"] and s.stop is None:
++                s.request_stop("FAILURE")  # Still requires the unchanged fresh deadline and full fingerprint checks.
++            for record in s.keep:
++                if record.get("pid") is None:
++                    continue
++                if record["role"] == "helper":
++                    s.helper_clockless_once(record)
++                else:
++                    s.close_record_endpoints(record, readers=True)
++                    s.reap_record(record, main=True)
++            return refuse(s, 13, "TIMING_EVIDENCE_UNAVAILABLE", {"config_sha256": s.config_sha})
++        phase = Deadline(FINALIZE_S, s.fit_mono)
+         return final_body(s, phase)
+     except BaseException as e:
+         if s.ack_output_started:
+             return 14  # A begun ACK never falls back to a second stdout summary, even if stderr reporting failed.
+-        sys.stderr.write("FINALIZATION_FAILED %r\n" % e)
+-        return refuse(s, 13, "FINALIZATION_FAILED", {"config_sha256": s.config_sha, "error": repr(e), "error_code": exception_code(e)})
++        diagnostic_error = None
++        try:
++            sys.stderr.write("FINALIZATION_FAILED %r\n" % e)
++        except BaseException as diagnostic:
++            diagnostic_error = type(diagnostic).__name__
++        return refuse(s, 13, "FINALIZATION_FAILED", {"config_sha256": s.config_sha, "error": repr(e),
++                                                    "error_code": exception_code(e), "diagnostic_error": diagnostic_error})
+ 
+ 
+ def final_body(s, phase):
+@@ -2175,6 +2499,10 @@
+     frozen_failure_codes, frozen_trip_codes = tuple(sorted(s.failure_keys)), tuple(s.trips)
+     s.rec.update(settlement=state, child_pid=s.pid, child_identity=s.ident, child_returncode=s.rc,
+                  child_exit_mono=s.exit_mono, child_exit_epoch=s.exit_epoch, wait_status_lost=s.lost_wait,
++                 timing_failed=s.timing_failed, raw_acquisitions=list(s.raw_acquisitions.values()),
++                 last_native_free=s.last_native_free,
++                 main_wait=None if s.child is None else {k: s.child.get(k) for k in
++                     ("pid", "native_wait_result", "raw_wait_status", "leader_reaped", "rc", "mono_reaped", "epoch_reaped")},
+                  failures=s.failures, trips=list(s.trips.values()), stop_request=s.stop, signal=s.signal,
+                  owned_identities=list(s.owned.values()), contract_violations=s.violations, clear=s.clear,
+                  unproved_history=list(s.unproved_history.values()), coverage_history=list(s.coverage_history),
+@@ -2296,7 +2624,7 @@
+     signal.signal(signal.SIGCHLD, signal.SIG_DFL)
+     signal.pthread_sigmask(signal.SIG_UNBLOCK, CANCEL_SIGNALS)
+     if len(sys.argv) != 2:
+-        sys.stderr.write("usage: owned_supervisor_v16.py CONFIG.json\n")
++        sys.stderr.write("usage: owned_supervisor_v17.py CONFIG.json\n")
+         return 2
+     s = None
+     try:
+@@ -2319,11 +2647,13 @@
+         try:
+             launch_and_go(s)
+         except BaseException as e:
+-            if s.pid is None:
++            if s.pid is None and not recover_registered_main(s, e):
+                 s.rec["launch_refusal"] = repr(e)
+                 if CANCEL["signal"] is not None:
+                     s.cancel_handled = True
+             else:
++                if s.ident is None:
++                    recover_registered_main(s, e)
+                 s.fail("LAUNCH_OR_OBSERVE_EXCEPTION", repr(e))
+                 try:
+                     observe(s)

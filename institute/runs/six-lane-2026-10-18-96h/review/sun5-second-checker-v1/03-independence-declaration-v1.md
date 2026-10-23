@@ -1,0 +1,11 @@
+# Sun5 second checker v1 — read-independence declaration
+
+- Written: 2026-10-19T17:37:06-0700 (host /bin/date). Worker: Sun5SecondChecker. Complete read log: `03-read-log-v1.json` (58df24ed53abacfb0439d9c48cf76a3f14a5d4f13a486f67f879e9c16fcebc03).
+
+1. I did not open, grep the contents of, copy, import or execute any earlier checker, verifier, engine, producer or controls implementation. In particular I never read `math16/sun-coset5/code/*`, `bridge_verifier_v1.py`, `indep_check_v1.py`, `indep_labelled_v1.py`, or any review-desk Python file; their names were seen only in directory listings.
+2. Checker logic was derived only from proof-v4.md, rules-v1.md, rules-v1-erratum-v3.md, README.md and README-addendum-v4.md (read in full), plus the certificate format, which was taken from cited producer output DATA (survivors.json decoding, controls.json witness arrays, run.json) and the untrusted extract itself.
+3. Exposure disclosed: a targeted grep of old `AUDIT-v1.md` displayed line 147 ("lex-min α over S5, then the min marker pair over the stabiliser, with none sorting after the vertices") and line 149 (old labelled coverage counts per rule). Neither enters the checker: no canonical form is computed, keys are never compared with a canonical representative, and no old count is used as an oracle. Grep hits in old review prompts showed only SOURCE/header lines and quoted AUDIT line 22–24 (finite-bridge pins), no code.
+4. Verdict/ruling prose (parent verdict v1, gate ruling, source scope) was used only for routes, pins and obligations.
+5. The representation (edge-colour masks + one-hot markers, subset-decomposition universe, generator-closed S5, forward orbit expansion into an owner array, Burnside cross-check, symbolic supremum gcds for unbounded marker exponents) was chosen by me for this slice and is documented in `00-scope-design-v1.md`, frozen before any code.
+6. Nothing was executed, compiled, tested, linted or formatted. The only computations performed were sha256 hashes, gzip decompression for a hash binding, JSON/regex shape census and line lookups of the untrusted extract, `ast.parse` of my own source (syntax + import/I/O inventory), and byte-level fixture materialisation exactly per the frozen controls plan.
+7. No self-acceptance: this slice delivers source and plans for parent review; correctness of the checker is not claimed.

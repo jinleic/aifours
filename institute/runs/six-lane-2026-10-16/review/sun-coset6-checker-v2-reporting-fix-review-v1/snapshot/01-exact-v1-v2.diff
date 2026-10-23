@@ -1,0 +1,67 @@
+--- checker_v1.py	2026-10-18 12:18:17
++++ checker_v2.py	2026-10-18 12:36:25
+@@ -1,7 +1,13 @@
+ #!/usr/bin/env python3
+ """
+-checker_v1.py -- independent checker for the engine-v3 Core5(6) certificate set
++checker_v2.py -- independent checker for the engine-v3 Core5(6) certificate set
+ (sun-coset6 lane, six-lane run 2026-10-16).
++
++v2 = checker_v1.py (sha256 5c25199b6de969c84c9521b9960a02d297d6cbacacea6c5e9e8f82695737874e) plus one
++reporting fix from the final Codex composition review (sun-coset6-composition-final-v1-codex-v1.note.md,
++MAJOR at lines 7-13): a witness skipped because the time budget ran out is now also recorded in the
++global incomplete list, and PASS now also requires, from the per-rule tallies, verified == number of
++lines, failed == 0 and incomplete == 0.  No check predicate changed.
+ 
+ Written ONLY from these texts; no engine or verifier source code was read:
+   sun-coset6/CERT-FORMAT-k6-v1.md (primary specification), CERT-FORMAT-k6-v2.md, rules-k6-v1.md,
+@@ -14,7 +20,7 @@
+ arithmetic in every decision.
+ 
+ Usage:
+-  TMPDIR=<own tmp dir> python3 checker_v1.py --engine-dir DIR --out-json REPORT.json \
++  TMPDIR=<own tmp dir> python3 checker_v2.py --engine-dir DIR --out-json REPORT.json \
+         --out-md REPORT.md --log RUNLOG.txt [--budget-seconds 3300]
+ Output files are created exclusively (open mode 'x'); the program never overwrites anything.
+ """
+@@ -1140,6 +1146,7 @@
+         rs["lines"] += 1
+         if time.time() > deadline:
+             rs["incomplete"] += 1
++            rep["incomplete"].append({"where": "line %d" % n, "what": "%s witness not checked before deadline" % rule})
+             continue
+         A = alpha_matrix(repc)
+         try:
+@@ -1205,9 +1212,12 @@
+     rep["environment"]["finished"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+     rep["environment"]["max_rss_bytes_self"] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+     rep["environment"]["elapsed_seconds"] = round(time.time() - t0, 1)
+-    if rep["failures"]:
++    pass_gate = {"verified_equals_total_lines": tot["verified"] == len(lines),
++                 "failed_zero": tot["failed"] == 0, "incomplete_zero": tot["incomplete"] == 0}
++    g["pass_gate"] = pass_gate
++    if rep["failures"] or tot["failed"] != 0:
+         verdict = "FAIL"
+-    elif rep["incomplete"]:
++    elif rep["incomplete"] or not all(pass_gate.values()):
+         verdict = "INCOMPLETE"
+     else:
+         verdict = "PASS"
+@@ -1226,7 +1236,7 @@
+ 
+ def render_md(rep):
+     g = rep["global"]
+-    out = ["# Independent checker report (checker_v1, standard library, one process)\n"]
++    out = ["# Independent checker report (checker_v2, standard library, one process)\n"]
+     out.append("- Verdict: **%s** (failures %d, incomplete parts %d)" % (
+         rep["verdict"], rep["failures_total"], len(rep["incomplete"])))
+     out.append("- Checker: `%s` sha256 `%s`" % (rep["checker"]["path"], rep["checker"]["sha256"]))
+@@ -1265,7 +1275,7 @@
+     out.append("\n## Global\n")
+     for key in ("lines_parsed", "lines_malformed", "survive_lines", "survivors_json_empty", "total_orbits_match",
+                 "rlp_dual_entries", "rlp_keys_checked", "rlp_keys_passed", "rlp_keys_failed",
+-                "rlp_dual_entries_unused", "leaves_total_mine", "manifest_lists_input_hashes"):
++                "rlp_dual_entries_unused", "leaves_total_mine", "manifest_lists_input_hashes", "pass_gate"):
+         out.append("- %s: %s" % (key, g.get(key)))
+     out.append("- FH5: %s" % (g.get("fh5"),))
+     out.append("- q statistics: %s" % (g.get("q_statistics"),))

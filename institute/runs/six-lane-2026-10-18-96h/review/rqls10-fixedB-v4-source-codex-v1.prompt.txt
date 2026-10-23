@@ -1,0 +1,1827 @@
+Independent hostile safety/numerical-model source review, PRE-ADMISSION. No tools, code execution, edits or delegation. All embedded files frozen; no numpy run of these assay versions has occurred. Return GO_FOR_BOUNDED_Q1 / GO_WITH_FIXES / HOLD with severity-ranked concrete findings and minimum repairs. Q1 only (700s supervisor,900s child budget) can be admitted after fixes; Phase1/2 require separate parent itemGOs. Sourcev3 had an uninterruptible LM loop; v4 passes stage end to all run paths and checks TERM/deadlines inside iterations/retries. Review that fix deeply, not just flag presence.
+Contract: writes only under aifours, exclusive-create outputs, no deletion, SIGTERM + bounded wait ONLY (no SIGKILL/ulimit/tool-timeout), full process identity/census/receipt before next run; fresh stabilitygate; 10GiB lane disk ceiling; busy<=2; one single-threaded BLAS child;2GiB RSStrip,20MiB outputreservation. All known controls gates must pass before target starts; do not silently weaken amp<=1e-2 gate. No candidate/math proof from floating residuals. Any n10 endpoint with full Gram<1e-8,100 distinct rays,minsep>1e-6 must write complete U/B/seed and immediately stop7, including calibration stages. Residual<1e-10 but fullGram>=1e-8 must write U and stop8. Numerical refinement stays CANDIDATE until exact or certified-interval independent verification.
+Audit: full fixed-B parameterization qij=Ui ej, U0I; chart zero-diagonal skewHermitian, correct left/right Jacobian signs/block assembly, class indexing; all3v Gram lines independent from residual; ray uniqueness and minsep; stored witness reconstruction includes U0I; random-start arrays/RSS bounds; data input pins; every native spawn/signal/output identity. Gates S include anchors/Jacobian/normal assembly, N/Z4Z6 nofalse positives, C/Z5 classical only, KP mandatory 8small perturbations peranchor; misses are UNKNOWN and KR recovery not detectionpower.
+Q1 supposed to exercise one W DEADLINE at ~612s and supervisor DEADLINE/SIGTERM during WD at~700s, settle clean within7s. Check stage clock drift, no new start after deadline/TERM, convergence-vs-cancel precedence, worst uninterruptible BLAS interval, signals between over()/retract/run_one/main gates, candidate vs error/cap priority, safety guards and output caps. Qualification must not misclassify any RSS/disk/cancel trip as the intended test deadline. If KP fails beforeW, this is INCONCLUSIVE, not an altered gate. If1000 starts finish before a deadline, scenario unexercised, not PASS. Request erratumcorrects supervisor statusEXITED (not inferred EXITED_AFTER_SIGTERM). Config inputpins do not by themselves pin interpreter/dependencies; state actual risk, not hallucinated guarantees.
+The candidate Q1 checker is advisory, not automatic admission. Parent already noticed b_last_record's second disjunct accepts any WD-tag non-summary, and b_supervisor accepts firstDEADLINE without explicitly excluding additional trips/error/cancel. Audit whether these can falsely PASS the intended in-LM cancellation scenario; propose exact raw checks. Do not count copy/wiring/default tests as behavior proof. No build/lint/tests now: report a bounded ACTUAL behavior qualification sequence the parent can run, not fake mocked success.
+
+### rqls_fixedb_lm_v4.py
+Path:/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10/code/rqls_fixedb_lm_v4.py
+SHA256:816884478ae6eb163c328db9c6f3984d7a447260ddbda0e4887d4f5a7310470e
+#!/usr/bin/env python3
+"""rqls_fixedb_lm_v4: float Levenberg-Marquardt assay of the FIXED-B UNITARY MODEL (no orbit symmetry) for 1-RQLS(v)
+(design note evidence/fixedb-unitary-model-proposal-v1.md). NOT a certificate; any target miss is a scoped UNKNOWN.
+
+Model: B is a fixed Latin square (the resolution). Cell (i, j) carries q_ij = U_i e_j with U_0 = I (rows built in);
+unknowns U_1..U_{v-1} unitary. For i < i' let M = U_i^* U_i'. Residual (complex, 2v per pair) = M[p, p] (columns) and
+M[p, pi(p)] (B-classes), pi(p) = the column j' with B[i'][j'] = B[i][p]; real residual = (Re, Im); 2 v^2 (v - 1) reals.
+Chart: U_k <- U_k expm(A_k), A_k skew-Hermitian with ZERO diagonal (right phases removed); real parameters x_ab, y_ab
+(a < b): A[a,b] = x + i y, A[b,a] = -x + i y; v (v - 1)^2 parameters. Analytic Jacobian (validated in pure Python by
+code/fixedb_jacobian_v1.py, receipt evidence/fixedb_jacobian_v1.receipt.md): dM = -A_i M + M A_i', A_0 = 0. Normal
+equations assembled pair-block-wise. LM damping schedule as rqls_wh10_lm_v2 (lam0 1e-3, x10 on failure up to 12 tries,
+/3 on success, floor 1e-12); CONVERGED when |r|^2 < 1e-26; STALL; MAX_ITER after ITERS; polar re-unitarisation every 25
+iterations.
+EVERY endpoint is verified on the FULL configuration: Gram deviation of all v rows, v columns and v B-classes (3v
+lines, per family recorded); "verified" = max deviation < 1e-8. For deviation < 1e-6 distinct rays are counted (pairs
+with 1 - |<q,q'>|^2 < 1e-7 merged; minsep recorded). Maximal candidate = v = 10 (ANY stage), verified, 100 rays, minsep >
+1e-6: U written at full precision, then IMMEDIATE stop (exit 7). Model defect = LM residual < 1e-10 with deviation >=
+1e-8 (any stage): U written, IMMEDIATE stop (exit 8). U is also written for the first 32 verified v = 10 TARGET
+endpoints (stages W, WD, WS; v2 change: v1 also spent these slots on the Parker calibration stages) and the first 8
+verified S8 endpoints. v3 change: in KP only a SKIPPED small-amplitude (<= 1e-2) run fails the gate (time-skipped
+0.1 / 0.3 runs are recorded only), and the KP slot is split 20 / 30 / 50 % over the v = 7, 8, 10 anchors.
+v4 change (parent HOLD on v3): every LM run receives its stage end; lm() checks the SIGTERM flag and min(stage end,
+T0 + BUDGET) before each outer iteration, after the normal-equation assembly, before each damping retry and after each
+solve, and then returns status TERMINATED or DEADLINE with the last accepted (finite) iterate - never CONVERGED. The
+record is still written with full-Gram diagnostics; candidate (exit 7) and defect (exit 8) stops keep priority; after a
+TERMINATED run, at any run boundary (over()) and at any gate evaluation after a SIGTERM, no new run starts and no gate is
+evaluated: TermStop, stop receipt TERMINATED_UNKNOWN, exit 5. After a DEADLINE run the stage starts nothing new (the
+stage loop sees its end); the S-stage self-tests contain no LM run.
+
+Stages (deterministic seeds; wall-clock stage ends inside BUDGET; actual counts recorded; unfinished runs SKIPPED_TIME):
+ S   self-tests (gate): input pins (sha256) of the exact anchors and the Parker pair; analytic Jacobian vs central
+     differences (exact for the bilinear M) at Haar-random U for cyclic v = 4, 5, 7, 10, XOR v = 8, Cay(D_5): relative
+     error < 1e-9; block normal equations vs dense J^T J, J^T r at v = 5 and 7 (< 1e-12 relative); retraction
+     unitarity < 1e-12; float anchors: Huang-Li v = 7 (cyclic B) and Zhang-Cao Example 3.3 v = 8 (XOR B): residual <
+     1e-12, deviation < 1e-12, rays 49 / 64, U_0 = I; classical Parker v = 10 point (B_array, mate A_array relabelled so
+     that A(0, j) = j): residual 0, deviation 0, rays 10; mutation U_1 <- U_1 expm(A(0.3 g)): residual >= 0.01.
+ N   negative controls (gate: >= 1 run, 0 verified, 0 defects): v = 4, B = Cay(Z_4) and v = 6, B = Cay(Z_6). Imports
+     (Zhang-Cao arXiv:2608.29201v2 Sec. 3, citing Ball-Simoens): every 1-RQLS(4) is classical, no 1-RQLS(6) exists;
+     Cay(Z_4) has no transversal.
+ C   classical-only control (gate: >= 1 run, 0 defects, every verified endpoint has exactly 5 rays): v = 5, Cay(Z_5).
+     Import: every 1-RQLS(5) is classical (same source).
+ KP  near-anchor recovery: U_anchor expm(A(amp g)), g ~ N(0,1)^P, amp in {1e-3, 1e-2, 0.1, 0.3}, 4 seeds, at the v = 7
+     and v = 8 anchors and the classical v = 10 Parker point. Gate: every amp <= 1e-2 run verified, with 49 rays (v = 7)
+     and 64 rays (v = 8); v = 10 amp <= 1e-2 runs verified (rays recorded: the point has trade directions); 0 defects.
+ KR  random-start recovery of KNOWN classes (gate: >= 1 run each, 0 defects; counts and ray histograms recorded, NOT
+     detection power for v = 10 targets): v = 7 cyclic B, v = 8 XOR B (NKR each), v = 10 Parker B (NKR10).
+ S8  sensitivity probe (recorded, no gate): v = 8, B = Cay(Z_8) (no classical solution, Hall-Paige), N8 random starts.
+ W   TARGET v = 10, B = Cay(Z_10), B(i,j) = (j - i) mod 10: NW random starts.
+ WD  TARGET v = 10, B = Cay(D_5), B(i,j) = index(g_i^-1 g_j), g = r^a s^b <-> a + 5b: NWD random starts.
+ WS  TARGET seeded: up to NS starts at verified (non-maximal) W/WD endpoints, U expm(A(0.05 g)).
+MODE "full" runs every stage with fixed calibration slots (S 60 s, N 120, C 60, KP 300, KR 900, S8 420) and splits the
+remainder R = BUDGET - 1980 as W 0.6 R, WD 0.3 R, WS 0.1 R (120 s reserve). MODE "target" runs S and KP (the gated
+self-tests and near-anchor recovery) and then W / WD / WS on R = BUDGET - 480 (same split). R <= 0 is a gate failure.
+Usage: rqls_fixedb_lm_v4.py OUT.jsonl BUDGET_S MODE NN NC NKR NKR10 N8 NW NWD NS STOP_RECEIPT
+Protocol (owned_supervisor_v2): no computation before the line "GO" on stdin (otherwise exit 6, no output); SIGTERM sets
+a flag honoured inside every LM run (see v4 change) and at run boundaries. Exit codes: 0 done, 2 exception, 3 gate
+failure, 4 output cap, 5 SIGTERM, 6 no GO,
+7 maximal candidate (unverified; immediate), 8 model defect (immediate). On every non-zero exit after GO a separate
+exclusive STOP_RECEIPT is written.
+"""
+import hashlib, json, math, signal, sys, time
+import numpy as np
+
+TERM = [False]
+signal.signal(signal.SIGTERM, lambda s, f: TERM.__setitem__(0, True))
+if sys.stdin.readline().strip() != "GO":
+    sys.exit(6)
+T0 = time.monotonic()
+OUT, BUDGET, MODE = sys.argv[1], float(sys.argv[2]), sys.argv[3]
+NN, NC, NKR, NKR10, N8, NW, NWD, NS = (int(a) for a in sys.argv[4:12])
+STOP_RECEIPT = sys.argv[12]
+LANE = "/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10"
+ANCHORS = (LANE + "/evidence/fixedb_anchors_v1.result.json",
+           "13d6ed64d8aafde833ce7981d7ed10044b2b06975d425a5778328ea610e22b92")
+PARKER = (LANE + "/evidence/parker_z7p3_classical_v1.result.json",
+          "00e991d692e669411a49d45aa1623c52189346dc32acb6fb1feea1858b841c30")
+CAP = 8 * 1024 * 1024
+ITERS = 300
+fh = open(OUT, "x", encoding="utf-8")
+NB = [0, 0]
+STAGE = ["init"]
+SAVED = {"v10": 0, "S8": 0}
+
+
+class CapStop(Exception):
+    pass
+
+
+class GateFail(Exception):
+    pass
+
+
+class CandidateStop(Exception):
+    pass
+
+
+class ModelDefectStop(Exception):
+    pass
+
+
+class TermStop(Exception):
+    pass
+
+
+def W(o):
+    s = json.dumps(o, separators=(",", ":")) + "\n"
+    b = len(s.encode("utf-8"))
+    if NB[0] + b > CAP:
+        raise CapStop("jsonl cap %d bytes reached" % CAP)
+    fh.write(s)
+    fh.flush()
+    NB[0] += b
+    NB[1] += 1
+
+
+def elapsed():
+    return time.monotonic() - T0
+
+
+def over(end):
+    if TERM[0]:
+        raise TermStop("SIGTERM seen at a run boundary")
+    return time.monotonic() > end or elapsed() > BUDGET
+
+
+def gate(tag, ok, detail):
+    if TERM[0]:
+        W({"GATE": tag, "pass": None, "detail": "not evaluated: SIGTERM received", "elapsed_s": round(elapsed(), 2)})
+        raise TermStop("SIGTERM seen before gate " + tag)
+    W({"GATE": tag, "pass": bool(ok), "detail": detail, "elapsed_s": round(elapsed(), 2)})
+    if not ok:
+        raise GateFail(tag)
+
+
+def is_latin(B):
+    v = B.shape[0]
+    return all(sorted(B[i].tolist()) == list(range(v)) for i in range(v)) and \
+        all(sorted(B[:, j].tolist()) == list(range(v)) for j in range(v))
+
+
+class Problem:
+    def __init__(self, B, name):
+        B = np.asarray(B, dtype=np.int64)
+        v = B.shape[0]
+        if B.shape != (v, v) or not is_latin(B):
+            raise GateFail("B not Latin: " + name)
+        self.v, self.name, self.B = v, name, B
+        pos = np.empty((v, v), dtype=np.int64)
+        for i in range(v):
+            pos[i, B[i]] = np.arange(v)
+        self.pos = pos
+        self.pairs = [(i, ip) for i in range(v) for ip in range(i + 1, v)]
+        n = len(self.pairs)
+        self.npairs = n
+        self.I = np.array([p[0] for p in self.pairs], dtype=np.int64)
+        self.IP = np.array([p[1] for p in self.pairs], dtype=np.int64)
+        pi = np.stack([pos[ip, B[i]] for (i, ip) in self.pairs])
+        R2 = 2 * v
+        self.Prow = np.concatenate([np.arange(v), np.arange(v)])
+        self.Qrow = np.concatenate([np.tile(np.arange(v), (n, 1)), pi], axis=1)
+        pl = [(a, b) for a in range(v) for b in range(a + 1, v)]
+        self.half = len(pl)
+        self.nb = 2 * self.half
+        self.P = (v - 1) * self.nb
+        self.ia = np.array([a for a, b in pl], dtype=np.int64)
+        self.ib = np.array([b for a, b in pl], dtype=np.int64)
+        pidx = -np.ones((v, v), dtype=np.int64)
+        for k, (a, b) in enumerate(pl):
+            pidx[a, b] = k
+            pidx[b, a] = k
+        r = np.arange(v)
+        coli = np.broadcast_to(pidx[self.Prow[:, None], r[None, :]], (n, R2, v))
+        sgi = np.broadcast_to(-np.sign(r[None, :] - self.Prow[:, None]).astype(float), (n, R2, v))
+        self.mi = (coli >= 0) & (self.I >= 1)[:, None, None]
+        colp = pidx[r[None, None, :], self.Qrow[:, :, None]]
+        sgp = np.sign(self.Qrow[:, :, None] - r[None, None, :]).astype(float)
+        self.mp = colp >= 0
+        base = np.broadcast_to((np.arange(n)[:, None, None] * R2 + np.arange(R2)[None, :, None]) * (2 * self.nb),
+                               (n, R2, v))
+        self.fxi = (base + coli)[self.mi]
+        self.fyi = (base + self.half + coli)[self.mi]
+        self.fxp = (base + self.nb + colp)[self.mp]
+        self.fyp = (base + self.nb + self.half + colp)[self.mp]
+        self.sgi = sgi[self.mi]
+        self.sgp = sgp[self.mp]
+        self.gn = np.broadcast_to(np.arange(n)[:, None, None], (n, R2, v))
+        self.gr = np.broadcast_to(r[None, None, :], (n, R2, v))
+        self.gq = np.broadcast_to(self.Qrow[:, :, None], (n, R2, v))
+        self.gp = np.broadcast_to(self.Prow[None, :, None], (n, R2, v))
+        self.rn = np.broadcast_to(np.arange(n)[:, None], (n, R2))
+        self.rp = np.broadcast_to(self.Prow[None, :], (n, R2))
+        self.eye = np.eye(self.P)
+
+    def Ms(self, U):
+        return np.conj(U[self.I]).transpose(0, 2, 1) @ U[self.IP]
+
+    def resid(self, U):
+        return self.Ms(U)[self.rn, self.rp, self.Qrow]
+
+    def normal(self, U):
+        M = self.Ms(U)
+        res = M[self.rn, self.rp, self.Qrow]
+        Mcol = M[self.gn, self.gr, self.gq]
+        Mrow = M[self.gn, self.gp, self.gr]
+        J = np.zeros(self.npairs * 2 * self.v * 2 * self.nb, dtype=complex)
+        J[self.fxi] = self.sgi * Mcol[self.mi]
+        J[self.fyi] = -1j * Mcol[self.mi]
+        J[self.fxp] = self.sgp * Mrow[self.mp]
+        J[self.fyp] = 1j * Mrow[self.mp]
+        J = J.reshape(self.npairs, 2 * self.v, 2 * self.nb)
+        Jr = np.concatenate([J.real, J.imag], axis=1)
+        rr = np.concatenate([res.real, res.imag], axis=1)
+        G = np.matmul(Jr.transpose(0, 2, 1), Jr)
+        g = np.einsum("nra,nr->na", Jr, rr)
+        nb = self.nb
+        JTJ = np.zeros((self.P, self.P))
+        JTr = np.zeros(self.P)
+        for k, (i, ip) in enumerate(self.pairs):
+            b = slice((ip - 1) * nb, ip * nb)
+            JTJ[b, b] += G[k, nb:, nb:]
+            JTr[b] += g[k, nb:]
+            if i >= 1:
+                a = slice((i - 1) * nb, i * nb)
+                JTJ[a, a] += G[k, :nb, :nb]
+                JTJ[a, b] += G[k, :nb, nb:]
+                JTJ[b, a] += G[k, nb:, :nb]
+                JTr[a] += g[k, :nb]
+        return JTJ, JTr, res, Jr
+
+    def A_of(self, th):
+        T = th.reshape(self.v - 1, self.nb)
+        x, y = T[:, :self.half], T[:, self.half:]
+        A = np.zeros((self.v - 1, self.v, self.v), dtype=complex)
+        A[:, self.ia, self.ib] = x + 1j * y
+        A[:, self.ib, self.ia] = -x + 1j * y
+        return A
+
+    def retract(self, U, th):
+        w, V = np.linalg.eigh(-1j * self.A_of(th))
+        E = (V * np.exp(1j * w)[:, None, :]) @ np.conj(V).transpose(0, 2, 1)
+        U2 = U.copy()
+        U2[1:] = U[1:] @ E
+        return U2
+
+
+def rand_U(v, rng):
+    Z = (rng.standard_normal((v - 1, v, v)) + 1j * rng.standard_normal((v - 1, v, v))) / math.sqrt(2.0)
+    Q, R = np.linalg.qr(Z)
+    d = np.diagonal(R, axis1=1, axis2=2)
+    U = np.empty((v, v, v), dtype=complex)
+    U[0] = np.eye(v)
+    U[1:] = Q * (d / np.abs(d))[:, None, :]
+    return U
+
+
+def polar(U):
+    Wm, _, Vh = np.linalg.svd(U[1:])
+    U2 = U.copy()
+    U2[1:] = Wm @ Vh
+    return U2
+
+
+def lm(Pr, U, end, iters=ITERS, tol=1e-26):
+    dl = min(end, T0 + BUDGET)
+
+    def halt():
+        if TERM[0]:
+            return "TERMINATED"
+        if time.monotonic() > dl:
+            return "DEADLINE"
+        return None
+    lam = 1e-3
+    r = Pr.resid(U)
+    nf = float(np.sum(np.abs(r) ** 2))
+    status, it = "MAX_ITER", 0
+    for it in range(1, iters + 1):
+        if nf < tol:
+            status = "CONVERGED"
+            break
+        h = halt()
+        if h:
+            status = h
+            break
+        JTJ, JTr, _, _ = Pr.normal(U)
+        h = halt()
+        if h:
+            status = h
+            break
+        improved = False
+        for _ in range(12):
+            h = halt()
+            if h:
+                break
+            try:
+                step = np.linalg.solve(JTJ + lam * Pr.eye, -JTr)
+            except np.linalg.LinAlgError:
+                lam *= 10
+                continue
+            h = halt()
+            if h:
+                break
+            if not np.all(np.isfinite(step)):
+                lam *= 10
+                continue
+            U2 = Pr.retract(U, step)
+            r2 = Pr.resid(U2)
+            n2 = float(np.sum(np.abs(r2) ** 2))
+            if n2 < nf:
+                U, r, nf = U2, r2, n2
+                lam = max(lam / 3, 1e-12)
+                improved = True
+                break
+            lam *= 10
+        if h:
+            status = h
+            break
+        if not improved:
+            status = "STALL"
+            break
+        if it % 25 == 0:
+            U = polar(U)
+            r = Pr.resid(U)
+            nf = float(np.sum(np.abs(r) ** 2))
+    return U, math.sqrt(nf), it, status
+
+
+def verify(Pr, U):
+    v = Pr.v
+    Id = np.eye(v)
+    Gr = np.conj(U).transpose(0, 2, 1) @ U
+    Q = U.transpose(0, 2, 1)
+    C = Q.transpose(1, 0, 2)
+    Gc = np.conj(C) @ C.transpose(0, 2, 1)
+    S = Q[np.arange(v)[None, :], Pr.pos.T]
+    Gs = np.conj(S) @ S.transpose(0, 2, 1)
+    dev = {"rows": float(np.max(np.abs(Gr - Id))), "columns": float(np.max(np.abs(Gc - Id))),
+           "classes": float(np.max(np.abs(Gs - Id)))}
+    return dev, Q
+
+
+def ray_count(Q, v):
+    V = Q.reshape(v * v, v)
+    V = V / np.linalg.norm(V, axis=1, keepdims=True)
+    O = np.abs(np.conj(V) @ V.T) ** 2
+    n = v * v
+    parent = list(range(n))
+
+    def find(a):
+        while parent[a] != a:
+            parent[a] = parent[parent[a]]
+            a = parent[a]
+        return a
+    iu = np.triu_indices(n, 1)
+    sep = 1.0 - O[iu]
+    close = sep < 1e-7
+    for a, b in zip(iu[0][close], iu[1][close]):
+        parent[find(int(a))] = find(int(b))
+    far = sep[~close]
+    return len({find(a) for a in range(n)}), (float(far.min()) if far.size else 1.0)
+
+
+def evaluate(Pr, U):
+    if not np.all(np.isfinite(U)):
+        return {"md": 1e9, "mdf": None}
+    dev, Q = verify(Pr, U)
+    md = max(dev.values())
+    out = {"md": md, "mdf": [dev["rows"], dev["columns"], dev["classes"]]}
+    if md < 1e-6:
+        out["rays"], out["minsep"] = ray_count(Q, Pr.v)
+    return out
+
+
+def u_payload(Pr, U):
+    return {"U_re": U[1:].real.tolist(), "U_im": U[1:].imag.tolist(), "B_matrix": Pr.B.tolist(), "B_name": Pr.name}
+
+
+def run_one(Pr, U0, tag, extra, end):
+    if TERM[0]:
+        raise TermStop("SIGTERM seen before the start of a %s run" % tag)
+    t0 = time.monotonic()
+    U, res, it, st = lm(Pr, U0, end)
+    rec = {"tag": tag, "v": Pr.v, "B": Pr.name, "st": st, "it": it, "res": res}
+    rec.update(evaluate(Pr, U))
+    rec.update(extra)
+    rec["ok"] = bool(rec["md"] < 1e-8)
+    rec["maximal_candidate"] = bool(Pr.v == 10 and rec["ok"] and rec.get("rays") == 100 and rec.get("minsep", 0.0) > 1e-6)
+    rec["model_defect"] = bool(res < 1e-10 and rec["md"] >= 1e-8)
+    save = rec["maximal_candidate"] or rec["model_defect"]
+    if not save and rec["ok"] and Pr.v == 10 and tag.startswith("W") and SAVED["v10"] < 32:
+        SAVED["v10"] += 1
+        save = True
+    if not save and rec["ok"] and tag.startswith("S8") and SAVED["S8"] < 8:
+        SAVED["S8"] += 1
+        save = True
+    if save:
+        rec.update(u_payload(Pr, U))
+    rec["s"] = round(time.monotonic() - t0, 4)
+    W(rec)
+    if rec["model_defect"]:
+        raise ModelDefectStop("model defect at " + tag)
+    if rec["maximal_candidate"]:
+        raise CandidateStop("unverified 100-ray candidate at " + tag)
+    if st == "TERMINATED" or TERM[0]:
+        raise TermStop("SIGTERM during or right after a %s run (status %s, it %d)" % (tag, st, it))
+    return rec, U
+
+
+def summarize(tag, recs, skipped):
+    ver = [r for r in recs if r["ok"]]
+    rh, st = {}, {}
+    for r in ver:
+        rh[str(r.get("rays"))] = rh.get(str(r.get("rays")), 0) + 1
+    for r in recs:
+        st[r["st"]] = st.get(r["st"], 0) + 1
+    res = sorted(r["res"] for r in recs)
+
+    def q(f):
+        return res[min(len(res) - 1, int(f * (len(res) - 1)))] if res else None
+    s = {"summary": tag, "runs": len(recs), "skipped_time": skipped, "verified": len(ver), "verified_rays": rh,
+         "status": st, "model_defects": sum(r["model_defect"] for r in recs),
+         "maximal_candidates": sum(r["maximal_candidate"] for r in recs),
+         "resid_quantiles": {"min": q(0.0), "q01": q(0.01), "q10": q(0.1), "median": q(0.5), "max": q(1.0)},
+         "n_resid_lt": {"1e-2": sum(1 for x in res if x < 1e-2), "1e-4": sum(1 for x in res if x < 1e-4),
+                        "1e-6": sum(1 for x in res if x < 1e-6)},
+         "mean_s": (round(sum(r["s"] for r in recs) / len(recs), 4) if recs else None),
+         "elapsed_s": round(elapsed(), 2)}
+    W(s)
+    return s
+
+
+def random_stage(tag, Pr, n, seed0, end):
+    recs, Us, skipped = [], [], 0
+    for k in range(n):
+        if over(end):
+            skipped += 1
+            continue
+        rng = np.random.default_rng(seed0 + k)
+        rec, U = run_one(Pr, rand_U(Pr.v, rng), tag, {"seed": seed0 + k}, end)
+        recs.append(rec)
+        Us.append(U)
+    if skipped:
+        W({"tag": tag, "status": "SKIPPED_TIME", "count": skipped})
+    return recs, Us, summarize(tag, recs, skipped)
+
+
+def cyclic(v):
+    return [[(j - i) % v for j in range(v)] for i in range(v)]
+
+
+def xor(v):
+    return [[i ^ j for j in range(v)] for i in range(v)]
+
+
+def dihedral5():
+    el = [(a, b) for b in range(2) for a in range(5)]
+    idx = {g: t for t, g in enumerate(el)}
+
+    def mul(g, h):
+        return ((g[0] + (h[0] if g[1] == 0 else -h[0])) % 5, (g[1] + h[1]) % 2)
+
+    def inv(g):
+        return ((-g[0]) % 5, 0) if g[1] == 0 else g
+    return [[idx[mul(inv(el[i]), el[j])] for j in range(10)] for i in range(10)]
+
+
+def sha(path):
+    with open(path, "rb") as f:
+        return hashlib.sha256(f.read()).hexdigest()
+
+
+def load_anchor(d, key, N, den):
+    z = np.exp(2j * np.pi * np.arange(N) / N)
+    C = np.array(d[key]["U_form"], dtype=float)
+    return (C @ z / den).transpose(0, 2, 1), d[key]["B"]
+
+
+def jac_selftest(Pr, rng):
+    U = rand_U(Pr.v, rng)
+    th = rng.standard_normal(Pr.P)
+    JTJ, JTr, res, Jr = Pr.normal(U)
+    T = th.reshape(Pr.v - 1, Pr.nb)
+    loc = np.zeros((Pr.npairs, 2 * Pr.nb))
+    for k, (i, ip) in enumerate(Pr.pairs):
+        if i >= 1:
+            loc[k, :Pr.nb] = T[i - 1]
+        loc[k, Pr.nb:] = T[ip - 1]
+    Jt = np.einsum("nra,na->nr", Jr, loc)
+    eps = 1e-4
+    A = Pr.A_of(th)
+
+    def pert(s):
+        U2 = U.copy()
+        U2[1:] = U[1:] @ (np.eye(Pr.v) + s * eps * A)
+        rc = Pr.resid(U2)
+        return np.concatenate([rc.real, rc.imag], axis=1)
+    fd = (pert(1.0) - pert(-1.0)) / (2 * eps)
+    e_fd = float(np.max(np.abs(Jt - fd)) / max(1.0, float(np.max(np.abs(Jt)))))
+    e_ne = None
+    if Pr.v <= 7:
+        Jd = np.zeros((Pr.npairs * 4 * Pr.v, Pr.P))
+        for k, (i, ip) in enumerate(Pr.pairs):
+            rows = slice(k * 4 * Pr.v, (k + 1) * 4 * Pr.v)
+            if i >= 1:
+                Jd[rows, (i - 1) * Pr.nb:i * Pr.nb] = Jr[k, :, :Pr.nb]
+            Jd[rows, (ip - 1) * Pr.nb:ip * Pr.nb] = Jr[k, :, Pr.nb:]
+        rr = np.concatenate([res.real, res.imag], axis=1).reshape(-1)
+        e_ne = max(float(np.max(np.abs(Jd.T @ Jd - JTJ)) / max(1.0, float(np.max(np.abs(JTJ))))),
+                   float(np.max(np.abs(Jd.T @ rr - JTr)) / max(1.0, float(np.max(np.abs(JTr))))))
+    U3 = Pr.retract(U, 0.3 * th / max(1.0, float(np.linalg.norm(th))))
+    e_un = float(np.max(np.abs(np.conj(U3).transpose(0, 2, 1) @ U3 - np.eye(Pr.v))))
+    return {"fd": e_fd, "normal_eq": e_ne, "retract_unitarity": e_un}
+
+
+def near_stage(tag, Pr, Ua, seed0, end, want_rays):
+    recs, skipped_small = [], 0
+    for ai, amp in enumerate((1e-3, 1e-2, 0.1, 0.3)):
+        for j in range(4):
+            sd = seed0 + 10 * ai + j
+            if over(end):
+                skipped_small += int(amp <= 1e-2)
+                W({"tag": tag, "amp": amp, "seed": sd, "status": "SKIPPED_TIME"})
+                continue
+            rng = np.random.default_rng(sd)
+            g = rng.standard_normal(Pr.P)
+            rec, _ = run_one(Pr, Pr.retract(Ua, amp * g), tag, {"amp": amp, "seed": sd}, end)
+            recs.append(rec)
+    small = [r for r in recs if r["amp"] <= 1e-2]
+    ok = skipped_small == 0 and len(small) == 8 and all(r["ok"] for r in small) and \
+        (want_rays is None or all(r.get("rays") == want_rays for r in small))
+    by = {}
+    for r in recs:
+        k = "%g" % r["amp"]
+        by.setdefault(k, [0, 0, {}])
+        by[k][0] += 1
+        by[k][1] += int(r["ok"])
+        if r["ok"]:
+            by[k][2][str(r.get("rays"))] = by[k][2].get(str(r.get("rays")), 0) + 1
+    W({"summary": tag, "by_amp_runs_verified_rays": by, "elapsed_s": round(elapsed(), 2)})
+    return ok, by, recs
+
+
+def main():
+    W({"assay": "rqls_fixedb_lm_v4", "numpy": np.__version__, "python": sys.version, "budget_s": BUDGET,
+       "argv": sys.argv[1:], "flags": {"optimize": sys.flags.optimize, "isolated": sys.flags.isolated}})
+    if sys.flags.optimize:
+        raise GateFail("python optimize flag set")
+    if MODE == "full":
+        fixed = [("S", 60), ("N", 120), ("C", 60), ("KP", 300), ("KR", 900), ("S8", 420)]
+    elif MODE == "target":
+        fixed = [("S", 60), ("KP", 300)]
+    else:
+        raise GateFail("unknown MODE " + MODE)
+    R = BUDGET - sum(b for _, b in fixed) - 120
+    if R <= 0:
+        raise GateFail("budget too small for MODE %s: R = %.1f s" % (MODE, R))
+    plan = fixed + [("W", 0.6 * R), ("WD", 0.3 * R), ("WS", 0.1 * R)]
+    ends, acc, t0 = {}, 0.0, time.monotonic()
+    for tag, b in plan:
+        acc += b
+        ends[tag] = t0 + acc
+    W({"plan_s": plan, "mode": MODE, "reserve_s": 120})
+    # S: self-tests
+    STAGE[0] = "S"
+    pins = {"anchors": sha(ANCHORS[0]) == ANCHORS[1], "parker": sha(PARKER[0]) == PARKER[1]}
+    gate("S_input_pins", all(pins.values()), {"pins": pins})
+    with open(ANCHORS[0], "r", encoding="utf-8") as f:
+        AN = json.load(f)
+    with open(PARKER[0], "r", encoding="utf-8") as f:
+        PK = json.load(f)["pairs"][0]
+    U7, B7 = load_anchor(AN, "v7", 7, 7.0)
+    U8, B8 = load_anchor(AN, "v8", 8, 2.0)
+    Apk, Bpk = np.array(PK["A_array"]), np.array(PK["B_array"])
+    sig = np.empty(10, dtype=np.int64)
+    sig[Apk[0]] = np.arange(10)
+    Arel = sig[Apk]
+    U10 = np.zeros((10, 10, 10), dtype=complex)
+    for i in range(10):
+        U10[i, Arel[i], np.arange(10)] = 1.0
+    orth = len({(int(a), int(b)) for a, b in zip(Arel.reshape(-1), Bpk.reshape(-1))}) == 100
+    P7, P8, P10 = Problem(B7, "cyclic7_huang_li"), Problem(B8, "xor8_zhang_cao"), Problem(Bpk, "parker_z7p3_pair0_B")
+    rng = np.random.default_rng(12345)
+    js = {}
+    for name, Pr in (("cyc4", Problem(cyclic(4), "cyc4")), ("cyc5", Problem(cyclic(5), "cyc5")), ("cyc7", P7),
+                     ("xor8", P8), ("cyc10", Problem(cyclic(10), "cyc10")), ("d5", Problem(dihedral5(), "d5"))):
+        js[name] = jac_selftest(Pr, rng)
+    jok = all(t["fd"] < 1e-9 and (t["normal_eq"] is None or t["normal_eq"] < 1e-12) and t["retract_unitarity"] < 1e-12
+              for t in js.values()) and js["cyc5"]["normal_eq"] is not None and js["cyc7"]["normal_eq"] is not None
+    gate("S_jacobian", jok, {"by_B": js, "rule": "fd < 1e-9; block normal equations vs dense < 1e-12 (v <= 7); "
+                                               "retraction unitarity < 1e-12"})
+    an = {}
+    for name, Pr, U, want in (("anchor7", P7, U7, 49), ("anchor8", P8, U8, 64), ("parker10", P10, U10, 10)):
+        res = float(np.max(np.abs(Pr.resid(U))))
+        ev = evaluate(Pr, U)
+        g = np.random.default_rng(777).standard_normal(Pr.P)
+        Um = U.copy()
+        Um[1] = Pr.retract(U, 0.3 * g)[1]
+        resm = float(np.linalg.norm(Pr.resid(Um)))
+        u0 = float(np.max(np.abs(U[0] - np.eye(Pr.v))))
+        an[name] = {"res": res, "md": ev["md"], "rays": ev.get("rays"), "minsep": ev.get("minsep"), "mut_res": resm,
+                    "U0_dev": u0}
+        an[name]["pass"] = bool(res < 1e-12 and ev["md"] < 1e-12 and ev.get("rays") == want and resm >= 0.01
+                                and u0 == 0.0)
+    an["parker10"]["orthogonal_mate"] = orth
+    gate("S_anchors", all(a["pass"] for a in an.values()) and orth,
+         {"anchors": an, "rule": "float residual < 1e-12, full Gram < 1e-12, rays 49/64/10, U_0 = I, mutation residual "
+                                 ">= 0.01; Parker mate orthogonal"})
+    if MODE == "full":
+        # N: negative controls
+        STAGE[0] = "N"
+        nsum, st0 = {}, time.monotonic()
+        for di, (v, seed0) in enumerate(((4, 100000), (6, 110000))):
+            sub_end = st0 + (ends["N"] - st0) * (di + 1) / 2.0
+            _, _, s = random_stage("N_negative_cyc%d" % v, Problem(cyclic(v), "cyc%d" % v), NN, seed0, sub_end)
+            nsum[str(v)] = {"runs": s["runs"], "verified": s["verified"], "defects": s["model_defects"],
+                            "min_res": s["resid_quantiles"]["min"]}
+        gate("N_negative_controls", all(x["runs"] >= 1 and x["verified"] == 0 and x["defects"] == 0
+                                        for x in nsum.values()),
+             {"by_v": nsum, "rule": ">= 1 run, 0 verified, 0 model defects for Cay(Z_4) and Cay(Z_6)"})
+        # C: classical-only control
+        STAGE[0] = "C"
+        recs, _, s = random_stage("C_classical_only_cyc5", Problem(cyclic(5), "cyc5"), NC, 120000, ends["C"])
+        bad = [r for r in recs if r["ok"] and r.get("rays") != 5]
+        gate("C_classical_only_v5", s["runs"] >= 1 and s["model_defects"] == 0 and not bad,
+             {"runs": s["runs"], "verified": s["verified"], "verified_rays": s["verified_rays"], "non5": len(bad),
+              "rule": ">= 1 run, 0 defects, every verified endpoint has exactly 5 rays"})
+    # KP: near-anchor recovery
+    STAGE[0] = "KP"
+    kp_ok, kpd, st0 = True, {}, time.monotonic()
+    for di, (name, Pr, Ua, want, seed0) in enumerate((("KP_anchor7", P7, U7, 49, 400000),
+                                                       ("KP_anchor8", P8, U8, 64, 410000),
+                                                       ("KP_parker10", P10, U10, None, 420000))):
+        sub_end = st0 + (ends["KP"] - st0) * (0.2, 0.5, 1.0)[di]
+        ok, by, _ = near_stage(name, Pr, Ua, seed0, sub_end, want)
+        kp_ok = kp_ok and ok
+        kpd[name] = by
+    gate("KP_near_anchor", kp_ok, {"by_anchor": kpd, "rule": "every amp <= 1e-2 run verified (8 per anchor); rays 49 at "
+                                                               "v = 7 and 64 at v = 8; v = 10 rays recorded; 0 defects"})
+    if MODE == "full":
+        # KR: random recovery of known classes
+        STAGE[0] = "KR"
+        krs, st0 = {}, time.monotonic()
+        tot = ends["KR"] - st0
+        for name, Pr, n, seed0, frac in (("KR_random_cyc7", P7, NKR, 200000, 0.15),
+                                         ("KR_random_xor8", P8, NKR, 210000, 0.25),
+                                         ("KR_random_parker10", P10, NKR10, 220000, 0.60)):
+            sub_end = time.monotonic() + tot * frac
+            _, _, s = random_stage(name, Pr, n, seed0, min(sub_end, ends["KR"]))
+            krs[name] = {"runs": s["runs"], "verified": s["verified"], "rays": s["verified_rays"],
+                         "defects": s["model_defects"], "mean_s": s["mean_s"]}
+        gate("KR_known_class_recovery", all(x["runs"] >= 1 and x["defects"] == 0 for x in krs.values()),
+             {"by_B": krs, "rule": ">= 1 run per B and 0 model defects; counts recorded, not gated; NOT v = 10 "
+                                   "detection power"})
+        # S8: sensitivity probe
+        STAGE[0] = "S8"
+        random_stage("S8_cyc8", Problem(cyclic(8), "cyc8"), N8, 500000, ends["S8"])
+    # W, WD: targets
+    STAGE[0] = "W"
+    Pw = Problem(cyclic(10), "cyc10")
+    rw, uw, sw = random_stage("W_target_cyc10", Pw, NW, 1000000, ends["W"])
+    STAGE[0] = "WD"
+    Pd = Problem(dihedral5(), "d5")
+    rd, ud, sd = random_stage("WD_target_d5", Pd, NWD, 1100000, ends["WD"])
+    # WS: seeded target
+    STAGE[0] = "WS"
+    seeds = [(Pw, U) for r, U in zip(rw, uw) if r["ok"]] + [(Pd, U) for r, U in zip(rd, ud) if r["ok"]]
+    ws, skipped = [], 0
+    for k in range(min(NS, 4 * len(seeds))):
+        if over(ends["WS"]):
+            skipped += 1
+            continue
+        Pr, Us = seeds[k % len(seeds)]
+        rng = np.random.default_rng(1200000 + k)
+        rec, _ = run_one(Pr, Pr.retract(Us, 0.05 * rng.standard_normal(Pr.P)), "WS_target_seeded",
+                         {"seed": 1200000 + k, "seed_B": Pr.name}, ends["WS"])
+        ws.append(rec)
+    if skipped:
+        W({"tag": "WS_target_seeded", "status": "SKIPPED_TIME", "count": skipped})
+    sws = summarize("WS_target_seeded", ws, skipped)
+    keys = ("runs", "verified", "verified_rays", "maximal_candidates", "model_defects", "skipped_time")
+    W({"end": True, "terminated": TERM[0], "target_cyc10": {k: sw[k] for k in keys}, "target_d5": {k: sd[k] for k in keys},
+       "target_seeded": {k: sws[k] for k in keys}, "seed_pool": len(seeds), "records": NB[1], "bytes": NB[0],
+       "elapsed_s": round(elapsed(), 2)})
+    return 0
+
+
+def stop_receipt(status, detail):
+    try:
+        with open(STOP_RECEIPT, "x", encoding="utf-8") as sf:
+            json.dump({"status": status, "stage": STAGE[0], "detail": detail, "jsonl_records": NB[1], "jsonl_bytes": NB[0],
+                       "elapsed_s": round(elapsed(), 2), "terminated": TERM[0]}, sf, indent=1)
+    except OSError:
+        pass
+
+
+if __name__ == "__main__":
+    code = 0
+    try:
+        code = main()
+    except CapStop as ex:
+        stop_receipt("CAP_STOP_UNKNOWN", repr(ex))
+        code = 4
+    except CandidateStop as ex:
+        stop_receipt("CANDIDATE_UNVERIFIED_STOP", str(ex))
+        code = 7
+    except ModelDefectStop as ex:
+        stop_receipt("MODEL_DEFECT_STOP", str(ex))
+        code = 8
+    except GateFail as ex:
+        stop_receipt("GATE_FAIL_STOP", repr(ex))
+        code = 3
+    except TermStop as ex:
+        stop_receipt("TERMINATED_UNKNOWN", str(ex))
+        code = 5
+    except Exception as ex:
+        import traceback
+        tb = traceback.format_exc()[-4000:]
+        try:
+            W({"exception": repr(ex), "traceback": tb, "elapsed_s": round(elapsed(), 2)})
+        except CapStop:
+            pass
+        stop_receipt("EXCEPTION_STOP", tb)
+        code = 2
+    if code == 0 and TERM[0]:
+        stop_receipt("TERMINATED_UNKNOWN", "SIGTERM received; stages after the flag are incomplete")
+        code = 5
+    fh.close()
+    sys.exit(code)
+
+
+### rqls_fixedb_lm_v3_to_v4.diff
+Path:/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10/review/rqls_fixedb_lm_v3_to_v4.diff
+SHA256:504f5e852118fe4297bbdc2477e176e8f9409fc6d8c52e68a0b8cfd649d7dd32
+--- code/rqls_fixedb_lm_v3.py	2026-10-19 05:13:48
++++ code/rqls_fixedb_lm_v4.py	2026-10-19 05:24:45
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""rqls_fixedb_lm_v3: float Levenberg-Marquardt assay of the FIXED-B UNITARY MODEL (no orbit symmetry) for 1-RQLS(v)
++"""rqls_fixedb_lm_v4: float Levenberg-Marquardt assay of the FIXED-B UNITARY MODEL (no orbit symmetry) for 1-RQLS(v)
+ (design note evidence/fixedb-unitary-model-proposal-v1.md). NOT a certificate; any target miss is a scoped UNKNOWN.
+ 
+ Model: B is a fixed Latin square (the resolution). Cell (i, j) carries q_ij = U_i e_j with U_0 = I (rows built in);
+@@ -19,6 +19,13 @@
+ endpoints (stages W, WD, WS; v2 change: v1 also spent these slots on the Parker calibration stages) and the first 8
+ verified S8 endpoints. v3 change: in KP only a SKIPPED small-amplitude (<= 1e-2) run fails the gate (time-skipped
+ 0.1 / 0.3 runs are recorded only), and the KP slot is split 20 / 30 / 50 % over the v = 7, 8, 10 anchors.
++v4 change (parent HOLD on v3): every LM run receives its stage end; lm() checks the SIGTERM flag and min(stage end,
++T0 + BUDGET) before each outer iteration, after the normal-equation assembly, before each damping retry and after each
++solve, and then returns status TERMINATED or DEADLINE with the last accepted (finite) iterate - never CONVERGED. The
++record is still written with full-Gram diagnostics; candidate (exit 7) and defect (exit 8) stops keep priority; after a
++TERMINATED run, at any run boundary (over()) and at any gate evaluation after a SIGTERM, no new run starts and no gate is
++evaluated: TermStop, stop receipt TERMINATED_UNKNOWN, exit 5. After a DEADLINE run the stage starts nothing new (the
++stage loop sees its end); the S-stage self-tests contain no LM run.
+ 
+ Stages (deterministic seeds; wall-clock stage ends inside BUDGET; actual counts recorded; unfinished runs SKIPPED_TIME):
+  S   self-tests (gate): input pins (sha256) of the exact anchors and the Parker pair; analytic Jacobian vs central
+@@ -44,9 +51,10 @@
+ MODE "full" runs every stage with fixed calibration slots (S 60 s, N 120, C 60, KP 300, KR 900, S8 420) and splits the
+ remainder R = BUDGET - 1980 as W 0.6 R, WD 0.3 R, WS 0.1 R (120 s reserve). MODE "target" runs S and KP (the gated
+ self-tests and near-anchor recovery) and then W / WD / WS on R = BUDGET - 480 (same split). R <= 0 is a gate failure.
+-Usage: rqls_fixedb_lm_v3.py OUT.jsonl BUDGET_S MODE NN NC NKR NKR10 N8 NW NWD NS STOP_RECEIPT
++Usage: rqls_fixedb_lm_v4.py OUT.jsonl BUDGET_S MODE NN NC NKR NKR10 N8 NW NWD NS STOP_RECEIPT
+ Protocol (owned_supervisor_v2): no computation before the line "GO" on stdin (otherwise exit 6, no output); SIGTERM sets
+-a flag honoured between runs. Exit codes: 0 done, 2 exception, 3 gate failure, 4 output cap, 5 SIGTERM, 6 no GO,
++a flag honoured inside every LM run (see v4 change) and at run boundaries. Exit codes: 0 done, 2 exception, 3 gate
++failure, 4 output cap, 5 SIGTERM, 6 no GO,
+ 7 maximal candidate (unverified; immediate), 8 model defect (immediate). On every non-zero exit after GO a separate
+ exclusive STOP_RECEIPT is written.
+ """
+@@ -87,6 +95,10 @@
+ 
+ 
+ class ModelDefectStop(Exception):
++    pass
++
++
++class TermStop(Exception):
+     pass
+ 
+ 
+@@ -106,10 +118,15 @@
+ 
+ 
+ def over(end):
+-    return TERM[0] or time.monotonic() > end or elapsed() > BUDGET
++    if TERM[0]:
++        raise TermStop("SIGTERM seen at a run boundary")
++    return time.monotonic() > end or elapsed() > BUDGET
+ 
+ 
+ def gate(tag, ok, detail):
++    if TERM[0]:
++        W({"GATE": tag, "pass": None, "detail": "not evaluated: SIGTERM received", "elapsed_s": round(elapsed(), 2)})
++        raise TermStop("SIGTERM seen before gate " + tag)
+     W({"GATE": tag, "pass": bool(ok), "detail": detail, "elapsed_s": round(elapsed(), 2)})
+     if not ok:
+         raise GateFail(tag)
+@@ -243,7 +260,15 @@
+     return U2
+ 
+ 
+-def lm(Pr, U, iters=ITERS, tol=1e-26):
++def lm(Pr, U, end, iters=ITERS, tol=1e-26):
++    dl = min(end, T0 + BUDGET)
++
++    def halt():
++        if TERM[0]:
++            return "TERMINATED"
++        if time.monotonic() > dl:
++            return "DEADLINE"
++        return None
+     lam = 1e-3
+     r = Pr.resid(U)
+     nf = float(np.sum(np.abs(r) ** 2))
+@@ -252,14 +277,28 @@
+         if nf < tol:
+             status = "CONVERGED"
+             break
++        h = halt()
++        if h:
++            status = h
++            break
+         JTJ, JTr, _, _ = Pr.normal(U)
++        h = halt()
++        if h:
++            status = h
++            break
+         improved = False
+         for _ in range(12):
++            h = halt()
++            if h:
++                break
+             try:
+                 step = np.linalg.solve(JTJ + lam * Pr.eye, -JTr)
+             except np.linalg.LinAlgError:
+                 lam *= 10
+                 continue
++            h = halt()
++            if h:
++                break
+             if not np.all(np.isfinite(step)):
+                 lam *= 10
+                 continue
+@@ -272,6 +311,9 @@
+                 improved = True
+                 break
+             lam *= 10
++        if h:
++            status = h
++            break
+         if not improved:
+             status = "STALL"
+             break
+@@ -332,9 +374,11 @@
+     return {"U_re": U[1:].real.tolist(), "U_im": U[1:].imag.tolist(), "B_matrix": Pr.B.tolist(), "B_name": Pr.name}
+ 
+ 
+-def run_one(Pr, U0, tag, extra):
++def run_one(Pr, U0, tag, extra, end):
++    if TERM[0]:
++        raise TermStop("SIGTERM seen before the start of a %s run" % tag)
+     t0 = time.monotonic()
+-    U, res, it, st = lm(Pr, U0)
++    U, res, it, st = lm(Pr, U0, end)
+     rec = {"tag": tag, "v": Pr.v, "B": Pr.name, "st": st, "it": it, "res": res}
+     rec.update(evaluate(Pr, U))
+     rec.update(extra)
+@@ -356,6 +400,8 @@
+         raise ModelDefectStop("model defect at " + tag)
+     if rec["maximal_candidate"]:
+         raise CandidateStop("unverified 100-ray candidate at " + tag)
++    if st == "TERMINATED" or TERM[0]:
++        raise TermStop("SIGTERM during or right after a %s run (status %s, it %d)" % (tag, st, it))
+     return rec, U
+ 
+ 
+@@ -389,7 +435,7 @@
+             skipped += 1
+             continue
+         rng = np.random.default_rng(seed0 + k)
+-        rec, U = run_one(Pr, rand_U(Pr.v, rng), tag, {"seed": seed0 + k})
++        rec, U = run_one(Pr, rand_U(Pr.v, rng), tag, {"seed": seed0 + k}, end)
+         recs.append(rec)
+         Us.append(U)
+     if skipped:
+@@ -476,7 +522,7 @@
+                 continue
+             rng = np.random.default_rng(sd)
+             g = rng.standard_normal(Pr.P)
+-            rec, _ = run_one(Pr, Pr.retract(Ua, amp * g), tag, {"amp": amp, "seed": sd})
++            rec, _ = run_one(Pr, Pr.retract(Ua, amp * g), tag, {"amp": amp, "seed": sd}, end)
+             recs.append(rec)
+     small = [r for r in recs if r["amp"] <= 1e-2]
+     ok = skipped_small == 0 and len(small) == 8 and all(r["ok"] for r in small) and \
+@@ -494,7 +540,7 @@
+ 
+ 
+ def main():
+-    W({"assay": "rqls_fixedb_lm_v3", "numpy": np.__version__, "python": sys.version, "budget_s": BUDGET,
++    W({"assay": "rqls_fixedb_lm_v4", "numpy": np.__version__, "python": sys.version, "budget_s": BUDGET,
+        "argv": sys.argv[1:], "flags": {"optimize": sys.flags.optimize, "isolated": sys.flags.isolated}})
+     if sys.flags.optimize:
+         raise GateFail("python optimize flag set")
+@@ -625,7 +671,7 @@
+         Pr, Us = seeds[k % len(seeds)]
+         rng = np.random.default_rng(1200000 + k)
+         rec, _ = run_one(Pr, Pr.retract(Us, 0.05 * rng.standard_normal(Pr.P)), "WS_target_seeded",
+-                         {"seed": 1200000 + k, "seed_B": Pr.name})
++                         {"seed": 1200000 + k, "seed_B": Pr.name}, ends["WS"])
+         ws.append(rec)
+     if skipped:
+         W({"tag": "WS_target_seeded", "status": "SKIPPED_TIME", "count": skipped})
+@@ -662,6 +708,9 @@
+     except GateFail as ex:
+         stop_receipt("GATE_FAIL_STOP", repr(ex))
+         code = 3
++    except TermStop as ex:
++        stop_receipt("TERMINATED_UNKNOWN", str(ex))
++        code = 5
+     except Exception as ex:
+         import traceback
+         tb = traceback.format_exc()[-4000:]
+
+
+### rqls10-fixedb-GO-request-v1.md
+Path:/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10/review/rqls10-fixedb-GO-request-v1.md
+SHA256:9a891f0dded332da7a137f654e2000a3c93abee50a2017f9e4cfe682101573b9
+# Preregistered admission request: rqls_fixedb_lm_v3 Phase 1 (fixed-B unitary model, no orbit symmetry) - NOT run
+
+Recorded 2026-10-19T05:10:54-0700, pins revised to v3 and frozen 2026-10-19T05:14:34-0700 (from /bin/date). Requester ContinueRQLS10b. No numpy/native computation has been
+executed for this item (no smoke). Launch owner: to be named by the parent (this worker launches only if named in the
+GO). This request covers ONE calibration-plus-pilot run (Phase 1). Any target run with a larger budget (Phase 2) needs a
+separate GO computed from Phase 1 timings (section 5).
+
+## 1. Written basis (lane-internal, unreviewed, not parent-accepted)
+- Design note evidence/fixedb-unitary-model-proposal-v1.md a0f3c3fd191a2ac5670f477e5a18b99c741cc76b337896c1bbbd8cbfbd4302b2
+  (model, relation to the earlier `unsym` RRR path, source screen for Hall-Paige / quantum complete-mapping no-gos for
+  Cay(Z_10): none found; B choice Cay(Z_10) primary, Cay(D_5) secondary; headroom; stop rules; verification ladder).
+- Settled small probes (parent registry: SETTLED): evidence/fixedb_anchors_v1.receipt.md
+  dee13731c6e548854b4222b385bb8d2c1426986344b4d25019de7347f8327d4e (exact v = 7 Huang-Li and v = 8 Zhang-Cao anchors in
+  U-form); evidence/fixedb_jacobian_v1.receipt.md 28c2789a54e5001763ad4094dbe0824a95f2629eb6b77d25ec0cad12d0fc1ca4
+  (analytic Jacobian = central differences to <= 4.9e-13; anchor tangent counts); evidence/fixedb_candidate_verify_v1.selftest.receipt.md
+  3a1321cc5273ff5a12719ea1751c057a3fb92c36a0ae0317a0d99f2468fb6db4 (candidate verifier on perturbed anchors).
+
+## 2. Pins (sha256)
+- source code/rqls_fixedb_lm_v3.py 5bb69a05787ae1cc72c2a3628ac4ad67233e901d3c8793e0ef08bd6d7732d3d5 (0444). Lineage (all
+  frozen, never run, superseded before submission): v1 5a4e7956dabf1152356b90e1f72eea8394d0930608a35d6228d198ef25e0895e
+  (cited by the design note section 5) -> v2 89772debc90894e89bae084583311334c490662dab009f364e2ab6bb1cfadcba (diff
+  review/rqls_fixedb_lm_v1_to_v2.diff 08dbc5e34a37ced5a3ab92ac6048b5adb0fde466bf1806fde87900e24876cf38: the 32
+  U-payload slots for float-verified v = 10 endpoints are reserved for the target stages W/WD/WS) -> v3 (diff
+  review/rqls_fixedb_lm_v2_to_v3.diff 328990850e9b20f03c7a15f43180fdd9a1aadb3f442c1b6d5f1ea38400c88686: in KP only a
+  time-skipped run with amp <= 1e-2 fails the gate, skipped 0.1 / 0.3 runs are recorded only; KP slot split
+  20 / 30 / 50 % over the v = 7, 8, 10 anchors) + version strings. Protocol, exception classes, exit codes, stop
+  receipt, W() cap and LM damping schedule are copied from the parent's code/rqls_wh10_lm_v2.py
+  48b186e0a63bdad584ddcc36c198bab67ef9abd813cd55ed744427442e79f38e.
+- config evidence/rqls_fixedb_lm_v3.p1.supervisor-config-v1.json 04caa99c6fec145d4dc7355623ca10ef7f11815ca499f14d6ae30f958787d514
+  (pins the source and both inputs; the supervisor refuses to launch on any mismatch). The configs
+  evidence/rqls_fixedb_lm_v1.p1.supervisor-config-v1.json (69a5cc1f...16e7) and
+  evidence/rqls_fixedb_lm_v2.p1.supervisor-config-v1.json (cb78de54...2a62) are superseded and must not be launched.
+- inputs evidence/fixedb_anchors_v1.result.json 13d6ed64d8aafde833ce7981d7ed10044b2b06975d425a5778328ea610e22b92;
+  evidence/parker_z7p3_classical_v1.result.json 00e991d692e669411a49d45aa1623c52189346dc32acb6fb1feea1858b841c30 (pair 0)
+- supervisor code/owned_supervisor_v2.py 1fece595258d7ba448875c407e8b221bdbd01966824dc267147c316ef54115aa; gate
+  code/stability_gate_v2.py 1f62874aff9b22657a90f180b81c678117fd703afe2345f7576454e0faae008a (observer
+  RUN/control/resource_observer_v3.py fe311f28d122310da004d0968272ae294a99757756b4898f0d9db4cb13f04196)
+- tightening 8ac556699352a42f3d97f83861039e21f57db0646da2f38391ee1f11e330aa20; stop registry review/stop-registry-v2.json
+  a47bb3ffbff22c0f15b1d7fba186812c27ac925ec77a73c76b1d7eb3f639acb7 (no relevant stop)
+- candidate verifier (post-stop only) code/fixedb_candidate_verify_v1.py 9b915c425e34b00533a0c8bf8b5e6c5a10497f94b18deaad0df30d488f256735
+
+## 3. Run (argv in the config): MODE full, BUDGET 2400 s, NN 64, NC 64, NKR 64, NKR10 32, N8 128, NW 64, NWD 32, NS 32
+Model: q_ij = U_i e_j, U_0 = I; residual = M[p,p], M[p,pi(p)] of M = U_i^* U_i' (2 v^2 (v-1) reals); zero-diagonal
+skew-Hermitian charts; analytic Jacobian; LM <= 300 iterations per start (damping as rqls_wh10_lm_v2). EVERY endpoint:
+full float Gram of all v rows, v columns, v B-classes; float-verified = deviation < 1e-8; rays merged at
+1 - |<q,q'>|^2 < 1e-7, minsep recorded.
+Gates, all before any target start (GATE_FAIL_STOP receipt, exit 3, on failure):
+ S   pins; Jacobian vs central differences at Haar-random U (cyclic 4, 5, 7, 10; XOR 8; Cay(D_5)) < 1e-9; block normal
+     equations vs dense (v = 5, 7) < 1e-12; retraction unitarity < 1e-12; float anchors (Huang-Li v = 7: 49 rays;
+     Zhang-Cao v = 8: 64 rays; classical Parker v = 10: 10 rays) residual and full Gram < 1e-12, U_0 = I, mutation >= 0.01.
+ N   Cay(Z_4), Cay(Z_6) x 64 random starts: >= 1 run, 0 float-verified, 0 defects (imports: Zhang-Cao Sec. 3 citing
+     Ball-Simoens - every 1-RQLS(4) classical and Cay(Z_4) has no transversal; no 1-RQLS(6)).
+ C   Cay(Z_5) x 64: >= 1 run, 0 defects, every float-verified endpoint has exactly 5 rays (import: 1-RQLS(5) classical).
+ KP  near-anchor recovery at the three anchors, amp 1e-3, 1e-2, 0.1, 0.3 x 4 seeds (slot 300 s split 20 / 30 / 50 %):
+     all 8 runs with amp <= 1e-2 per anchor run (none time-skipped) and float-verified, with 49 rays (v = 7) and 64 rays
+     (v = 8); v = 10 rays recorded; 0 defects.
+ KR  random starts on cyclic v = 7 and XOR v = 8 (64 each) and the Parker v = 10 B (32): >= 1 run each, 0 defects; counts
+     and ray histograms recorded, NOT detection power for v = 10 targets.
+Recorded without gate: S8 = Cay(Z_8) x 128 (first even order where a cyclic-B solution is open to the requester).
+Targets (pilot size in Phase 1): W = Cay(Z_10), B(i,j) = (j - i) mod 10, x 64; WD = Cay(D_5) x 32; WS = up to 32 starts
+seeded at float-verified non-maximal W/WD endpoints (+ expm(0.05 g)). Unstarted runs are written as SKIPPED_TIME.
+Stage clocks: S 60, N 120, C 60, KP 300, KR 900 (cyclic7 15 %, XOR8 25 %, Parker10 60 %), S8 420; remainder
+R = 2400 - 1980 = 420 s split W 252, WD 126, WS 42; 120 s reserve. Supervisor max_wall 2700 s, settle 120 s, sample 2 s.
+
+## 4. Stop rules (immediate; flush before exit)
+- 7 CANDIDATE_UNVERIFIED_STOP: any v = 10 endpoint (any stage, including KP/KR on the Parker B) float-verified with 100
+  rays and minsep > 1e-6; U (full precision), B, seed written in the JSONL record first.
+- 8 MODEL_DEFECT_STOP: LM residual < 1e-10 with full deviation >= 1e-8 (any stage); U written.
+- 3 gate failure; 4 JSONL cap 8 MiB; 5 SIGTERM (flag honoured between runs); 6 no "GO" line; 2 exception (traceback
+  recorded). A separate exclusive stop receipt is written on every non-zero exit after GO.
+- After exit 7: nothing is claimed. Requester freezes the record and notifies the parent at once; (i) exact rational
+  Gram + all pairwise ray margins of the stored doubles (verifier `candidate` mode; stdlib, initial scope), (ii) 60-digit
+  refinement + full Gram (same script; at v = 10 the pure-Python Cholesky may exceed 300 s -> only under a parent GO),
+  (iii) independent exact/algebraic or certified-interval verification by three independent checkers chosen by the
+  parent. Status REFINED from (ii) is numerical CANDIDATE evidence, never labelled VERIFIED.
+
+## 5. Resources and calibrated budget
+- One child process (single-threaded BLAS via env), RSS expected < 300 MB (largest arrays at v = 10: 810 x 810 normal
+  matrix, 45 x 180 x 180 pair blocks; trip 2 GiB); JSONL expected < 2 MB (U payload capped at 32 v = 10 and 8 S8
+  endpoints), hard cap 8 MiB in code, output trip 9 MiB; projected reservation 20 MiB; free-disk trip 12.2 GB, launch
+  minimum 12,220,971,520 B; settle-by epoch 1792731393 (2026-10-22T21:56:33-0700) respected by the supervisor fit check.
+- Launch (only by the GO-named owner): fresh code/stability_gate_v2.py (projected 20,971,520 B) &&
+  code/owned_supervisor_v2.py evidence/rqls_fixedb_lm_v3.p1.supervisor-config-v1.json, tool timeout 0; launch-record
+  path + sha sent to the parent at launch; terminal receipt + census sent on return.
+- Phase 2 (NOT requested here): MODE target (gates S and KP rerun, then W/WD/WS). Budget B2 chosen by the parent; counts
+  derived from Phase 1: NW = floor(0.6 (B2 - 480) / mean_s(W)), NWD = floor(0.3 (B2 - 480) / mean_s(WD)), NS = floor(0.1
+  (B2 - 480) / mean_s(W)), using the Phase 1 per-run means recorded in the W / WD summaries.
+
+## 6. Known limits of this request
+- The numpy source has never been executed; implementation errors are caught by gate S (Jacobian, normal-equation
+  assembly, anchors) before any target start, at a cost of <= 60 s.
+- Stage timings are estimates; the stage clocks bound wall time, so low throughput shows up as SKIPPED_TIME, not overrun.
+- Claims: target misses are a scoped UNKNOWN for this model and these B's (never nonexistence); recovery rates are not
+  detection power; S8 is an observation; no novelty/priority claims; one implementation.
+
+
+### rqls10-fixedb-GO-request-v2.md
+Path:/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10/review/rqls10-fixedb-GO-request-v2.md
+SHA256:cbc89a55f7592f81fbf2753e7894121ed08d6fcb752d3b6216324d4b6866d6cd
+# Admission request v2: rqls_fixedb_lm_v4 - bounded behaviour qualification Q1, then Phase 1 - NOT run
+
+Recorded 2026-10-19T05:25:33-0700 (from /bin/date). Requester ContinueRQLS10b. Supersedes review/rqls10-fixedb-GO-request-v1.md
+(9a891f0dded332da7a137f654e2000a3c93abee50a2017f9e4cfe682101573b9), which pinned v3; the parent put v3 on HOLD (lm() ignored
+SIGTERM, the stage end and BUDGET for up to 300 iterations x 12 damping retries, so an in-progress run could overrun its
+stage and the supervisor's 120 s settle window). No numpy/native computation has been executed for any version. Launch
+owner: to be named by the parent. Everything in request v1 not changed below still applies (written basis, model,
+gates, stop rules 7/8/3/4/6/2, candidate path, claims).
+
+## 1. Pins (sha256)
+- source code/rqls_fixedb_lm_v4.py 816884478ae6eb163c328db9c6f3984d7a447260ddbda0e4887d4f5a7310470e (0444, 727 lines); diff
+  review/rqls_fixedb_lm_v3_to_v4.diff 504f5e852118fe4297bbdc2477e176e8f9409fc6d8c52e68a0b8cfd649d7dd32 against v3
+  5bb69a05787ae1cc72c2a3628ac4ad67233e901d3c8793e0ef08bd6d7732d3d5 (earlier lineage and diffs as in request v1). No model,
+  schedule or dependency change.
+- Q1 config evidence/rqls_fixedb_lm_v4.q1.supervisor-config-v2.json 7cb4a51c1444e9208be0e9134fb5b7e270f152c03c2a5f2d24e61d93ad0fd382
+  (supersedes q1 config-v1 3af8de20...6777, never launched: NW / NWD raised from 64 / 32 to 1000 / 1000 so that the W
+  and WD stages are time-limited and scenario (a) cannot be skipped by reaching the run cap early)
+- Phase 1 config evidence/rqls_fixedb_lm_v4.p1.supervisor-config-v1.json 0198d79743f87174d80a9ef8edf4f21e6d4d6d9c965b415b29e1249c9cc0ff46
+  (same argv as v3 Phase 1: MODE full, BUDGET 2400, NN 64, NC 64, NKR 64, NKR10 32, N8 128, NW 64, NWD 32, NS 32;
+  max_wall 2700 s). Configs for v1, v2 and v3 are superseded and must not be launched.
+- Both configs pin the source and the inputs evidence/fixedb_anchors_v1.result.json 13d6ed64...2b95 and
+  evidence/parker_z7p3_classical_v1.result.json 00e991d6...1c30; supervisor, gate, observer, tightening and stop registry
+  as in request v1.
+
+## 2. The v4 fix (minimal; old files untouched)
+- lm(Pr, U, end) uses dl = min(stage end, T0 + BUDGET) and checks the SIGTERM flag and dl before each outer iteration,
+  after the normal-equation assembly, before each damping retry and after each linear solve. On a hit it returns
+  status TERMINATED or DEADLINE with the last ACCEPTED iterate (finite) and its residual - never CONVERGED. A run that
+  converged before the check keeps CONVERGED.
+- run_one(..., end) receives the stage end from random_stage, near_stage (per-anchor sub-slot) and the WS loop; it still
+  evaluates the endpoint (full float Gram of all 3v lines, rays) and writes the record; candidate (exit 7) and model
+  defect (exit 8) keep priority; then, if the run was TERMINATED or the flag is set, TermStop -> stop receipt
+  TERMINATED_UNKNOWN, exit 5. over() raises TermStop at every run boundary once the flag is set, and gate() raises it
+  instead of evaluating a gate, so no new run starts and no gate is evaluated after a SIGTERM.
+- Wall-time claim, corrected: stage clocks bound the START of runs; an in-progress LM run stops at the next check after
+  its stage end, BUDGET or SIGTERM, i.e. after at most one normal-equation assembly or one solve + retraction + residual
+  (not measured; estimated well below 1 s at v = 10), plus the endpoint evaluation (full Gram + ray count). The S-stage
+  self-tests contain no LM run (expected seconds).
+
+## 3. Q1: bounded behaviour qualification (requested first)
+argv: MODE target, BUDGET 900 s (NN, NC, NKR, NKR10, N8 = 1 are unused in target mode), NW 1000, NWD 1000, NS 8; supervisor
+max_wall 700 s, settle 120 s. Plan: S 0-60 s, KP 60-360 s (gated; v = 7, 8, 10 anchors), W 360-612 s, WD 612-738 s,
+WS 738-780 s, reserve 120 s. Scenarios exercised: (a) child-side DEADLINE inside a v = 10 LM run at the W stage end
+(~612 s); (b) supervisor DEADLINE trip at ~700 s -> SIGTERM to the process group during a WD LM run.
+Proposed pass criteria (parent to confirm): pins OK and GO sent; gates S_input_pins, S_jacobian, S_anchors and
+KP_near_anchor PASS (if a gate fails, Q1 ends with exit 3 and is inconclusive for (a)/(b)); the W summary shows one run
+with st = DEADLINE and the W summary is written within 2 s after the planned W end; after the SIGTERM the child writes
+at most the interrupted run's record (st = TERMINATED, finite md) and exits 5 with stop receipt TERMINATED_UNKNOWN within
+5 s of the supervisor's signal (supervisor status EXITED_AFTER_SIGTERM); empty-child census afterwards; 0 model
+defects. A 100-ray v = 10 candidate during Q1 still stops with exit 7 (candidate path of request v1 section 4).
+Resources: one child, RSS expected < 300 MB, JSONL < 1 MB, output trip 9 MiB, projected 20 MiB.
+
+## 4. Phase 1 (after Q1 is accepted; separate GO)
+Unchanged from request v1 section 3 except the source/config pins above and the corrected wall-time statement.
+Phase 2 (target mode, larger budget) remains a later, separately sized request.
+
+
+### rqls10-fixedb-GO-request-v2-erratum-1.md
+Path:/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10/review/rqls10-fixedb-GO-request-v2-erratum-1.md
+SHA256:d47a099f087f192848497a5c2b50d3125892de30b17dc224a0d542fb7bcada30
+# Erratum 1 to review/rqls10-fixedb-GO-request-v2.md (cbc89a55f7592f81fbf2753e7894121ed08d6fcb752d3b6216324d4b6866d6cd)
+
+Recorded 2026-10-19T05:27:55-0700 (from /bin/date; written shortly after). Requester ContinueRQLS10b. The request file is
+unchanged; this note corrects the Q1 pass criteria against the actual code of code/owned_supervisor_v2.py
+(1fece595...15aa) and discloses two risks. No code or config changes; nothing has been run.
+
+- E1 (wrong label). After a DEADLINE trip owned_supervisor_v2 sends ONE identity-checked SIGTERM to the process group;
+  the next poll that finds the child gone records status "EXITED" (lines 116-119). "EXITED_AFTER_SIGTERM" is set only
+  on the finally path (line 177). Corrected criterion (b): supervisor receipt status EXITED, returncode 5,
+  trips[0].trip = "DEADLINE", sigterm_sent true, identity_ok_at_signal true, settlement SETTLED, group_members_after [],
+  and exit latency receipt.wall_s - trips[0].t <= 7 s (5 s plus one 2 s sample period); child stop receipt status
+  TERMINATED_UNKNOWN with stage "WD"; at most one WD run record after the trip, with st = "TERMINATED".
+- E2 (stage windows). Stage ends are absolute (t0 + cumulative plan); each stage starts when the previous one finishes.
+  W therefore starts when KP completes (probably well before 360 s) and runs until about 612 s. Corrected criterion (a):
+  exactly one W run record has st = "DEADLINE", it is the last W run record, a W SKIPPED_TIME record follows, and the W
+  summary has 612 <= elapsed_s <= 614.
+- E3 (risk, no change made). KP perturbs every chart coordinate by amp * N(0,1), so the perturbation norm is about
+  amp * sqrt(P): at amp = 1e-2 about 0.16 (v = 7, P = 252), 0.20 (v = 8, P = 392) and 0.28 (v = 10, P = 810), versus
+  about 0.045 in rqls_wh10_lm_v2 (P = 20). Recovery at this size is untested in this model (lane precedent: the v7
+  forced-Z7+3 LM recovered 16/16 near-anchor starts up to amp 0.1, a different model). If KP_near_anchor fails, Q1 ends
+  with exit 3 before W and is inconclusive for (a)/(b). Option for the parent: accept the risk, or request a v5 that
+  gates only amp = 1e-3 (norm <= 0.03) and records amp = 1e-2.
+- E4 (throughput estimate, not measured). A v = 10 LM iteration assembles an 810 x 810 normal matrix (45 pair blocks of
+  180 x 180 from 40 x 180 real Jacobian blocks) and solves it (about 0.35 GFlop per solve; estimated 0.05-0.2 s
+  single-threaded), so a 300-iteration v = 10 run may take tens of seconds and Phase 1's W / WD / KR-Parker10 windows may
+  complete only a few to a few tens of v = 10 runs (unstarted runs are recorded as SKIPPED_TIME). Phase 1 records mean_s
+  for sizing Phase 2.
+- Checker for the criteria: code/fixedb_q1_check_v1.py (stdlib, reads the Q1 outputs only; written, not run).
+
+
+### fixedb_q1_check_v1.py
+Path:/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10/code/fixedb_q1_check_v1.py
+SHA256:4e695ebbd8663ce3d7ce638c1d2547cf8d0dbbc8c96d51de317758be0dfe081c
+#!/usr/bin/env python3
+"""fixedb_q1_check_v1: standard-library checker of the Q1 behaviour-qualification criteria for rqls_fixedb_lm_v4
+(review/rqls10-fixedb-GO-request-v2.md section 3 as corrected by review/rqls10-fixedb-GO-request-v2-erratum-1.md).
+Reads ONLY the Q1 outputs (prefix evidence/rqls_fixedb_lm_v4.q1.sv2.*) and the frozen config; computes nothing else.
+Usage: fixedb_q1_check_v1.py PREFIX CONFIG OUT.json
+Verdict: PASS (all criteria), FAIL (a criterion failed), INCONCLUSIVE (a gate failed before W, or a candidate / defect
+stop occurred - the latter are reported for the candidate / defect path, not judged here).
+"""
+import hashlib, json, os, sys
+
+PREFIX, CONFIG, OUT = sys.argv[1], sys.argv[2], sys.argv[3]
+
+
+def sha(p):
+    with open(p, "rb") as f:
+        return hashlib.sha256(f.read()).hexdigest()
+
+
+def load_json(p):
+    with open(p, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+res = {"checker": "fixedb_q1_check_v1", "prefix": PREFIX, "config": {"path": CONFIG, "sha256": sha(CONFIG)}, "criteria": {}}
+files = {k: PREFIX + k for k in (".result.jsonl", ".stdout.txt", ".stderr.txt", ".stop-receipt.json", ".launch.json",
+                                 ".samples.jsonl", ".supervisor-receipt.json")}
+res["files"] = {k: ({"bytes": os.path.getsize(p), "sha256": sha(p)} if os.path.exists(p) else None) for k, p in files.items()}
+C = res["criteria"]
+cfg = load_json(CONFIG)
+sv = load_json(files[".supervisor-receipt.json"])
+recs = []
+with open(files[".result.jsonl"], "r", encoding="utf-8") as f:
+    for line in f:
+        if line.strip():
+            recs.append(json.loads(line))
+stop = load_json(files[".stop-receipt.json"]) if os.path.exists(files[".stop-receipt.json"]) else None
+res["supervisor"] = {k: sv.get(k) for k in ("status", "returncode", "trips", "sigterm_sent", "identity_ok_at_signal",
+                                            "settlement", "group_members_after", "go_sent", "wall_s", "max_rss_bytes",
+                                            "min_free_bytes", "error", "pid", "pgid")}
+res["stop_receipt"] = stop
+gates = {r["GATE"]: r["pass"] for r in recs if "GATE" in r}
+res["gates"] = gates
+rc = sv.get("returncode")
+if rc in (7, 8):
+    res["verdict"] = "INCONCLUSIVE"
+    res["note"] = "candidate (7) or model-defect (8) stop: follow the request's candidate / defect path"
+elif rc == 3 or any(v is False for v in gates.values()):
+    res["verdict"] = "INCONCLUSIVE"
+    res["note"] = "a gate failed before the target stages; scenarios (a)/(b) not exercised"
+else:
+    head = recs[0] if recs else {}
+    C["assay_v4"] = head.get("assay") == "rqls_fixedb_lm_v4"
+    C["argv_matches_config"] = sv.get("go_sent") is True and head.get("argv") == cfg["argv"][4:]
+    C["gates_pass"] = all(gates.get(g) is True for g in ("S_input_pins", "S_jacobian", "S_anchors", "KP_near_anchor"))
+    runs = [r for r in recs if "tag" in r and "st" in r]
+    C["no_defects_or_candidates"] = not any(r.get("model_defect") or r.get("maximal_candidate") for r in runs)
+    # (a) child-side DEADLINE at the W stage end
+    w_runs = [r for r in runs if r["tag"] == "W_target_cyc10"]
+    w_dead = [k for k, r in enumerate(w_runs) if r["st"] == "DEADLINE"]
+    w_sum = [r for r in recs if r.get("summary") == "W_target_cyc10"]
+    w_skip = [r for r in recs if r.get("tag") == "W_target_cyc10" and r.get("status") == "SKIPPED_TIME"]
+    C["a_one_deadline_run_last"] = len(w_dead) == 1 and w_dead[0] == len(w_runs) - 1
+    C["a_skipped_record"] = len(w_skip) == 1
+    C["a_summary_time"] = len(w_sum) == 1 and 612.0 <= w_sum[0]["elapsed_s"] <= 614.0
+    C["a_deadline_endpoint_finite"] = bool(w_dead) and w_runs[w_dead[0]].get("md", 1e9) < 1e9
+    # (b) supervisor DEADLINE trip -> SIGTERM inside WD
+    trips = sv.get("trips") or []
+    C["b_supervisor"] = (sv.get("status") == "EXITED" and rc == 5 and bool(trips) and trips[0].get("trip") == "DEADLINE"
+                         and sv.get("sigterm_sent") is True and sv.get("identity_ok_at_signal") is True
+                         and sv.get("settlement") == "SETTLED" and sv.get("group_members_after") == [])
+    C["b_latency"] = bool(trips) and isinstance(sv.get("wall_s"), (int, float)) and sv["wall_s"] - trips[0]["t"] <= 7.0
+    C["b_stop_receipt"] = stop is not None and stop.get("status") == "TERMINATED_UNKNOWN" and stop.get("stage") == "WD"
+    wd_runs = [r for r in runs if r["tag"] == "WD_target_d5"]
+    last = recs[-1] if recs else {}
+    C["b_last_record"] = (last.get("tag") == "WD_target_d5" and last.get("st") == "TERMINATED") or \
+        (last.get("summary") is None and last.get("tag") == "WD_target_d5")
+    C["b_no_wd_summary"] = not any(r.get("summary") == "WD_target_d5" for r in recs)
+    C["b_no_end_record"] = not any(r.get("end") for r in recs)
+    res["counts"] = {"W_runs": len(w_runs), "WD_runs": len(wd_runs),
+                     "W_mean_s": (round(sum(r["s"] for r in w_runs) / len(w_runs), 3) if w_runs else None),
+                     "WD_mean_s": (round(sum(r["s"] for r in wd_runs) / len(wd_runs), 3) if wd_runs else None),
+                     "W_verified": sum(1 for r in w_runs if r.get("ok")), "WD_verified": sum(1 for r in wd_runs if r.get("ok")),
+                     "W_status": {s: sum(1 for r in w_runs if r["st"] == s) for s in {r["st"] for r in w_runs}},
+                     "WD_status": {s: sum(1 for r in wd_runs if r["st"] == s) for s in {r["st"] for r in wd_runs}}}
+    res["verdict"] = "PASS" if all(C.values()) else "FAIL"
+with open(OUT, "x", encoding="utf-8") as f:
+    json.dump(res, f, indent=1)
+print(json.dumps({"verdict": res["verdict"], "criteria": C, "counts": res.get("counts"), "gates": gates}))
+
+
+### rqls_fixedb_lm_v4.q1.supervisor-config-v2.json
+Path:/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10/evidence/rqls_fixedb_lm_v4.q1.supervisor-config-v2.json
+SHA256:7cb4a51c1444e9208be0e9134fb5b7e270f152c03c2a5f2d24e61d93ad0fd382
+{
+  "lane": "/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10",
+  "argv": [
+    "/opt/homebrew/bin/python3.14",
+    "-I",
+    "-B",
+    "/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10/code/rqls_fixedb_lm_v4.py",
+    "/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10/evidence/rqls_fixedb_lm_v4.q1.sv2.result.jsonl",
+    "900",
+    "target",
+    "1",
+    "1",
+    "1",
+    "1",
+    "1",
+    "1000",
+    "1000",
+    "8",
+    "/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10/evidence/rqls_fixedb_lm_v4.q1.sv2.stop-receipt.json"
+  ],
+  "env": {
+    "TMPDIR": "/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10/tmp",
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "OPENBLAS_NUM_THREADS": "1",
+    "OMP_NUM_THREADS": "1",
+    "VECLIB_MAXIMUM_THREADS": "1",
+    "MKL_NUM_THREADS": "1"
+  },
+  "stdout": "/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10/evidence/rqls_fixedb_lm_v4.q1.sv2.stdout.txt",
+  "stderr": "/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10/evidence/rqls_fixedb_lm_v4.q1.sv2.stderr.txt",
+  "outputs": [
+    "/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10/evidence/rqls_fixedb_lm_v4.q1.sv2.result.jsonl",
+    "/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10/evidence/rqls_fixedb_lm_v4.q1.sv2.stdout.txt",
+    "/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10/evidence/rqls_fixedb_lm_v4.q1.sv2.stderr.txt",
+    "/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10/evidence/rqls_fixedb_lm_v4.q1.sv2.stop-receipt.json"
+  ],
+  "launch_record": "/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10/evidence/rqls_fixedb_lm_v4.q1.sv2.launch.json",
+  "samples": "/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10/evidence/rqls_fixedb_lm_v4.q1.sv2.samples.jsonl",
+  "receipt": "/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10/evidence/rqls_fixedb_lm_v4.q1.sv2.supervisor-receipt.json",
+  "pins": [
+    {
+      "path": "/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10/code/rqls_fixedb_lm_v4.py",
+      "sha256": "816884478ae6eb163c328db9c6f3984d7a447260ddbda0e4887d4f5a7310470e"
+    },
+    {
+      "path": "/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10/evidence/fixedb_anchors_v1.result.json",
+      "sha256": "13d6ed64d8aafde833ce7981d7ed10044b2b06975d425a5778328ea610e22b92"
+    },
+    {
+      "path": "/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10/evidence/parker_z7p3_classical_v1.result.json",
+      "sha256": "00e991d692e669411a49d45aa1623c52189346dc32acb6fb1feea1858b841c30"
+    }
+  ],
+  "max_wall_s": 700,
+  "rss_trip_bytes": 2147483648,
+  "free_trip_bytes": 12200000000,
+  "output_trip_bytes": 9437184,
+  "launch_free_min_bytes": 12220971520,
+  "sample_s": 2,
+  "settle_s": 120,
+  "max_chunk_seconds": 10800,
+  "owned_compute_settled_by_epoch": 1792731393.0
+}
+
+### rqls_fixedb_lm_v4.p1.supervisor-config-v1.json
+Path:/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10/evidence/rqls_fixedb_lm_v4.p1.supervisor-config-v1.json
+SHA256:0198d79743f87174d80a9ef8edf4f21e6d4d6d9c965b415b29e1249c9cc0ff46
+{
+  "lane": "/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10",
+  "argv": [
+    "/opt/homebrew/bin/python3.14",
+    "-I",
+    "-B",
+    "/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10/code/rqls_fixedb_lm_v4.py",
+    "/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10/evidence/rqls_fixedb_lm_v4.p1.sv2.result.jsonl",
+    "2400",
+    "full",
+    "64",
+    "64",
+    "64",
+    "32",
+    "128",
+    "64",
+    "32",
+    "32",
+    "/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10/evidence/rqls_fixedb_lm_v4.p1.sv2.stop-receipt.json"
+  ],
+  "env": {
+    "TMPDIR": "/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10/tmp",
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "OPENBLAS_NUM_THREADS": "1",
+    "OMP_NUM_THREADS": "1",
+    "VECLIB_MAXIMUM_THREADS": "1",
+    "MKL_NUM_THREADS": "1"
+  },
+  "stdout": "/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10/evidence/rqls_fixedb_lm_v4.p1.sv2.stdout.txt",
+  "stderr": "/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10/evidence/rqls_fixedb_lm_v4.p1.sv2.stderr.txt",
+  "outputs": [
+    "/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10/evidence/rqls_fixedb_lm_v4.p1.sv2.result.jsonl",
+    "/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10/evidence/rqls_fixedb_lm_v4.p1.sv2.stdout.txt",
+    "/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10/evidence/rqls_fixedb_lm_v4.p1.sv2.stderr.txt",
+    "/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10/evidence/rqls_fixedb_lm_v4.p1.sv2.stop-receipt.json"
+  ],
+  "launch_record": "/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10/evidence/rqls_fixedb_lm_v4.p1.sv2.launch.json",
+  "samples": "/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10/evidence/rqls_fixedb_lm_v4.p1.sv2.samples.jsonl",
+  "receipt": "/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10/evidence/rqls_fixedb_lm_v4.p1.sv2.supervisor-receipt.json",
+  "pins": [
+    {
+      "path": "/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10/code/rqls_fixedb_lm_v4.py",
+      "sha256": "816884478ae6eb163c328db9c6f3984d7a447260ddbda0e4887d4f5a7310470e"
+    },
+    {
+      "path": "/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10/evidence/fixedb_anchors_v1.result.json",
+      "sha256": "13d6ed64d8aafde833ce7981d7ed10044b2b06975d425a5778328ea610e22b92"
+    },
+    {
+      "path": "/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10/evidence/parker_z7p3_classical_v1.result.json",
+      "sha256": "00e991d692e669411a49d45aa1623c52189346dc32acb6fb1feea1858b841c30"
+    }
+  ],
+  "max_wall_s": 2700,
+  "rss_trip_bytes": 2147483648,
+  "free_trip_bytes": 12200000000,
+  "output_trip_bytes": 9437184,
+  "launch_free_min_bytes": 12220971520,
+  "sample_s": 2,
+  "settle_s": 120,
+  "max_chunk_seconds": 10800,
+  "owned_compute_settled_by_epoch": 1792731393.0
+}
+
+### owned_supervisor_v2.py
+Path:/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10/code/owned_supervisor_v2.py
+SHA256:1fece595258d7ba448875c407e8b221bdbd01966824dc267147c316ef54115aa
+#!/usr/bin/env python3
+"""owned_supervisor_v2: run ONE child in its own session/process group; launch record before compute; fail-closed guard.
+
+v2 fixes (parent HOLD on v1): every post-spawn path runs inside try/finally that settles the child (one identity-checked
+SIGTERM to its process group, bounded wait settle_s, no escalation) and writes a receipt; SIGTERM/SIGINT/SIGHUP to the
+supervisor set a cooperative cancel flag handled the same way; an unreadable live RSS, free-space or output reading is
+a trip (never a silent pass); the deadline is enforced on BOTH the monotonic clock and the absolute epoch wall clock
+(survives sleep/resume), and launch is refused unless start + max_wall <= min(start + max_chunk - 120,
+owned_compute_settled_by - 180). The child must read the line "GO" from stdin before computing; if the supervisor dies
+before GO, the pipe closes and the child exits on EOF.
+
+Config JSON (argv[1]): lane, argv, env, stdout, stderr, outputs, launch_record, samples, receipt, pins [{path, sha256}],
+max_wall_s, rss_trip_bytes, free_trip_bytes, output_trip_bytes, launch_free_min_bytes, sample_s, settle_s,
+max_chunk_seconds, owned_compute_settled_by_epoch. Standard library only.
+"""
+import hashlib, json, os, signal, subprocess, sys, time
+
+CANCEL = [None]
+
+
+def _cancel(signum, frame):
+    if CANCEL[0] is None:
+        CANCEL[0] = signum
+
+
+def date():
+    try:
+        return subprocess.run(["/bin/date", "+%Y-%m-%dT%H:%M:%S%z"], capture_output=True, text=True).stdout.strip()
+    except Exception as ex:
+        return "DATE_UNAVAILABLE " + repr(ex)
+
+
+def sha(p):
+    h = hashlib.sha256()
+    with open(p, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def free_bytes(path):
+    st = os.statvfs(path)
+    return st.f_bavail * st.f_frsize
+
+
+def rss_bytes(pid):
+    r = subprocess.run(["/bin/ps", "-o", "rss=", "-p", str(pid)], capture_output=True, text=True)
+    t = r.stdout.strip()
+    return int(t) * 1024 if (r.returncode == 0 and t.isdigit()) else None
+
+
+def group_members(pgid):
+    r = subprocess.run(["/bin/ps", "-A", "-o", "pid=,pgid="], capture_output=True, text=True)
+    if r.returncode != 0:
+        return None
+    out = []
+    for line in r.stdout.splitlines():
+        parts = line.split()
+        if len(parts) == 2 and parts[1].isdigit() and int(parts[1]) == pgid:
+            out.append(int(parts[0]))
+    return out
+
+
+def out_bytes(paths):
+    return sum(os.path.getsize(p) for p in paths if os.path.exists(p))
+
+
+def main():
+    for s in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+        signal.signal(s, _cancel)
+    cfg_path = os.path.abspath(sys.argv[1])
+    cfg = json.load(open(cfg_path))
+    lane = cfg["lane"]
+    rec = {"config": cfg_path, "config_sha256": sha(cfg_path), "supervisor": os.path.abspath(__file__),
+           "supervisor_sha256": sha(os.path.abspath(__file__)), "supervisor_pid": os.getpid()}
+    pins_ok = all(os.path.isfile(p["path"]) and not os.path.islink(p["path"]) and sha(p["path"]) == p["sha256"] for p in cfg["pins"])
+    free0 = free_bytes(lane)
+    w0 = time.time()
+    abs_end = w0 + cfg["max_wall_s"]
+    fit_limit = min(w0 + cfg["max_chunk_seconds"] - 120, cfg["owned_compute_settled_by_epoch"] - 180)
+    fit_ok = abs_end <= fit_limit
+    if not pins_ok or free0 < cfg["launch_free_min_bytes"] or not fit_ok or CANCEL[0] is not None:
+        rec.update({"status": "NOT_LAUNCHED", "pins_ok": pins_ok, "free": free0, "fit_ok": fit_ok, "abs_end_epoch": abs_end,
+                    "fit_limit_epoch": fit_limit, "cancel": CANCEL[0], "at": date()})
+        with open(cfg["receipt"], "x") as fh:
+            json.dump(rec, fh, indent=1)
+        return 10
+    fo = open(cfg["stdout"], "x")
+    fe = open(cfg["stderr"], "x")
+    start_date = date()
+    t0 = time.monotonic()
+    w0 = time.time()
+    abs_end = w0 + cfg["max_wall_s"]
+    child = subprocess.Popen(cfg["argv"], cwd=lane, env=dict(cfg["env"]), stdin=subprocess.PIPE, stdout=fo, stderr=fe,
+                             start_new_session=True)
+    pid = child.pid
+    st = {"pgid": None, "trips": [], "signalled_mono": None, "signal_at": None, "max_rss": 0, "min_free": free0, "samples": 0,
+          "error": None, "status": None, "go_sent": False}
+    samples = None
+    try:
+        st["pgid"] = os.getpgid(pid)
+        launch = {"pid": pid, "pgid": st["pgid"], "argv": cfg["argv"],
+                  "argv_sha256": hashlib.sha256(json.dumps(cfg["argv"]).encode()).hexdigest(), "cwd": lane, "env": cfg["env"],
+                  "start_date": start_date, "start_epoch": w0, "abs_end_epoch": abs_end, "max_wall_s": cfg["max_wall_s"],
+                  "settle_s": cfg["settle_s"], "fit_limit_epoch": fit_limit, "pins": cfg["pins"], "free_at_launch": free0,
+                  "supervisor_pid": os.getpid(), "supervisor_sha256": rec["supervisor_sha256"], "config_sha256": rec["config_sha256"],
+                  "outputs": cfg["outputs"], "receipt": cfg["receipt"]}
+        with open(cfg["launch_record"], "x") as fh:
+            json.dump(launch, fh, indent=1)
+        samples = open(cfg["samples"], "x")
+        if CANCEL[0] is None:
+            child.stdin.write(b"GO\n")
+            st["go_sent"] = True
+        child.stdin.close()
+        while True:
+            rc = child.poll()
+            if rc is not None:
+                st["status"] = "EXITED"
+                break
+            now, wnow = time.monotonic(), time.time()
+            trip = None
+            try:
+                fr = free_bytes(lane)
+            except Exception:
+                fr, trip = None, "FREE_UNREADABLE"
+            rs = rss_bytes(pid)
+            if rs is None:
+                if child.poll() is not None:
+                    st["status"] = "EXITED"
+                    break
+                trip = trip or "RSS_UNREADABLE"
+            try:
+                ob = out_bytes(cfg["outputs"])
+            except Exception:
+                ob, trip = None, trip or "OUTPUT_UNREADABLE"
+            if fr is not None:
+                st["min_free"] = min(st["min_free"], fr)
+            if rs is not None:
+                st["max_rss"] = max(st["max_rss"], rs)
+            if trip is None:
+                if CANCEL[0] is not None:
+                    trip = "SUPERVISOR_CANCEL_%d" % CANCEL[0]
+                elif rs > cfg["rss_trip_bytes"]:
+                    trip = "RSS"
+                elif fr < cfg["free_trip_bytes"]:
+                    trip = "FREE"
+                elif ob > cfg["output_trip_bytes"]:
+                    trip = "OUTPUT"
+                elif now - t0 > cfg["max_wall_s"] or wnow > abs_end:
+                    trip = "DEADLINE"
+            samples.write(json.dumps({"t": round(now - t0, 2), "w": round(wnow, 1), "free": fr, "rss": rs, "out": ob, "trip": trip}) + "\n")
+            samples.flush()
+            st["samples"] += 1
+            if trip is not None and st["signalled_mono"] is None:
+                st["trips"].append({"trip": trip, "t": round(now - t0, 2), "at": date()})
+                term_once(child, pid, st)
+            if st["signalled_mono"] is not None and time.monotonic() - st["signalled_mono"] > cfg["settle_s"]:
+                st["status"] = "UNSETTLED_AFTER_SIGTERM"
+                break
+            time.sleep(cfg["sample_s"])
+    except BaseException as ex:
+        st["error"] = repr(ex)
+    finally:
+        try:
+            if not st["go_sent"]:
+                try:
+                    child.stdin.close()
+                except Exception:
+                    pass
+            if child.poll() is None and st["status"] != "UNSETTLED_AFTER_SIGTERM":
+                if st["signalled_mono"] is None:
+                    st["trips"].append({"trip": "FINALLY_SETTLE" + ("_ERROR" if st["error"] else ""), "at": date()})
+                    term_once(child, pid, st)
+                limit = (st["signalled_mono"] or time.monotonic()) + cfg["settle_s"]
+                while child.poll() is None and time.monotonic() < limit:
+                    time.sleep(1)
+                st["status"] = "EXITED_AFTER_SIGTERM" if child.poll() is not None else "UNSETTLED_AFTER_SIGTERM"
+        finally:
+            write_receipt(cfg, rec, st, child, pid, start_date, w0, t0, fo, fe, samples)
+    return 0 if st.get("settlement") == "SETTLED" else 11
+
+
+def term_once(child, pid, st):
+    if st["signalled_mono"] is not None:
+        return
+    try:
+        ident = child.poll() is None and st["pgid"] is not None and os.getpgid(pid) == st["pgid"]
+    except Exception:
+        ident = False
+    st["identity_ok_at_signal"] = ident
+    if ident:
+        os.killpg(st["pgid"], signal.SIGTERM)
+        st["signalled_mono"] = time.monotonic()
+        st["signal_at"] = date()
+
+
+def write_receipt(cfg, rec, st, child, pid, start_date, w0, t0, fo, fe, samples):
+    for f in (fo, fe, samples):
+        try:
+            if f is not None:
+                f.close()
+        except Exception:
+            pass
+    rc = child.poll()
+    members = group_members(st["pgid"]) if st["pgid"] is not None else None
+    outs = {}
+    for p in cfg["outputs"] + [cfg["samples"], cfg["launch_record"]]:
+        try:
+            if os.path.exists(p):
+                outs[p] = {"bytes": os.path.getsize(p), "sha256": sha(p)}
+        except Exception as ex:
+            outs[p] = {"error": repr(ex)}
+    settled = (rc is not None and members == [] and st["status"] in ("EXITED", "EXITED_AFTER_SIGTERM") and st["error"] is None)
+    st["settlement"] = "SETTLED" if settled else "UNSETTLED"
+    rec.update({"status": st["status"], "returncode": rc, "pid": pid, "pgid": st["pgid"], "start_date": start_date, "start_epoch": w0,
+                "end_date": date(), "end_epoch": time.time(), "wall_s": round(time.monotonic() - t0, 2), "trips": st["trips"],
+                "sigterm_sent": st["signalled_mono"] is not None, "signal_at": st["signal_at"],
+                "identity_ok_at_signal": st.get("identity_ok_at_signal"), "error": st["error"], "max_rss_bytes": st["max_rss"],
+                "min_free_bytes": st["min_free"], "samples": st["samples"], "outputs": outs, "group_members_after": members,
+                "go_sent": st["go_sent"], "cancel_signal": CANCEL[0], "settlement": st["settlement"]})
+    try:
+        with open(cfg["receipt"], "x") as fh:
+            json.dump(rec, fh, indent=1)
+    except Exception as ex:
+        sys.stderr.write("RECEIPT_WRITE_FAILED %r %s\n" % (ex, json.dumps(rec)))
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+
+
+### stability_gate_v2.py
+Path:/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10/code/stability_gate_v2.py
+SHA256:1f62874aff9b22657a90f180b81c678117fd703afe2345f7576454e0faae008a
+#!/usr/bin/env python3
+"""stability_gate_v2: 300 s disk-stability runway rule on the parent's observer v3 stream (stdlib only).
+
+Stream schema (pinned to RUN/control/resource_observer_v3.py, sha256 given on the command line and re-hashed here):
+ line 1: {"event": "observer_start", "at", "pid", "pgid", "cwd", "source_sha256"} with source_sha256 == pinned sha;
+ then samples {"t", "free", "floor_bytes", "scope"} exactly (t timezone-aware ISO 8601, free int >= 0,
+ floor_bytes == 12000000000, scope str); an {"event": "observer_end", ...} line means the monitor ended -> REFUSE.
+ Any other complete line refuses; only an unterminated final line is ignored. Sample timestamps strictly increasing.
+Rule (control/resource-stability-addendum-v1.json): window = samples with now-300 <= t <= now (now = /bin/date +%s);
+ >= 25 samples; span >= 290 s; 0 <= last age <= 30 s; no future-dated sample; last free >= 13.5e9 + projected;
+ max peak-to-later drop in window <= max(3e8, (last_free - 13.5e9) // 12); fresh statvfs(lane) >= 12.2e9 + projected.
+Usage: stability_gate_v2.py MONITOR LANE PROJECTED_BYTES RECEIPT OBSERVER_SOURCE OBSERVER_SHA256
+Writes RECEIPT exclusively; exit 0 PASS, 1 REFUSE.
+"""
+import datetime, hashlib, json, os, subprocess, sys
+
+START_KEYS = {"event", "at", "pid", "pgid", "cwd", "source_sha256"}
+SAMPLE_KEYS = {"t", "free", "floor_bytes", "scope"}
+
+
+def main():
+    monitor, lane, projected, receipt, obs_src, obs_sha = sys.argv[1], sys.argv[2], int(sys.argv[3]), sys.argv[4], sys.argv[5], sys.argv[6]
+    rec = {"monitor": monitor, "projected_new_disk_bytes": projected, "observer_source": obs_src, "observer_sha256_pinned": obs_sha, "reasons": []}
+    rec["now_date"] = subprocess.run(["/bin/date", "+%Y-%m-%dT%H:%M:%S%z"], capture_output=True, text=True).stdout.strip()
+    now_s = subprocess.run(["/bin/date", "+%s"], capture_output=True, text=True).stdout.strip()
+    now = float(now_s) if now_s.isdigit() else None
+    if now is None:
+        rec["reasons"].append("DATE_UNREADABLE")
+    try:
+        actual = hashlib.sha256(open(obs_src, "rb").read()).hexdigest()
+    except OSError as ex:
+        actual = None
+        rec["reasons"].append("OBSERVER_SOURCE_UNREADABLE %r" % ex)
+    rec["observer_sha256_actual"] = actual
+    if actual is not None and actual != obs_sha:
+        rec["reasons"].append("OBSERVER_SOURCE_SHA_MISMATCH")
+    try:
+        raw = open(monitor, "rb").read()
+    except OSError as ex:
+        raw = b""
+        rec["reasons"].append("MONITOR_UNREADABLE %r" % ex)
+    parts = raw.split(b"\n")
+    rec["ignored_unterminated_final_line"] = bool(parts and parts[-1] != b"")
+    complete = parts[:-1]
+    samples = []
+    for k, ln in enumerate(complete):
+        try:
+            d = json.loads(ln.decode("utf-8"))
+            if not isinstance(d, dict):
+                raise ValueError("not an object")
+        except Exception as ex:
+            rec["reasons"].append("MALFORMED_LINE %d %r" % (k + 1, ex))
+            break
+        if k == 0:
+            if set(d) != START_KEYS or d.get("event") != "observer_start":
+                rec["reasons"].append("FIRST_LINE_NOT_OBSERVER_START")
+                break
+            if d.get("source_sha256") != obs_sha:
+                rec["reasons"].append("START_EVENT_SOURCE_SHA_MISMATCH")
+                break
+            rec["observer_start"] = d
+            continue
+        if "event" in d:
+            if d.get("event") == "observer_end":
+                rec["reasons"].append("OBSERVER_ENDED line %d" % (k + 1))
+            else:
+                rec["reasons"].append("UNKNOWN_EVENT line %d" % (k + 1))
+            break
+        try:
+            if set(d) != SAMPLE_KEYS:
+                raise ValueError("sample keys %s" % sorted(d))
+            t = datetime.datetime.fromisoformat(d["t"])
+            if t.tzinfo is None:
+                raise ValueError("naive timestamp")
+            if not isinstance(d["free"], int) or isinstance(d["free"], bool) or d["free"] < 0:
+                raise ValueError("free not a non-negative int")
+            if d["floor_bytes"] != 12000000000 or not isinstance(d["scope"], str):
+                raise ValueError("floor/scope")
+            samples.append((t.timestamp(), d["free"]))
+        except Exception as ex:
+            rec["reasons"].append("MALFORMED_SAMPLE line %d %r" % (k + 1, ex))
+            break
+    if not complete:
+        rec["reasons"].append("EMPTY_MONITOR")
+    for i in range(1, len(samples)):
+        if not samples[i][0] > samples[i - 1][0]:
+            rec["reasons"].append("NON_INCREASING_TIMESTAMPS sample %d" % (i + 1))
+            break
+    rec["samples_total"] = len(samples)
+    if now is not None and samples:
+        fut = sum(1 for s in samples if s[0] > now)
+        rec["future_samples"] = fut
+        if fut:
+            rec["reasons"].append("FUTURE_DATED_SAMPLE")
+        win = [s for s in samples if now - 300 <= s[0] <= now]
+        rec["window_samples"] = len(win)
+        if len(win) < 25:
+            rec["reasons"].append("TOO_FEW_SAMPLES")
+        if win:
+            span = win[-1][0] - win[0][0]
+            age = now - samples[-1][0]
+            last_free = win[-1][1]
+            drop = max(win[i][1] - min(f for _, f in win[i:]) for i in range(len(win)))
+            allowed = max(300000000, (last_free - 13500000000) // 12)
+            rec.update({"span_s": span, "last_age_s": age, "last_free": last_free, "max_peak_to_later_drop": drop, "allowed_drop": allowed})
+            if span < 290:
+                rec["reasons"].append("SPAN_TOO_SHORT")
+            if not (0 <= age <= 30):
+                rec["reasons"].append("LAST_SAMPLE_AGE")
+            if last_free < 13500000000 + projected:
+                rec["reasons"].append("LAST_FREE_LOW")
+            if drop > allowed:
+                rec["reasons"].append("DROP_TOO_LARGE")
+        else:
+            rec["reasons"].append("EMPTY_WINDOW")
+    elif not samples:
+        rec["reasons"].append("NO_SAMPLES")
+    try:
+        st = os.statvfs(lane)
+        rec["fresh_free"] = st.f_bavail * st.f_frsize
+        if rec["fresh_free"] < 12200000000 + projected:
+            rec["reasons"].append("FRESH_FREE_LOW")
+    except OSError as ex:
+        rec["reasons"].append("STATVFS_FAILED %r" % ex)
+    rec["verdict"] = "PASS" if not rec["reasons"] else "REFUSE"
+    with open(receipt, "x") as fh:
+        json.dump(rec, fh, indent=1)
+    print(json.dumps({k: rec.get(k) for k in ("verdict", "reasons", "window_samples", "span_s", "last_age_s", "last_free", "max_peak_to_later_drop", "allowed_drop", "fresh_free")}))
+    return 0 if rec["verdict"] == "PASS" else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+
+
+### fixedb_jacobian_v1.receipt.md
+Path:/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10/evidence/fixedb_jacobian_v1.receipt.md
+SHA256:28c2789a54e5001763ad4094dbe0824a95f2629eb6b77d25ec0cad12d0fc1ca4
+# Receipt: fixedb_jacobian_v1 (initial-scope stdlib probe, pure-Python float complex; validation, not a search)
+
+Recorded 2026-10-19T04:52:41-0700 for the launch; receipt written after the run (clock read 04:53:12 at END). Owner
+ContinueRQLS10b. Source code/fixedb_jacobian_v1.py 10c466ddf9afb9f1b9376a5bdca29783ecf97ffd7c57ed2adc1f5463268fed8c (0444
+before launch); launch record evidence/fixedb_jacobian_v1.launch.json
+218f628b1d523d8c13711e5c22579c78bb5fbb8d27f9965f846a84687182402d (0444; path + sha sent to the parent before the run);
+input evidence/fixedb_anchors_v1.result.json 13d6ed64d8aafde833ce7981d7ed10044b2b06975d425a5778328ea610e22b92. Command (cwd
+lane, tool timeout 0): /bin/bash -c 'echo START ... PID $$ ...; exec /usr/bin/env -i TMPDIR=<lane>/tmp
+/opt/homebrew/bin/python3.14 -I -B code/fixedb_jacobian_v1.py evidence/fixedb_anchors_v1.result.json
+evidence/fixedb_jacobian_v1.result.json'. START 2026-10-19T04:53:02-0700, PID 86952 = PGID 86952, EXIT 0, END 04:53:12 (in-run
+10.27 s); single process; lane tmp/ empty. Output evidence/fixedb_jacobian_v1.result.json (2,621 bytes, born 04:53:12, 0444
+within the same minute) 598282a44aa53bc9a9f8cb44a115f51dc88a095187a42451fbb055387b754bfa. One implementation, double precision.
+
+Results (all five gates true):
+- Analytic Jacobian of the fixed-B unitary model vs central differences along U_k (I + eps A_k) (exact for the bilinear
+  M = U_i^* U_i'): max relative error 3.2e-13 .. 4.9e-13 at random unitaries (cyclic v = 4, 5, 7; XOR v = 8) and at both
+  anchors.
+- Anchors in float: residual <= 1.8e-16, full Gram deviation (all rows, columns, classes) <= 2.3e-16, U_0 = I, rays 49
+  (minsep 5/7) and 64 (minsep 1/2).
+- Tangent counts (real Jacobian rank by two-pass modified Gram-Schmidt, gap: accepted relative norms >= 0.079, rejected
+  <= 3.3e-14; same rank at 1e-9 and 1e-6):
+  - v = 7 Huang-Li anchor (cyclic B): 252 parameters, rank 246, kernel 6 = left-phase gauge rank 6 -> excess 0
+    (first-order isolated modulo gauge).
+  - v = 8 Zhang-Cao anchor (XOR B): 392 parameters, rank 380, kernel 12, gauge rank 6 (not 7: one left-phase direction,
+    +1 on span{e_0..e_3} and -1 on span{e_4..e_7}, is absorbed by right phases because every U_k maps the computational
+    basis into the two halves) -> first-order excess 6 (not known to integrate to a family).
+  - classical v = 7 point (A(i,j) = j + 3i mod 7, cyclic B): rank 252 = parameters, kernel 0 (rigid).
+Scope: validation of formulas and local counts at known points; no statement about v = 10.
+
+
+### fixedb_candidate_verify_v1.selftest.receipt.md
+Path:/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10/evidence/fixedb_candidate_verify_v1.selftest.receipt.md
+SHA256:3a1321cc5273ff5a12719ea1751c057a3fb92c36a0ae0317a0d99f2468fb6db4
+# Receipt: fixedb_candidate_verify_v1 selftest (initial-scope stdlib probe; Fraction + 60-digit decimal)
+
+Recorded 2026-10-19T05:07:01-0700 (from /bin/date). Owner ContinueRQLS10b. Source code/fixedb_candidate_verify_v1.py
+9b915c425e34b00533a0c8bf8b5e6c5a10497f94b18deaad0df30d488f256735 (0444 at 05:06:29, before launch); launch record
+evidence/fixedb_candidate_verify_v1.selftest.launch.json 7c6bae801fe1d6c0b33eb715041260f62a0adf7a36982894b8c39998becb3efa
+(path + sha sent to the parent before the run); input evidence/fixedb_anchors_v1.result.json
+13d6ed64d8aafde833ce7981d7ed10044b2b06975d425a5778328ea610e22b92. Command (cwd lane, tool timeout 0): /bin/bash -c 'echo
+START ... PID $$ ...; exec /usr/bin/env -i TMPDIR=<lane>/tmp /opt/homebrew/bin/python3.14 -I -B
+code/fixedb_candidate_verify_v1.py selftest evidence/fixedb_anchors_v1.result.json
+evidence/fixedb_candidate_verify_v1.selftest.result.json 60'. START 2026-10-19T05:06:53-0700, PID 91486 = PGID 91486,
+EXIT 0, END 05:06:55 (in-run 1.84 s); single process; lane tmp/ empty. Output (3,286 bytes, born 05:06:55, 0444 at 05:07)
+evidence/fixedb_candidate_verify_v1.selftest.result.json d7f0f6333525c6fd0dc03cd63c09c9a9de560566e595b3b7fa772e382a1996fc.
+One implementation.
+
+Results (all five gates true):
+- Exact (Fraction) check of the double-precision anchors: Gram deviation < 1e-14 on all 3v lines; after a 1e-9 random
+  perturbation of every U_k entry (unitarity broken) the exact deviation is in (1e-11, 1e-7) as designed.
+- 60-digit refinement (Newton-Schulz polar + chord Gauss-Newton, double-precision Jacobian of the start point):
+  v = 7 Huang-Li: max |F| 2.99e-9 -> 3.1e-18 -> 6.3e-27 -> 1.7e-35 -> 5.5e-44 -> 1.5e-52 -> 5.4e-61, REFINED; full
+  Gram deviation 5.4e-61; 49 rays; min ray margin 0.7143 (= 5/7 to the shown digits).
+  v = 8 Zhang-Cao: 3.7e-9 -> ... -> 5.7e-69 in 7 steps, REFINED; Gram 5.7e-69; 64 rays; min margin 0.5000 (the
+  first-order excess 6 at this anchor did not slow the chord iteration).
+- Negative control (random unitaries, cyclic B, v = 7): start residual 0.74 -> NOT_NEAR_SOLUTION (no refinement), exact
+  Gram deviation > 1e-2.
+Scope: validates the verifier on known points; a REFINED status is high-precision numerical evidence of a nearby exact
+solution, not a proof (no interval / Kantorovich bound is computed).
+
+
+### launch-contract-tightening-v1.json
+Path:/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/control/launch-contract-tightening-v1.json
+SHA256:8ac556699352a42f3d97f83861039e21f57db0646da2f38391ee1f11e330aa20
+{
+  "at": "2026-10-18T23:20:30-0700",
+  "status": "Scientific labels: CANDIDATE_UNVERIFIED, CORRECTNESS_ACCEPTED_SCOPED_PARTIAL, OPEN, UNKNOWN, or GATE_MET only with all applicable frozen gates. Partial claims require their own exact-scope evidence and parent verdict; they do not automatically meet every full-target gate. Run execution status is separate and never certifies science. README is navigation; immutable verdict/receipts are authority.",
+  "base_contract_sha256": "55baff0cf1ac1a4b0ab38b0eb1b1fa5a35a47c890f352b79dae4dfea919ffcaa",
+  "independent_review": {
+    "path": "/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/review/continuation-admission-claude-v1.prompt.note.md",
+    "sha256": "3c5720f1f2a5399b96ddccd0cb64bb83660ed3a9272011c02326a59cb2f5ec39",
+    "observed_model": "claude-opus-5-5",
+    "verdict": "GO-WITHIN-INITIAL-SCOPE; material launch-boundary recommendations disposed separately"
+  },
+  "preservation_and_inputs": {
+    "baseline": "/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/inputs/prior-evidence-manifest-v1.json",
+    "census": "/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/review/admission-process-census-v1.json",
+    "rule": "Before use, hash every load-bearing prior regular file against its controlling record; missing/mismatched is INHERITED_UNAVAILABLE, not silently repaired. Never open old FIFO/socket or follow symlinks while scanning. No hardlinks or writable symlinks to old evidence. Old code must run with bytecode/cache/output paths contained in the new lane. Full old corpus hashing is not an admission prerequisite; no claim of full-corpus preservation audit."
+  },
+  "small_probes": "Worker-authored source frozen before execution, <=300s self wall-budget checked during work; explicit tool timeout0. Third-party/downloaded code is data until explicitGO. No runtime deadline tool may kill the process.",
+  "chunk_fit": {
+    "settlement_grace_seconds": 120,
+    "margin_seconds": 60,
+    "rule": "Before every launch freeze absolute wall-clock child end <= min(now+max_chunk_seconds-120, owned_compute_settled_by-180). No launch whose worst-case child budget plus120s settlement and60s margin cannot fit. Check absolute cutoff as well as elapsed clock after sleep/resume. At owned_compute_settled_by-120 parent requests ownedSIGTERM for registered survivors; no escalation.",
+    "scope": "All busy components/descendants count; RSS is whole-lane total. UNSETTLED anywhere blocks all new scientific launches until disposition."
+  },
+  "ownership": "Every job has exclusive parent-readable launch record: item, owner, parentGO hash, PID/PGID, launch/start identity, argv/source/binary/input pins, cwd, absolute child end, output paths and retained-byte reservation. Send parent exact path immediately. Parent may identity-check and SIGTERM any registered owned job; responsibility transfers on worker end/kernel loss. Unregistered or identity-mismatched processes are never signalled by inference.",
+  "settled_definition": "Recorded direct-child exit/signal reaped, owned descendant census clear, output streams closed and named final artifacts pinned, final receipt/checkpoint written. If any condition cannot be observed, report UNSETTLED/UNKNOWN; no PASS or implicit completion.",
+  "stops": "Each itemGO cites parent-reviewed lane STOP-registry path/hash and dispositions of every relevant inherited/new stop. Only parent supersedes a stop through a NEW versionedGO; markers stay untouched. Safety/correctness notices immediately latch STOP on the affected item; memory/disk/systemwide notices block all scientific launches until parent disposition. Disk-stopped output is UNKNOWN unless independent completeness evidence qualifies it; old accepted receipts are not demoted merely because another attempt failed.",
+  "resource_reservations": "Each GO freezes retained output byte reservation and enforcement (byte-capped sink/log cap or proven fixed-size output bound), in-flight disk/RSS sampling cadence, and ownedSIGTERM on overrun. Before admission, freshfree minus sum remaining admitted retained-output reservations must remain >=12e9. Account new per-lane10GiB and parent10GiB ceilings; streams held only inRAM are charged to RSS, not falsely to disk. Shared observer is metadata, not an enforcement guard. Guard unreadability or underestimated unbounded output holds admission.",
+  "proof_transport": "For streamed proofs require contemporaneous producer-read and checker-delivered bytecounts/SHA256, checker-consumed bytecount equality, formula/binary/argv binding, and every pipeline exit/signal. Checker-consumed bytes do not imply a separately measured consumer SHA; state actual measured boundaries. Same checker-binary positive/intended-reason mutation controls mandatory. Parent independently audits the measured endpoints; rereplay only newly required or specifically defective inputs, never backfill old digests. Streamed payload non-retention and shared checker trust stay explicit.",
+  "slots": "Two owned problem slots per area are maintained. A slot may be blocked/idle with explicit reason; do not manufacture work or start a third target. Replacement requires parent frozen transition and a new primary-status/claim contract. Original outcome remains unchanged.",
+  "closeout": {
+    "report_freeze_at_pt": "2026-10-22T21:56:33-07:00",
+    "target_delivery_at_pt": "2026-10-22T22:51:33-07:00",
+    "absolute_deadline_at_pt": "2026-10-22T22:56:33-07:00",
+    "rule": "Assemble draft before freeze; include every launch with finalstate or explicitUNSETTLED, precise scientific boundary, named-input recheck and deviations. Incomplete review means CANDIDATE, not silent gate promotion. Final report independent review required."
+  },
+  "prior_short_qualification": "StageA terminalqualification completed before this addendum under its frozen itemGO; all children settled within~seconds and measured guard/terminal controls passed. Do not describe this addendum as preregistered for that completed attempt."
+}
+

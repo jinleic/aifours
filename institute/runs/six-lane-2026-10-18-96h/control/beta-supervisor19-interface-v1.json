@@ -1,0 +1,107 @@
+{
+ "format": "beta-supervisor19-interface-v1",
+ "at": "2026-10-19T16:20:53-0700",
+ "status": "INTERFACE_FROZEN_BEFORE_SOURCE_NOEXEC",
+ "scope": {"path": "control/beta-supervisor19-scope-v1.json", "sha256": "4087d6f9eab6034f142d9706972774cbea04aed982fe7600f2753129f602315c"},
+ "post_freeze_refinements_disclosed": [
+  "Tightening only: supervisor coverage_history gap pids must each appear in the parent identity union (else IDENTITY_UNION_INVALID); union status then decides blocking. Reason: package v9 says historical failed coverage stays visible and blocking; only the parent's external union can classify it.",
+  "Tightening only: receipt timing_failed true, history_overflow non-null or nonempty raw_acquisitions => HELD RECEIPT_EVIDENCE_INCOMPLETE (v17: pending raw/nullable evidence is HOLD, never healthy evidence)."
+ ],
+ "import_map": {
+  "module": "RUN/control/beta_supervisor19_adapter_v1.py",
+  "imports": ["copy", "hashlib", "json", "math"],
+  "no_imports": "No os/sys/time/subprocess/threading/socket. No module is imported by path; no source is compiled or executed by the bridge.",
+  "exports": ["build_beta_inputs", "HELD_CAUSES", "EXTERNAL_PREREQUISITES"],
+  "consumes_interfaces": {
+   "reader": "beta_parent_reader_v1 EvidenceReader instance owned by caller: read_bytes(path:str, cap:int)->bytes; last_file(path)->dict|None; report()->dict. Only these three; never constructed/closed by the bridge.",
+   "deadline_check": "()->None or raise; original nonrenewing deadline"
+  },
+  "feeds": "beta_parent_adapter_v3.evaluate_pinned(inputs, reader, deadline_check) where inputs = result['adapter3_inputs'] ONLY after the parent exclusively publishes each result['records'][name]['text'] encoded ASCII at its path and authenticates the readback. The bridge publishes nothing."
+ },
+ "entry": "build_beta_inputs(request_ref, reader, deadline_check) -> result",
+ "request_ref": "exact {path:normalized absolute str, sha256:lowercase hex64}; caller vouches the SHA as parent authority",
+ "request_schema": {
+  "format": "beta-supervisor19-bridge-request-v1",
+  "exact_keys": ["format", "mode", "item", "plan", "job_dir", "expected", "parent_wait", "parent_captures", "publication", "identity_union", "context", "publication_freeze", "publish_paths"],
+  "mode": "PLAN or FIXTURE",
+  "item": "exact plan v5 job item (calibrations rejected)",
+  "plan": "exact ref equal to {path: MOLS39 plan v5 path, sha256: 254b44c3...}",
+  "job_dir": "normalized absolute; PLAN: equal to the plan job's single --job-root argument; FIXTURE: not equal/below plan base_dir or audit_dir",
+  "expected": {"exact_keys": ["go", "config", "source_pins", "input_pins", "date_start", "date_end"], "go": "ref", "config": "ref", "source_pins": "dict normalized-absolute-path -> hex64", "input_pins": "same", "date_start": "nonempty dict (parent-bound record, copied verbatim)", "date_end": "nonempty dict"},
+  "parent_wait": "ref to PRT wait doc exact {format:'parent-release-wait-v1',item,role:'driver',pid:int>0,pgid:int>0,start_fingerprint:nonempty str,raw_status:int in [0,2^31),actual_exit:int,observed_by:'parent'} for the supervisor process",
+  "parent_captures": "exact {stdout,stderr}; each V9 exact {path,sha256,bytes:int>=0,inode:[dev:int>=0,ino:int>0],eof:true}; distinct paths and inodes",
+  "publication": "exact {receipt}; receipt exact {path,sha256,bytes:int>=0,inode:[dev,ino],nlink:1}",
+  "identity_union": "ref to union doc (schema below)",
+  "context": "exact {original_dm21:ref, prefix:list of exact {item, files:{name:ref}, audit:ref}}",
+  "publication_freeze": "ref to beta-parent-publication-freeze-v1",
+  "publish_paths": "exact {expectation,observation,context}: distinct normalized absolute, not equal/below job_dir, not any bridge-acquired path"
+ },
+ "union_schema": {
+  "format": "beta-supervisor19-identity-union-v1",
+  "exact_keys": ["format", "item", "receipt_sha256", "completeness", "identities"],
+  "completeness": "literal PARENT_ATTESTED_COMPLETE_HISTORICAL_UNION (attestation is the parent's CP2 obligation; never verified here)",
+  "row_exact_keys": ["role", "pid", "pgid", "start_fingerprint", "uniqueid", "source", "status"],
+  "roles": ["driver", "main_child", "helper", "descendant", "unproved", "oracle", "oracle_child", "oracle_helper"],
+  "status": ["ENDED_PROVED", "UNRESOLVED"],
+  "constraints": "pid/pgid int>0; start_fingerprint and source nonempty str; uniqueid int>0 or null; unique (pid,start_fingerprint); unique non-null uniqueid; exactly one driver row equal to parent_wait pid/pgid/start_fingerprint; row with child uniqueid has role main_child; every receipt identity (child, owned_identities, unproved_history, helpers by uniqueid or by pid when identity null, final and ACK census live arrays) present with equal pid; every coverage_history gap pid present"
+ },
+ "actual_evidence_derivation": {
+  "receipt": "request.publication.receipt path; reader bytes sha/len and last_file dev/ino/nlink/size must equal the binding",
+  "actual_config": "receipt.config_path with sha receipt.config_sha256",
+  "actual_go": "actual config admission.go_path with sha receipt.authorization.go_sha256; must carry mode and plan_sha256 (beta binding fields; supervisor allows extra GO keys)",
+  "launch_record": "actual config launch_record with sha receipt.launch_record_sha256",
+  "main_captures": "actual config stdout/stderr paths; bytes sha/len equal stream sha256_written/bytes_written; last_file dev/ino equal receipt artifacts[path].inode (supervisor checked == original created ident); nlink 1",
+  "ack": "parent stdout capture bytes: exactly one LF-terminated strict JSON successful ACK object"
+ },
+ "caps_bytes": {"json_small": 1048576, "large": 16777216, "assignments": "request, plan, GO, config, wait doc, launch record, freeze, DM21, prefix audits: 1 MiB; receipt, parent captures, MAIN capture files, union, prefix files: 16 MiB (reader maximum). Larger evidence => READ_FAILED => HELD."},
+ "held_causes_in_order": {
+  "REQUEST_INVALID": "request ref/bytes/schema/publish paths invalid",
+  "AUTHORITY_PIN_MISMATCH": "plan ref or receipt supervisor pin differs from module constants",
+  "PLAN_ITEM_INVALID": "item/plan tables/job_dir guard",
+  "EXPECTED_GO_INVALID": "expected GO bytes/schema/binding",
+  "EXPECTED_CONFIG_INVALID": "expected config bytes/schema/item/channel/fault/pin coherence",
+  "PARENT_WAIT_INVALID": "PRT wait doc schema/decode/pid joins",
+  "SUPERVISOR_CAPTURE_UNBOUND": "V9 parent capture schema/bytes/identity, stderr nonempty",
+  "SUPERVISOR_ACK_INVALID": "stdout not exactly one successful ACK or ACK joins fail",
+  "SUPERVISOR_EXIT_NOT_ELIGIBLE": "parent actual supervisor exit not 0/11 (10 maps to NESTED_EXIT_UNAVAILABLE)",
+  "RECEIPT_UNBOUND": "receipt bytes/identity differ from parent publication binding",
+  "RECEIPT_INVALID": "receipt parse/schema/consistency",
+  "RECEIPT_EVIDENCE_INCOMPLETE": "timing_failed, history_overflow or pending raw acquisitions",
+  "ACTUAL_CONFIG_INVALID": "actual config bytes/schema/receipt path/channel/fault",
+  "ACTUAL_GO_INVALID": "actual GO bytes/schema/beta binding",
+  "LAUNCH_RECORD_INVALID": "launch record bytes/schema/joins",
+  "NESTED_EXIT_UNAVAILABLE": "no reaped nested child exit or inconsistent native wait",
+  "MAIN_STREAM_UNBOUND": "missing/ambiguous/inconsistent MAIN stream or capture file identity",
+  "EVIDENCE_TAMPER_REPORTED": "receipt reports ARTIFACT_IDENTITY_CHANGED/EVIDENCE_MUTATED/ARTIFACT_UNREADABLE/EVIDENCE_MISSING",
+  "ARTIFACT_UNBOUND": "actual outputs not representable/bindable",
+  "DATE_UNAVAILABLE": "receipt start/end owned date missing or malformed",
+  "PIN_CLASSIFICATION_INVALID": "actual pin unclassified or duplicate conflict",
+  "IDENTITY_UNION_INVALID": "union bytes/schema/joins/coverage",
+  "CONTEXT_INVALID": "DM21/prefix structure or bytes",
+  "FREEZE_INVALID": "freeze bytes/schema/bindings",
+  "FREEZE_COVERAGE_INCOMPLETE": "freeze immutable_paths omit a bridge or predicted adapter3 acquisition",
+  "READ_FAILED": "reader raised, or current completed acquisition not established, or stricter cap conflict",
+  "DEADLINE": "deadline_check raised/non-None/noncallable; no further acquisitions",
+  "READER_UNRESOLVED": "final caller reader report has unresolved resources or is unavailable",
+  "BRIDGE_INTERNAL_EXCEPTION": "any other Exception inside the bridge (fail closed)"
+ },
+ "mapping": {
+  "expectation": {"format": "beta-parent-audit-expectation-v1", "mode": "request.mode", "item": "request.item", "plan_sha256": "plan pin", "expected_exit": "plan job exit", "outputs": "plan job outputs", "job_dir": "request.job_dir", "capture_paths": "expected config stdout/stderr", "receipt_path": "expected config receipt", "receipt_sha256": "request.publication.receipt.sha256", "resolved_argv": "expected config argv", "go_sha256": "request.expected.go.sha256", "source_pins": "request.expected.source_pins", "input_pins": "request.expected.input_pins", "date_start": "request.expected.date_start", "date_end": "request.expected.date_end"},
+  "observation": {"format": "beta-parent-audit-observation-v1", "item": "actual config item", "plan_sha256": "actual GO plan_sha256", "mode": "actual GO mode", "actual_exit": "receipt main_wait rc (nested child; negative = signal)", "captures": "{stdout,stderr}: {present:true, path: actual config path, sha256: sha256_written, bytes_seen, bytes_stored: bytes_written, eof: eof_seen, overflow, error}", "artifacts": "per actual config output with dict receipt record {path,sha256,bytes,ino:inode[1],nlink}; null record omitted (truthful absence)", "actual_artifact_names": "sorted receipt output_root_inventory[actual job dir]", "receipt": "{path: bound receipt path, sha256: bound receipt sha}", "settlement": "{reaped:true, group_empty: final and ACK census group_live empty, census_complete: final and ACK census complete, unresolved: sorted unique labels, signals: sorted unique labels}", "resolved_argv": "launch record argv", "go_sha256": "receipt authorization go_sha256", "source_pins/input_pins": "actual config pins classified by request map keys", "date_start/date_end": "{kind:'SUPERVISOR19_OWNED_BIN_DATE', purpose:'start'|'end', text: receipt date text, receipt_sha256: bound receipt sha}"},
+  "unresolved_labels": ["FINAL_OWNED_LIVE:<uniqueid>", "FINAL_UNPROVED_LIVE:<uniqueid>", "ACK_OWNED_LIVE:<uniqueid>", "ACK_UNPROVED_LIVE:<uniqueid>", "HELPER_UNSETTLED:<pid>", "SUPERVISOR_FAILURE:<code>", "SUPERVISOR_TRIP:<code>", "SUPERVISOR_STATE:<state> when not SETTLED", "CONTRACT_VIOLATION:<uniqueid|index>", "LOOP_STATUS:<status> when not EXITED", "CLEARANCE_NOT_ESTABLISHED", "UNION_UNRESOLVED:<role>:<pid>:<uniqueid|null>"],
+  "signal_labels": ["STOP_REQUESTED:<reason>", "MAIN_SIGTERM_SENT", "HELPER_SIGTERM_SENT:<pid>", "SUPERVISOR_CANCEL_SIGNAL:<signum>"],
+  "context": {"format": "beta-parent-schema-context-v2", "plan": "plan pin ref", "original_dm21": "request.context.original_dm21 (== plan dm21 path/sha)", "prefix": "request.context.prefix (rows exactly plan order[:position], files exactly plan outputs, all refs sha-verified)", "derivation": null, "publication_freeze": "request.publication_freeze"}
+ },
+ "freeze_required_coverage": "every bridge acquisition (request, plan, expected/actual GO and config, wait doc, parent captures, receipt, launch record, MAIN capture files, union, freeze, DM21, prefix files/audits) plus predicted adapter3 acquisitions: publish paths, capture4, schema2, ext4 gate, plan, DM21, prefix refs, expected job_dir/output names, expected capture and receipt paths, actual capture paths and bound receipt path, every expected and actual pin path",
+ "result_schema": {
+  "format": "beta-supervisor19-bridge-result-v1",
+  "keys": ["format", "state", "held_causes", "held_evidence", "records", "adapter3_inputs", "consumed", "reader_unresolved", "external_prerequisites_not_verified", "authority"],
+  "state": "READY only if no cause fired and the final original-deadline check after full assembly passed; else HELD",
+  "records": "null unless READY; {expectation,observation,context}: {path, sha256, length, text}; text = canonical json.dumps(sort_keys, separators (',',':'), ensure_ascii, allow_nan False) + LF",
+  "adapter3_inputs": "null unless READY; {expectation,observation,context}: {path, sha256}",
+  "consumed": "acquisition order list {roles, path, sha256, length, metadata:{dev,ino,nlink,size,mtime_ns,ctime_ns}}",
+  "authority": "{release:false, canonical_audit:false, runtime:false, scientific:false, publication_performed:false}"
+ },
+ "never": ["infer authenticity from JSON or hash equality", "fabricate exit, capture, date, identity, settlement or provenance", "return partial records on HELD", "write, publish, launch, signal, sleep, read clocks", "close or replace the caller reader"],
+ "verification_boundary": "Interface frozen by reading only. No execution/import/compile/AST/tests."
+}

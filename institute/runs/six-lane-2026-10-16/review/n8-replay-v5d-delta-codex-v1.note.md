@@ -1,0 +1,11 @@
+**Native CONTROLS: GO.** Both prior MAJOR findings are closed. No new BLOCKER/MAJOR/MINOR finding in this narrow delta.
+
+**SCIENTIFIC FORMULAS/LEAVES: HOLD.** Five real control receipts remain unverified in this snapshot.
+
+- **F1′ closed:** `take()` allocates the complete result list before removing ownership; its actual one/two-descriptor calls then populate existing slots without allocation (**SOURCE00:1128–1137**). `_relay` preallocates cleanup state before claiming descriptors (**1201, 1222**). Nested `try/finally` attempts dst then src closure independently; close-error formatting follows both attempts (**1253–1268**). Failure in the existing exception formatting at **1251** still enters that cleanup.
+- **F4′ closed:** admission reads fresh driver RSS and requires `other + max(desk, projected) <= 11 GiB`; an unreadable measurement refuses admission (**SOURCE00:710–714**). Busy limits, passing-streak requirements and in-flight accounting remain unchanged.
+- **Scope and acceptance preserved:** all six SHA256 hashes and byte counts match. SOURCE01’s 20 hunks exactly reproduce SOURCE02→SOURCE00. Changes are confined to F1′, F4′ and naming/provenance. Acceptance text and the complete evaluator are byte-identical to v5c (**SOURCE00:241–263, 1631–1760**). The five controls—`unsat`, `sat-checker`, `truncate`, `early-close`, `suffix`—retain their inputs, modes, observations and verdict predicates (**203–221, 1723–1760**).
+
+**BLOCKER — native scientific admission evidence absent from the supplied snapshot:** [SOURCE05:13](/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-16/review/n8-replay-v5d-delta-review-v1/snapshot/05-UNITCHECK-v5d-r1.json:13) explicitly identifies stubs/fakes. Its 120/120 reported checks cannot replace five qualifying native receipts. Those receipts must bind to reviewed script SHA256 `ee52004ba7d12edd673a10bc4ed73005d6c56588697215c9b06cc1dbb846339e`, pinned binaries, referenced PRE-EXEC hashes and preregistered verdicts, with no latched stop ([SOURCE00:1818–1849](/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-16/review/n8-replay-v5d-delta-review-v1/snapshot/00-replay_v5d.py:1818)). Scientific HOLD remains until those receipts are reviewed.
+
+Review used only static reads, comparisons and hashes inside the snapshot; no code was executed.

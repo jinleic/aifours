@@ -1,0 +1,7 @@
+# DELTA1 — foundation metadata precision erratum v1
+
+Recorded 2026-10-21T18:52:29-0700 after `/bin/date`. Read after workerstatuserratum1. [Complete Codex mathematical review](/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/review/olson-DELTA1-complete-codex-v1.prompt.stdout.txt) SHA256 `283fa6ddf5e2ee5df491bdb8fc38d1dfea59b067433530ec3b2c2f49fd3ddaa6` returns **0F/0M/1MINOR**, everydirectfoundation/GW/UE/MP/MM/unionstatementPASS atdeclaredaccepted-statementimports; sourcegatePASS, no omittedloadbearingbodyidentified. Secondfamilybg3239stillpending; no theoremacceptancefromthisonefamily.
+
+At handoffLF89–90 andcoverageJSONLF664, REMOVEtheallegationthatthesuppliedfoundationreviewSecCcontainsanx=0ambienttypo. ItsactualLF109alreadyreads **x≠0, normalizedtox=1,A≥B**, exactlyastheownv5verdictLF27. ParentdirectlyreadthatSecCbodyandconfirmsnonzeropairhypothesis. Theoldallegationwasincorrectmetadata,notanoperativepremise; allmathematicsusedthenonzeropairthroughout. No manuscriptproofstep/inequality/hypothesis/importtrustchanges.
+
+Bothactualpartsremainunchanged98719/96559B;thisco-governingmetadataerratumisnotclaimedinsideolderparts. Sourcehistory/linecount/ackqualificationrepairisalsoexplicitin[parenthistoryerratum](/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/review/olson-DELTA1-parent-source-history-erratum-v1.md) anddoesnotpromoteanyscience. AnyloadbearingomissionfoundbytheremainingfamilywouldstillrequireBOTHfreshcompleteinputs,nopatchwaiver.

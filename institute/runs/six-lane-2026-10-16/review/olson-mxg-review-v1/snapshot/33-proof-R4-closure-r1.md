@@ -1,0 +1,136 @@
+# Closure of the MIX_low residual: Lemma R4, and MIX_low(p), PAR(p) for every prime p >= 5 (r1)
+
+Owner OlsonParity2.  Version r1, written after host clock 2026-10-17T22:46:04-0700; supersedes proof-R4-closure.md (sha256
+74929e9c...33f6, kept unchanged).  r1 applies the findings of the hostile reviews of the closure packet:
+review/olson-par2-closure-codex-review-v1.note.md (sha256 2ee09b8e...a1; ACCEPT-WITH-FIXES, no FATAL/MAJOR,
+3 MINOR, none located in this file) and review/olson-par2-closure-claude-review-v1.note.md (sha256 bfd7038b...14;
+ACCEPT-WITH-FIXES, no FATAL/MAJOR, 11 MINOR; MINOR-1, -2, -7, -8, -9 are located in this file).  Changes are marked
+[r1 fix ...]; change log at the end.  Status: written proof [W]; the r0 mathematics was reviewed (both reviews:
+complete and correct from the stated imports); these fixes await the parent's delta check.
+Claims are exactly Theorems M and P below.  Nothing here proves RUNS(p), INV, INV* or ordered Olson for D_(2p).
+p >= 5 throughout; p = 3 is not treated here.
+
+Imports (exact):
+* c2/proof-MIX-low-partial-r2.md (adf8cb70...6a22): setting, Lemma S, Lemma K + Corollary, Theorem MIX-R, R*.
+* c2/proof-Rstar-r4.md (r4 = r3 + review fixes; sha256 recorded in out/freeze.txt): Fact F, Lemma KL, W, B1, A, G1,
+  KS, AC, ZP, C, the R4 consequences and Corollary R4-av (Sec. 6).
+* c2/proof-PAR-assembly-r2.md (sha256 in out/freeze.txt): the PAR chain (Sec. 2(a)).
+* Through these: Lemma H (../../proof-PAR-K0.md Sec. 1), Lemma M0 (../../../inverse-run-count/proof-RUNS.md Sec. 12;
+  re-derived by both closure reviews, correct), Proposition S1' (../../proof-PAR-Kplus-partial-r2.md Sec. 3').
+Notation as in proof-Rstar-r4.md Sec. 0, 4, 6 (Z0, Y, Z0+ = free runs, alpha = number of free anti runs,
+s = k - 1 - 2g - B, S_Z, n_d = number of aligned runs in Z0, TOT = p - k + 2g = sum phi).  [r1 fix, Claude MINOR-9]
+DEFINED HERE (not in r3/r4): X := phi(Z0+) and delta+ := -BH(Z0+).
+
+## 1. Lemma R4
+
+**Lemma R4.**  No normalized MIX_low avoider has lift data in R4 (proof-Rstar-r4.md Sec. 6).
+Proof.  Let v be a normalized MIX_low avoider whose lift data lie in R4.  Facts:
+(i) R4 is contained in R**, so no bh_t >= B + 1 and no d_t >= 2p - B; by Fact F(d) every d_t <= 2g + B - 2, hence
+    every phi_t <= g - 1 (Fact F(c)).
+(ii) Every bh_t <= s (definition of R4).
+(iii) [r1 fix, Claude MINOR-3] Z0+ != empty: otherwise X = alpha = 0 and 2X + alpha = 0 < 2g + s + S_Z, contradicting
+    the R*** inequality 2X + alpha >= 2g + s + S_Z.  So m(Z0+) >= 1, and c(Z0+) = X + m(Z0+) <= g (R4) gives
+    X <= g - 1.  With the R*** inequality, alpha >= 2g + s + S_Z - 2X >= 2 m(Z0+) + s + S_Z >= s + 2.  Each free anti
+    run carries >= 1 unit of the anti mass B - n_P <= B, so B >= alpha >= s + 2; with B <= g (R**), s <= B - 2 <= g - 2.
+(iv) Every aligned run of Z0 has phi >= d/2 > 0, so it is free with phi >= 1, and every pair of Z0 is free (phi =
+    -bh/2 >= 0); hence D(Z0+) = S_Z + n_d - (anti mass of the free antis) and
+      delta+ = 2X - D(Z0+) = 2X - S_Z - n_d + (anti mass of the free antis) >= 2X + alpha - S_Z - n_d >= 2g + s - n_d;
+    n_d <= X <= g - 1, so delta+ >= g + s + 1.
+Step 1 (a set N of Y-runs).  Y = {bh >= 1} is nonempty (sum bh = k - 2g = B + s + 1 > 0) and not the whole cycle
+(Z0+ is nonempty), so its maximal cyclic intervals are paths.  BH(Y) = (k - 2g) - BH(Z0) = s + 1 + B + delta with
+delta := -BH(Z0) >= delta+ (the runs of Z0 not in Z0+ have bh <= 0), so BH(Y) >= 3s + g + 4 >= 2s + 3.  In every
+path take the parity class of larger BH; the union Q is independent in the cycle (positions of one parity in a
+proper path are at cyclic distance >= 2 since k >= 4; here k = 2g + B + s + 1 >= 11) and BH(Q) >= BH(Y)/2 > s + 1.
+Add runs of Q to N one at a time until BH(N) >= s + 1; as 1 <= bh <= s on Y, s + 1 <= BH(N) <= 2s, |N| >= 2, and N
+is nonempty and independent.
+Step 2 (dichotomy).
+(a) If phi(N) <= (p - k + g - 1) + |N|: S' := [k] \ N is nonempty (it contains Z0) and proper (N is nonempty);
+    as N is nonempty and independent, S' has exactly |N| maximal cyclic blocks, so m(S') = |N| and
+    c(S') = TOT - phi(N) + |N| >= g + 1; BH(S') = (k - 2g) - BH(N) <= (k - 2g) - (s + 1) = B; phi <= g - 1 on S'
+    by (i).  Lemma KL.
+(b) Otherwise phi(N) >= p - k + g + |N| >= g + 2 (integrality; k <= p, |N| >= 2).  S := Z0+ union N (disjoint, as
+    N is contained in Y) is nonempty.  [r1 fix, Claude MINOR-2] BH(S) = BH(N) - delta+ <= 2s - delta+ <=
+    s - g - 1 <= B - g - 3 < B (by (iii), s <= B - 2), and S != [k] because BH(S) < s + 1 + B = BH([k]); hence
+    m(S) >= 1 and c(S) >= phi(S) + 1 = X + phi(N) + 1 >= g + 3 (X >= 0).  phi <= g - 1 on S by (i).  Lemma KL.
+In both cases v has an identity 2p-subword, contradicting avoidance.  []
+Remark (from the reviews; not used): in (b) the BH budget only needs delta+ >= 2s - B, and |N| >= 2 is not needed
+there.
+
+## 2. Theorem M (MIX_low(p) for every prime p >= 5)
+
+**Theorem M.**  Let p >= 5 be prime.  Every RGR word v of length 4p - 2 (so F, R >= 1; here F >= k >= 1 and
+R >= A + B >= 2) with all k reflection runs odd, k <= p, A >= B >= 1 and B < kappa <= k - 1 has an identity
+2p-subword.  [r1 fix, scout wording: in the rigid run family, i.e. rotations only rho_x, rho_-x (x != 0, normalised
+to 1) and k nonempty rotation runs alternating with k nonempty constant reflection runs.]
+Proof.  [r1 fix, Claude MINOR-1 and Main: avoider-data chain with explicit normalization]  Suppose v avoids.
+Step 0 (trivial cut).  If A >= 2p, 2p letters rho_1 multiply to 1.  So A <= 2p - 1, i.e. (A = 2p - k + 2g + B,
+g := kappa - B >= 1) 2g + B <= k - 1.
+Step 1 (Lemma M0).  While some rotation run has a_t, b_t >= 1 and r_t >= 3, apply Lemma M0: the new word has length
+4p - 2, the same k, d_t, reflection parities and theta, A, B and kappa each drop by 1 (g is unchanged), F, R >= 1
+(no run vanishes as r_t - 2 >= 1), and it still avoids.  B decreases, so this stops; then every rotation run is pure
+or a (1,1)-pair.  Let v', B' be the result.
+Step 2 (B' = 0).  All rotation letters are rho_1, all reflection runs odd, k <= p, kappa' = g >= 1 and
+R' = A - B = 2p - k + 2g <= 2p - 2 (k >= 2g + B + 1 >= 2g + 2): Proposition S1' gives an identity 2p-subword of v'.
+(A1' and the trivial cut are not needed here.)
+Step 3 (B' >= 1).  v' is a normalized MIX_low avoider (odd reflection runs, k <= p, A' - B' = A - B > 0,
+kappa' - B' = g >= 1, kappa' <= kappa <= k - 1, A' <= 2p - 1, pure/(1,1) runs), so r2 Lemma S gives its lift data.
+By Corollary R4-av (proof-Rstar-r4.md Sec. 6; eliminations MIX-R, W, B1, A, AC, KS, ZP, C) the data lie in R4; by
+Lemma R4 they do not.  Contradiction.  []
+Neither "no interval-feasible normalized data lie in R4" (Corollary' of proof-Rstar-r4.md, Theorem PA of the
+assembly) nor any census output is used.
+
+## 3. Theorem P (PAR(p) for every prime p >= 5)
+
+**Theorem P.**  Let p >= 5 be prime and let w' be a word in RGR_(4p-2)(p) with F, R >= 1 [r1 fix, Claude MINOR-7]
+(a cyclic alternation of k nonempty rotation runs over rho_x, rho_-x and k nonempty constant reflection runs) and
+k <= p, which has no identity 2p-subword and is INHERITED, i.e. [r1 fix, scout wording request] satisfies the five
+conditions of ../../../proof-INV-reduction.md Sec. 1 (its lines 14-16):
+  (E) R <= 3p - 2;  (P) F + sum_i floor(r_i/2) <= 3p - 2;  (V) R + H <= 3p - 2, H = sum_j floor(l_j/2);
+  (Pairs) H <= p - 1;  (D0) a_i, b_i <= p - 1 for every rotation run i.
+Then all 2k runs of w' are odd.  ("Inherited" means these five conditions; the theorem does not assume that w'
+arises as a one-letter deletion, although in Theorem DR-Res it is applied to in-run deletions, which satisfy them.)
+Proof.  proof-PAR-assembly-r2.md Sec. 2(a): normalise B <= A; avoidance gives A, B <= 2p - 1 and B <= kappa; then
+kappa = 0: Theorem K0; kappa >= 1 and B = 0: Lemma OR + S1' / A1' / trivial cut; B = kappa >= 1: Theorem KB;
+1 <= B < kappa: Lemma OR + MIX_low(p) for w~, which is Theorem M.  []
+Dependencies and review status: proof-PAR-assembly-r2.md Sec. 4.
+[r1 fix, Claude MINOR-8] Consequence for the programme: ordered Olson for D_(2p) <= INV*(p) + PAR(p) + RUNS(p), by
+Theorem DR-Res (proof-INV-reduction.md Sec. 1; INV_Res(p) = PAR(p) + RUNS(p)) and Corollary DR' (proof-DR.md), since
+DR' uses only the conclusion of Theorem DR, which DR-Res also provides.  RUNS(p) and INV*(p) remain open; nothing
+here proves them.
+
+## 4. Replays [F] (research aids; never hypotheses; Theorems M and P do not depend on them)
+
+c2/r4_replay.py (sha256 4e1b6d0b...6c6a), output c2/out/r4_replay_p11.json (seed 20261017, host
+17:52:51-17:52:54 PDT):
+* p = 11 census (all 211,911 interval-feasible configurations): Lemma ZP applicable to 211,284, every produced
+  KL prefix satisfies integer window containment x(P) in [-L_P, U_P]; Lemma C never applicable.
+* [r1 fix, Claude MINOR-9] Synthetic integer data on normalized MIX_low run data satisfying a WEAKENING of the facts
+  used (evidence only): for Lemma C, phi <= g - 1 off t0, bh_t0 >= s + 1, phi_t0 <= p - k + g; for Lemma R4, all
+  phi <= g - 1, all bh <= s, delta+ >= 2s - B (weaker than fact (iv)), and the Step-1 property "heavier Y-class
+  BH >= s + 1" imposed directly; p = 11..37, NOT interval-feasible (the conclusions are pure arithmetic): C 3,200 /
+  3,200 and R4 2,815 / 2,815 produced prefixes inside their windows; mutation (every window shrunk by one at both
+  ends) rejects 1,202 (C) and 1,046 (R4) of them.
+* Earlier eval-session checks (same constructions, seeds 4242, 99, 777): 15,285 + 9,000 applicable synthetic
+  cases, 0 failures; mutation rejections 4,254 and 3,535.
+(Census-dependent sentences: this section only.)
+
+## Change log r1 (closure-packet reviews)
+
+1. Claude MINOR-1 (r0 L40): Theorem M now cites the avoider-data chain (Corollary R4-av of proof-Rstar-r4.md + Lemma
+   R4), with explicit Steps 0-3 (trivial cut, M0, B' = 0 by S1', normalized case); no use of Corollary' or of
+   Theorem PA's interval-feasible hypothesis.
+2. Claude MINOR-2 (r0 L33): BH(S) <= 2s - delta+ <= s - g - 1 <= B - g - 3 < B and S != [k] since
+   BH(S) < BH([k]); the use of s <= B - 2 is cited.
+3. Claude MINOR-3 (support, r0 L18): Z0+ != empty and m(Z0+) >= 1 are proved inside fact (iii).
+4. Claude MINOR-7 (r0 L47-48): Theorem P states F, R >= 1 (and the alternation of nonempty runs).
+5. Claude MINOR-8 (r0 L53-54): the consequence is stated via DR-Res + DR'.
+6. Claude MINOR-9 (r0 L11-12, L64-65): X and delta+ are defined here; the synthetic replay is described as a
+   weakening of the facts used.
+7. Scout wording request (review/olson-par-priority-scout-v1.md L61): "inherited" spelled out as (E), (P), (V),
+   (Pairs), (D0); rigid run family spelled out in Theorem M.
+8. Main (22:4x): explicit nonemptiness (Y, Z0+, N, S', S) and normalization steps; F, R >= 1 in Theorems M and P.
+Codex MINOR-1, -2, -3 concern proof-PAR-assembly-r1.md, proof-Rstar-r3.md and c2/README.md; they are applied in
+proof-PAR-assembly-r2.md, proof-Rstar-r4.md and a dated README note.  Claude MINOR-3, -4 are applied in
+proof-Rstar-r4.md; MINOR-5, -6 in proof-PAR-assembly-r2.md; MINOR-10 in the README note; MINOR-6 (part on
+proof-PAR-Kplus-partial-r2.md:133) and MINOR-11 (proof-PAR-K0.md:4) concern files outside c2/ that this task may
+not edit: their corrected status is recorded in proof-PAR-assembly-r2.md Sec. 5.

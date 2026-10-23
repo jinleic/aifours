@@ -1,0 +1,968 @@
+Independent focused SOURCE-ONLY repair review of beta_parent_adapter_v3 74a12f3f60e83f736e85ba4f0c06c4167a75e55922a095982389273b2db0f662. No tools/imports/execution/edits/tests/delegation/launches. PriorHOLD d763787d: 0F/1M (artifact acquisition exception added X5 without schema). Fullv3 source, exact v2->v3diff, priorreview and parent superseding sourcejoin supplied. Confirm exactly X4 only on acquisition error; X5 only from actualschema result; no other regression. Verify superseding join resolves capture3->capture4 authority discrepancy: pinned capture4 has exact3argAPI and source-ready review, schema2/reader pins. Other v2 repairs FIXED should remain unchanged. ReturnSOURCE_READY_FOR_FINITE_CONTROL_REVIEW/READY_WITH_FIXES/HOLD with findings, unchangedexternalpreconditions and finitecontrols. No runtime authority.
+
+### beta_parent_adapter_v3.py
+Path: /Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/control/beta_parent_adapter_v3.py
+Full-file SHA256: 74a12f3f60e83f736e85ba4f0c06c4167a75e55922a095982389273b2db0f662
+Excerpt: None-None
+"""SOURCE ONLY, UNTESTED. V3 cause-ownership repair. Compose frozen parent beta consumers over pinned evidence.
+
+The parent supplies input SHA256s as authority and retains the EvidenceReader on every exception.
+This module reads/compiles only pinned consumer bytes inside evaluate_pinned, never imports them
+by pathname, writes nothing and starts no processes. A decision is NOT a canonical audit or release.
+A matching receipt hash authenticates bytes, not runtime truth. Parent-observed execution, actual
+nested exit, complete captures, date provenance, full endedness and late resources remain required.
+REQUIRED EXTERNAL PRECONDITION: the parent enforces an exclusive immutable publication freeze across every supplied file, namespace and alias for the whole decision. This is not established by NOFOLLOW or hashes alone. No raw shared-supervisor adapter is guessed here; it must be built against a reviewed final schema.
+"""
+import copy
+import hashlib
+import json
+import math
+
+PLAN_PATH = '/Users/jinleic/repos/aifours/information-science/evidence/six-lane-20261018-96h/mols39/evidence/ext-search-plan-v5.json'
+PLAN_SHA = '254b44c372fd170640198dbdc773cca2a1893607127d373320b8518a54e59731'
+CAPTURE_PATH = '/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/control/beta_capture_audit_v4.py'
+CAPTURE_SHA = '9b50052136d82bd21914ca0ec83f561881fbee280ef472f09a20354e89b6c645'
+SCHEMA_PATH = '/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/control/beta_schema_audit_v2.py'
+SCHEMA_SHA = '9e910e2d90ad1b80266fd38abc69d73e597fc589763b4464cb9251dd209be103'
+CAP = 16 << 20
+CAUSES = ('X1 EXIT_MISMATCH', 'X2 STDOUT_CAPTURE_MISSING', 'X2 STDOUT_CAPTURE_INCOMPLETE',
+          'X2 STDOUT_NOT_EXACT_RESULT_LINE', 'X3 STDERR_CAPTURE_MISSING',
+          'X3 STDERR_CAPTURE_INCOMPLETE', 'X3 STDERR_NONEMPTY', 'X4 ARTIFACT_SET_OR_DIGEST',
+          'X5 RESULT_SCHEMA', 'X6 UNSETTLED', 'X7 PROVENANCE')
+
+
+class SnapshotRefusal(ValueError):
+    pass
+
+
+def _tick(check):
+    if not callable(check) or check() is not None:
+        raise SnapshotRefusal('deadline_check must return None or raise')
+
+
+def _hex(value):
+    return type(value) is str and len(value) == 64 and all(c in '0123456789abcdef' for c in value)
+
+
+def _exact(left, right):
+    if type(left) is not type(right):
+        return False
+    if type(left) is dict:
+        return set(left) == set(right) and all(_exact(left[k], right[k]) for k in left)
+    if type(left) is list:
+        return len(left) == len(right) and all(_exact(a, b) for a, b in zip(left, right))
+    return left == right
+
+
+def _json(data):
+    def pairs(rows):
+        value = {}
+        for key, entry in rows:
+            if key in value:
+                raise SnapshotRefusal('duplicate JSON key')
+            value[key] = entry
+        return value
+    def bad(_):
+        raise SnapshotRefusal('nonfinite JSON')
+    def number(text):
+        value = float(text)
+        if not math.isfinite(value):
+            bad(text)
+        return value
+    if type(data) is not bytes or len(data) > CAP:
+        raise SnapshotRefusal('JSON type/cap')
+    return json.loads(data.decode('utf-8'), object_pairs_hook=pairs,
+                      parse_constant=bad, parse_float=number)
+
+
+def _pinned(ref, reader, check, cap=CAP):
+    if type(ref) is not dict or set(ref) != {'path', 'sha256'} or not _hex(ref['sha256']):
+        raise SnapshotRefusal('pinned reference schema')
+    _tick(check)
+    data = reader.read_bytes(ref['path'], cap)
+    if type(data) is not bytes or hashlib.sha256(data).hexdigest() != ref['sha256']:
+        raise SnapshotRefusal('pinned bytes mismatch')
+    _tick(check)
+    return data
+
+
+def _load(path, digest, symbol, reader, check):
+    source = _pinned({'path': path, 'sha256': digest}, reader, check, 1 << 20)
+    code = compile(source, path, 'exec', dont_inherit=True)
+    _tick(check)
+    namespace = {'__name__': 'parent_beta_snapshot_consumer', '__file__': path}
+    exec(code, namespace)
+    _tick(check)
+    function = namespace.get(symbol)
+    if not callable(function):
+        raise SnapshotRefusal('approved consumer entry missing')
+    return function
+
+
+class _Bundle:
+    """One private acquisition per path. Both consumers see these exact bytes and selected actual metadata.
+
+    Base-reader ownership remains available to the caller on every exception. Final fresh reads test
+    persistence but are not an atomic filesystem snapshot; the publication-freeze precondition is mandatory.
+    """
+    def __init__(self, reader, check):
+        self.reader, self.check = reader, check
+        self.entries = {}
+
+    def read_bytes(self, path, cap):
+        _tick(self.check)
+        if type(path) is not str or type(cap) is not int or cap < 0:
+            raise SnapshotRefusal('bundle path/cap')
+        if path not in self.entries:
+            data = self.reader.read_bytes(path, cap)
+            meta = self.reader.last_file(path)
+            if (type(data) is not bytes or len(data) > cap or type(meta) is not dict
+                    or meta.get('path') != path or meta.get('completed') is not True
+                    or meta.get('bytes_seen') != len(data)
+                    or meta.get('sha256') != hashlib.sha256(data).hexdigest()):
+                raise SnapshotRefusal('missing current successful actual acquisition')
+            self.entries[path] = {'bytes': data, 'metadata': copy.deepcopy(meta), 'cap': cap}
+        entry = self.entries[path]
+        if len(entry['bytes']) > cap:
+            raise SnapshotRefusal('cached immutable acquisition exceeds requested cap')
+        _tick(self.check)
+        return entry['bytes']
+
+    def revalidate(self):
+        """Fresh same-path readbacks must match the originally SELECTED bytes and actual identity."""
+        results = []
+        for path, selected in self.entries.items():
+            current = self.reader.read_bytes(path, selected['cap'])
+            actual = self.reader.last_file(path)
+            if (type(actual) is not dict or actual.get('completed') is not True
+                    or current != selected['bytes']
+                    or not _exact(actual.get('after'), selected['metadata'].get('after'))):
+                raise SnapshotRefusal('publication changed after selected acquisition: ' + path)
+            results.append({'path': path, 'sha256': selected['metadata']['sha256'],
+                            'actual_metadata': copy.deepcopy(actual['after'])})
+            _tick(self.check)
+        return results
+
+
+def _directory_snapshot(reader, path, check):
+    names = reader.directory_names(path)
+    report = reader.report()
+    if type(report) is not dict or not report.get('observations'):
+        raise SnapshotRefusal('directory census report unavailable')
+    row = report['observations'][-1]
+    if (row.get('kind') != 'directory' or row.get('path') != path or row.get('completed') is not True
+            or sorted(row.get('names', [])) != names):
+        raise SnapshotRefusal('current directory census not established')
+    result = {'names': list(names), 'before': copy.deepcopy(row['before']), 'after': copy.deepcopy(row['after'])}
+    _tick(check)
+    return result
+
+
+def _context(context, expected, bundle, check):
+    keys = {'format', 'plan', 'original_dm21', 'prefix', 'derivation', 'publication_freeze'}
+    if type(context) is not dict or set(context) != keys or context['format'] != 'beta-parent-schema-context-v2':
+        raise SnapshotRefusal('schema context v2 keys/format')
+    if not _exact(context['plan'], {'path': PLAN_PATH, 'sha256': PLAN_SHA}):
+        raise SnapshotRefusal('context plan authority')
+    plan_bytes = _pinned(context['plan'], bundle, check)
+    plan = _json(plan_bytes)
+    if not _exact(context['original_dm21'], {'path': plan['dm21_path'], 'sha256': plan['dm21_sha256']}):
+        raise SnapshotRefusal('original DM21 binding')
+    original = _pinned(context['original_dm21'], bundle, check, 1 << 20)
+    if type(context['prefix']) is not list or len(context['prefix']) > 19:
+        raise SnapshotRefusal('prefix count/type')
+    prefix, authority = [], []
+    for row in context['prefix']:
+        _tick(check)
+        if type(row) is not dict or set(row) != {'item', 'files', 'audit'} or type(row['files']) is not dict:
+            raise SnapshotRefusal('prefix reference keys')
+        files = {name: _pinned(ref, bundle, check) for name, ref in row['files'].items()}
+        prefix.append({'item': row['item'], 'files': files,
+                       'audit_bytes': _pinned(row['audit'], bundle, check, 1 << 20)})
+        authority.append({'item': row['item'], 'audit_sha256': row['audit']['sha256']})
+    freeze = _json(_pinned(context['publication_freeze'], bundle, check, 1 << 20))
+    freeze_keys = {'format', 'mode', 'job_dir', 'immutable_paths', 'prefix_authority'}
+    if (type(freeze) is not dict or set(freeze) != freeze_keys
+            or freeze['format'] != 'beta-parent-publication-freeze-v1'
+            or not _exact(freeze['mode'], expected['mode']) or not _exact(freeze['job_dir'], expected['job_dir'])
+            or not _exact(freeze['prefix_authority'], authority)
+            or type(freeze['immutable_paths']) is not list
+            or any(type(path) is not str for path in freeze['immutable_paths'])
+            or len(freeze['immutable_paths']) != len(set(freeze['immutable_paths']))):
+        raise SnapshotRefusal('parent publication-freeze authority/binding')
+    # This checks the parent-authenticated declaration, not that a child cannot mutate the OS.
+    return plan_bytes, original, prefix, freeze
+
+
+def _current_files(expected, bundle):
+    outputs, directory = expected['outputs'], expected['job_dir']
+    if type(outputs) is not list or not outputs or type(directory) is not str:
+        raise SnapshotRefusal('current output binding')
+    result = {}
+    for name in outputs:
+        if type(name) is not str or name in ('', '.', '..') or '/' in name or '\x00' in name:
+            raise SnapshotRefusal('current output name')
+        result[name] = bundle.read_bytes(directory + '/' + name, CAP)
+    return result
+
+
+def _derivation(manifest_ref, refs, expected, observed, capture, schema, schema_args, bundle, check):
+    """Verify exactly the approved transformation; never change upstream receipt or measured-exit evidence."""
+    if expected['mode'] != 'FIXTURE' or observed['mode'] != 'FIXTURE':
+        raise SnapshotRefusal('synthetic derivatives are fixture-only')
+    manifest = _json(_pinned(manifest_ref, bundle, check, 1 << 20))
+    keys = {'format', 'expectation_sha256', 'observation_sha256', 'upstream_observation', 'mutations'}
+    if type(manifest) is not dict or set(manifest) != keys or manifest['format'] != 'beta-parent-synthetic-derivation-v1':
+        raise SnapshotRefusal('derivation schema')
+    if (manifest['expectation_sha256'] != refs['expectation']['sha256']
+            or manifest['observation_sha256'] != refs['observation']['sha256']):
+        raise SnapshotRefusal('derivation input pins')
+    upstream = _json(_pinned(manifest['upstream_observation'], bundle, check))
+    if capture(expected, upstream, bundle.read_bytes) != []:
+        raise SnapshotRefusal('synthetic upstream capture baseline invalid')
+    plan_bytes, original, prefix, current = schema_args
+    if schema(plan_bytes, expected['item'], current, prefix, original, check, bundle.read_bytes) != []:
+        raise SnapshotRefusal('synthetic upstream schema baseline invalid')
+    mutations = manifest['mutations']
+    if type(mutations) is not list or not 1 <= len(mutations) <= 8:
+        raise SnapshotRefusal('synthetic mutation count')
+    paths = []
+    for mutation in mutations:
+        if type(mutation) is not dict or set(mutation) != {'path', 'value'} or type(mutation['path']) is not list:
+            raise SnapshotRefusal('mutation schema')
+        path = mutation['path']
+        allowed = (path == ['actual_exit'] or path == ['captures', 'stderr']
+                   or (len(path) == 3 and path[:2] == ['captures', 'stderr']
+                       and path[2] in ('present', 'bytes_seen', 'bytes_stored', 'eof', 'overflow', 'error')))
+        if not allowed:
+            raise SnapshotRefusal('unlicensed synthetic field mutation')
+        key = tuple(path)
+        if any(key[:len(prior)] == prior or prior[:len(key)] == key for prior in paths):
+            raise SnapshotRefusal('duplicate or ancestor/descendant mutation conflict')
+        paths.append(key)
+    derived = copy.deepcopy(upstream)
+    for mutation in mutations:
+        target = derived
+        for component in mutation['path'][:-1]:
+            if type(target) is not dict or component not in target:
+                raise SnapshotRefusal('mutation parent unavailable')
+            target = target[component]
+        field = mutation['path'][-1]
+        if type(target) is not dict or field not in target or _exact(target[field], mutation['value']):
+            raise SnapshotRefusal('mutation absent or no-op')
+        target[field] = copy.deepcopy(mutation['value'])
+    if _exact(derived, upstream) or not _exact(derived, observed):
+        raise SnapshotRefusal('transformed input is unchanged or differs from approved derivation')
+    return {'manifest': copy.deepcopy(manifest_ref), 'verified': True,
+            'upstream_observation': copy.deepcopy(manifest['upstream_observation']),
+            'upstream_parent_reported_exit': upstream.get('actual_exit'),
+            'mutations': copy.deepcopy(mutations), 'actual_exit_is_measured': False}
+
+
+def evaluate_pinned(inputs, reader, deadline_check):
+    """Caller owns reader and parent SHA authority. No writes, launch, canonical audit or release.
+
+    Both consumers receive ONE acquired byte/identity bundle; an external publication freeze is mandatory.
+    The parent retains this reader on every BaseException. Failed tail construction never returns PASS.
+    """
+    fired, errors = set(), []
+    refs, expected, observed, context = None, None, None, None
+    synthetic, selected, persistence = None, {}, []
+    before_dir, after_dir, context_values, current = None, None, None, None
+    bundle = _Bundle(reader, deadline_check)
+    try:
+        _tick(deadline_check)
+        if type(inputs) is not dict or set(inputs) != {'expectation', 'observation', 'context'}:
+            raise SnapshotRefusal('input reference keys')
+        refs = copy.deepcopy(inputs)
+        _tick(deadline_check)
+        expected = _json(_pinned(refs['expectation'], bundle, deadline_check))
+        observed = _json(_pinned(refs['observation'], bundle, deadline_check))
+        context = _json(_pinned(refs['context'], bundle, deadline_check))
+        if type(context) is dict and context.get('derivation') is not None:
+            synthetic = {'requested': True, 'verified': False,
+                         'manifest': copy.deepcopy(context['derivation']), 'actual_exit_is_measured': False}
+        capture = _load(CAPTURE_PATH, CAPTURE_SHA, 'audit_capture', bundle, deadline_check)
+        schema = _load(SCHEMA_PATH, SCHEMA_SHA, 'audit_schema', bundle, deadline_check)
+        try:
+            before_dir = _directory_snapshot(reader, expected['job_dir'], deadline_check)
+        except Exception as exc:
+            fired.add('X4 ARTIFACT_SET_OR_DIGEST')
+            errors.append({'stage': 'initial_artifact_census', 'error': repr(exc)})
+        capture_causes = capture(expected, observed, bundle.read_bytes)
+        if type(capture_causes) is not list or any(type(c) is not str or c not in CAUSES for c in capture_causes):
+            raise SnapshotRefusal('capture returned invalid causes')
+        fired.update(capture_causes)
+        try:
+            context_values = _context(context, expected, bundle, deadline_check)
+        except Exception as exc:
+            fired.add('X7 PROVENANCE')
+            errors.append({'stage': 'context_authority', 'error': repr(exc)})
+        try:
+            current = _current_files(expected, bundle)
+        except Exception as exc:
+            fired.add('X4 ARTIFACT_SET_OR_DIGEST')
+            errors.append({'stage': 'current_artifact_bytes', 'error': repr(exc)})
+        if context_values is not None and current is not None:
+            plan_bytes, original, prefix, freeze = context_values
+            schema_causes = schema(plan_bytes, expected['item'], current, prefix, original,
+                                   deadline_check, bundle.read_bytes)
+            if schema_causes not in ([], ['X5 RESULT_SCHEMA']):
+                raise SnapshotRefusal('schema returned invalid causes')
+            fired.update(schema_causes)
+            if synthetic is not None:
+                try:
+                    synthetic = _derivation(context['derivation'], refs, expected, observed, capture, schema,
+                                            (plan_bytes, original, prefix, current), bundle, deadline_check)
+                except Exception as exc:
+                    fired.add('X7 PROVENANCE')
+                    errors.append({'stage': 'synthetic_derivation', 'error': repr(exc)})
+        try:
+            after_dir = _directory_snapshot(reader, expected['job_dir'], deadline_check)
+            if (before_dir is None or not _exact(before_dir, after_dir)
+                    or not _exact(after_dir['names'], sorted(observed['actual_artifact_names']))
+                    or set(after_dir['names']) != set(expected['outputs'])):
+                fired.add('X4 ARTIFACT_SET_OR_DIGEST')
+            for name in expected['outputs']:
+                path = expected['job_dir'] + '/' + name
+                entry = bundle.entries[path]
+                meta, record = entry['metadata'], observed['artifacts'][name]
+                if (not _exact(record['ino'], meta['after']['ino'])
+                        or not _exact(record['nlink'], meta['after']['nlink'])
+                        or not _exact(record['bytes'], len(entry['bytes']))
+                        or not _exact(record['sha256'], meta['sha256'])):
+                    fired.add('X4 ARTIFACT_SET_OR_DIGEST')
+                selected[name] = {'path': path, 'sha256': meta['sha256'],
+                                  'bytes': len(entry['bytes']), 'actual_metadata': copy.deepcopy(meta['after'])}
+        except Exception as exc:
+            fired.add('X4 ARTIFACT_SET_OR_DIGEST')
+            errors.append({'stage': 'selected_artifact_identity_census', 'error': repr(exc)})
+        if context_values is not None:
+            freeze = context_values[3]
+            if not set(bundle.entries).issubset(set(freeze['immutable_paths'])):
+                fired.add('X7 PROVENANCE')
+                errors.append({'stage': 'publication_freeze', 'error': 'freeze does not cover every acquisition path'})
+        try:
+            persistence = bundle.revalidate()
+        except Exception as exc:
+            fired.update(('X4 ARTIFACT_SET_OR_DIGEST', 'X7 PROVENANCE'))
+            errors.append({'stage': 'snapshot_persistence', 'error': repr(exc)})
+        _tick(deadline_check)
+    except Exception as exc:
+        fired.add('X7 PROVENANCE')
+        errors.append({'stage': 'input_or_consumer', 'error': repr(exc)})
+    try:
+        report = reader.report()
+        if type(report) is not dict or report.get('unresolved') != []:
+            fired.add('X6 UNSETTLED')
+        decision = {'format': 'beta-parent-consumer-decision-v2',
+                    'verdict': 'AUDITED_FAIL' if fired else 'AUDITED_PASS',
+                    'causes': [cause for cause in CAUSES if cause in fired],
+                    'input_pins': copy.deepcopy(refs),
+                    'consumer_pins': {'capture': CAPTURE_SHA, 'schema': SCHEMA_SHA},
+                    'synthetic_derivation': copy.deepcopy(synthetic),
+                    'mode': expected.get('mode') if type(expected) is dict else None,
+                    'nested_exit': {'value': observed.get('actual_exit') if type(observed) is dict else None,
+                                    'kind': 'SYNTHETIC_PREDICATE_INPUT' if synthetic is not None
+                                            else 'UNVERIFIED_PARENT_REPORTED_NESTED_EXIT'},
+                    'selected_artifacts': copy.deepcopy(selected),
+                    'snapshot_persistence': copy.deepcopy(persistence),
+                    'directory_before': copy.deepcopy(before_dir), 'directory_after': copy.deepcopy(after_dir),
+                    'errors': copy.deepcopy(errors), 'reader': report,
+                    'canonical_audit_written': False, 'release_authority': False, 'runtime_authority': False,
+                    'boundary': 'Pinned immutable acquisition bundle under parent-enforced publication freeze; actual execution/date/endedness and independent five-part transaction remain external required evidence.'}
+        _tick(deadline_check)  # AFTER the complete detached report and result have been assembled
+        return decision
+    except Exception as exc:
+        # This path may not certify timeliness; it can only fail. Parent keeps the original reader regardless.
+        fired.add('X7 PROVENANCE')
+        try:
+            retained = reader.report()
+        except Exception as report_exc:
+            retained = {'report_unavailable': repr(report_exc)}
+            fired.add('X6 UNSETTLED')
+        if retained.get('unresolved') != []:
+            fired.add('X6 UNSETTLED')
+        return {'format': 'beta-parent-consumer-decision-v2', 'verdict': 'AUDITED_FAIL',
+                'causes': [cause for cause in CAUSES if cause in fired],
+                'input_pins': refs, 'synthetic_derivation': synthetic,
+                'nested_exit': {'value': observed.get('actual_exit') if type(observed) is dict else None,
+                                'kind': 'SYNTHETIC_PREDICATE_INPUT' if synthetic is not None else 'UNVERIFIED'},
+                'errors': errors + [{'stage': 'final_report_or_deadline', 'error': repr(exc)}],
+                'reader': retained, 'canonical_audit_written': False,
+                'release_authority': False, 'runtime_authority': False}
+
+
+### beta_parent_adapter_v2_to_v3.diff
+Path: /Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/review/beta_parent_adapter_v2_to_v3.diff
+Full-file SHA256: ad22f0182731349cc467dd92c82a0c934980a281942da83ae64ba36a907487df
+Excerpt: None-None
+--- control/beta_parent_adapter_v2.py
++++ control/beta_parent_adapter_v3.py
+@@ -1,4 +1,4 @@
+-"""SOURCE ONLY, UNTESTED. V2 coherent snapshot repair. Compose frozen parent beta consumers over pinned evidence.
++"""SOURCE ONLY, UNTESTED. V3 cause-ownership repair. Compose frozen parent beta consumers over pinned evidence.
+ 
+ The parent supplies input SHA256s as authority and retains the EvidenceReader on every exception.
+ This module reads/compiles only pinned consumer bytes inside evaluate_pinned, never imports them
+@@ -295,7 +295,7 @@
+         try:
+             current = _current_files(expected, bundle)
+         except Exception as exc:
+-            fired.update(('X4 ARTIFACT_SET_OR_DIGEST', 'X5 RESULT_SCHEMA'))
++            fired.add('X4 ARTIFACT_SET_OR_DIGEST')
+             errors.append({'stage': 'current_artifact_bytes', 'error': repr(exc)})
+         if context_values is not None and current is not None:
+             plan_bytes, original, prefix, freeze = context_values
+
+
+### beta-parent-adapter-source-join-v3.json
+Path: /Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/control/beta-parent-adapter-source-join-v3.json
+Full-file SHA256: 24142b488cf4f71e0dfec6917d11cf9bc98f3c4602c5f16df073d07bd0d69851
+Excerpt: None-None
+{
+ "at": "2026-10-19T12:32:55-0700",
+ "status": "SUPERSEDING_SOURCE_JOIN_NOEXEC",
+ "supersedes_capture_pin_in": {
+  "path": "/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/control/beta-parent-adapter-repair-contract-v2.json",
+  "sha256": "e8579227239813abc166ce3a9981f1e618bff8bfdc44a2f4a6db0ec1da1f339b",
+  "old": "capture3 4c0a5930"
+ },
+ "reason": "Capture3 reviewed READY_WITH_FIXES077fd5c2 with2MAJOR. Capture4 repairs exact str keys and pure-empty item/argv only; its v4 review d8a4257f SOURCE_READY. This parent record authenticates the changed join.",
+ "pins": {
+  "capture": {
+   "path": "/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/control/beta_capture_audit_v4.py",
+   "sha256": "9b50052136d82bd21914ca0ec83f561881fbee280ef472f09a20354e89b6c645",
+   "review": "d8a4257fce19401d8107f61cfd42421dc9d9691920fe8fe906ab00984e61ff4d"
+  },
+  "schema": {
+   "path": "/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/control/beta_schema_audit_v2.py",
+   "sha256": "9e910e2d90ad1b80266fd38abc69d73e597fc589763b4464cb9251dd209be103",
+   "review": "76a80d0db75c94ab693a26afadcb011cc24daa440c0f83fb9697ade59ce1284d"
+  },
+  "reader": {
+   "path": "/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/control/beta_parent_reader_v1.py",
+   "sha256": "1fc8f00c08cd9f78885c9a38fa0797ce5b01aba8e8ad39a6d19d7b6ce3370ec6",
+   "review": "b3f828bb1ce51fb6033da99a0fda02acdd801fccc41bc5f92facf52d93d4dbad"
+  },
+  "adapter": {
+   "path": "/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/control/beta_parent_adapter_v3.py",
+   "sha256": "74a12f3f60e83f736e85ba4f0c06c4167a75e55922a095982389273b2db0f662"
+  }
+ },
+ "adapter_delta": {
+  "path": "/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/review/beta_parent_adapter_v2_to_v3.diff",
+  "sha256": "ad22f0182731349cc467dd92c82a0c934980a281942da83ae64ba36a907487df",
+  "change": "Artifact acquisition exception now adds X4 only; X5 only from actual audit_schema result"
+ },
+ "unchanged": "All coherent bundle, publication-freeze, synthetic and deadline repairs from v2; no runtime or authority expansion."
+}
+
+
+### beta-parent-adapter-source-disposition-v3.json
+Path: /Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/review/beta-parent-adapter-source-disposition-v3.json
+Full-file SHA256: 903483501071856583162b560d59f168390ca6528a15f9d36a56008df543ccf4
+Excerpt: None-None
+{
+ "at": "2026-10-19T12:32:55-0700",
+ "status": "SOURCE_ONLY_UNTESTED_NOT_QUALIFIED",
+ "source": {
+  "path": "/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/control/beta_parent_adapter_v3.py",
+  "sha256": "74a12f3f60e83f736e85ba4f0c06c4167a75e55922a095982389273b2db0f662"
+ },
+ "review_v2": {
+  "path": "/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/review/beta-parent-adapter-codex-v2.prompt.stdout.txt",
+  "sha256": "d763787d5594ecbc889d4e5d3202fa4e404a72db351e1979e2c8ebacd1f5c2a8",
+  "findings": "0F/1M/0m"
+ },
+ "source_join": {
+  "path": "/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/control/beta-parent-adapter-source-join-v3.json",
+  "sha256": "24142b488cf4f71e0dfec6917d11cf9bc98f3c4602c5f16df073d07bd0d69851"
+ },
+ "repair": "Removed manufactured X5 from current artifact acquisition exception path. Single-line source delta.",
+ "remaining": "Independent verification; finite controls; raw approved observation adapter, canonical writer and full five-part parent transaction remain absent; runtime held."
+}
+
+
+### beta-parent-adapter-codex-v2.prompt.stdout.txt
+Path: /Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/review/beta-parent-adapter-codex-v2.prompt.stdout.txt
+Full-file SHA256: d763787d5594ecbc889d4e5d3202fa4e404a72db351e1979e2c8ebacd1f5c2a8
+Excerpt: None-None
+**HOLD — 0 FATAL, 1 MAJOR, 0 MINOR findings.**
+
+Reviewed only the supplied adapter labelled SHA256 `49d2a3f42b6140558e7ec115601c96c356d5272d339981aa2a490a8c790e5a73`, diff, contracts, and dependency source. No tools, imports, execution, edits, tests, delegation, or launches. Hash identifiers were compared textually, not recomputed.
+
+The principal coherence repairs hold under the exact supplied reader and mandatory parent publication freeze. One cause-ownership violation remains.
+
+**MAJOR — artifact acquisition failure asserts X5 without schema evaluation.**
+
+[evaluate_pinned:298](/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/control/beta_parent_adapter_v2.py:298), following [_current_files:199](/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/control/beta_parent_adapter_v2.py:199).
+
+Concrete failure path:
+
+1. A declared artifact contains schema-valid bytes but the reader refuses acquisition—for example, it is a regular file with a fixed link count of two.
+2. Capture validation fires X4.
+3. `_current_files()` raises before returning its dictionary.
+4. The handler unconditionally adds both X4 and X5.
+5. `current` remains `None`, so the schema call at line 302 is skipped.
+
+The decision therefore asserts `X5 RESULT_SCHEMA` without an independent schema result. This contradicts the frozen repair contract: artifact acquisition failures own X4; schema may independently establish X5. The verdict remains failed, so this is cause misattribution rather than a demonstrated false PASS.
+
+**Minimal repair:** add only X4 in this handler. Preserve X5 when independently returned by `audit_schema()`. Do not manufacture substitute artifact bytes to obtain that result.
+
+| Prior finding | Disposition | Source assessment |
+|---|---|---|
+| 1. Final deadline and report/assembly tail | **FIXED** | `evaluate_pinned:349–369` obtains the detached reader report and assembles the complete decision before the final original-deadline check. Ordinary tail exceptions enter a failed-return path. |
+| 2. Shared snapshot, selected identity, census and persistence | **FIXED**, subject to the explicit freeze | `_Bundle.read_bytes:106` supplies one selected byte/metadata acquisition per path. Both consumers and derivation use it. Identity comparison uses that selected metadata, rather than whichever acquisition most recently populated `_last`. |
+| 3. Hidden schema descriptor ownership | **FIXED** | Both schema invocations use the seventh `bundle.read_bytes` argument. Gate-source acquisition goes through the parent reader. The invoked gate validation path uses the substituted offline DM21 reader. |
+| 4. Conflicting/cancelling mutations and manifest aliasing | **FIXED** | `_derivation:234` rejects duplicate and ancestor/descendant paths before application. Line 245 rejects individual no-ops; line 247 copies assigned values. Final comparison rejects an unchanged transformation. Returned mutation records are copied. |
+| 5. X5 versus X7 ownership | **PARTIAL** | Context failures and derivation failures now receive X7 separately. The artifact-read handler still manufactures X5, as described above. |
+| 6. Synthetic-exit label on failure | **FIXED** | `evaluate_pinned:276` records derivation intent before verification. Both return paths retain the synthetic label when verification fails. |
+| 7. Caller-owned input-reference aliasing | **FIXED** | `evaluate_pinned:271` detaches references before consuming them. The normal return copies them again; the fallback returns the already-private reference snapshot. |
+
+The fresh-regression checks otherwise support the repair:
+
+- **Failed reads cannot refresh stale metadata.** Both bundle acquisition and persistence call `read_bytes()` before consulting `last_file()`. With the supplied reader, an unsuccessful acquisition raises and cannot authorize a fresh selection using an older `_last` entry.
+- **Selected metadata is bound to selected bytes.** Initial acquisition requires a completed observation with matching path, byte count and SHA256. The supplied reader publishes `_last` only after successful acquisition and cleanup.
+- **Stricter cached caps are enforced.** A later smaller cap succeeds only when the selected immutable bytes fit it. The bundle does not reread a different version to satisfy that request.
+- **Capture and schema judge the same current artifact bytes.** Capture’s result/artifact reads and `_current_files()` resolve through the same private entries. Derivation baseline calls use those entries too. The former schema-A/capture-B sequence cannot be reconstructed through these calls.
+- **Persistence preserves the chosen identity.** `_Bundle.revalidate:125` performs fresh reads and compares bytes and actual `after` metadata against the original selection. It does not overwrite selected entries or selected-artifact reporting.
+- **The directory comparison uses actual observations.** `_directory_snapshot:141` requires the current completed directory observation, including names and before/after metadata. Census failures and selected-entry lookup failures add X4; neither permits PASS. The census surrounds the consumer artifact-selection phase, not every global bundle acquisition or the later persistence reads.
+- **Exceptions cannot clear earlier causes.** Causes accumulate monotonically. Stage exceptions and bad selected-artifact lookups fail the decision. The final report checks global reader unresolved ownership, including resources from failed operations, and adds X6.
+- **Non-Exception BaseExceptions propagate.** This preserves the required caller responsibility to retain the original reader. Returning a failed report does not discharge ownership.
+
+The ordinary report fallback is adequate for the supplied reader’s plain-dictionary-or-exception behavior. Its unchecked `retained.get()` at line 378 is not a general safeguard against a replacement reader returning arbitrary objects; the exact reader join remains necessary.
+
+The declared interfaces match the supplied full modules: capture has three arguments; schema has seven; both adapter schema calls provide the common callback. The offline DM21 replacement also accepts the gate’s optional third `check` argument. The reachable schema validation helpers contain no additional application-file descriptor acquisition after substitution; descriptor-opening helpers remaining in the gate namespace are not invoked by that validation path. Trusted interpreter/import state remains external.
+
+The adapter constants name supplied **capture4/schema2** identifiers correctly. The frozen repair contract still names **capture3**. The disposition documents an intended replacement, but that authored statement alone does not establish authority for the changed join. A parent-authenticated superseding source join must resolve this discrepancy before finite controls.
+
+After the X5 ownership repair, remaining finite qualification must cover:
+
+- All seven frozen negatives and all twenty schema positions, with exact expected causes.
+- Shared-path acquisition, compatible and incompatible stricter caps, failed rereads, changed bytes/identity, directory replacement and namespace changes, and persistence failure.
+- Duplicate, ancestor/descendant and no-op mutations; copied replacement values; faithful manifest reporting; failed derivation labels.
+- Report construction crossing the original deadline, report exceptions, consumer exceptions and bad lookups.
+- Acquisition/close uncertainty anywhere in the global reader, plus BaseException propagation with caller retention.
+
+Parent-authenticated input references, genuine prefix transactions, the unchanged original deadline, and an exclusive freeze covering files, namespaces and aliases remain explicit preconditions. Freeze-record and prefix-audit syntax prove neither OS atomicity nor runtime provenance.
+
+The approved raw supervisor/source17 adaptation, scheduler integration and canonical writer are not supplied or accepted here. Actual nested exit, captures, dates, complete endedness and the independent full five-part parent transaction remain outstanding.
+
+**All runtime remains held. This review grants no execution GO, science acceptance, canonical-audit authority or release approval.**
+
+
+### beta_capture_audit_v4.py
+Path: /Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/control/beta_capture_audit_v4.py
+Full-file SHA256: 9b50052136d82bd21914ca0ec83f561881fbee280ef472f09a20354e89b6c645
+Excerpt: None-None
+"""Parent beta capture-audit consumer v1: pure X1/X2/X3/X4/X6/X7 predicates. SOURCE ONLY, UNTESTED.
+
+Implements audit_capture() of the frozen parent consumer contract
+/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/control/beta-audit-consumer-contract-v1.json
+(sha256 b26a98caba1fbf17de0376fde24905052b68ebc0d5f567cdebfac092a6cdfd96). X5 RESULT_SCHEMA belongs to audit_schema.
+This module starts no processes and performs no application-file I/O; standard-library imports may read runtime files. Trusted Python/import state and -B remain parent launch preconditions. audit_capture()
+returns causes only: no verdict, file write, process or /bin/date. Every byte it judges comes from the caller's
+read_bytes(path, cap), called only at paths bound by the parent expectation.
+
+    causes = audit_capture(expectation, observed, read_bytes)   # e.g. [] or ["X1 EXIT_MISMATCH"]
+
+TRUSTED-PARENT ADAPTER PRECONDITION (enforced by the parent adapter before the call; never inferred here)
+- The expectation is parent authority, never child self-report. PLAN: the plan v5 item and its exact GO. FIXTURE:
+  the separately approved instrumented invocation. Its resolved_argv binds that actual command line, including
+  --budget-s 2 versus 240; production B-BAD_PIN supplies only the compared status/schema/expected-exit oracle.
+- The observation is parent-owned evidence. actual_exit is the parent-observed exit status of the nested science
+  child (negative = signal), never a supervisor or driver exit. Capture records map the actual capture files with no
+  ignored duplicate field. Census hits and unresolved identities go into settlement.unresolved; every stop signal
+  goes into settlement.signals.
+- Synthetic negatives: the parent first verifies its own immutable derivation manifest. The manifest preserves the
+  genuine upstream receipt and actual exit and labels exactly the altered predicate input. The same function is then
+  called; there is no synthetic bypass and no extra field. A synthetic exit (for example 120) is never measured exit
+  evidence.
+- A receipt match proves only that the bytes at receipt_path have the parent-bound digest, never runtime truth.
+  Endedness comes only from settlement, never from a receipt label.
+- read_bytes(path, cap) is the contract's descriptor-anchored, cap+1-bounded reader that retains actual identity
+  evidence. Tests may use an explicitly labelled immutable snapshot callback, never presented as kernel evidence. It
+  returns bytes of length <= cap or raises OSError/ValueError. Any other exception propagates, and the caller must
+  treat an exception from audit_capture as a failed audit.
+- [] only means that no owned cause fired. It is not a verdict, not X5 and not a canonical audit. No consumer,
+  fixture or source PASS writes an audit, releases a reservation or admits a job. That needs the separate five-part
+  parent transaction.
+
+DETERMINISTIC RULES
+- Strict types: bool is never int, counts are exact ints >= 0, hashes are 64 lowercase hex, paths are absolute and
+  normalized (no empty, '.' or '..' component, no NUL), names are plain. An absent or malformed field fails the
+  predicate that owns it. No default is substituted, and no JSON-typed input raises.
+- Ownership: expected_exit/actual_exit -> X1. capture_paths and captures.stdout -> X2; captures.stderr -> X3.
+  outputs, job_dir, artifacts and actual_artifact_names -> X4; X2 also locates result.json through outputs/job_dir.
+  settlement -> X6. Top-level format/key sets and every remaining field -> X7.
+- Each stream has at most one subcause. MISSING (record absent/null or present false) beats INCOMPLETE (present but
+  not a verified complete capture), which beats the content cause. Content is judged only on a verified complete
+  capture: stdout must equal the actual bytes of the bound result.json (its single canonical line is X5's), and
+  stderr must be empty. An empty complete capture is not a missing capture.
+- Cross-role path placement is parent authority; this predicate adds no uncontracted disjointness restriction.
+- Reads happen only at bound paths, at most once per path per call, with one cap (READ_CAP), in evaluation order
+  X2, X3, X4, X7 (artifact names and pin paths sorted).
+"""
+import hashlib
+import math
+
+EXPECTATION_FORMAT = "beta-parent-audit-expectation-v1"
+OBSERVATION_FORMAT = "beta-parent-audit-observation-v1"
+# Plan pinned by the consumer contract authority (ext-search-plan-v5.json); any other plan digest fails X7.
+AUTHORITY_PLAN_SHA256 = "254b44c372fd170640198dbdc773cca2a1893607127d373320b8518a54e59731"
+MODES = ("PLAN", "FIXTURE")
+RESULT_NAME = "result.json"
+READ_CAP = 16 << 20  # successor4 v3 plan/source-pin/artifact cap, also applied to captures and the receipt
+READ_FAILURES = (OSError, ValueError)  # defined read_bytes failures; every other exception propagates
+
+X1 = "X1 EXIT_MISMATCH"
+X2_MISSING = "X2 STDOUT_CAPTURE_MISSING"
+X2_INCOMPLETE = "X2 STDOUT_CAPTURE_INCOMPLETE"
+X2_NOT_EXACT = "X2 STDOUT_NOT_EXACT_RESULT_LINE"
+X3_MISSING = "X3 STDERR_CAPTURE_MISSING"
+X3_INCOMPLETE = "X3 STDERR_CAPTURE_INCOMPLETE"
+X3_NONEMPTY = "X3 STDERR_NONEMPTY"
+X4 = "X4 ARTIFACT_SET_OR_DIGEST"
+X6 = "X6 UNSETTLED"
+X7 = "X7 PROVENANCE"
+# Contract cause order without X5 RESULT_SCHEMA, which audit_schema owns.
+CAUSE_ORDER = (X1, X2_MISSING, X2_INCOMPLETE, X2_NOT_EXACT, X3_MISSING, X3_INCOMPLETE, X3_NONEMPTY, X4, X6, X7)
+
+EXPECTATION_KEYS = frozenset((
+    "format", "mode", "item", "plan_sha256", "expected_exit", "outputs", "job_dir", "capture_paths",
+    "receipt_path", "receipt_sha256", "resolved_argv", "go_sha256", "source_pins", "input_pins", "date_start",
+    "date_end"))
+OBSERVATION_KEYS = frozenset((
+    "format", "item", "plan_sha256", "mode", "actual_exit", "captures", "artifacts", "actual_artifact_names",
+    "receipt", "settlement", "resolved_argv", "go_sha256", "source_pins", "input_pins", "date_start", "date_end"))
+STREAM_KEYS = frozenset(("stdout", "stderr"))
+CAPTURE_KEYS = frozenset(("present", "path", "sha256", "bytes_seen", "bytes_stored", "eof", "overflow", "error"))
+ARTIFACT_KEYS = frozenset(("path", "sha256", "bytes", "ino", "nlink"))
+RECEIPT_KEYS = frozenset(("path", "sha256"))
+SETTLEMENT_KEYS = frozenset(("reaped", "group_empty", "census_complete", "unresolved", "signals"))
+HEX_DIGITS = frozenset("0123456789abcdef")
+
+_ABSENT = object()  # field unavailable: fails every check and never stands in for a value
+_MISSING, _INCOMPLETE, _COMPLETE = "MISSING", "INCOMPLETE", "COMPLETE"
+
+
+def audit_capture(expectation, observed, read_bytes):
+    """Ordered unique X1/X2/X3/X4/X6/X7 causes; [] only when every owned predicate is established."""
+    reader = _Reader(read_bytes)
+    fired = set()
+    if not _exit_matches(expectation, observed):
+        fired.add(X1)
+    state, stdout = _capture(expectation, observed, "stdout", reader)
+    if state == _MISSING:
+        fired.add(X2_MISSING)
+    elif state == _INCOMPLETE:
+        fired.add(X2_INCOMPLETE)
+    else:
+        result = _result_bytes(expectation, reader)
+        if result is None or stdout != result:
+            fired.add(X2_NOT_EXACT)
+    state, stderr = _capture(expectation, observed, "stderr", reader)
+    if state == _MISSING:
+        fired.add(X3_MISSING)
+    elif state == _INCOMPLETE:
+        fired.add(X3_INCOMPLETE)
+    elif len(stderr) != 0:
+        fired.add(X3_NONEMPTY)
+    if not _artifacts_ok(expectation, observed, reader):
+        fired.add(X4)
+    if not _settled(observed):
+        fired.add(X6)
+    if not _provenance_ok(expectation, observed, reader):
+        fired.add(X7)
+    return [cause for cause in CAUSE_ORDER if cause in fired]
+
+
+class _Reader:
+    """Calls read_bytes(path, READ_CAP) at most once per bound path; any failure yields None, never bytes."""
+
+    def __init__(self, read_bytes):
+        self._read_bytes = read_bytes if callable(read_bytes) else None
+        self._cache = {}
+
+    def read(self, path):
+        if not _norm_abs(path):
+            return None
+        if path not in self._cache:
+            data = None
+            if self._read_bytes is not None:
+                try:
+                    data = self._read_bytes(path, READ_CAP)
+                except READ_FAILURES:
+                    data = None
+                if type(data) is not bytes or len(data) > READ_CAP:
+                    data = None
+            self._cache[path] = data
+        return self._cache[path]
+
+
+def _get(record, key):
+    """Field value, or _ABSENT when record is not an exact dict or lacks key."""
+    if type(record) is dict and key in record:
+        return record[key]
+    return _ABSENT
+
+
+def _sha256(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def _hex64(value):
+    return type(value) is str and len(value) == 64 and set(value) <= HEX_DIGITS
+
+
+def _count(value):
+    return type(value) is int and value >= 0
+
+
+def _same_str(value, want):
+    return type(value) is str and type(want) is str and value == want
+
+
+def _norm_abs(path):
+    """Absolute normalized path as in ext4_gate anchored_parent: leading '/', no '', '.', '..' component, no NUL."""
+    if type(path) is not str or not path.startswith("/") or "\x00" in path:
+        return False
+    return all(part not in ("", ".", "..") for part in path.split("/")[1:])
+
+
+def _plain_name(name):
+    return type(name) is str and name not in ("", ".", "..") and "/" not in name and "\x00" not in name
+
+
+def _names(value):
+    """Exact nonempty list of distinct plain names, else None; no uncontracted count limit."""
+    if type(value) is not list or len(value) == 0:
+        return None
+    if not all(_plain_name(name) for name in value) or len(set(value)) != len(value):
+        return None
+    return value
+
+
+def _exact(left, right):
+    """Iterative typed JSON equality with no depth cap; reject cycles but allow repeated acyclic aliases."""
+    stack = [(left, right, False)]
+    active = set()
+    while stack:
+        a, b, leave = stack.pop()
+        pair = (id(a), id(b))
+        if leave:
+            active.remove(pair)
+            continue
+        if type(a) is not type(b):
+            return False
+        if type(a) in (dict, list):
+            if pair in active:
+                return False
+            active.add(pair)
+            stack.append((a, b, True))
+            if type(a) is dict:
+                if (len(a) != len(b) or any(type(k) is not str for k in b)
+                        or any(type(k) is not str or k not in b for k in a)):
+                    return False
+                stack.extend((a[k], b[k], False) for k in a)
+            else:
+                if len(a) != len(b):
+                    return False
+                stack.extend((x, y, False) for x, y in zip(a, b))
+        elif type(a) is float:
+            if not math.isfinite(a) or not math.isfinite(b) or a != b:
+                return False
+        elif type(a) in (str, int, bool):
+            if a != b:
+                return False
+        elif a is not None:
+            return False
+    return True
+
+def _keys(record, keys):
+    """Exact built-in JSON string keys on every schema boundary; str subclasses never alias authority."""
+    return type(record) is dict and all(type(k) is str for k in record) and set(record) == set(keys)
+
+
+def _bound_job_dir(expectation):
+    job_dir = _get(expectation, "job_dir")
+    return job_dir if _norm_abs(job_dir) else None
+
+
+def _bound_capture_path(expectation, stream):
+    """Declared capture path of stream, or None when the parent binding is unusable."""
+    paths = _get(expectation, "capture_paths")
+    if not _keys(paths, STREAM_KEYS):
+        return None
+    path = paths[stream]
+    if not _norm_abs(path):
+        return None
+    return path
+
+
+def _exit_matches(expectation, observed):
+    want = _get(expectation, "expected_exit")
+    got = _get(observed, "actual_exit")
+    return type(want) is int and type(got) is int and got == want
+
+
+def _capture(expectation, observed, stream, reader):
+    """(MISSING, None), (INCOMPLETE, None) or (COMPLETE, verified actual capture bytes)."""
+    captures = _get(observed, "captures")
+    record = _get(captures, stream)
+    if record is _ABSENT or record is None or (type(record) is dict and _get(record, "present") is False):
+        return _MISSING, None
+    if type(captures) is not dict or any(type(key) is not str or key not in STREAM_KEYS for key in captures):
+        return _INCOMPLETE, None
+    path = _bound_capture_path(expectation, stream)
+    if path is None or not _keys(record, CAPTURE_KEYS) or record["present"] is not True:
+        return _INCOMPLETE, None
+    seen, stored, digest = record["bytes_seen"], record["bytes_stored"], record["sha256"]
+    if (not _same_str(record["path"], path) or not _hex64(digest) or not _count(seen) or not _count(stored)
+            or seen != stored or stored > READ_CAP or record["eof"] is not True
+            or record["overflow"] is not False or record["error"] is not None):
+        return _INCOMPLETE, None
+    data = reader.read(path)
+    if data is None or len(data) != stored or _sha256(data) != digest:
+        return _INCOMPLETE, None
+    return _COMPLETE, data
+
+
+def _result_bytes(expectation, reader):
+    """Actual bytes of the declared result.json at its bound path; None if undeclared, unbound or unreadable."""
+    outputs = _names(_get(expectation, "outputs"))
+    job_dir = _bound_job_dir(expectation)
+    if outputs is None or job_dir is None or RESULT_NAME not in outputs:
+        return None
+    return reader.read(job_dir + "/" + RESULT_NAME)
+
+
+def _artifacts_ok(expectation, observed, reader):
+    outputs = _names(_get(expectation, "outputs"))
+    job_dir = _bound_job_dir(expectation)
+    artifacts = _get(observed, "artifacts")
+    if outputs is None or job_dir is None or type(artifacts) is not dict:
+        return False
+    census = _names(_get(observed, "actual_artifact_names"))
+    ok = (RESULT_NAME in outputs and census is not None and set(census) == set(outputs)
+          and _keys(artifacts, outputs))
+    for name in sorted(outputs):
+        if not _artifact_ok(_get(artifacts, name), job_dir + "/" + name, reader):
+            ok = False
+    return ok
+
+
+def _artifact_ok(record, path, reader):
+    if not _keys(record, ARTIFACT_KEYS):
+        return False
+    size, digest, ino, nlink = record["bytes"], record["sha256"], record["ino"], record["nlink"]
+    if (not _same_str(record["path"], path) or not _hex64(digest) or not _count(size) or size > READ_CAP
+            or type(ino) is not int or ino <= 0 or type(nlink) is not int or nlink != 1):
+        return False
+    data = reader.read(path)
+    return data is not None and len(data) == size and _sha256(data) == digest
+
+
+def _settled(observed):
+    settlement = _get(observed, "settlement")
+    if not _keys(settlement, SETTLEMENT_KEYS):
+        return False
+    unresolved, signals = settlement["unresolved"], settlement["signals"]
+    return (settlement["reaped"] is True and settlement["group_empty"] is True
+            and settlement["census_complete"] is True and type(unresolved) is list and len(unresolved) == 0
+            and type(signals) is list and len(signals) == 0)
+
+
+def _provenance_ok(expectation, observed, reader):
+    ok = _record_ok(expectation, EXPECTATION_KEYS, EXPECTATION_FORMAT)
+    if not _record_ok(observed, OBSERVATION_KEYS, OBSERVATION_FORMAT):
+        ok = False
+    mode = _get(expectation, "mode")
+    if type(mode) is not str or mode not in MODES or not _same_str(_get(observed, "mode"), mode):
+        ok = False
+    item = _get(expectation, "item")
+    if type(item) is not str or not _same_str(_get(observed, "item"), item):
+        ok = False
+    plan = _get(expectation, "plan_sha256")
+    if not _same_str(plan, AUTHORITY_PLAN_SHA256) or not _same_str(_get(observed, "plan_sha256"), plan):
+        ok = False
+    if not _receipt_ok(expectation, observed, reader):
+        ok = False
+    argv = _get(expectation, "resolved_argv")
+    if (type(argv) is not list or not all(type(arg) is str for arg in argv)
+            or not _exact(argv, _get(observed, "resolved_argv"))):
+        ok = False
+    go = _get(expectation, "go_sha256")
+    if not _hex64(go) or not _same_str(_get(observed, "go_sha256"), go):
+        ok = False
+    for key in ("source_pins", "input_pins"):
+        if not _pins_bound(_get(expectation, key), _get(observed, key), reader):
+            ok = False
+    for key in ("date_start", "date_end"):
+        record = _get(expectation, key)
+        if type(record) is not dict or len(record) == 0 or not _exact(record, _get(observed, key)):
+            ok = False
+    return ok
+
+
+def _record_ok(record, keys, form):
+    return _keys(record, keys) and _same_str(record["format"], form)
+
+
+def _receipt_ok(expectation, observed, reader):
+    path, digest = _get(expectation, "receipt_path"), _get(expectation, "receipt_sha256")
+    if not _norm_abs(path) or not _hex64(digest):
+        return False
+    receipt = _get(observed, "receipt")
+    ok = (_keys(receipt, RECEIPT_KEYS) and _same_str(receipt["path"], path)
+          and _same_str(receipt["sha256"], digest))
+    data = reader.read(path)
+    return ok and data is not None and _sha256(data) == digest
+
+
+def _pins_bound(pins, observed_pins, reader):
+    if (type(pins) is not dict
+            or not all(_norm_abs(path) and _hex64(digest) for path, digest in pins.items())):
+        return False
+    ok = _exact(pins, observed_pins)
+    for path in sorted(pins):
+        data = reader.read(path)
+        if data is None or _sha256(data) != pins[path]:
+            ok = False
+    return ok
+
+
+### beta-capture-audit-codex-v4.prompt.stdout.txt
+Path: /Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/review/beta-capture-audit-codex-v4.prompt.stdout.txt
+Full-file SHA256: d8a4257fce19401d8107f61cfd42421dc9d9691920fe8fe906ab00984e61ff4d
+Excerpt: None-None
+**SOURCE_READY_FOR_FINITE_CONTROL_REVIEW — SOURCE ONLY, UNTESTED.**
+
+Reviewed the supplied v4 text labelled SHA256 `9b50052136d82bd21914ca0ec83f561881fbee280ef472f09a20354e89b6c645`, exact diff, frozen contract and v3b review. No tools, imports, execution, edits, tests, delegation or launches were used. Digests were not independently verified.
+
+**Findings: no FATAL, open MAJOR or MINOR regression identified. Both previous MAJOR findings are repaired.**
+
+1. **Exact dictionary-key repair is complete in the supplied source.**  
+   `_exact` now requires exact built-in `str` keys on **both operands** before comparing dictionary values. This closes the asymmetric observed-date and observed-pin subclass-key acceptance.
+
+   `_keys` enforces exact key types and key sets at expectation/observation, capture-path, capture-record, artifact-map, artifact-record, settlement and receipt boundaries. Expected pin keys additionally pass `_norm_abs`; compared pin/date dictionaries receive `_exact` validation.
+
+   Capture-map handling preserves the required precedence: absent/null/`present=False` records yield that stream’s **MISSING** first. A nonmissing record encounters the map’s exact-string/allowed-key validation before completeness can succeed. A missing sibling therefore produces its own MISSING without invalidating an otherwise complete stream. Both streams can succeed only with the required exact built-in keys.
+
+2. **Matching empty item/argv repair is complete.**  
+   `_provenance_ok` permits matching `item=""` and matching `resolved_argv=[]`, while retaining exact types and equality. Nonempty date records remain expressly required. The parent remains responsible for binding an actual admitted plan item, invocation and required pins; these pure-API cases supply no substitute authority.
+
+The original three-argument direct Python API remains intact, including validation of caller-created structures. `_exact` retains iterative active-path enter/leave traversal: deep nesting has no imposed depth cutoff, completed sibling aliases can be revisited, and shared versus copied acyclic subtrees can compare equal. Cycles cannot establish equality; unsupported types, scalar subclasses, bool/int/float mismatches and nonfinite floats are rejected.
+
+No pin fallback was introduced. Empty pin maps remain permitted pure-API values. Uncontracted pin-count, depth, exit-range and cross-role path restrictions remain removed. Normalized-path checks, contracted counts, the 16 MiB read cap, authority-plan digest, reader caching, cause ordering and X5 separation remain intact. No additional scope change is apparent in the supplied diff.
+
+Remaining **separately admitted** finite controls are:
+
+- Subclass/non-JSON keys on both comparison operands and every schema boundary, including malformed capture maps combined with independent MISSING cases.
+- Matching empty item/argv/pin maps; over-256 pin maps; depth beyond 32; repeated aliases versus copied subtrees; cycles on either side; nonfinite values and strict-type failures; exits outside the former range and permitted path overlaps.
+- Baseline positive and the stream-precedence, artifact, settlement, provenance, reader-failure/exception, cap, cache and simultaneous-cause matrix, including genuine exits 5/94 and explicitly synthetic 120.
+- Composed capture **and X5** review across all twenty controls with approved budget-2/budget-240 bindings. Genuine N1 C1–C4 remain separately admitted rejection obligations.
+
+This disposition establishes source readiness only. It grants no execution, canonical-audit, release, job-admission or scientific permission.
+

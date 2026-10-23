@@ -1,0 +1,8 @@
+# Parent end notice: PA19 manual M1 retry 543 (and 542) ended; owned groups quiescent, v1
+
+Written 2026-10-18 after 11:56 PDT. Scope: the operational prerequisite named in the v6_2 HOLD ([note](/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-16/review/pa19-m2h-v6-2-codex-v1.note.md) line 40) and repeated by the v6_3 review ([note](/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-16/review/pa19-m2h-v6-3-codex-v1.note.md), `ddcd6aa0…2ca3`).
+
+- **Retry 543** (ms06_s00183) started 10:32:32.459 and finished 10:58:27.899 PDT. Parent audit [parent-audit-index-543-v1.json](/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-16/review/pa19-explicit-floor-retry-v1/parent-audit-index-543-v1.json) (`7bb15020aa03cbf1e8bb1dad5b87d03330d7107e9c73ad2a15fc529529fbb5d2`) records `PARENT_AUDIT_PASS` and `clean_settlement: true`.
+- **Retry 542** ended earlier; its parent audit is [parent-audit-index-542-v1.json](/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-16/review/pa19-explicit-floor-retry-v1/parent-audit-index-542-v1.json).
+- **Live check at about 11:55 PDT** (`ps -axo pid,ppid,pgid,etime,rss,command`, filtered for kissat, drat-trim, cadical, lrat, supervise_pa19, run_m2 and stream_check): no PA19 solver, checker, supervisor or runner process exists. The only native checkers running belong to other lanes: the M7 B/C311cuts-p2 drat-trim (pgid 40988) and the n8 GA driver's drat-trim (pgid 64001). No process group owned by retry 542 or 543 remains.
+- No PA19 native work is active. This notice does not by itself authorize any run; the separate pilot GO governs.

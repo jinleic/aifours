@@ -1,0 +1,212 @@
+# Lemma ZS and Theorem ROT-ZS: ROT, INV* and ordered Olson for 3 o_F <= 2p + 1 and F >= 3 o_F - 2 (contains o_F <= (p+1)/2), v2
+
+Owner OlsonRotationRigidity.  Written after host clock 2026-10-18T11:01:35-07:00.  Status [W], UNREVIEWED.
+v2 supersedes proof-ROT-half-v1.md (3b8fa50e...c738; kept, sent to the parent at 10:58).  Its theorem is the special case
+o_F <= (p+1)/2 (Corollary ROT-HALF below), and every v1 statement remains true.  The change is that Lemma ZS is stated
+under the weaker hypothesis (G) below, with every inequality the proof uses checked against (G) (Sec. 2).  The proof
+steps are the v1 steps.  The new range is 3 o_F <= 2p + 1 for avoiders with F >= 3 o_F - 2; for o_F <= (p+1)/2 the
+inequality F >= 3 o_F - 2 holds automatically.  The open residual inside 3 o_F <= 2p + 1 is therefore exactly the
+rotation-rich avoiders with F <= 3 o_F - 3.
+New here: Lemma ZS, a statement about sequences in Z_(2p) with a complete in-file proof.  Sec. 3-4 combine it with
+parent-accepted results exactly as the accepted ROT-FEW-E, INV*-FEW (b) and OLSON-FEW (b) do.  No novelty claim; not
+ROT(p), INV*(p) or ordered Olson in general.
+Paths: R = institute/runs/six-lane-2026-10-16/review/; files without a directory are in this rotation/ directory.
+Imports, all parent-accepted at their stated scopes:
+- (D) D(Z_(2p)) = 2p, GRX, PM*, Proposition K1: R/olson-rotation-lowodd-parent-verdict-v2.md (0853f4ac...ba29).
+- Lemma MULT (i)-(iii): proof-ROT-few-v4.md (abd3973c...b521) L61-81, accepted with ROT-FEW
+  (R/olson-fewodd-parent-verdict-v1-addendum-1.md L11); its proof uses SCHERK, GROW, SET and INC (a), (b) of that file.
+- Normal form, Lemma DAV / (V) and (ZP) for the normal form: proof-ROT-few-E-v4.md (ac560eb8...ea8f) Sec. 0, L28-43.
+  Lemma SHgen-E: same file, Sec. 1, L45-71 (addendum-1 L12).
+- Theorem SHgen with its setting, (ZP), (V), kappa >= 0 and weights: proof-SHgen-v3.md (fcbd5a97...eb5e) Sec. 0-1,
+  L20-56 (addendum-1 L10).
+- Corollary REFL-few-odd: reflection/proof-REFL-fewodd-r4.md (1e447754...861d) L21-25 and its Sec. 4 interface
+  (R/olson-refl-fewodd-parent-verdict-v1.md L6).
+- For Sec. 4 only: RGR-LONG(p) (R/olson-runs-parent-verdict-v1.md L7); the proof of OLSON-FEW in
+  proof-OLSON-few-v3.md L28-47; the deletion ledger (D1)-(D4) of proof-FEW-p5-lift-v3.md Sec. 4.1, which does not
+  depend on p (R/olson-p5-few-lift-parent-verdict-v1.md, c2d06e14...6d7b).
+Notation (as in proof-ROT-few-v4.md L20-23):
+- Y(x) := (1, x) in Z_2 x Z_p = Z_(2p).  Elements with first coordinate 1 are "odd".
+- For an odd generator g every odd element is b g with b odd and unique mod 2p; b(y) is the representative in (-p, p].
+- A sequence is a multiset of terms, and T <= Y means a subsequence (sub-multiset).  Zero-sums of odd elements have even
+  length.
+- For a word w: F(w) is the number of reflections, o = o_F(w) the number of odd maximal constant reflection blocks, and
+  kappa(w) := p - 1 - (F - o)/2.  So kappa(w) <= p - o is the same as F >= 3o - 2.
+
+## 1. Lemma ZS
+
+**Lemma ZS.**  Let p >= 5 be prime and let k, kappa be integers with
+  (G) k >= 1,  3k <= 2p + 1,  0 <= kappa <= min(k - 1, p - k).
+Let Y be a sequence of R = 2p + 2kappa - k odd elements of Z_(2p) such that
+  (ZP) Y has no zero-sum subsequence of length in [2kappa + 2, 2p].
+Then there is an odd generator g of Z_(2p) such that, with b = b(y) relative to g,
+  cost(Y) := sum over y with b > 0 of (b - 1)  +  sum over y with b < 0 of |b|  <=  k - 1.
+In particular every |b| <= k (so no term is (1,0) = p g), and with E := sum_y (|b| - 1) and N := the number of terms
+with b < 0, E <= k - 1 - N.
+(If k <= (p+1)/2, then min(k - 1, p - k) = k - 1, so (G) reads 0 <= kappa <= k - 1; this is the v1 lemma.)
+
+## 2. Proof of Lemma ZS
+
+Consequences of (G) used below:
+- (G1) kappa <= (p-1)/2, so 4kappa <= 2p - 2, because min(k - 1, p - k) <= ((k - 1) + (p - k))/2;
+- (G2) 3(k - 1) + 2 <= 2p;
+- (G3) k <= p - 2 (from 3k <= 2p + 1 if p >= 7; for p = 5, k <= 3);
+- (G4) 3k <= 2p + 2;
+- (G5) 2kappa <= 2p - 2k.
+
+Step 1 (every zero-sum is short).  Every zero-sum subsequence T of Y has |T| <= 2kappa.
+A minimal zero-sum subsequence has length <= 2p (deleting one term leaves a zero-sum-free sequence, of length <= 2p - 1
+by (D)), and its length is even, so by (ZP) it is <= 2kappa.  A zero-sum T is a product T_1 ... T_r of minimal zero-sum
+subsequences (take one minimal zero-sum subsequence, then induct on the rest).  If |T| >= 2kappa + 2, let j be least
+with |T_1| + ... + |T_j| >= 2kappa + 2.  Then T_1 ... T_j is a zero-sum of length at least 2kappa + 2 and at most
+4kappa <= 2p - 2 (G1), contrary to (ZP).  []
+
+Step 2 (splitting).  Let Z be a zero-sum subsequence of Y of maximal length (Z may be empty), and Y' the complementary
+subsequence.  Y' is zero-sum-free: a nonempty zero-sum V <= Y' would make Z V a longer zero-sum.  By Step 1
+|Z| <= 2kappa, so L := |Y'| = R - |Z| >= 2p - k, and e := 2p - 1 - L = k - 1 - 2kappa + |Z| satisfies 0 <= e <= k - 1
+(L <= 2p - 1 by (D)).
+
+Step 3 (structure of Y').  Since 3e + 2 <= 2p (G2), Lemma MULT (iii), (ii) applies to Y'.  Let m be the largest
+multiplicity in Y', attained by g.  Then m >= max(2, e + 1), g is a generator, and Y' = g^m (d_1 g) ... (d_q g) with
+odd d_j >= 3 and e' := sum_j (d_j - 1) <= e.  MULT (i) gives m >= L - e >= 2p - 2k + 1.  Put W' := m + sum_j d_j =
+L + e'.
+**Lemma COMP.**  (a) Every integer t in [0, W'] is the weight w(Q) := #(g in Q) + sum of the d_j of the terms d_j g in Q
+of some subsequence Q <= Y'.  (b) W' <= 2p - 1.  (c) Every Q <= Y' has sum w(Q) g and |Q| = w(Q) - (sum of d_j - 1 over
+its terms d_j g) >= w(Q) - e'.
+Proof.  (a) Every d_j <= e' + 1 <= e + 1 <= m.  The weights of subsequences of g^m are all integers in [0, m].  If all
+integers in [0, M] are weights and d <= M + 1, then after adding d g all integers in [0, M + d] are weights (t <= M,
+or t - d in [0, M]).  Add d_1, ..., d_q in turn.  (b) If W' >= 2p, some Q has weight 2p by (a), so sum 2p g = 0: a
+nonempty zero-sum in Y'.  (c) Clear.  []
+Consequences:
+- (C1) Every d_j <= e' + 1 <= k <= p - 2 (G3), so each term of Y' is b g with b in {1} u [3, k] and b = b(y).
+- (C2) W' >= L >= 2p - k.
+- (C3) e' <= e.
+- (C4) m >= 2p - 2k + 1 >= k - 1 (G4).
+
+Step 4 (zero-sums through Z).  For U <= Z put s(U) := sum over y in U of b(y), an integer, and let tau(U) in
+{0, 1, ..., 2p - 1} satisfy tau(U) = -s(U) (mod 2p).  If 1 <= tau(U) <= W', then every Q <= Y' with w(Q) = tau(U) has
+|U| + |Q| <= 2kappa.  Hence |U| + tau(U) - e' <= 2kappa (COMP (a), (c)), and if tau(U) <= m also |U| + tau(U) <= 2kappa
+(take Q = g^tau(U)).
+Proof.  U and Q are disjoint parts of Y, and U Q has sum (s(U) + tau(U)) g = 0.  Apply Step 1.  []
+
+Step 5 (every sub-sum of Z is small).  For every U <= Z, tau(U) lies in {0} u [1, k - 1] u [2p - k + 1, 2p - 1].
+Proof.  Suppose k <= tau(U) <= 2p - k, and let U^c be the complement of U in Z.  Z is a zero-sum, so s(Z) = 0 (mod 2p).
+Hence tau(U^c) = 2p - tau(U), which also lies in [k, 2p - k].  Both values are <= 2p - k <= W' (C2), so Step 4
+applies twice: |U| + tau(U) - e' <= 2kappa and |U^c| + 2p - tau(U) - e' <= 2kappa.  Adding gives
+|Z| + 2p - 2e' <= 4kappa.  With e' <= e = k - 1 - 2kappa + |Z| this becomes |Z| >= 2p - 2k + 2.  But
+|Z| <= 2kappa <= 2p - 2k (G5): a contradiction.  []
+
+Step 6 (Z is balanced).  Every term of Z has |b| <= k - 1, by Step 5 with U a single term (k - 1 < p).  Let Z+ and Z- be
+the terms of Z with b > 0 and b < 0, and let sigma+ := sum over Z+ of b and sigma- := sum over Z- of |b| (integers).
+Then sigma+ <= k - 1, sigma- <= k - 1 and sigma+ = sigma- =: sigma.
+Proof.  List Z+ as y_1, ..., y_r.  The integer partial sums S_j = b(y_1) + ... + b(y_j) increase by at most k - 1 per
+step.  If sigma+ = S_r >= k, the least j with S_j >= k has k <= S_j <= 2k - 2.  The representative of S_j mod 2p in
+(-p, p] is S_j if S_j <= p, and S_j - 2p otherwise.  Its absolute value is at least min(k, 2p - 2k + 2) >= k (G4),
+contrary to Step 5 for U = {y_1, ..., y_j}.  Likewise sigma- <= k - 1.  Then s(Z) = sigma+ - sigma- lies in
+[-(k-1), k - 1] and is 0 mod 2p, so sigma+ = sigma-.  []
+
+Step 7 (room left in Y').  W' <= 2p - 1 - sigma.
+Proof.  For sigma = 0 this is COMP (b).  Let sigma >= 1; then tau(Z+) = 2p - sigma lies in [2p - k + 1, 2p - 1].
+Suppose 2p - sigma <= W'.  Step 4 gives |Z+| + 2p - sigma - e' <= 2kappa.  With e' <= k - 1 - 2kappa + |Z| this
+becomes 2p + 1 <= sigma + k + |Z-|.  Since every |b| >= 1, |Z-| <= sigma- = sigma, so 2p + 1 <= 2sigma + k <= 3k - 2,
+contrary to (G4).  So W' < 2p - sigma.  []
+
+Step 8 (negatives of Z).  |Z-| + sigma <= 2kappa.
+Proof.  If sigma = 0, Z- is empty.  Otherwise tau(Z-) = sigma lies in [1, k - 1], and sigma <= k - 1 <= m (C4), so
+Step 4 with Q = g^sigma gives |Z-| + sigma <= 2kappa.  []
+
+Step 9 (count).  By (C1) the terms of Y' contribute e' to cost(Y).  By Step 6 the terms of Z contribute
+(sigma - |Z+|) + sigma.  Hence
+  cost(Y) = (W' - L) + 2sigma - |Z+|
+          <= (2p - 1 - sigma - L) + 2sigma - |Z+|        (Step 7)
+          = e + sigma - |Z+|  =  k - 1 - 2kappa + |Z-| + sigma
+          <= k - 1                                       (Step 8).
+Every |b| is <= k: for Y' by (C1), for Z by Step 6.  Finally cost(Y) = sum_y (|b| - 1) + #{b < 0} = E + N.  []
+
+Remarks.
+(1) The bound is attained.  For kappa = k - 1 and Y = g^(2p-1) (-g)^kappa (which needs kappa <= p - k, i.e.
+k <= (p+1)/2): Z = (g (-g))^kappa, Y' = g^(2p-1-kappa), sigma = kappa, cost(Y) = k - 1, with E = 0 and N = k - 1.  For
+kappa = 0 and Y = g^(2p-k) the cost is 0.
+(2) The new step is Step 5.  It uses the full length R through e, and the complementary pair U, U^c of the maximal
+zero-sum Z.  Steps 6-9 then bound positive and negative weights together, so neither G >= 2kappa + w_+ (WT (b), (c) of
+ROT-few) nor (F) 5k <= 2p + 4 is needed.
+(3) Where (G) is used:
+- (G1) in Step 1;
+- (G2) for MULT;
+- (G3) in (C1);
+- (G4) in (C4) and Steps 6-7;
+- (G5) only in Step 5.
+With kappa > p - k, Step 5's contradiction disappears.  The lemma's conclusion itself fails at k = p: take kappa = p - 1
+and Y = g^(2p-1) (3g)^(p-1) (R = 3p - 2).
+- (ZP) holds: the only length in its window is 2p, and g^a (3g)^b with a + b = 2p has sum 2b g, which is 0 only for b in
+  {0, p}.  Neither is available.
+- Every generator costs too much.  For any odd generator h, write g = beta h.  The 2p - 1 copies of g already cost at
+  least 2p - 1 > p - 1 unless beta = 1, and for h = g the copies of 3g cost 2(p - 1) > p - 1.
+So near k = p a proof must use GRX patterns with sign changes (Phi >= 2), not only (ZP).  For p - k < kappa <= k - 1
+with 3k <= 2p + 1, the lemma is neither proved nor refuted here.
+
+## 3. Theorem ROT-ZS and Corollary ROT-HALF
+
+**Theorem ROT-ZS.**  Let p >= 5 be prime and w an avoider of length 4p - 2 over D_(2p) with o := o_F(w) such that
+3o <= 2p + 1 and F(w) >= 3o - 2 (equivalently kappa(w) <= p - o).  Then all rotation letters of w lie in one set
+{rho_c, rho_-c}, c != 0.
+Proof.  Take the normal form w^ of proof-ROT-few-E-v4.md Sec. 0 (L32-43).  It is an avoider of the same length,
+rotation multiset and F, given by a cyclic representation with 1 <= k <= o odd blocks and every empty run between blocks
+of different values; the ending with one even block is impossible there.  If k = 1, Proposition K1 makes all rotations
+equal.  Let k >= 2.  Then H = (F - k)/2 and kappa := p - 1 - H = kappa(w) - (o - k)/2.  Also kappa >= 0
+(proof-SHgen-v3.md L37), and Lemma DAV gives kappa <= k - 1.  Moreover
+kappa <= (p - o) - (o - k)/2 <= p - k, as k <= o.  And 3k <= 3o <= 2p + 1, so (G) holds.  GRX gives (ZP) for the
+sequence Y of the values Y(x) over the rotation letters, of length R = 2p + 2kappa - k (L42-43).  So Lemma ZS applies.
+Write its generator as g = Y(c); then c != 0, since g != (1,0).  Y(x) = b g means x = b c (mod p), so the SHgen weight
+of rho_x relative to c (proof-SHgen-v3.md L39-43) is b_x = b(Y(x)).  Every |b| <= k <= p - 2, so no rotation is rho_0,
+the lights are the terms with b = +-1, and E and N are those of Lemma ZS: E <= k - 1 - N.  If E = 0, every rotation is
+rho_c or rho_-c.  Otherwise eta >= 1, and the two hypotheses of Theorem SHgen hold.
+- (H): 2H = 2p - 2 - 2kappa >= 2p - 2 - 2(p - k) = 2k - 2 >= k - 1 >= E.
+- (K): every heavy has |b| >= 3, so eta <= E/2 <= (k-1)/2, and a_max <= E + 1 <= k.  Hence
+  2p - eta - a_max - 1 >= 2p - (k-1)/2 - k - 1 >= k, because 5k <= 4p - 1 (from 3k <= 2p + 1 and p >= 4).
+If all runs of w^ are nonempty, w^ is in the setting of proof-SHgen-v3.md Sec. 0 and Theorem SHgen gives w^ an identity
+2p-subword.  Otherwise Lemma SHgen-E (proof-ROT-few-E-v4.md Sec. 1) gives one; its REFL instances have
+o_F <= k <= p, supplied by Corollary REFL-few-odd.  Either way this contradicts that w^ avoids, so E = 0.  The rotation
+multiset of w is that of w^.  []
+
+**Corollary ROT-HALF.**  Every avoider w of length 4p - 2 (p >= 5 prime) with o := o_F(w) <= (p+1)/2 has all rotation
+letters in one {rho_c, rho_-c}, c != 0.
+Proof.  With k and kappa as above, kappa(w) = kappa + (o - k)/2 <= (k - 1) + (o - k)/2 <= o - 1.  And o - 1 <= p - o as
+o <= (p+1)/2, so F(w) >= 3o - 2.  Also 3o <= (3p+3)/2 <= 2p + 1.  Apply Theorem ROT-ZS.  []
+
+## 4. Corollaries
+
+**Corollary INV*-ZS.**  For every prime p >= 5, every avoider w of length 4p - 2 over D_(2p) with 3 o_F(w) <= 2p + 1 and
+F(w) >= 3 o_F(w) - 2 satisfies INV*.  In particular this holds for every avoider with o_F(w) <= (p+1)/2 (INV*-HALF).
+Proof.  Theorem ROT-ZS gives the rotations.  Corollary REFL-few-odd applies to w: (0) p >= 5 is prime, (a) |w| = 4p - 2,
+(b) the pair just found, and (d) o_F(w) <= (2p+1)/3 <= p.  []
+
+**Corollary OLSON-ZS.**  For every prime p >= 5, every word w of length 4p - 1 over D_(2p) with o := o_F(w) such that
+3o <= 2p + 1 and (o <= (p+1)/2 or F(w) >= 3o - 2) has an identity 2p-subword in increasing index order.  In particular
+this holds for every word with o_F(w) <= (p+1)/2 (OLSON-HALF).
+Proof.  Use the proof of OLSON-FEW (proof-OLSON-few-v3.md L28-47), with Corollary INV*-ZS in place of INV*-FEW.  Every
+INV* call there must satisfy the hypothesis of INV*-ZS; the deletion ledger (D1)-(D4) of proof-FEW-p5-lift-v3.md
+Sec. 4.1, which does not depend on p, gives what is needed.
+- Case 1 (R <= 2) needs o <= 2p - 3, which holds since o <= (2p+1)/3.
+- Case 2: w' has o' = o - 1 and F' = F - 1.  If o <= (p+1)/2, then o' <= (p+1)/2.  Otherwise F' >= 3o' - 2, which
+  follows from F >= 3o - 2.  Also 3o' <= 2p + 1.
+- Case 3: w_i has F_i = F, and o_i is o or o - 2.  If o <= (p+1)/2, then o_i <= (p+1)/2.  Otherwise
+  F_i = F >= 3o - 2 >= 3o_i - 2.  Also 3o_i <= 2p + 1.
+- Each such INV* call is on an avoider of length 4p - 2.  If its o_F is <= (p+1)/2, F >= 3 o_F - 2 holds automatically
+  (Corollary ROT-HALF), so INV*-ZS applies.
+- RGR-LONG(p) then gives the identity 2p-subword.  []
+
+## 5. Ranges and scope
+
+- New range: every avoider with o_F <= (p+1)/2.  At p = 11, 13, 17, 19, 23, 29 that is o_F <= 6, 7, 9, 10, 12, 15; the
+  accepted range gives 5, 6, 7, 8, 10, 12.  Beyond it, avoiders with (p+1)/2 < o_F <= (2p+1)/3 and F >= 3 o_F - 2 are
+  also covered, e.g. p = 13 with o_F in {8, 9} and F >= 22 resp. 25.
+- The accepted (b) range 5 o_F <= 2p + 4 is contained for every p >= 3, since (2p+4)/5 <= (p+1)/2.  Combined with the
+  accepted o_F <= 4, every avoider with o_F <= max(4, (p+1)/2) is covered.  For p = 5 and p = 7 nothing is new.
+- KAPPA01 (proof-KAPPA01-v4.md) still covers kappa in {0, 1} with 3 o_F <= 2p + 1.
+- Open inside 3 o_F <= 2p + 1: exactly the avoiders with (p+1)/2 < o_F and F <= 3 o_F - 3, i.e. kappa(w) > p - o_F.
+  Type-II-like Davenport-tight avoiders lie there: kappa = o_F - 1 > p - o_F.
+- Open beyond 3 o_F > 2p + 1: Lemma MULT is unavailable.  Remark (3) shows that a (ZP)-only route cannot reach o_F = p.
+- Not ROT(p), INV*(p) or ordered Olson for D_(2p) in general.  No novelty claim.
+- Finite aid (not a premise): the earlier exhaustive check code/check_rotfew_v3.py (README 06:37:49) found
+  E <= k - 1 - N for every (ZP) multiset at (p, k) = (11, 6) and (13, 7), every kappa, with g the most frequent value
+  of Y.  It was written before this lemma and does not test Steps 2-9.

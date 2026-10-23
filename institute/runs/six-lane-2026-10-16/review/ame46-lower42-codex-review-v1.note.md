@@ -1,0 +1,17 @@
+VERDICT: ACCEPT-WITH-FIXES
+
+**MINOR — [review/SUPPORT_LOWER42.r1.md:236](/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-16/review/ame46-lower42-parent-inputs-v1/review/SUPPORT_LOWER42.r1.md:236).** The symmetry-equivalence sentence is false. Weight-3 parity sets contain pairs at Hamming distance 1; weight-4 parity sets do not. Coordinate permutations and independent value relabellings preserve this distinction. There are **two symmetry classes**, not one. Consequently, the written weight-4 example cannot cover the eight weight-3 cases by the stated symmetries. Delete the sentence or replace it with the two-class statement. The separately verified F2/F3 certificates cover both classes, so this does not invalidate the lower bound.
+
+**MINOR — [review/SUPPORT_LOWER42.r1.md:20](/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-16/review/ame46-lower42-parent-inputs-v1/review/SUPPORT_LOWER42.r1.md:20).** State “product **orthonormal** basis” explicitly. The reduction at line 34 requires unitary local basis changes; the proof establishes the intended orthonormal-basis claim.
+
+**What is established:** Subject to the declared Tarry import, the argument establishes support ≥42 for every complex AME(4,6) state in every product orthonormal basis.
+
+- The normalization \(U=6\psi\), both marginal formulas—including the complementary transpose—and the local-unitary reduction are correct. The unused four-qubit restriction is correctly normalized by \(3\psi|_N\).
+- The classical coefficient arguments, \(s\ge72-t\), balanced unitary components, \(e_K=0\) exactly for full \(2\times2\) components, exclusion of \(e_K=1\), and \(e=\sum e_K\) hold. Lemma 8, including \(d\ne1\), and the exhaustive \(t=31,\ldots,36\) case split hold. No real-amplitude or equal-nonclassical-magnitude assumption is needed.
+- The Fourier classification holds: the ten unordered pairwise frequency sums are distinct, comprising all four weight-1 and six weight-2 frequencies. Independent exact enumeration checked all **12,870** subsets and recovered exactly the **10** claimed parity sets.
+- Independent checks of the actual JSON validated every listed block and all **10** certificates: one genuine block per reshaping, correct checkerboard signs, zero signed phase vector, and RHS \(+\pi\) or \(-\pi\). The obstruction applies to arbitrary complex phases.
+- Source inspection confirms exhaustive F4 coverage of **50,625 subcubes × 10 sets = 506,250 cases** on a successful run. Failures propagate to failure status; early termination occurs only after failure. The reported subset count is hard-coded, but the enumeration itself is exhaustive.
+
+**Imports/trust limits:** All four requested hashes match; the stdout hash also matches. I did not rerun the writing main or independently repeat the full F4 loop; its execution evidence is the parent’s reported fresh-tree replay.
+
+Tarry’s nonexistence theorem is the only substantive external mathematical import used, solely for \(t=36\), cited through the pinned Pandya text. Neither Pandya’s code-size bound nor nonexistence of AME(4,2) is needed. No SAT result enters. The published upper bound 60 is background here, not independently verified. Existence at support 42 and the exact minimum remain unproved.

@@ -1,0 +1,234 @@
+--- code/owned_supervisor_v13.py
++++ code/owned_supervisor_v14.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""owned_supervisor_v13: three-finding integrated successor, preserving v12's fixed owned guard core.
++"""owned_supervisor_v14: minimal cap/cleanup/accounting successor, preserving v13's fixed owned guard core.
+ 
+ BINDING correction: RUN/review/rqls10-supervisor-v10-scope-parent-correction-v1.json
+ fabe57ab4aeacc416f22bdf334c2cc3bbd5fda1d0e777d7279187ae0564155a2. V10's scope weakening is withdrawn,
+@@ -52,7 +52,7 @@
+ 
+ Exit:0 acknowledged SETTLED;10 acknowledged NOT_LAUNCHED;11 acknowledged UNSETTLED;12 publication refused/receipt
+ failed;13 settlement/sync/finalization failed;14 ACK refused/overran;2 unusable config/anchors. NOEXEC until separately
+-accepted source/package and an exact item GO. Usage: owned_supervisor_v13.py CONFIG.json
++accepted source/package and an exact item GO. Usage: owned_supervisor_v14.py CONFIG.json
+ V12 preserves v11 helper/clearance/identity/root machinery and fabe57ab. Repairs all nine v11 review findings plus
+ three package integration blockers: enforce main runtime before/after every reap (late observation cannot erase it),
+ restore bounded spawn-to-GO age, fresh ACK census, actual conservative /bin/date stability age, authorization last
+@@ -82,7 +82,7 @@
+ import threading
+ import time
+ 
+-VERSION = "owned_supervisor_v13"
++VERSION = "owned_supervisor_v14"
+ CANCEL_SIGNALS = {signal.SIGTERM, signal.SIGINT, signal.SIGHUP}
+ CANCEL = {"signal": None, "mono": None}
+ POLICY = {"disk": 10737418240, "free": 12000000000, "launch_free": 12200000000,
+@@ -708,6 +708,9 @@
+         self.stability_expiry_mono = None
+         self.identity_history, self.attempt_history = {}, []
+         self.history_charge, self.history_halted, self.history_overflow = 0, False, None
++        self.ack_output_started = False
++        self.publication_resources, self.ack_resources = None, None
++        self.publication_payload_bytes, self.last_accounting_observation = None, None
+ 
+     def deadline(self, seconds, phase=None):
+         cut = min([self.fit_mono] + [x[1] for x in self.cutoffs()])
+@@ -895,7 +898,11 @@
+                 "baseline_uniqueids": [] if self.baseline is None else sorted(self.baseline),
+                 "stability_expiry_mono": self.stability_expiry_mono,
+                 "history_charge_bytes": self.history_charge, "history_cap_bytes": 4 << 20,
+-                "history_halted": self.history_halted, "history_overflow": self.history_overflow}
++                "history_halted": self.history_halted, "history_overflow": self.history_overflow,
++                "publication_resources": self.publication_resources, "ack_resources": self.ack_resources,
++                "publication_payload_bytes": self.publication_payload_bytes,
++                "last_accounting_observation": self.last_accounting_observation,
++                "maxima": dict(self.maxima), "min_free": self.min_free}
+ 
+     def observed_identity(self, pid, source, known=False):
+         p = identify(pid)
+@@ -1038,7 +1045,8 @@
+                     key = (p["uniqueid"], p["idversion"])
+                     prior = self.prev_cpu.get(key)
+                     start = start_of(pid) if prior is None else None
+-                    if not self.identity_stable(pid, p):
++                    final_identity = identify(pid)  # Acquire/verify first; history charging cannot erase a completed bracket.
++                    if fingerprint(final_identity) != fingerprint(p):
+                         raise GuardError("TASK_IDENTITY_CHANGED")
+                     now_m, now_e = time.monotonic(), time.time()
+                     if prior is None:
+@@ -1047,7 +1055,8 @@
+                     else:
+                         seconds = now_m - prior[0]
+                         busy = seconds <= 0 or (ticks - prior[1]) * self.num_tb >= seconds * 1e9 * self.cfg["busy_cpu_fraction"]
+-                    measured = {"identity": dict(p), "rss": rss, "cpu_ticks": ticks, "busy": busy, "mono_observed": now_m}
++                    measured = {"identity": dict(p), "identity_after": dict(final_identity),
++                                "rss": rss, "cpu_ticks": ticks, "busy": busy, "mono_observed": now_m}
+                     # Totals and observed excesses are latched BEFORE another I/O or any possible abort.
+                     record["lane_pids"].append(pid)
+                     record["lane_rss"] += rss
+@@ -1055,10 +1064,17 @@
+                         record["lane_busy_pids"].append(pid)
+                         record["lane_busy"] += 1
+                     record["mono_last_observation"] = now_m
+-                    self.reserve_history("measurement", measured, witness=measured, extra=256)
+-                    record["measurements"].append(measured)
++                    record["measurements"].append(measured)  # At most one bounded composite beyond a history cap, then abort.
+                     cpu[key] = (now_m, ticks)
+-                    self.enforce_observed_resources(record)
++                    try:
++                        self.enforce_observed_resources(record)
++                        self.retain_identity(final_identity, "measurement_final_bracket")
++                        self.reserve_history("measurement", measured, witness=measured, extra=256)
++                    except BaseException:
++                        if self.history_halted and self.history_overflow is not None:
++                            self.history_overflow["completed_measurement"] = measured
++                        self.enforce_observed_resources(record)
++                        raise
+                 except OSError as e:
+                     if self.history_halted:
+                         raise
+@@ -1197,15 +1213,16 @@
+         if ident is None or not h.get("initial_identity_valid"):
+             h["signal"] = {"sent": False, "reason": "NO_VERIFIED_IDENTITY"}
+             return
+-        h["signal"] = {"sent": False}
++        h["signal"] = {"sent": False, "mono_check": time.monotonic()}
+         try:
+             p = identify(h["pid"])
+             h["signal"]["identity_observed"] = dict(p)
++            h["signal"]["mono_identity_observed"] = time.monotonic()
+             dl.check("after helper stop identity")
+             if fingerprint(p) != fingerprint(ident):
+                 raise GuardError("HELPER_SIGNAL_IDENTITY_CHANGED")
+             os.killpg(ident["pgid"], signal.SIGTERM)
+-            h["signal"] = {"sent": True, "identity_ok": True, "mono_sent": time.monotonic()}
++            h["signal"].update(sent=True, identity_ok=True, mono_sent=time.monotonic())
+             dl.check("after helper group SIGTERM")
+         except BaseException as e:
+             h["signal"]["reason"] = repr(e)
+@@ -1419,8 +1436,10 @@
+         self.charged, self.lane_bytes = charge, total
+         self.min_free = free if self.min_free is None else min(self.min_free, free)
+         self.maxima["charged_bytes"] = max(charge, self.maxima["charged_bytes"])
++        resources = {"charged_bytes": charge, "lane_bytes": total, "free": free}
++        self.last_accounting_observation = {"resources": dict(resources), "mono_observed": time.monotonic()}
+         dl.check("after accounting")
+-        return {"charged_bytes": charge, "lane_bytes": total, "free": free}
++        return resources
+ 
+     def reservation_fits(self, a, payload=0):
+         adm = self.cfg["admission"]
+@@ -1475,8 +1494,9 @@
+             raise GuardError("GO_BINDING_MISMATCH")
+         channel = self.cfg["creation_channel"]
+         if channel:
+-            negative = {"scenario": channel["scenario"], "kind": "mutation", "creation_channel": True}
+-            if go.get("qualification_negative") != negative:
++            negative = go.get("qualification_negative")
++            if not isinstance(negative, dict) or set(negative) != {"scenario", "kind", "creation_channel"} or \
++                    negative["scenario"] != channel["scenario"] or negative["kind"] != "mutation" or negative["creation_channel"] is not True:
+                 raise GuardError("MUTATION_NEGATIVE_GO_NOT_EXPLICIT")
+             pa, _ = read_file(channel["preparation_path"], SMALL, dl)
+             if pa["sha256"] != channel["preparation_sha256"]:
+@@ -1762,11 +1782,14 @@
+                              s.cfg["max_wall_s"] + s.cfg["settle_s"] + FINALIZE_S)
+     s.rec["launch_commit"] = child["launch_commit"]
+     try:
+-        s.ident = s.observed_identity(s.pid, "main_initial", True)
+-        if s.ident["pgid"] != s.pid or s.ident["euid"] != MY_UID or s.ident["ruid"] != MY_UID:
++        initial = identify(s.pid)
++        s.rec["main_initial_identity_observed"] = dict(initial)
++        s.rec["mono_main_initial_identity_observed"] = time.monotonic()
++        if initial["pgid"] != s.pid or initial["euid"] != MY_UID or initial["ruid"] != MY_UID:
+             raise GuardError("CHILD_IDENTITY_OR_GROUP_INVALID")
+-        s.group = s.ident["pgid"]
+-        s.register_owned(s.ident, "child")
++        s.ident, s.group = initial, initial["pgid"]  # Safe cleanup state precedes any fallible ledger retention.
++        s.retain_identity(initial, "main_initial", True)
++        s.register_owned(initial, "child")
+         if child["spawn_error"] is not None:
+             raise GuardError(child["spawn_error"])
+         for name in ("stdout", "stderr"):
+@@ -1905,6 +1928,8 @@
+     try:
+         return final_body(s, phase)
+     except BaseException as e:
++        if s.ack_output_started:
++            return 14  # A begun ACK never falls back to a second stdout summary, even if stderr reporting failed.
+         sys.stderr.write("FINALIZATION_FAILED %r\n" % e)
+         return refuse(s, 13, "FINALIZATION_FAILED", {"config_sha256": s.config_sha, "error": repr(e), "error_code": exception_code(e)})
+ 
+@@ -2022,7 +2047,9 @@
+                     "failure_codes": sorted(s.failure_keys), "trips": list(s.trips),
+                     "authority": "only independent parent commit releases reservations"})
+     payload = len(rb) + len(sb)
++    s.publication_payload_bytes = payload
+     b = s.accounting(Deadline(IO_S, phase.end))
++    s.publication_resources = b
+     adm = s.cfg["admission"]
+     fits = payload <= PUBLICATION_CAP and s.reservation_fits(b, payload) and \
+         b["charged_bytes"] + payload <= s.cfg["output_trip_bytes"]
+@@ -2049,6 +2076,7 @@
+     # I/O FIRST, fresh raw-clock/cancel checks LAST at the protected acknowledgment commit.
+     try:
+         end = s.accounting(Deadline(IO_S, phase.end))
++        s.ack_resources = end
+         if not s.reservation_fits(end) or end["charged_bytes"] > s.cfg["output_trip_bytes"]:
+             raise GuardError("ACK_RESOURCE_OR_AGGREGATE_OUTPUT_FAILED")
+         ack_census = s.full_census(Deadline(CENSUS_S, phase.end))
+@@ -2077,27 +2105,36 @@
+                    "config_sha256": s.config_sha, "receipt_sha256": rsha, "settlement_record_sha256": ssha,
+                    "receipt_bytes": len(rb), "settlement_bytes": len(sb), "post_publish_mono": post_publish,
+                    "ack_commit": commit, "publication_resources": b, "ack_resources": end,
++                   "publication_payload_bytes": payload,
+                    "child_returncode": s.rc, "failure_codes": sorted(s.failure_keys),
+                    "owned_live": ack_census["owned_live"], "unproved_live": ack_census["unproved_live"],
+                    "ack_census": ack_census, "contract_violations": s.violations,
+                    "unproved_history": list(s.unproved_history.values()), "coverage_history": s.coverage_history,
+                    "census_observations": s.census_history, "reconciliation": s.reconciliation_evidence()}
+-            sys.stdout.write(json.dumps(ack, sort_keys=True, allow_nan=False, separators=(",", ":")) + "\n")
++            ack_line = json.dumps(ack, sort_keys=True, allow_nan=False, separators=(",", ":")) + "\n"
++            s.ack_output_started = True
++            sys.stdout.write(ack_line)
+             sys.stdout.flush()
+             s.completion_check("ACK", phase)
+             s.resource_age(ack_census)
+         return code
+     except BaseException as e:
+         # If stdout already committed a line, do not emit a contradictory second line: mismatch exit refuses release.
+-        if "ack" in locals():
+-            sys.stderr.write(json.dumps({"kind": "POST_ACK_REFUSAL_EVIDENCE", "exit_code": 14,
+-                                         "error": repr(e), "error_code": exception_code(e),
+-                                         "reconciliation": s.reconciliation_evidence()},
+-                                        allow_nan=False, separators=(",", ":")) + "\n")
+-            sys.stderr.flush()
++        if s.ack_output_started:
++            try:
++                sys.stderr.write(json.dumps({"kind": "POST_ACK_REFUSAL_EVIDENCE", "exit_code": 14,
++                                             "error": repr(e), "error_code": exception_code(e),
++                                             "reconciliation": s.reconciliation_evidence()},
++                                            allow_nan=False, separators=(",", ":")) + "\n")
++                sys.stderr.flush()
++            except BaseException:
++                pass  # Missing/incomplete refusal capture is never release authority; preserve actual14 and one stdout line.
+             return 14
+         return refuse(s, 14, "ACK_REFUSED", {"receipt_sha256": rsha, "settlement_record_sha256": ssha,
+-                                           "post_publish_mono": post_publish, "error": repr(e), "error_code": exception_code(e)})
++                                           "post_publish_mono": post_publish,
++                                           "publication_resources": s.publication_resources, "ack_resources": s.ack_resources,
++                                           "publication_payload_bytes": s.publication_payload_bytes,
++                                           "error": repr(e), "error_code": exception_code(e)})
+ 
+ 
+ def main():
+@@ -2106,7 +2143,7 @@
+     signal.signal(signal.SIGCHLD, signal.SIG_DFL)
+     signal.pthread_sigmask(signal.SIG_UNBLOCK, CANCEL_SIGNALS)
+     if len(sys.argv) != 2:
+-        sys.stderr.write("usage: owned_supervisor_v13.py CONFIG.json\n")
++        sys.stderr.write("usage: owned_supervisor_v14.py CONFIG.json\n")
+         return 2
+     s = None
+     try:

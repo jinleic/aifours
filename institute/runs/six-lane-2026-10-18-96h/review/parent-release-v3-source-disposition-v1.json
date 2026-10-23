@@ -1,0 +1,70 @@
+{
+ "format": "parent-release-v3-source-disposition-v1",
+ "at_from_bin_date": "2026-10-19T16:30:33-0700",
+ "author": "ParentReleaseTxn",
+ "status": "FROZEN_MINIMAL_REPAIR_CANDIDATE_UNTESTED_AWAITING_INDEPENDENT_REVIEW",
+ "global_runtime": "HOLD",
+ "runtime_authority": false,
+ "release_authority": false,
+ "scientific_authority": false,
+ "artifacts": {
+  "source": {"path": "RUN/control/parent_release_v3.py", "sha256": "161ae04ce4ee98db76bb5b9b983cdfa13c769733b10159ebb5d31b5e377bd23a", "bytes": 81235, "lines": 1727},
+  "exact_diff": {"path": "RUN/review/parent_release_v2_to_v3.diff", "sha256": "5633fcbb88faccbff0af97748e414d740f5e7302c36071dafaac9b0ae7d4b37f", "bytes": 36306, "lines": 693, "provenance": "/usr/bin/diff -u -L control/parent_release_v2.py -L control/parent_release_v3.py; frozen file SHA equals regenerated stream SHA. Text binding only, not behavior."},
+  "notes_and_controls": {"path": "RUN/control/parent-release-v3-design-notes.md", "sha256": "7a9fcdca9de675b23c2c6ee12323c7f4d6d793a0d9ba28ee4a01678ca66b3d2c", "bytes": 20358, "lines": 162, "controls": "Amends v2 T01-T76 and adds T77-T108; unexercised source-derived expectations"},
+  "v2_notes_still_base": {"path": "RUN/control/parent-release-v2-design-notes.md", "sha256": "9e02abcebb46f58cf384401bca3da0a7fa08ca20019d553b3ed4308a06616b7b", "use": "Applies to v3 only as amended by v3 notes"},
+  "immutable_v2_source": {"path": "RUN/control/parent_release_v2.py", "sha256": "addcdf4c75c08bd4cd1e6d13c833886d058851b9b1927557008bb41bf93992a1", "status": "CODEX_HOLD_5_MAJOR_1_MINOR_UNTESTED"},
+  "design_freeze": {"path": "RUN/review/parent-release-checkpoint-005-v1.json", "sha256": "19e4cf6c41eeadd84202574fde14f99ca0e217be1222d32f90b7308bb85866f6"}
+ },
+ "governing_inputs": {
+  "base_contract": "4d12287257f8bf74d9057a796a0c6f7a391387c411b95d5dcda1131aa4692d3e",
+  "v2_repair_scope": "2fdf13b45e946df4f07881b0e6e2b5bc5452ea33d1df022afe896dded698b407",
+  "v3_repair_scope": "1f9befdb4d012800a8e2160c0ce8e822d255e34c88496fd26cb8875aac894030",
+  "v2_codex_review": "935b74fb14bfe4b3e62a583d3fa5c3de8e3946f3edb0e9a7f935317340bbb5ad"
+ },
+ "verification_boundary": "No execution/import/compile/AST/tests/formatter/model CLI/runtime. Only reading, source authoring, source-text diff and hash/byte/line metadata. Anchors are text locations, not behavioral proof. Raw os call audit by text search: every os.open/stat/fstat/scandir/next/read/write/pread/fsync/fstatvfs routes through _Txn.native; remaining direct calls are os.close/iterator.close (owned cleanup, then checked unless crossed), os.getpid (non-blocking) and os.waitstatus_to_exitcode (pure).",
+ "codex_v2_findings": [
+  {"id": "F1", "severity": "MAJOR", "finding": "Final result assembly follows the last deadline check", "disposition": "REPAIRED_SOURCE_ONLY", "locations": ["decide_and_commit:1687-1701", "_final:1601-1617", "_new_result:1571-1578"], "mechanism": "Complete result assembled first, then one ORIGINAL-deadline check; failure re-assembles HELD in memory (no I/O), final_deadline_check CROSSED/NOT_PERFORMED_ALREADY_CROSSED; BaseException from the check -> P5_BASE_EXCEPTION, HELD result attached, re-raised.", "residual": "Not a hard real-time return guarantee; one dict store and return follow a passing check; caller-side lateness is CP1 territory."},
+  {"id": "F2", "severity": "MAJOR", "finding": "Native commit operations lack individual completion checks", "disposition": "REPAIRED_SOURCE_ONLY", "locations": ["_Txn.native:371-392", "_Txn.failed:362-369", "_Txn.tick:315-330", "_Txn.must_tick:332-334", "_Txn.open:417-430", "_Txn.close:432-455", "_write_all:1385-1398", "_mark:1401-1404", "_pread_exact:1407-1415", "_write_new:1418-1440", "_ack:1443-1474", "_commit:1477-1508", "_registry_tail:1511-1525", "_append_registry:1528-1568", "_lstat:909-910", "_names:913-928", "_artifacts:931-975", "_hash_file:1119-1145", "_scan:1148-1173", "_walk:1199-1213", "_free_bytes:1216-1228"], "mechanism": "Full original check before each native call (crossed latch => no new I/O); per-call completion check on success AND Exception; primary event + secondary deadline cause retained separately, secondary BaseException keeps primary context; returned fd/iterator/progress/fsync completion retained BEFORE the completion check; owned closes always permitted and then checked unless crossed; deadline BaseException latches crossed.", "residual": "Stalls inside a native call remain unbounded; retain hooks assumed non-raising."},
+  {"id": "F3", "severity": "MAJOR", "finding": "Directory iterators lack protected acquisition and unresolved-resource reporting", "disposition": "REPAIRED_SOURCE_ONLY", "locations": ["_names:913-928", "_Txn.own:397-401", "_Txn.close:432-455", "_Txn.release:457-473", "_handle_key:269-270", "_final:1601-1617"], "mechanism": "scandir only via pre-checked native; iterator retained in the ownership ledger before its completion check; per-entry checked enumeration; one close in finally even on BaseException; iterator close failures in resources.unresolved (kind iterator) + unresolved_total + owning cause; enumeration primary kept as NATIVE_EXCEPTION event and owning cause; effective release requires live==0 and unresolved_total==0.", "residual": "Relies on CPython fd-based scandir dup/rewind semantics (source reasoning)."},
+  {"id": "F4", "severity": "MAJOR", "finding": "Registry close BaseException skips cleanup of another owned descriptor", "disposition": "REPAIRED_SOURCE_ONLY", "locations": ["_Txn.release:457-473", "_append_registry:1564-1566", "_Txn.open:426-430", "_Txn.directory:475-487", "decide_and_commit:1682-1686"], "mechanism": "release() makes one close attempt per owned handle in reverse order, continues after BaseException, re-raises the FIRST BaseException after all attempts; registry closed flag pre-set False; commit-phase BaseException fires P5_BASE_EXCEPTION, chains pending context and propagates with an in-memory HELD parent_release_result; partial files/lines preserved.", "residual": "Python exception chaining keeps one context chain; later close failures are retained in the unresolved ledger/event log rather than as chained exceptions."},
+  {"id": "F5", "severity": "MAJOR", "finding": "Artifact validation failure disables commit-directory exclusion", "disposition": "REPAIRED_SOURCE_ONLY_STRENGTHENED", "locations": ["_job_dir:647-652", "_shape:724-729", "_under:1176-1177"], "mechanism": "job_dir validated independently of the declared map; commit_dir equal to OR below job_dir, or job_dir unavailable/invalid => P5_COMMIT_DIR_INVALID and commit_dir None (in-memory HELD, no disposition/registry I/O).", "residual": "Malformed specs lose on-disk HELD evidence by design; the allocation stays held."},
+  {"id": "F6", "severity": "MINOR", "finding": "Root insertion bypasses the global tree-entry cap", "disposition": "REPAIRED_SOURCE_ONLY", "locations": ["_walk:1206", "_scan:1155-1160", "build_late_baseline:1704-1727"], "mechanism": "Same MAX_TREE_ENTRIES check immediately after every root insertion; helper inherits it."}
+ ],
+ "v3_scope_required_items": [
+  {"required": "Final assembled result same-original-deadline completion check before return, no further I/O on failure", "maps_to": "F1"},
+  {"required": "Completion checks after every native blocking success/Exception; retain primary plus secondary timing failures", "maps_to": "F2"},
+  {"required": "Protected scandir acquisition, iterator ownership and one close, retained unresolved history", "maps_to": "F3"},
+  {"required": "Nested cleanup ensures every owned descriptor gets at most one close even on BaseException; propagate afterward with evidence", "maps_to": "F4"},
+  {"required": "Retain independent job-dir destination exclusion even when another artifact field invalid", "maps_to": "F5"},
+  {"required": "Count root insertion toward tree-entry cap", "maps_to": "F6"}
+ ],
+ "codex_matrix_requests": {
+  "individual_native_completion_and_exception_boundaries": ["T80", "T81", "T82", "T83", "T84", "T85", "T86", "T87", "T88", "T89", "T90", "T91", "T92", "T93", "T94", "T108"],
+  "iterator_acquisition_and_closure_failures": ["T95", "T96", "T97", "T98", "T99"],
+  "base_exception_first_of_multiple_closes": ["T100", "T101", "T102", "T107"],
+  "deadline_expiry_during_final_assembly": ["T77", "T78", "T79"],
+  "malformed_artifact_destination_exclusion": ["T103", "T104", "T105"],
+  "root_insertion_cap": ["T106"]
+ },
+ "notes_errata_v1": {
+  "basis": "Frozen notes 7a9fcdca define H(c) as exact ORDERED causes; the order is the source CAUSES tuple. These rows listed causes out of that order or incompletely. The source is unchanged; these are the governing exact expectations.",
+  "T81": ["P5_DEADLINE", "P5_COMMIT_WRITE_FAILED"],
+  "T99": {"part5": ["P5_LATE_CENSUS_INCOMPLETE", "P5_BASE_EXCEPTION"], "part2": ["P2_ARTIFACT_IDENTITY", "P2_BASE_EXCEPTION"], "reason": "the failing iterator close fires the owning cause before its KeyboardInterrupt propagates"},
+  "T100": ["P5_BASE_EXCEPTION", "P5_REGISTRY_APPEND_FAILED"],
+  "T82": ["P5_DEADLINE"],
+  "fixture_premise": "Single-defect rows assume an otherwise-positive fixture; rows T99/T107 additionally depend on the subsequent safe HELD commit succeeding, otherwise its own commit causes accumulate."
+ },
+ "external_prerequisites_unchanged_not_waived": [
+  "CP1 caller-observed complete RELEASED return with final_deadline_check PASSED, ACK and registry completion, plus caller receipt/capacity accounting integration (parent; ParentCallerCP1 informed of the frozen interface).",
+  "CP2 full authenticated historical identity-union record.",
+  "Raw adapters and authentic provenance (beta worker owns raw supervisor19 adapter; no overlapping edits); RQLS10 eight consumer obligations.",
+  "Exclusive immutable publication freeze; all applicable lane/TMPDIR/capture/alias scope; baseline provenance.",
+  "Pinned reader global unresolved-resource report joined by the parent.",
+  "Owned /bin/date callback lifecycle settlement.",
+  "Separately reviewed streaming interface for part2 artifacts > 16 MiB.",
+  "RQLS9 fixture capture schema {path,sha256,bytes,inode:[dev,ino],eof:true} is fixture evidence, not the PRT capture API; any mapping belongs to a separately reviewed adapter.",
+  "Independent source review, then separately admitted finite controls (T01-T76 as amended, T77-T108)."
+ ],
+ "callsite_cutover": "No runtime callers of parent_release_v1/v2 exist in RUN/control (text search at v2 freeze; no new caller written by this worker). CP1 caller must pin v3 SHA only; no v2 fallback.",
+ "handoff": "Frozen for independent review; parked."
+}

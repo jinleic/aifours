@@ -1,0 +1,1184 @@
+# Unified diff: scripts/gb_staged_v1.py (sha256 b36fbb57f279d1b622c1b1b111ad36a542e0ac85c7b9edce92e4c6c7733f8151, unchanged) -> scripts/gb_staged_v2.py (sha256 89db96359ba1a94c3c6a45f7386a34006178fd38d4653e9fefcd921c62532844)
+# Scope: only the six MAJOR findings of review/n8-gb-staged-v1-source-codex-v1.note.md (480ef541...24a6), F1-F6,
+# plus the v2 names (gbs2- prefix, schema /2) and provenance pins of v1 and the audit note.
+--- a/scripts/gb_staged_v1.py
++++ b/scripts/gb_staged_v2.py
+@@ -1,6 +1,24 @@
+ #!/usr/bin/env python3
+-"""Parent staged GB replay desk v1: the counted parent replay of the eighteen GB (gram_b_r2) inputs of the MOQLS(8) n8
++"""Parent staged GB replay desk v2: the counted parent replay of the eighteen GB (gram_b_r2) inputs of the MOQLS(8) n8
+ contract, implementing review/gb-parent-replay-brief-v1.md (sha256 d95f3a0b...27ed) exactly.
++
++v2 = scripts/gb_staged_v1.py (b36fbb57...8151, kept unchanged) + DIFF-gb_staged_v1-to-v2.txt, which repairs only the
++six MAJOR findings of the Codex source audit review/n8-gb-staged-v1-source-codex-v1.note.md (480ef541...24a6):
++ F1 controls: every control preregisters its exact allowed (normal exit code, status lines) outcome(s) and its narrowly
++    allowed fatal-class diagnostics; a checker TIMEOUT, a signal/abnormal termination, an unlisted fatal diagnostic or
++    an unlisted outcome vetoes the control whatever may_fail says; science gains independent TIMEOUT and fatal-
++    diagnostic criteria. F2 children: ownership slots exist before Popen; a child is marked reaped immediately after
++    wait4 returns its pid, before any diagnostic allocation, and is never signalled or waited for again. F3
++    descriptors: every os.open/os.pipe result is closed unless its registry insertion committed (acquire()); the
++    feeder closes its descriptor in an unconditional nested finally before releasing the buffer or building
++    diagnostics. F4 signals: stop, cutoff and deadline are re-checked immediately before each Popen; a signal latched
++    during evaluation downgrades the verdict, and qualification needs the separate commit record written after the
++    receipt (receipts/<label>.commit.json, qualified only if no signal was latched when the receipt was durable);
++    SIGINT is latched like SIGTERM. F5 exclusions: foreign GB natives are identified by cwd/argv in a GB desk or GB
++    evidence tree, by orphanhood (ppid 1) and by ownership (parent is a GB driver); the scanner latches the first
++    exclusion itself, and the latch is checked at every completion break, before every spawn and at evaluation. F6
++    resources: other busy + 1 <= 4 is enforced in flight, and the launch threshold 12.2e9 + 10 MiB (not the 12e9
++    floor) is applied immediately before each spawn. Every v2 file name has the 'gbs2-' prefix.
+ 
+ Desk: institute/runs/six-lane-2026-10-16/review/moqls8-gb-parent-staged-replay-v1 (parent-owned, created exclusively
+ 2026-10-18T10:08:20-07:00). Inputs, and no others: the twelve direct templates P1-B4, P0-B4, P0-B5, P0-B6, P1-B6, P2-C4,
+@@ -50,13 +68,14 @@
+ bounded 120 s reap; never SIGKILL, Popen.kill, subprocess timeouts or Popen.wait; only owned child pids are signalled
+ (no process-group or broadcast signal). The ps/lsof lane helpers (replay_v5d.py run_helper/lane_scan/Scanner; lane_scan
+ adds exclusion flags computed on the full argv) run in their own session under monotonic deadlines; a helper survivor
+-stops the desk. A driver SIGTERM is latched and checked at the gate, at every identity check, before each spawn, at each
+-completion break and before evaluation. An unsettled child, thread or descriptor, a latched signal, a scanner failure
+-or a helper survivor vetoes PASS and stops the desk. A timeout, guard stop or deferral is never success; no retries.
+-
+-Usage (/opt/homebrew/opt/python@3.14/bin/python3.14 -I -B, environment TMPDIR=<desk>/tmp/):
+-  gb_staged_v1.py preexec OUT ITEM...    ITEM = control:NAME | gb:ID:aN  (only controls, or exactly one gb item)
+-  gb_staged_v1.py run PREEXEC GO         GO = the parent-written release record required by validate_go()
++stops the desk. A driver SIGTERM or SIGINT is latched and checked at the gate, at every identity check, immediately
++before each spawn, at each completion break, before evaluation and at the commit. An unsettled child, thread or
++descriptor, a latched signal, a scanner failure, an exclusion breach or a helper survivor vetoes PASS and stops the
++desk. A timeout, guard stop or deferral is never success; no retries.
++
++Usage (/opt/homebrew/opt/python@3.14/bin/python3.14 -I -B, environment TMPDIR=<desk>/tmp/; absolute paths):
++  gb_staged_v2.py preexec OUT ITEM...    ITEM = control:NAME | gb:ID:aN  (only controls, or exactly one gb item)
++  gb_staged_v2.py run PREEXEC GO         GO = the parent-written release record required by validate_go()
+ """
+ import ctypes
+ import datetime
+@@ -85,8 +104,8 @@
+ DESK = REVIEW + "/moqls8-gb-parent-staged-replay-v1"
+ DESK_REL = "review/moqls8-gb-parent-staged-replay-v1"  # relative to RUN; the parent GO record names it
+ SCRIPT = os.path.realpath(__file__)
+-SCRIPT_REL = "scripts/gb_staged_v1.py"
+-LABEL_PREFIX = "gbs1-"  # every receipt/log/FIFO/TMPDIR name of this version
++SCRIPT_REL = "scripts/gb_staged_v2.py"
++LABEL_PREFIX = "gbs2-"  # every receipt/log/FIFO/TMPDIR name of this version (v1 used gbs1-)
+ TMP = DESK + "/tmp"
+ 
+ KISSAT = "/opt/homebrew/Cellar/kissat/4.0.4/bin/kissat"
+@@ -119,6 +138,10 @@
+                                       "0870f26c2a3713a0e520b7e92721888de9ff8d7edc5dfdaeb684c58d4d63dc1b"),
+     "drat_trim_source": (REVIEW + "/moqls7-parent-proofcheck-tools-v1/drat-trim.c",
+                          "d834b649f437e091597f5347f259b9f681087f89ca0844d0cee250a1a1a0c2ee"),
++    "runtime_v1": (DESK + "/scripts/gb_staged_v1.py",
++                   "b36fbb57f279d1b622c1b1b111ad36a542e0ac85c7b9edce92e4c6c7733f8151"),
++    "codex_gbs1_source_audit": (REVIEW + "/n8-gb-staged-v1-source-codex-v1.note.md",
++                                "480ef5418c85d2d2bc43fbddf6b5d0c8d6ca38337939570037b87adcc0ec24a6"),
+ }
+ 
+ # --- the eighteen authorized inputs, in the brief's order (no other input or refinement)
+@@ -160,6 +183,8 @@
+ GA_DESK_MARKER = "/review/moqls8-strengthened-parent-replay-v1"
+ GA_DRIVER_KEYS = ("replay_v", "launch_v")
+ GB_DRIVER_KEYS = ("gb_direct_r", "gb_staged_v")
++GB_NATIVE_MARKERS = ("/review/moqls8-gb-", "/gb_direct_v", "/gb_one_p4", "/evidence/gb_")  # (F5) GB desks/evidence
++CHILD_NAMES = ("solver", "checker")  # (F2) the two ownership slots of a pipeline
+ HELPER_DEADLINE, HELPER_TERM_WAIT, STALE_SECONDS = 8.0, 5.0, 30.0
+ HELPER_SURVIVORS = []  # helpers still alive after SIGTERM + HELPER_TERM_WAIT; any entry stops the desk
+ MONITOR = REVIEW + "/disk-monitor-v1-20261018T0722-to-1810.jsonl"
+@@ -167,9 +192,10 @@
+ STABLE_RUNWAY_BASE, STABLE_RUNWAY_DIV = 13500000000, 12
+ STABLE_WINDOW, STABLE_MIN_DROP_CAP = 300.0, 300000000
+ STABLE_MAX_AGE, STABLE_MIN_SAMPLES, STABLE_MIN_SPAN = 30.0, 25, 290.0
+-RECEIPT_SCHEMA = "moqls8-gb-staged-replay-receipt/1"
+-PREEXEC_SCHEMA = "moqls8-gb-staged-replay-preexec/1"
+-RUN_SCHEMA = "moqls8-gb-staged-replay-run/1"
++RECEIPT_SCHEMA = "moqls8-gb-staged-replay-receipt/2"
++COMMIT_SCHEMA = "moqls8-gb-staged-replay-commit/2"
++PREEXEC_SCHEMA = "moqls8-gb-staged-replay-preexec/2"
++RUN_SCHEMA = "moqls8-gb-staged-replay-run/2"
+ GO_STATUS = "PARENT_GO"
+ 
+ # --- controls on this runtime identity (synthetic 3-variable formulas; exclusive separate outputs)
+@@ -198,74 +224,93 @@
+     "proof_fed_equals_collected",                # fed D == R and fed sha256 == collected sha256 == buffer sha256
+     "checker_self_exit_0",                       # wait4: normal exit 0 and no driver SIGTERM to it
+     "checker_status_exact_verified",             # status lines (CR removed only) == ['s VERIFIED']
+-    "checker_no_not_verified_or_timeout",
++    "checker_no_not_verified",
++    "checker_no_timeout",                        # (F1) independent: drat-trim's timeout prints s TIMEOUT, exit 0
++    "checker_no_fatal_diagnostic",               # (F1) no ERROR/MEMOUT/illegal literal/error opening/wrong prefix
+     "checker_no_early_eof_or_less_than_expected",
+     "checker_header_counts_match",               # exactly one parse line, counts == the bound header
+     "checker_consumed_proof_bytes_equal_fed",    # exactly one 'read N bytes from proof file' line with N == D
+     "checker_stream_filter_clean",               # raw stream to EOF, no read/log/close error, log on disk == kept
+     "no_safety_stop",                            # no stop, exception, spawn error, skipped stage or exceeded grace
+     "no_driver_signal_latched",
++    "no_exclusion_breach",                       # (F5) neither the scanner latch nor the supervise latch is set
+     "lane_scanner_clean",
+     "all_threads_finished",
+     "all_fds_settled",
+     "children_reaped",
+     "no_helper_survivor",
+ )
+-CHECKER_VERDICT = ("checker_self_exit_0", "checker_status_exact_verified", "checker_no_not_verified_or_timeout")
++CHECKER_VERDICT = ("checker_self_exit_0", "checker_status_exact_verified", "checker_no_not_verified")
+ PROOF_EQUALITY = ("feeder_plain_complete", "proof_fed_equals_collected")
+-CONTROLS = {  # name -> inputs, feed modes and the preregistered outcome. must_fail: criteria that must be False;
+-    # may_fail: criteria whose value is recorded as observed; every other criterion must be True; plus the observation
++VERIFIED_0 = {"exit_code": 0, "status_lines": ["s VERIFIED"], "allowed_diagnostics": []}
++NOT_VERIFIED_1 = {"exit_code": 1, "status_lines": ["s NOT VERIFIED"], "allowed_diagnostics": []}
++CONTROLS = {  # name -> inputs, feed modes and the preregistered outcome. (F1) outcomes: the ONLY allowed drat-trim
++    # results (normal self-exit code, exact status lines, the fatal-class diagnostic lines allowed with it); must_fail:
++    # criteria that must be False; may_fail: criteria that the allowed outcomes make False; every other criterion must
++    # be True (checker_no_timeout never appears in may_fail); plus the control's observation in control_observation()
+     "unsat": {
+         "solver": UNSAT3D, "checker": UNSAT3D, "checker_feed": "full", "proof_feed": "plain", "verdict": "PASS",
+-        "must_fail": (), "may_fail": (),
++        "outcomes": [VERIFIED_0], "must_fail": (), "may_fail": (),
+         "observation": "genuine tiny UNSAT: the complete acceptance predicate holds and the stream filter dropped "
+                        "exactly one duplicate-literal normalization line in the formula phase (clause 9 '1 1 2 0'), so "
+                        "the exact filter class matches the pinned checker's real output (proof-phase lines, e.g. from "
+                        "a kissat deletion of that original clause, are counted and recorded as observed)"},
+     "sat-checker": {
+         "solver": UNSAT3D, "checker": SAT3, "checker_feed": "full", "proof_feed": "plain",
+-        "verdict": "AS_PREREGISTERED_NOT_VERIFIED", "must_fail": CHECKER_VERDICT, "may_fail": (),
++        "verdict": "AS_PREREGISTERED_NOT_VERIFIED", "outcomes": [NOT_VERIFIED_1], "must_fail": CHECKER_VERDICT,
++        "may_fail": (),
+         "observation": "satisfiable checker CNF: complete equal transport (D == R, equal digests, N == D, parse line "
+                        "3 variables / 7 clauses) and drat-trim self-exit 1 with the exact singleton status "
+-                       "['s NOT VERIFIED']: an equal digest does not make a proof correct"},
++                       "['s NOT VERIFIED'] and no fatal-class diagnostic: an equal digest does not make a proof "
++                       "correct"},
+     "short-cnf": {
+         "solver": UNSAT3D, "checker": UNSAT3D, "checker_feed": "short", "proof_feed": "plain",
+-        "verdict": "AS_PREREGISTERED_FAIL_CLOSED", "must_fail": ("checker_feed_measured_complete",), "may_fail": (),
++        "verdict": "AS_PREREGISTERED_FAIL_CLOSED", "outcomes": [VERIFIED_0],
++        "must_fail": ("checker_feed_measured_complete",), "may_fail": (),
+         "observation": "intentionally short CNF delivery: the checker writer delivers the bound bytes except the "
+                        "final LF (written == bound - 1, sha256 of exactly that prefix, no error) while drat-trim "
+                        "self-exits 0 with exactly ['s VERIFIED'], N == D and the bound parse counts; only the measured "
+                        "feed fails, so a native VERIFIED cannot substitute for incomplete delivery"},
+     "truncate": {
+         "solver": UNSAT3D, "checker": UNSAT3D, "checker_feed": "full", "proof_feed": "truncate",
+-        "verdict": "AS_PREREGISTERED_FAIL_CLOSED", "must_fail": PROOF_EQUALITY,
+-        "may_fail": CHECKER_VERDICT + ("checker_consumed_proof_bytes_equal_fed",),
++        "verdict": "AS_PREREGISTERED_FAIL_CLOSED",
++        "outcomes": [VERIFIED_0, dict(NOT_VERIFIED_1, allowed_diagnostics=["c ERROR: no conflict"])],
++        "must_fail": PROOF_EQUALITY, "may_fail": CHECKER_VERDICT + ("checker_consumed_proof_bytes_equal_fed",
++                                                                    "checker_no_fatal_diagnostic"),
+         "observation": "truncated proof: the feeder writes the collected proof except its last 2 bytes without any "
+-                       "delivery error (D == R - 2, digests differ); the predicate fails on byte/digest equality "
+-                       "whatever drat-trim prints (native outcome and N recorded as observed)"},
++                       "delivery error (D == R - 2, digests differ) and drat-trim consumes it to EOF (one count line, "
++                       "N == D or D + 1 for an EOF at a literal start, drat-trim.c L986-988); its outcome must be "
++                       "VERIFIED/0 or NOT VERIFIED/1 (the latter may carry only 'c ERROR: no conflict', L874, when the "
++                       "withheld bytes held the empty clause); the predicate fails on byte/digest equality"},
+     "suffix": {
+         "solver": UNSAT3D, "checker": UNSAT3D, "checker_feed": "full", "proof_feed": "suffix",
+-        "verdict": "AS_PREREGISTERED_FAIL_CLOSED", "must_fail": PROOF_EQUALITY, "may_fail": CHECKER_VERDICT,
++        "verdict": "AS_PREREGISTERED_FAIL_CLOSED", "outcomes": [VERIFIED_0, NOT_VERIFIED_1],
++        "must_fail": PROOF_EQUALITY, "may_fail": CHECKER_VERDICT,
+         "observation": "suffix proof: after the collected proof the feeder writes the 5-byte binary deletion "
+                        "'d 1 2 3 0' (D == R + 5, digests differ) and the checker's consumed count N == D shows it read "
+-                       "the suffix; the predicate fails on byte equality (native verdict recorded as observed)"},
++                       "the suffix; outcome VERIFIED/0 or NOT VERIFIED/1 without fatal diagnostic; the predicate fails "
++                       "on byte equality"},
+     "digest-alter": {
+         "solver": UNSAT3D, "checker": UNSAT3D, "checker_feed": "full", "proof_feed": "alter",
+-        "verdict": "AS_PREREGISTERED_FAIL_CLOSED", "must_fail": PROOF_EQUALITY, "may_fail": CHECKER_VERDICT,
++        "verdict": "AS_PREREGISTERED_FAIL_CLOSED", "outcomes": [VERIFIED_0, NOT_VERIFIED_1],
++        "must_fail": PROOF_EQUALITY, "may_fail": CHECKER_VERDICT,
+         "observation": "altered transported digest: the feeder flips bit 0 of the first one-byte literal of the first "
+                        "'a' line in transit (that literal negated): D == R and N == D, but the transported digest "
+-                       "differs from the collected and independently recomputed digests; the predicate fails on "
+-                       "digest equality alone (native verdict recorded as observed)"},
++                       "differs from the collected and independently recomputed digests; outcome VERIFIED/0 or NOT "
++                       "VERIFIED/1 without fatal diagnostic; the predicate fails on digest equality alone"},
+     "early-close": {
+         "solver": UNSAT3D, "checker": NOHEADER, "checker_feed": "full", "proof_feed": "hold",
+         "verdict": "AS_PREREGISTERED_FAIL_CLOSED",
+-        "must_fail": PROOF_EQUALITY + ("checker_status_exact_verified", "checker_header_counts_match",
+-                                       "checker_consumed_proof_bytes_equal_fed"),
++        "outcomes": [{"exit_code": 0, "status_lines": [],
++                      "allowed_diagnostics": ["c ERROR: did not find p cnf line in input file"]}],
++        "must_fail": PROOF_EQUALITY + ("checker_status_exact_verified", "checker_no_fatal_diagnostic",
++                                       "checker_header_counts_match", "checker_consumed_proof_bytes_equal_fed"),
+         "may_fail": (),
+-        "observation": "early checker close: drat-trim reads the complete header-less CNF, prints the exact line "
+-                       "'c ERROR: did not find p cnf line in input file' and self-exits 0 with no status line and no "
+-                       "proof byte count; the feeder's first write, held until the checker was reaped, gets EPIPE "
+-                       "with 0 bytes fed and stops cleanly (descriptor closed once, buffer released); every thread "
+-                       "finishes, every descriptor is settled and no child is left"},
++        "observation": "early checker close: drat-trim reads the complete header-less CNF, prints exactly the one "
++                       "diagnostic 'c ERROR: did not find p cnf line in input file' and self-exits 0 with no status "
++                       "line and no proof byte count; the feeder's first write, held until the checker was reaped, "
++                       "gets EPIPE with 0 bytes fed and stops cleanly (descriptor closed once, buffer released); every "
++                       "thread finishes, every descriptor is settled and no child is left"},
+ }
+ WANT_VERDICTS = {name: spec["verdict"] for name, spec in CONTROLS.items()}
+ 
+@@ -280,20 +325,26 @@
+               "pipe) finished without write or close error with written == bound bytes and sha256 == bound sha256; "
+               "(3) kissat self-exit 20 (normal exit, no driver SIGTERM) and its status lines (log with only CR "
+               "removed, lines starting with 's') exactly ['s UNSATISFIABLE']; (4) drat-trim self-exit 0, status "
+-              "lines exactly ['s VERIFIED'], no 's NOT VERIFIED' or 's TIMEOUT', no 'early EOF' or 'clauses less "
+-              "than expected' line, exactly one 'c parsing input formula' line with the bound variable and clause "
+-              "counts; (5) the collector saw the actual FIFO EOF without error and read R > 0 bytes, an independent "
+-              "sha256 of the RAM buffer equals the collector's, and the plain-mode feeder wrote D == R bytes whose "
++              "lines exactly ['s VERIFIED'], no 's NOT VERIFIED' or 's TIMEOUT', no fatal-class diagnostic (ERROR, "
++              "MEMOUT, illegal literal, error opening, wrong binary prefix, failed to reallocate), no 'early EOF' or "
++              "'clauses less than expected' line, exactly one 'c parsing input formula' line with the bound variable "
++              "and clause counts; (5) the collector saw the actual FIFO EOF without error and read R > 0 bytes, an "
++              "independent sha256 of the RAM buffer equals the collector's, and the plain-mode feeder wrote D == R "
++              "bytes whose "
+               "sha256 equals the collected digest, without delivery or close error; (6) exactly one 'c finished "
+               "parsing, read N bytes from proof file' line with N == D; (7) the drat-trim stream filter read the raw "
+               "stream to EOF without read, log-write or close error and the filtered log on disk hashes to the bytes "
+               "it kept (it drops only exact duplicate-literal normalization lines, counted; the full raw stream "
+               "hash/count is recorded separately); (8) no safety stop, exception, spawn error, skipped stage or "
+-              "exceeded SIGTERM grace; no driver signal latched during the pipeline or at evaluation; no lane-scanner "
+-              "failure and the scanner stopped; all five worker threads started and finished; no descriptor left "
+-              "and no close error; both children reaped; no helper survivor. Anything else is UNKNOWN with reasons. "
+-              "A SAT report, a safety stop or any settlement failure stops the desk. No retries: a new attempt needs "
+-              "a new parent GO and a new attempt tag; old UNKNOWN receipts are retained.")
++              "exceeded SIGTERM grace; no driver signal latched during the pipeline or at evaluation; no exclusion "
++              "breach latched by the scanner or the in-flight guard; no lane-scanner failure and the scanner "
++              "stopped; all five worker threads started and finished; no descriptor left and no close error; both "
++              "children reaped; no helper survivor. Anything else is UNKNOWN with reasons; a driver signal latched "
++              "during evaluation downgrades PASS to UNKNOWN. Qualification additionally needs the commit record "
++              "receipts/<label>.commit.json, written after the receipt is durable, with qualified true (verdict PASS "
++              "and no driver signal latched at commit). A SAT report, a safety stop or any settlement failure stops "
++              "the desk. No retries: a new attempt needs a new parent GO and a new attempt tag; old UNKNOWN receipts "
++              "are retained.")
+ GATE_RULE = ("Before each launch (stage 1; stage 2 is not a new admission): a fresh lane scan (native solver/checker "
+              "processes plus python processes whose cwd or argv lies in the lane or a review/moqls8-* desk, "
+              "excluding this driver and its children; python counts as busy if its CPU use over a 2 s libproc window "
+@@ -309,13 +360,18 @@
+              "free, strictly increasing timestamps, last sample 0 <= age <= 30 s with free >= 13.5e9 + 10 MiB, >= 25 "
+              "samples spanning >= 290 s within the last 300 s, max peak-to-later drop <= max(300,000,000, (free_last "
+              "- 13.5e9) // 12); a malformed complete line or a naive, non-monotone or stale sample refuses; the rule "
+-             "and a fresh statvfs are re-read at the launch decision. The run also needs the parent GO record "
+-             "(validate_go) and, for gb items, the seven control receipts of this script sha256.")
++             "and a fresh statvfs are re-read at the launch decision. Immediately before EACH native spawn (kissat, "
++             "drat-trim) the launch threshold free >= 12.2e9 + 10 MiB, the latched stop/exclusion/scanner state, the "
++             "17:29 cutoff and the 17:57 deadline are checked again (stage 2 also lane busy + 1 <= 4 and the 11 GiB "
++             "lane total from the newest reading). The run also needs the parent GO record (validate_go) and, for gb "
++             "items, the seven qualified control receipts (receipt + commit) of this script sha256.")
+ STOPS = ("In flight, every 0.25 s: pipeline aggregate RSS (driver incl. CNF parts and the RAM proof + the live child, "
+          "libproc; a live child unreadable twice in a row is a guard failure) and free space; a scanner thread "
+          "publishes lane scans every >= 1 s (helpers under %.0f s deadlines; any failed reading is latched). SIGTERM "
+          "the live child if a lane reading failed, a failure is latched or the reading is older than %.0f s, an "
+-         "exclusion breach appears (latched), lane RSS (other lane + max(pipeline measured, reservation)) > 11 GiB, "
++         "exclusion breach appears (latched by the scanner itself; foreign GB natives are recognized by cwd/argv in a "
++         "GB desk or GB evidence tree, by ppid 1 or by a GB-driver parent), lane busy (other lane natives + hot "
++         "python) + 1 > 4, lane RSS (other lane + max(pipeline measured, reservation)) > 11 GiB, "
+          "pipeline aggregate > the item's cap (6 GiB gb, 1 GiB controls), free < 12,000,000,000, stage wall > "
+          "limit + 120 s (kissat %d s, drat-trim %d s), the host clock reaches 2026-10-18 17:57:00 PDT, a spawn error, "
+          "a helper survivor, any exception after the first descriptor, or the driver receives SIGTERM (also checked "
+@@ -335,8 +391,9 @@
+              "has its own TMPDIR and cwd tmp/<label>/kissat/ and tmp/<label>/drat/.")
+ SEQUENCING = ("A PRE-EXEC holds only controls (control:NAME, run in the listed order) or exactly one gb item "
+               "(gb:ID:aN). One native at a time. A gb PRE-EXEC is admitted only with the seven control receipts of "
+-              "this script sha256 with their preregistered verdicts, re-validated at the run start and at every "
+-              "identity check. A control whose verdict differs from its preregistered verdict stops the run; after "
++              "this script sha256 with their preregistered verdicts and qualified commit records, re-validated at "
++              "preexec, at the run start and at every identity check. A control whose commit is not qualified "
++              "(verdict differs from its preregistration or a late signal) stops the run; after "
+               "a SAT report, a safety stop, a spawn error, an exception, a driver SIGTERM, a scanner failure, an "
+               "unfinished thread, an unsettled descriptor, an unreaped child, a helper survivor or the 17:29 PDT "
+               "cutoff nothing more is launched. A label whose receipt exists is never re-run (controls: validated "
+@@ -531,14 +588,20 @@
+ def exclusion_flags(c, full_args):
+     """Brief: admit only after the parent GA driver has exited, no GA/GB concurrency, one GB native at a time. ->
+     reasons for one lane process, computed on its full argv and cwd: a parent GA replay native (cwd or argv in the GA
+-    desk) or GA replay/launch driver; any other kissat; any other GB pipeline driver (gb_direct_r*, gb_staged_v*).
+-    This driver and its own children never appear (lane_scan excludes them by pid/ppid)."""
++    desk) or GA replay/launch driver; any other kissat; (F5) any native whose cwd or argv lies in a GB desk or GB
++    evidence tree (an orphaned foreign GB drat-trim included) and any orphaned lane native (ppid 1); any other GB
++    pipeline driver (gb_direct_r*, gb_staged_v*). lane_scan adds the ownership rule (a native whose parent is a GB
++    driver). This driver and its own children never appear (lane_scan excludes them by pid/ppid)."""
+     where = c["cwd"] + "\n" + full_args
+     out = []
+     if GA_DESK_MARKER in where and (c["native"] or any(k in full_args for k in GA_DRIVER_KEYS)):
+         out.append("parent GA replay process: no GA/GB concurrency")
+     if c["comm"] == "kissat":
+         out.append("another kissat process: one GB native at a time")
++    if c["native"] and any(k in where for k in GB_NATIVE_MARKERS):
++        out.append("foreign GB native (cwd/argv in a GB desk or GB evidence tree): one GB native at a time")
++    if c["native"] and c["ppid"] == 1:
++        out.append("orphaned lane native (parent gone): unowned native work")
+     if any(k in full_args for k in GB_DRIVER_KEYS):
+         out.append("another GB pipeline driver")
+     return out
+@@ -624,14 +687,19 @@
+             c["exclusion"] = exclusion_flags(c, full_args)  # computed on the full argv and cwd, before truncation
+             c["args"] = full_args[:240]
+             lane.append(c)
++    gb_drivers = {c["pid"] for c in lane if "another GB pipeline driver" in c["exclusion"]}
++    for c in lane:  # (F5) ownership: a native whose parent is a GB driver is GB native work whatever its cwd
++        if c["native"] and c["ppid"] in gb_drivers:
++            c["exclusion"].append("native owned by another GB pipeline driver: one GB native at a time")
+     return lane, None
+ 
+ 
+ class Scanner(threading.Thread):
+-    """In-flight lane scanner: publishes (monotonic time, scan or None, error) after every scan, so the watchdog
+-    loop never blocks on a helper. (D) Every failed reading, and an exception escaping the loop, is also latched in
+-    'failed' independently of 'latest', so a later good reading cannot hide it. pipeline() treats a failed, latched
+-    or stale reading as a safety stop (also at the completion break) and evaluate() vetoes PASS on a latched one."""
++    """In-flight lane scanner (replay_v5d.py Scanner + the (F5) exclusion latch): publishes (monotonic time, scan or
++    None, error) after every scan, so the watchdog loop never blocks on a helper. Every failed reading, and an exception
++    escaping the loop, is latched in 'failed' independently of 'latest'; (F5) the first successful reading that carries
++    an exclusion breach is latched in 'excluded' by this thread itself, so a breach seen just before a completion break
++    cannot be bypassed. latched_stop() reports both latches; evaluate() vetoes PASS on either."""
+ 
+     def __init__(self):
+         threading.Thread.__init__(self, daemon=True)
+@@ -639,6 +707,7 @@
+         self.lock = threading.Lock()
+         self.latest = None
+         self.failed = None
++        self.excluded = None
+         self.scans = self.failures = 0
+ 
+     def _latch(self, err):
+@@ -650,14 +719,17 @@
+             while not self.halt.is_set():
+                 try:
+                     scan, err = lane_scan()
++                    ex = exclusions(scan) if scan is not None else []
+                 except Exception as e:  # recorded, never hidden
+-                    scan, err = None, "lane scan raised %r" % e
++                    scan, err, ex = None, "lane scan raised %r" % e, []
+                 with self.lock:
+                     self.latest = (time.monotonic(), scan, err)
+                     self.scans += 1
+                     if scan is None:
+                         self.failures += 1
+                         self._latch(err)
++                    elif ex and self.excluded is None:
++                        self.excluded = {"at": now(), "exclusions": ex}
+                 self.halt.wait(LANE_SCAN_PERIOD)
+         except BaseException as e:  # latched; the published reading also goes stale
+             with self.lock:
+@@ -671,6 +743,10 @@
+     def failure(self):
+         with self.lock:
+             return self.failed
++
++    def exclusion(self):
++        with self.lock:
++            return self.excluded
+ 
+ 
+ def compact(c):
+@@ -850,12 +926,16 @@
+ 
+ 
+ def latched_stop(stop, scanner):
+-    """(D) A latched driver SIGTERM, a latched lane-scanner failure or a recorded helper survivor -> reason or None."""
++    """A latched driver signal (SIGTERM or SIGINT), a latched lane-scanner failure, (F5) a scanner-latched exclusion
++    breach or a recorded helper survivor -> reason or None."""
+     if stop.get("signal"):
+         return "driver received %s (latched)" % stop["signal"]
+     failed = scanner.failure()
+     if failed is not None:
+         return "lane scanner failure latched at %s: %s" % (failed["at"], failed["error"])
++    excl = scanner.exclusion()
++    if excl is not None:
++        return "exclusion breach latched by the scanner at %s: %s" % (excl["at"], json.dumps(excl["exclusions"])[:300])
+     if HELPER_SURVIVORS:
+         return "helper survivor(s) recorded (pid %s)" % ", ".join(str(s["pid"]) for s in HELPER_SURVIVORS)
+     return None
+@@ -1055,8 +1135,9 @@
+             "expected_solver_feed_sha256": sha_bytes(s), "expected_solver_feed_bytes": len(s),
+             "expected_checker_feed_sha256": sha_bytes(c), "expected_checker_feed_bytes": len(c),
+             "expected_checker_header_counts": header_counts(c),
+-            "preregistered_verdict": spec["verdict"], "must_fail": list(spec["must_fail"]),
+-            "may_fail": list(spec["may_fail"]), "preregistered_observation": spec["observation"],
++            "preregistered_verdict": spec["verdict"], "preregistered_checker_outcomes": spec["outcomes"],
++            "must_fail": list(spec["must_fail"]), "may_fail": list(spec["may_fail"]),
++            "preregistered_observation": spec["observation"],
+             "reservation_bytes": CONTROL_RESERVATION, "desk_cap_bytes": CONTROL_CAP, "stability_rule": False,
+             "native_limits": {"kissat_seconds": KISSAT_SECONDS, "drat_trim_seconds": DRAT_SECONDS},
+             "purpose": "transport/acceptance control on a synthetic 3-variable formula; not part of the replay"}
+@@ -1145,7 +1226,8 @@
+ def validate_controls(script_sha):
+     """gb admission prerequisite: the seven control receipts of THIS script sha256 exist, each equal to its derived
+     control item, with its preregistered verdict, the pinned binaries, its PRE-EXEC and controls GO record re-hashed,
+-    and no latched stop. -> (identities, problems)."""
++    no latched stop, and (F4) its commit record bound to the receipt's sha256 with qualified true. -> (identities,
++    problems)."""
+     out, problems = [], []
+     for name in CONTROLS:
+         label = LABEL_PREFIX + "ctl-" + name
+@@ -1154,12 +1236,17 @@
+             problems.append("%s: receipt missing" % label)
+             continue
+         raw = read_bytes(path)
++        cpath = os.path.join(DESK, "receipts", label + ".commit.json")
+         try:
+             r = json.loads(raw)
++            cm = json.loads(read_bytes(cpath)) if os.path.isfile(cpath) else None
+         except ValueError:
+-            problems.append("%s: receipt is not JSON" % label)
++            problems.append("%s: receipt or commit record is not JSON" % label)
+             continue
+         try:
++            commit_ok = (isinstance(cm, dict) and cm.get("schema") == COMMIT_SCHEMA and cm.get("label") == label
++                         and cm.get("receipt_sha256") == sha_bytes(raw) and cm.get("qualified") is True
++                         and cm.get("verdict") == CONTROLS[name]["verdict"] and cm.get("stop_signal_at_commit") is None)
+             pe, go, bins = r.get("pre_exec") or {}, r.get("go") or {}, r.get("binaries") or {}
+             pre_ok = (isinstance(pe.get("path"), str) and os.path.isfile(os.path.join(DESK, pe["path"]))
+                       and sha_file(os.path.join(DESK, pe["path"])) == pe.get("sha256"))
+@@ -1175,6 +1262,7 @@
+                 ("pre-exec binding", pre_ok),
+                 ("go binding", go_ok),
+                 ("stop latched", r.get("stop_latched") is None and r.get("stop_latched_after_evaluation") is None),
++                ("qualified commit record", commit_ok),
+             ) if not ok]
+         except (AttributeError, TypeError, ValueError, OSError) as e:  # a malformed receipt is refused, not trusted
+             bad = ["malformed receipt: %r" % e]
+@@ -1182,6 +1270,7 @@
+             problems.append("%s: %s" % (label, ", ".join(bad)))
+             continue
+         out.append({"label": label, "receipt": rel(path), "receipt_sha256": sha_bytes(raw), "verdict": r["verdict"],
++                    "commit": rel(cpath), "commit_sha256": sha_file(cpath),
+                     "pre_exec": pe, "go": {"path": go.get("path"), "sha256": go.get("sha256")},
+                     "run_tag": r.get("run_tag")})
+     return out, problems
+@@ -1356,26 +1445,29 @@
+     except Exception as e:  # recorded, never hidden
+         res["feeder_exception"] = repr(e)
+     finally:
+-        for i in range(len(chunks)):  # release whatever an exception left
+-            chunks[i] = None
+-        if fd is not None:
+-            try:
+-                os.close(fd)
+-            except OSError as e:
+-                close_status[0] = e
+-        if close_status[0] is not None:
+-            res["close_error"] = repr(close_status[0])
+-        res.update({"mode": mode, "fed_bytes": st["fed"], "fed_sha256": h.hexdigest(), "collected_total": st["total"],
+-                    "proof_bytes_fed": st["proof_fed"], "undelivered_bytes": st["total"] - st["proof_fed"],
+-                    "finished_at": now(), "finished_mono": time.monotonic()})
+-        res["ok"] = not any(k in res for k in ("delivery_error", "feeder_exception", "close_error"))
++        try:  # (F3) the claimed descriptor is closed first, unconditionally, before any release or diagnostic
++            if fd is not None:
++                try:
++                    os.close(fd)
++                except OSError as e:
++                    close_status[0] = e
++        finally:
++            chunks.clear()  # release whatever an exception left (no iterator is allocated for this)
++            if close_status[0] is not None:
++                res["close_error"] = repr(close_status[0])
++            res.update({"mode": mode, "fed_bytes": st["fed"], "fed_sha256": h.hexdigest(),
++                        "collected_total": st["total"], "proof_bytes_fed": st["proof_fed"],
++                        "undelivered_bytes": st["total"] - st["proof_fed"], "finished_at": now(),
++                        "finished_mono": time.monotonic()})
++            res["ok"] = not any(k in res for k in ("delivery_error", "feeder_exception", "close_error"))
+ 
+ 
+ DUP_LINE = re.compile(rb"\rc WARNING: detected and deleted duplicate literal (-?[1-9][0-9]*) at position ([1-9][0-9]*) "
+                       rb"of proof line ([1-9][0-9]*)\n")
+ PARSE_LINE = re.compile(rb"c parsing input formula with (\d+) variables and (\d+) clauses")
+ FINISHED_LINE = re.compile(rb"c finished parsing(, read (\d+) bytes from proof file)?")
+-ERROR_KEYS = (b"ERROR", b"MEMOUT", b"illegal literal", b"error opening", b"wrong binary prefix")
++ERROR_KEYS = (b"ERROR", b"MEMOUT", b"illegal literal", b"error opening", b"wrong binary prefix",
++              b"failed to reallocate")  # (F1) the fatal-class diagnostics of the pinned drat-trim.c
+ 
+ 
+ def _filter(fds, res, header_clauses):
+@@ -1547,14 +1639,55 @@
+     return threading.Thread(target=target, args=args, daemon=True), res
+ 
+ 
++def acquire(fds, names, opener, rollback):
++    """(F3) Run opener() (os.pipe, or a 1-tuple from os.open) and register its descriptors under names. A descriptor
++    whose registry insertion did not commit is closed here before the exception propagates, so no failure (e.g. a
++    MemoryError in the insertion) leaves an untracked descriptor; committed ones belong to the registry, whose
++    cleanup closes any that no thread claims. rollback collects close errors of that rare path."""
++    got, first, second = None, False, False
++    try:
++        got = opener()
++        fds.put(names[0], got[0])
++        first = True
++        if len(names) == 2:
++            fds.put(names[1], got[1])
++            second = True
++    finally:
++        if got is not None:
++            if not first:
++                _rollback_close(got[0], rollback)
++            if len(names) == 2 and not second:
++                _rollback_close(got[1], rollback)
++
++
++def _rollback_close(fd, rollback):
++    try:
++        os.close(fd)
++    except OSError as e:
++        rollback.append(repr(e))
++
++
++def _child_record(status, ru, spawn_mono, sigterm_sent):
++    """Diagnostics of a reaped child (built only after the child is marked reaped, so a failure here can never lead to
++    signalling or waiting for the reaped pid again)."""
++    exited, signaled = os.WIFEXITED(status), os.WIFSIGNALED(status)
++    return {"rc": os.waitstatus_to_exitcode(status), "exited": exited,
++            "exit_code": os.WEXITSTATUS(status) if exited else None, "signaled": signaled,
++            "term_signal": os.WTERMSIG(status) if signaled else None, "sigterm_sent": sigterm_sent,
++            "maxrss_bytes": ru.ru_maxrss, "wall_seconds": round(time.monotonic() - spawn_mono, 3),
++            "user_seconds": round(ru.ru_utime, 3), "sys_seconds": round(ru.ru_stime, 3), "reaped_at": now(),
++            "reaped_mono": time.monotonic()}
++
++
+ THREAD_NAMES = ("collector", "solver_feed", "filter", "checker_feed", "feeder")
+ 
+ 
+ def pipeline(label, it, solver_parts, checker_parts, identity, log, stop):
+-    """Staged kissat -> RAM -> drat-trim pipeline for one item. identity(stage, parts) re-hashes every identity
+-    immediately before the spawn of that stage. One cleanup scope covers everything from the first descriptor to the
+-    last reap: any exception SIGTERMs the live child, reaps it within 120 s and closes every descriptor no thread
+-    claimed (exactly once). -> record."""
++    """Staged kissat -> RAM -> drat-trim pipeline for one item. identity(stage, parts) re-hashes every identity before
++    the spawn of that stage; spawn_veto() re-checks stop, cutoff, deadline, scanner/exclusion latches and the launch
++    threshold immediately before each Popen. One cleanup scope covers everything from the first descriptor to the
++    last reap: any exception SIGTERMs the live (never an already reaped) child, reaps it within 120 s and closes every
++    descriptor no thread claimed (exactly once). -> record."""
+     fifo = os.path.join(DESK, "fifo", label + ".kissat.fifo")
+     klog = os.path.join(DESK, "logs", label + ".kissat.log")
+     dlog = os.path.join(DESK, "logs", label + ".drat.filtered.log")
+@@ -1578,17 +1711,23 @@
+            "checker_feed_mode": it["checker_feed_mode"], "proof_feed_mode": it["proof_feed_mode"],
+            "cwd": {"kissat": rel(ktmp), "drat": rel(dtmp)}, "env": {"kissat": kenv, "drat": denv},
+            "reservation_bytes": reservation, "desk_cap_bytes": cap, "lane_rss_limit_bytes": LANE_RSS_LIMIT,
+-           "free_floor_bytes": FLOOR, "stage_backstop_seconds": {"kissat": KISSAT_SECONDS + STAGE_MARGIN,
+-                                                                  "drat": DRAT_SECONDS + STAGE_MARGIN},
++           "lane_busy_cap": LANE_BUSY_CAP, "free_floor_bytes": FLOOR, "launch_floor_bytes": LAUNCH_FLOOR,
++           "stage_backstop_seconds": {"kissat": KISSAT_SECONDS + STAGE_MARGIN, "drat": DRAT_SECONDS + STAGE_MARGIN},
+            "stale_lane_reading_seconds": STALE_SECONDS, "stops": STOPS}
+-    fds, procs, done, threads, events, rss_fail, sigterm_sent = Fds(), {}, {}, {}, [], {}, {}
++    fds, threads, events, rollback = Fds(), {}, [], []
++    procs = {"solver": None, "checker": None}  # (F2) ownership slots exist before any Popen
++    reaped = {"solver": False, "checker": False}  # (F2) set immediately after wait4 returns the child's pid
++    sigterm_sent = {"solver": None, "checker": None}
++    rss_fail = {"solver": 0, "checker": 0}
++    done = {}  # diagnostics of reaped children (built after the reaped mark)
+     ev_checker = threading.Event()
+     scanner = Scanner()
+     chunks = []  # the RAM proof: appended by the collector, released slot by slot by the feeder
+-    S = {"reason": None, "term_at": None, "grace_exceeded": False, "spawn_mono": {}, "peak_desk": 0,
+-         "peak_driver": 0, "peak_child": {"solver": 0, "checker": 0}, "peak_lane_total": 0, "peak_lane_reserved": 0,
+-         "peak_other": 0, "other_rss": 0, "max_other_busy": 0, "min_free": None, "last_mono": None, "prev_cpu": None,
+-         "prev_mono": None, "scan_started": None, "exclusion_seen": None, "alter_at": None}
++    S = {"reason": None, "term_at": None, "grace_exceeded": False, "spawn_mono": {"solver": None, "checker": None},
++         "peak_desk": 0, "peak_driver": 0, "peak_child": {"solver": 0, "checker": 0}, "peak_lane_total": 0,
++         "peak_lane_reserved": 0, "peak_other": 0, "other_rss": 0, "cur_busy": 0, "max_other_busy": 0,
++         "min_free": None, "last_mono": None, "prev_cpu": None, "prev_mono": None, "scan_started": None,
++         "exclusion_seen": None, "alter_at": None}
+     closed_by_cleanup, cleanup_errors = [], []
+ 
+     def close_fd(name):  # take() first: a descriptor is closed by exactly one owner
+@@ -1596,13 +1735,16 @@
+         if fd is not None:
+             os.close(fd)
+ 
++    def live(name):
++        return procs[name] is not None and not reaped[name]
++
+     def term_live(why):
+-        for n, p in procs.items():
+-            if n not in done:
++        for n in CHILD_NAMES:
++            if live(n):  # (F2) never a reaped pid
+                 try:
+-                    os.kill(p.pid, signal.SIGTERM)
++                    os.kill(procs[n].pid, signal.SIGTERM)
+                     sigterm_sent[n] = now()
+-                    events.append({"at": now(), "event": "SIGTERM", "target": n, "pid": p.pid, "reason": why})
++                    events.append({"at": now(), "event": "SIGTERM", "target": n, "pid": procs[n].pid, "reason": why})
+                 except ProcessLookupError:
+                     pass
+ 
+@@ -1613,28 +1755,24 @@
+         log("SAFETY STOP %s: %s" % (label, why))
+ 
+     def reap():
+-        for name, p in procs.items():
+-            if name in done:
++        for name in CHILD_NAMES:
++            if not live(name):
+                 continue
++            p = procs[name]
+             pid, status, ru = os.wait4(p.pid, os.WNOHANG)
+             if pid:
+-                rc = os.waitstatus_to_exitcode(status)
+-                p.returncode = rc
+-                exited, signaled = os.WIFEXITED(status), os.WIFSIGNALED(status)
+-                done[name] = {"rc": rc, "exited": exited, "exit_code": os.WEXITSTATUS(status) if exited else None,
+-                              "signaled": signaled, "term_signal": os.WTERMSIG(status) if signaled else None,
+-                              "sigterm_sent": name in sigterm_sent, "maxrss_bytes": ru.ru_maxrss,
+-                              "wall_seconds": round(time.monotonic() - S["spawn_mono"][name], 3),
+-                              "user_seconds": round(ru.ru_utime, 3), "sys_seconds": round(ru.ru_stime, 3),
+-                              "reaped_at": now(), "reaped_mono": time.monotonic()}
++                reaped[name] = True  # (F2) ownership ends here, before any allocation: never signalled/waited again
++                p.returncode = status  # (F2) Popen itself never polls this pid again (exit code set below)
+                 if name == "solver":
+                     close_fd("keepalive")  # the collector sees EOF once kissat's own write end is gone too
+                 else:
+                     ev_checker.set()
++                p.returncode = os.waitstatus_to_exitcode(status)
++                done[name] = _child_record(status, ru, S["spawn_mono"][name], sigterm_sent[name] is not None)
+ 
+     def lane_guard(tnow):
+-        """Latched scanner failure or survivor, a failed or stale reading, or a (latched) exclusion breach -> reason;
+-        otherwise refresh the other-lane RSS/busy figures from a new reading -> None."""
++        """Latched scanner failure, exclusion or survivor, a failed or stale reading, or an exclusion breach in the
++        newest reading (latched here too) -> reason; otherwise refresh the other-lane RSS/busy figures -> None."""
+         late = latched_stop({}, scanner)
+         if late is not None:
+             return late
+@@ -1661,6 +1799,7 @@
+                     if (c["cpu_ns"] - S["prev_cpu"][c["pid"]]) / ((mono - S["prev_mono"]) * 1e9) >= HOT_CPU_FRACTION:
+                         busy += 1
+             S["prev_cpu"], S["prev_mono"] = cpu, mono
++            S["cur_busy"] = busy
+             S["max_other_busy"] = max(S["max_other_busy"], busy)
+             S["peak_other"] = max(S["peak_other"], S["other_rss"])
+             ex = exclusions(scan)
+@@ -1676,8 +1815,8 @@
+         p = procs[name]
+         while True:
+             reap()
+-            if name in done:
+-                if S["reason"] is None:  # latched SIGTERM / scanner failure / survivor checked before leaving
++            if reaped[name]:
++                if S["reason"] is None:  # latched signal / scanner failure / exclusion / survivor before leaving
+                     late = latched_stop(stop, scanner)
+                     if late is not None:
+                         S["reason"] = late
+@@ -1694,7 +1833,7 @@
+             desk = driver
+             t = taskinfo(p.pid)
+             if t is None:  # one miss can be an exit between wait4 and the read; two in a row cannot
+-                rss_fail[name] = rss_fail.get(name, 0) + 1
++                rss_fail[name] += 1
+                 if rss_fail[name] >= 2 and guard_fail is None:
+                     guard_fail = "own child %s (pid %d) RSS unreadable twice in a row" % (name, p.pid)
+             else:
+@@ -1718,6 +1857,8 @@
+                     why = "driver received %s" % stop["signal"]
+                 elif guard_fail is not None:
+                     why = "guard reading failed: " + guard_fail
++                elif S["cur_busy"] + MINE > LANE_BUSY_CAP:  # (F6) the busy cap is enforced in flight too
++                    why = "lane busy %d other + %d > %d in flight" % (S["cur_busy"], MINE, LANE_BUSY_CAP)
+                 elif lane_reserved > LANE_RSS_LIMIT:
+                     why = ("lane RSS %d > 11 GiB (%d): other lane %d + max(pipeline %d, reservation %d)"
+                            % (lane_reserved, LANE_RSS_LIMIT, S["other_rss"], desk, reservation))
+@@ -1734,8 +1875,8 @@
+                     stop_now(why)
+             elif time.monotonic() - S["term_at"] > SIGTERM_GRACE:
+                 S["grace_exceeded"] = True
+-                events.append({"at": now(), "event": "SIGTERM grace of 120 s exceeded; no escalation",
+-                               "alive": [n for n in procs if n not in done]})
++                events.append({"at": now(), "event": "SIGTERM grace of %d s exceeded; no escalation" % SIGTERM_GRACE,
++                               "alive": [n for n in CHILD_NAMES if live(n)]})
+                 log("SIGTERM grace exceeded for %s (%s); no escalation" % (label, name))
+                 return
+             time.sleep(SAMPLE)
+@@ -1754,28 +1895,40 @@
+                 events.append({"at": now(), "event": "thread unfinished", "thread": name})
+                 log("SAFETY STOP %s: %s" % (label, S["reason"]))
+ 
+-    def spawn_block(idrec, stage):
+-        """-> reason that forbids the spawn of this stage, or None (identity, latched stops, cutoff, free, lane)."""
+-        if not idrec.get("ok"):
+-            return "identity re-hash before the %s spawn failed: %s" % (stage, "; ".join(idrec.get("problems") or []))
++    def boundary(stage):
++        """(F4, F6) Shared launch-boundary predicate -> reason or None: a latched driver signal, scanner failure,
++        exclusion breach or helper survivor, the 17:29 cutoff, the 17:57 deadline, free below the launch threshold
++        12.2e9 + 10 MiB; for the checker also the newest lane reading (stale/failed/exclusion), lane busy + 1 <= 4 and
++        the 11 GiB lane total."""
+         late = latched_stop(stop, scanner)
+         if late is not None:
+-            return "%s before the %s spawn" % (late, stage)
++            return "%s at the %s launch boundary" % (late, stage)
+         if time.time() >= NO_LAUNCH_AT:
+-            return "launch cutoff 2026-10-18 17:29:00 PDT reached before the %s spawn" % stage
++            return "launch cutoff 2026-10-18 17:29:00 PDT reached at the %s launch boundary" % stage
++        if time.time() >= NATIVE_STOP_AT:
++            return "native-work deadline 2026-10-18 17:57:00 PDT reached at the %s launch boundary" % stage
+         fb = free_bytes()
+-        if fb < FLOOR:
+-            return "free bytes %d < in-flight floor %d before the %s spawn" % (fb, FLOOR, stage)
++        if fb < LAUNCH_FLOOR:
++            return "free bytes %d < launch threshold %d at the %s launch boundary" % (fb, LAUNCH_FLOOR, stage)
+         if stage == "checker":
+             lane_fail = lane_guard(time.monotonic())
+             if lane_fail is not None:
+-                return "guard reading failed before the checker spawn: " + lane_fail
++                return "guard reading failed at the checker launch boundary: " + lane_fail
++            if S["cur_busy"] + MINE > LANE_BUSY_CAP:
++                return "lane busy %d other + %d > %d at the checker launch boundary" % (S["cur_busy"], MINE,
++                                                                                         LANE_BUSY_CAP)
+             own = taskinfo(os.getpid())
+             if own is None:
+-                return "driver RSS unreadable before the checker spawn"
++                return "driver RSS unreadable at the checker launch boundary"
+             if S["other_rss"] + max(own[0], reservation) > LANE_RSS_LIMIT:
+-                return "lane RSS above 11 GiB before the checker spawn"
++                return "lane RSS above 11 GiB at the checker launch boundary"
+         return None
++
++    def spawn_block(idrec, stage):
++        """Before the stage's setup: the identity re-hash and the launch-boundary predicate."""
++        if not idrec.get("ok"):
++            return "identity re-hash before the %s spawn failed: %s" % (stage, "; ".join(idrec.get("problems") or []))
++        return boundary(stage)
+ 
+     def stage1_ok():
+         s = done.get("solver") or {}
+@@ -1802,50 +1955,55 @@
+     with open(klog, "xb") as kl:
+         try:  # one cleanup scope for everything from the first descriptor to the last reap
+             # ------------------------------------------------ stage 1: kissat alone; proof FIFO -> RAM collector
+-            fds.put("fifo_read", os.open(fifo, os.O_RDONLY | os.O_NONBLOCK))
+-            fcntl.fcntl(fds.get("fifo_read"), fcntl.F_SETFL,
+-                        fcntl.fcntl(fds.get("fifo_read"), fcntl.F_GETFL) & ~os.O_NONBLOCK)
+-            fds.put("keepalive", os.open(fifo, os.O_WRONLY))
+-            r, w = os.pipe()
+-            fds.put("scr", r)
+-            fds.put("scw", w)
+-            res = {"ok": False}
+-            threads["collector"] = _thread(_collector, (fds, res, chunks), res)  # registered before start()
+-            threads["collector"][0].start()
+             rec["identity_solver"] = identity("solver", solver_parts)
+             why = spawn_block(rec["identity_solver"], "solver")
+             if why is not None:
+                 S["reason"] = why
+-                log("STOP before the kissat spawn %s: %s" % (label, why))
++                log("STOP before the kissat setup %s: %s" % (label, why))
+             else:
+-                S["spawn_mono"]["solver"] = time.monotonic()
+-                try:  # registered in procs the moment Popen returns
+-                    procs["solver"] = subprocess.Popen(kissat_argv + ["/dev/fd/%d" % fds.get("scr"), fifo],
+-                                                       stdin=subprocess.DEVNULL, stdout=kl, stderr=subprocess.STDOUT,
+-                                                       pass_fds=(fds.get("scr"),), cwd=ktmp, env=kenv)
+-                except OSError as e:  # a spawn error is a stop reason; nothing more is launched
+-                    rec["solver_spawn_error"] = repr(e)
+-                    S["reason"] = "solver spawn failed: %r" % e
+-            if "solver" in procs:
+-                rec["solver_pid"] = procs["solver"].pid
+-                rec["solver_spawned_at"] = now()
+-                close_fd("scr")
+-                res = {"ok": False, "fd": "scw", "expected_len": sum(len(x) for x in solver_parts),
+-                       "limit": sum(len(x) for x in solver_parts)}
+-                threads["solver_feed"] = _thread(_writer, (fds, "scw", solver_parts, res, res["limit"]), res)
+-                threads["solver_feed"][0].start()
+-                scanner.start()
+-                S["scan_started"] = time.monotonic()
+-                log("stage 1 %s: kissat pid %d" % (label, procs["solver"].pid))
+-                supervise("solver", KISSAT_SECONDS + STAGE_MARGIN)
+-            else:
+-                close_fd("scr")
+-                close_fd("scw")
+-                close_fd("keepalive")  # no writer: the collector reads EOF and finishes
+-            if not S["grace_exceeded"]:
+-                settle(("collector", "solver_feed"))
++                acquire(fds, ("fifo_read",), lambda: (os.open(fifo, os.O_RDONLY | os.O_NONBLOCK),), rollback)
++                fcntl.fcntl(fds.get("fifo_read"), fcntl.F_SETFL,
++                            fcntl.fcntl(fds.get("fifo_read"), fcntl.F_GETFL) & ~os.O_NONBLOCK)
++                acquire(fds, ("keepalive",), lambda: (os.open(fifo, os.O_WRONLY),), rollback)
++                acquire(fds, ("scr", "scw"), os.pipe, rollback)
++                res = {"ok": False}
++                threads["collector"] = _thread(_collector, (fds, res, chunks), res)  # registered before start()
++                threads["collector"][0].start()
++                why = boundary("solver")  # (F4) immediately before the Popen
++                if why is not None:
++                    S["reason"] = why
++                    rec["stop_at_solver_launch_boundary"] = why
++                    log("STOP at the kissat launch boundary %s: %s" % (label, why))
++                else:
++                    S["spawn_mono"]["solver"] = time.monotonic()
++                    try:  # (F2) the preallocated slot is filled the moment Popen returns
++                        procs["solver"] = subprocess.Popen(kissat_argv + ["/dev/fd/%d" % fds.get("scr"), fifo],
++                                                           stdin=subprocess.DEVNULL, stdout=kl,
++                                                           stderr=subprocess.STDOUT, pass_fds=(fds.get("scr"),),
++                                                           cwd=ktmp, env=kenv)
++                    except OSError as e:  # a spawn error is a stop reason; nothing more is launched
++                        rec["solver_spawn_error"] = repr(e)
++                        S["reason"] = "solver spawn failed: %r" % e
++                if live("solver"):
++                    rec["solver_pid"] = procs["solver"].pid
++                    rec["solver_spawned_at"] = now()
++                    close_fd("scr")
++                    res = {"ok": False, "fd": "scw", "expected_len": sum(len(x) for x in solver_parts),
++                           "limit": sum(len(x) for x in solver_parts)}
++                    threads["solver_feed"] = _thread(_writer, (fds, "scw", solver_parts, res, res["limit"]), res)
++                    threads["solver_feed"][0].start()
++                    scanner.start()
++                    S["scan_started"] = time.monotonic()
++                    log("stage 1 %s: kissat pid %d" % (label, procs["solver"].pid))
++                    supervise("solver", KISSAT_SECONDS + STAGE_MARGIN)
++                else:
++                    close_fd("scr")
++                    close_fd("scw")
++                    close_fd("keepalive")  # no writer: the collector reads EOF and finishes
++                if not S["grace_exceeded"]:
++                    settle(("collector", "solver_feed"))
+             rec["stage1_finished_at"] = now()
+-            pre2 = stage1_ok() if "solver" in done else {"ok": False, "failed": ["kissat not run or not reaped"]}
++            pre2 = stage1_ok() if reaped["solver"] else {"ok": False, "failed": ["kissat not run or not reaped"]}
+             rec["stage2_preconditions"] = pre2
+             if S["reason"] is None and not pre2["ok"]:
+                 rec["stage2_skipped"] = pre2["failed"]
+@@ -1861,30 +2019,36 @@
+                 why = spawn_block(rec["identity_checker"], "checker")
+                 if why is not None:
+                     S["reason"] = why
+-                    log("STOP before the drat-trim spawn %s: %s" % (label, why))
++                    log("STOP before the drat-trim setup %s: %s" % (label, why))
+                 else:
+-                    for rname, wname in (("ccr", "ccw"), ("cpr", "cpw"), ("cor", "cow")):
+-                        r, w = os.pipe()
+-                        fds.put(rname, r)
+-                        fds.put(wname, w)
+-                    fds.put("dlog", os.open(dlog, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644))
++                    acquire(fds, ("ccr", "ccw"), os.pipe, rollback)
++                    acquire(fds, ("cpr", "cpw"), os.pipe, rollback)
++                    acquire(fds, ("cor", "cow"), os.pipe, rollback)
++                    acquire(fds, ("dlog",), lambda: (os.open(dlog, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644),),
++                            rollback)
+                     res = {"ok": False}
+                     threads["filter"] = _thread(_filter, (fds, res, (it["expected_checker_header_counts"] or
+                                                                      [None, None])[1]), res)
+                     threads["filter"][0].start()
+-                    S["spawn_mono"]["checker"] = time.monotonic()
+-                    try:  # registered in procs the moment Popen returns
+-                        procs["checker"] = subprocess.Popen([DRAT, "/dev/fd/%d" % fds.get("ccr")] + drat_opts,
+-                                                            stdin=fds.get("cpr"), stdout=fds.get("cow"),
+-                                                            stderr=subprocess.STDOUT, pass_fds=(fds.get("ccr"),),
+-                                                            cwd=dtmp, env=denv)
+-                    except OSError as e:
+-                        rec["checker_spawn_error"] = repr(e)
+-                        S["reason"] = "checker spawn failed: %r" % e
++                    why = boundary("checker")  # (F4, F6) immediately before the Popen
++                    if why is not None:
++                        S["reason"] = why
++                        rec["stop_at_checker_launch_boundary"] = why
++                        log("STOP at the drat-trim launch boundary %s: %s" % (label, why))
++                    else:
++                        S["spawn_mono"]["checker"] = time.monotonic()
++                        try:  # (F2) the preallocated slot is filled the moment Popen returns
++                            procs["checker"] = subprocess.Popen([DRAT, "/dev/fd/%d" % fds.get("ccr")] + drat_opts,
++                                                                stdin=fds.get("cpr"), stdout=fds.get("cow"),
++                                                                stderr=subprocess.STDOUT, pass_fds=(fds.get("ccr"),),
++                                                                cwd=dtmp, env=denv)
++                        except OSError as e:
++                            rec["checker_spawn_error"] = repr(e)
++                            S["reason"] = "checker spawn failed: %r" % e
+                     close_fd("ccr")
+                     close_fd("cpr")
+                     close_fd("cow")  # from here the filter sees EOF when drat-trim's copies are gone
+-                    if "checker" in procs:
++                    if live("checker"):
+                         rec["checker_pid"] = procs["checker"].pid
+                         rec["checker_spawned_at"] = now()
+                         res = {"ok": False, "fd": "ccw", "expected_len": sum(len(x) for x in checker_parts),
+@@ -1914,17 +2078,17 @@
+             except Exception as e3:  # recorded, never hidden (e.g. a full disk refusing the log line)
+                 events.append({"at": now(), "event": "driver log write failed", "error": repr(e3)})
+             t_end = time.monotonic() + SIGTERM_GRACE
+-            while any(n not in done for n in procs) and time.monotonic() < t_end:
++            while (live("solver") or live("checker")) and time.monotonic() < t_end:
+                 try:
+                     reap()
+                 except Exception as e2:  # recorded, never hidden
+                     events.append({"at": now(), "event": "reap failed during exception cleanup", "error": repr(e2)})
+                     break
+                 time.sleep(SAMPLE)
+-            if any(n not in done for n in procs):
++            if live("solver") or live("checker"):
+                 S["grace_exceeded"] = True
+                 events.append({"at": now(), "event": "children alive after exception cleanup; no escalation",
+-                               "alive": [n for n in procs if n not in done]})
++                               "alive": [n for n in CHILD_NAMES if live(n)]})
+         finally:
+             scanner.halt.set()
+             for name in fds.names():  # only descriptors no thread has claimed; each taken exactly once
+@@ -1936,6 +2100,7 @@
+                     events.append({"at": now(), "event": "fd close failed", "fd": name, "error": repr(e)})
+     rec["fds_closed_by_cleanup"] = closed_by_cleanup
+     rec["fd_cleanup_errors"] = cleanup_errors
++    rec["fd_rollback_close_errors"] = rollback
+     rec["fds_left_after_cleanup"] = fds.names()
+     if scanner.is_alive():
+         scanner.join(3 * (HELPER_DEADLINE + HELPER_TERM_WAIT) + 2)
+@@ -1944,17 +2109,20 @@
+             t.join(5.0 if S["grace_exceeded"] else JOIN_SECONDS)
+         res["thread_started"] = t.ident is not None
+         res["thread_finished"] = t.ident is not None and not t.is_alive()
+-    # latched state read after every join: stop, scanner, threads (evaluate() vetoes PASS on any of them)
++    # latched state read after every join: stop, scanner (failure and exclusion), threads
+     rec["lane_scanner"] = {"started": S["scan_started"] is not None, "scans": scanner.scans,
+                            "failures": scanner.failures, "failed": scanner.failure(),
+-                           "alive_after_join": scanner.is_alive()}
++                           "exclusion": scanner.exclusion(), "alive_after_join": scanner.is_alive()}
++    rec["exclusion_latched_in_flight"] = S["exclusion_seen"]
+     rec["threads"] = {name: dict(res) for name, (_t, res) in threads.items()}
+     rec["threads_started"] = sorted(n for n, (_t, r) in threads.items() if r["thread_started"])
+     rec["threads_unfinished"] = sorted(n for n, (_t, r) in threads.items() if not r["thread_finished"])
+     rec["stop_latched_during_pipeline"] = stop.get("signal")
+     rec["helper_survivors"] = list(HELPER_SURVIVORS)
+     rec["children"] = done
+-    rec["children_alive"] = sorted(n for n in procs if n not in done)
++    rec["children_reaped_flags"] = dict(reaped)
++    rec["children_spawned"] = sorted(n for n in CHILD_NAMES if procs[n] is not None)
++    rec["children_alive"] = sorted(n for n in CHILD_NAMES if live(n))
+     rec["sigterm_sent"] = sigterm_sent
+     rec["safety_stop_reason"] = S["reason"]
+     rec["sigterm_grace_exceeded"] = S["grace_exceeded"]
+@@ -2036,8 +2204,10 @@
+         "checker_self_exit_0": c.get("exited") is True and c.get("exit_code") == 0 and c.get("sigterm_sent") is False,
+         "checker_status_exact_verified": (fi.get("status_lines") == ["s VERIFIED"]
+                                           and fi.get("status_line_count") == 1),
+-        "checker_no_not_verified_or_timeout": (fi.get("eof_seen") is True and fi.get("not_verified_lines") == 0
+-                                               and fi.get("timeout_lines") == 0),
++        "checker_no_not_verified": fi.get("eof_seen") is True and fi.get("not_verified_lines") == 0,
++        "checker_no_timeout": (fi.get("eof_seen") is True and fi.get("timeout_lines") == 0
++                               and "s TIMEOUT" not in (fi.get("status_lines") or [])),
++        "checker_no_fatal_diagnostic": fi.get("eof_seen") is True and fi.get("error_line_count") == 0,
+         "checker_no_early_eof_or_less_than_expected": (fi.get("eof_seen") is True and fi.get("early_eof_lines") == 0
+                                                        and fi.get("less_than_expected_lines") == 0),
+         "checker_header_counts_match": (it.get("expected_checker_header_counts") is not None
+@@ -2057,14 +2227,20 @@
+         "no_driver_signal_latched": (pe.get("checked") is True and pe.get("stop_signal") is None
+                                      and "stop_latched_during_pipeline" in rec
+                                      and rec["stop_latched_during_pipeline"] is None),
++        "no_exclusion_breach": ("exclusion" in ls and ls["exclusion"] is None and pe.get("checked") is True
++                                and pe.get("scanner_exclusion") is None
++                                and "exclusion_latched_in_flight" in rec
++                                and rec["exclusion_latched_in_flight"] is None),
+         "lane_scanner_clean": (ls.get("started") is True and ls.get("failures") == 0 and ls.get("failed") is None
+                                and ls.get("alive_after_join") is False and pe.get("checked") is True
+                                and pe.get("scanner_failed") is None),
+         "all_threads_finished": (rec.get("threads_started") == sorted(THREAD_NAMES)
+                                  and rec.get("threads_unfinished") == []),
+         "all_fds_settled": (rec.get("fds_left_after_cleanup") == [] and rec.get("fds_closed_by_cleanup") == []
+-                            and rec.get("fd_cleanup_errors") == [] and not thread_close_errors),
+-        "children_reaped": sorted(ch) == ["checker", "solver"] and rec.get("children_alive") == [],
++                            and rec.get("fd_cleanup_errors") == [] and rec.get("fd_rollback_close_errors") == []
++                            and not thread_close_errors),
++        "children_reaped": (sorted(ch) == ["checker", "solver"] and rec.get("children_alive") == []
++                            and rec.get("children_reaped_flags") == {"solver": True, "checker": True}),
+         "no_helper_survivor": (pe.get("checked") is True and not pe.get("helper_survivors")
+                                and "helper_survivors" in rec and not rec["helper_survivors"]),
+     }
+@@ -2094,7 +2270,8 @@
+                 and fi.get("status_lines") == ["s VERIFIED"])
+     if name == "truncate":
+         return (fe.get("mode") == "truncate" and clean_feeder and differs and R > TRUNCATE_BYTES
+-                and fe.get("undelivered_bytes") == TRUNCATE_BYTES and D == R - TRUNCATE_BYTES)
++                and fe.get("undelivered_bytes") == TRUNCATE_BYTES and D == R - TRUNCATE_BYTES
++                and fi.get("finished_lines") == 1 and fi.get("proof_bytes_parsed") in ([D], [D + 1]))
+     if name == "suffix":
+         return (fe.get("mode") == "suffix" and clean_feeder and differs and fe.get("undelivered_bytes") == 0
+                 and fe.get("suffix_delivered_bytes") == len(SUFFIX) and D == R + len(SUFFIX)
+@@ -2110,7 +2287,8 @@
+                 and "feeder_exception" not in fe and "close_error" not in fe and fe.get("undelivered_bytes") == R
+                 and c.get("exited") is True and c.get("exit_code") == 0 and c.get("sigterm_sent") is False
+                 and fi.get("header_error_line_exact") is True and fi.get("status_line_count") == 0
+-                and fi.get("finished_lines") == 0 and fi.get("header_count_lines") == 0)
++                and fi.get("error_line_count") == 1 and fi.get("finished_lines") == 0
++                and fi.get("header_count_lines") == 0)
+     die("unknown control " + str(name))
+ 
+ 
+@@ -2119,10 +2297,40 @@
+     return s.get("exit_code") == 10 or "s SATISFIABLE" in (rec.get("solver_status_lines") or [])
+ 
+ 
++def control_vetoes(name, rec):
++    """(F1) Independent of must_fail/may_fail: kissat or drat-trim not exiting normally by itself (a signal, a driver
++    SIGTERM), a drat-trim TIMEOUT, an outcome (exit code, exact status lines) outside the preregistered list, a
++    fatal-class diagnostic not allowed with that outcome, or a truncated status/diagnostic list. -> vetoes."""
++    spec = CONTROLS[name]
++    ch = rec.get("children") or {}
++    s, c = ch.get("solver") or {}, ch.get("checker") or {}
++    fi = _th(rec, "filter")
++    vetoes = []
++    if not (s.get("exited") is True and s.get("signaled") is False and s.get("sigterm_sent") is False):
++        vetoes.append("kissat did not exit normally by itself")
++    if not (c.get("exited") is True and c.get("signaled") is False and c.get("sigterm_sent") is False):
++        vetoes.append("drat-trim did not exit normally by itself")
++    status, errors = fi.get("status_lines"), fi.get("error_lines")
++    if fi.get("timeout_lines") != 0 or "s TIMEOUT" in (status or []):
++        vetoes.append("drat-trim TIMEOUT")
++    if (not isinstance(status, list) or fi.get("status_line_count") != len(status)
++            or not isinstance(errors, list) or fi.get("error_line_count") != len(errors)):
++        vetoes.append("status or diagnostic lines incomplete")
++        return vetoes
++    match = [o for o in spec["outcomes"] if o["exit_code"] == c.get("exit_code") and o["status_lines"] == status]
++    if not match:
++        vetoes.append("drat-trim outcome (exit %r, status %r) is not preregistered" % (c.get("exit_code"), status))
++    else:
++        extra = [e for e in errors if e not in match[0]["allowed_diagnostics"]]
++        if extra:
++            vetoes.append("fatal-class diagnostic not preregistered for this outcome: %r" % extra[:3])
++    return vetoes
++
++
+ def evaluate(rec, it):
+-    """gb: PASS iff every criterion holds, else UNKNOWN with reasons. control: its preregistered verdict iff exactly
+-    the intended criteria fail (must_fail all False, every criterion outside must_fail/may_fail True) and its
+-    observation holds; anything else is INVALID_CONTROL."""
++    """gb: PASS iff every criterion holds, else UNKNOWN with reasons. control: its preregistered verdict iff no veto
++    (control_vetoes), exactly the intended criteria fail (must_fail all False, every criterion outside
++    must_fail/may_fail True) and its observation holds; anything else is INVALID_CONTROL."""
+     crit = criteria(rec, it)
+     failed = [k for k in CRITERIA if not crit[k]]
+     if it["kind"] == "gb":
+@@ -2134,6 +2342,8 @@
+                          "launches nothing more" % ((rec.get("children") or {}).get("solver") or {}).get("exit_code"))
+         if _th(rec, "filter").get("not_verified_lines"):
+             notes.append("drat-trim printed s NOT VERIFIED")
++        if _th(rec, "filter").get("timeout_lines"):
++            notes.append("drat-trim printed s TIMEOUT")
+         if rec.get("safety_stop_reason"):
+             notes.append("safety stop: " + rec["safety_stop_reason"])
+         if rec.get("stage2_skipped"):
+@@ -2143,12 +2353,20 @@
+     must, may = set(spec["must_fail"]), set(spec["may_fail"])
+     unexpected = [k for k in failed if k not in must and k not in may]
+     absent = [k for k in spec["must_fail"] if crit[k]]
++    vetoes = control_vetoes(it["name"], rec)
+     seen = control_observation(it["name"], rec, it)
+-    if unexpected or absent or not seen:
+-        return ("INVALID_CONTROL", ["unexpected failure: " + k for k in unexpected]
++    if vetoes or unexpected or absent or not seen:
++        return ("INVALID_CONTROL", ["veto: " + v for v in vetoes] + ["unexpected failure: " + k for k in unexpected]
+                 + ["intended failure absent: " + k for k in absent]
+                 + ([] if seen else ["preregistered control observation missing"]), crit)
+     return spec["verdict"], failed, crit
++
++
++def downgrade(verdict, reasons, it, why):
++    """(F4) A driver signal latched after the pre-evaluation check never leaves a qualifying verdict."""
++    if it["kind"] == "gb":
++        return ("UNKNOWN" if verdict == "PASS" else verdict), reasons + [why]
++    return "INVALID_CONTROL", reasons + [why]
+ 
+ 
+ # --- identity checks (after admission, immediately before each spawn) and subcommands
+@@ -2187,9 +2405,10 @@
+             problems.append("CNF parts re-hash %s/%d != expected %s/%d" % (h, n, exp[0], exp[1]))
+     if it["kind"] == "gb":
+         adm, probs = validate_controls(script_sha)
+-        now_ids = [(a["label"], a["receipt_sha256"]) for a in adm]
+-        pre_ids = [(a["label"], a["receipt_sha256"]) for a in (pre.get("admission_controls") or [])]
+-        out["controls_revalidated"] = [{"label": a, "receipt_sha256": b} for a, b in now_ids]
++        now_ids = [(a["label"], a["receipt_sha256"], a["commit_sha256"]) for a in adm]
++        pre_ids = [(a.get("label"), a.get("receipt_sha256"), a.get("commit_sha256"))
++                   for a in (pre.get("admission_controls") or [])]
++        out["controls_revalidated"] = [{"label": a, "receipt_sha256": b, "commit_sha256": c} for a, b, c in now_ids]
+         out["controls_equal_pre_exec"] = not probs and now_ids == pre_ids and len(now_ids) == len(CONTROLS)
+         problems.extend(probs)
+         if not out["controls_equal_pre_exec"]:
+@@ -2219,7 +2438,8 @@
+ 
+ 
+ def artifact_paths(label):
+-    return [os.path.join(DESK, "receipts", label + ".json"), os.path.join(DESK, "fifo", label + ".kissat.fifo"),
++    return [os.path.join(DESK, "receipts", label + ".json"), os.path.join(DESK, "receipts", label + ".commit.json"),
++            os.path.join(DESK, "fifo", label + ".kissat.fifo"),
+             os.path.join(DESK, "logs", label + ".kissat.log"), os.path.join(DESK, "logs", label + ".drat.filtered.log"),
+             os.path.join(TMP, label)]
+ 
+@@ -2344,6 +2564,7 @@
+         stop["signal"] = signal.Signals(signum).name
+ 
+     signal.signal(signal.SIGTERM, on_term)
++    signal.signal(signal.SIGINT, on_term)  # (F4) latched too: no asynchronous KeyboardInterrupt inside the driver
+     summary = {"schema": RUN_SCHEMA, "run_tag": runtag, "started_at": now(), "driver_pid": os.getpid(),
+                "pre_exec": {"path": rel(pre_path), "sha256": pre_sha},
+                "go": {"path": go["path"], "sha256": go["sha256"], "scope": go["scope"]}, "script_sha256": script_sha,
+@@ -2355,8 +2576,9 @@
+     remaining = list(items)
+     if items[0]["kind"] == "gb":
+         adm, probs = validate_controls(script_sha)
+-        same = ([(a["label"], a["receipt_sha256"]) for a in adm]
+-                == [(a["label"], a["receipt_sha256"]) for a in (pre.get("admission_controls") or [])])
++        same = ([(a["label"], a["receipt_sha256"], a["commit_sha256"]) for a in adm]
++                == [(a.get("label"), a.get("receipt_sha256"), a.get("commit_sha256"))
++                    for a in (pre.get("admission_controls") or [])])
+         if probs or not same:
+             summary["stopped_reason"] = ("gb admission re-validation failed: %s"
+                                          % ("; ".join(probs) or "control receipts differ from the PRE-EXEC record"))
+@@ -2450,8 +2672,12 @@
+         # the latched stop, scanner failure and survivors are checked again immediately before evaluation
+         rec["pre_evaluation_check"] = {"checked": True, "at": now(), "stop_signal": stop.get("signal"),
+                                        "scanner_failed": (rec.get("lane_scanner") or {}).get("failed"),
++                                       "scanner_exclusion": (rec.get("lane_scanner") or {}).get("exclusion"),
+                                        "helper_survivors": list(HELPER_SURVIVORS)}
+         verdict, reasons, crit = evaluate(rec, it)
++        late = stop.get("signal")  # (F4) a signal latched during evaluation never leaves a qualifying verdict
++        if late is not None:
++            verdict, reasons = downgrade(verdict, reasons, it, "driver signal %s latched during evaluation" % late)
+         receipt = {"schema": RECEIPT_SCHEMA, "label": label, "kind": it["kind"], "id": it.get("id"),
+                    "name": it.get("name"), "attempt": it.get("attempt"),
+                    "scope": SCOPE if it["kind"] == "gb" else it["purpose"], "desk": DESK,
+@@ -2462,17 +2688,30 @@
+                    "pipeline": rec, "criteria": crit, "verdict": verdict, "reasons": reasons,
+                    "solver_reported_sat": solver_reported_sat(rec),
+                    "stop_latched": rec["pre_evaluation_check"]["stop_signal"],  # the value evaluate() saw
+-                   "stop_latched_after_evaluation": stop.get("signal"),  # diagnostic; the run stops on it below
++                   "stop_latched_after_evaluation": late,  # sampled after evaluate(); a signal here downgraded it
++                   "qualification": "only the commit record receipts/%s.commit.json qualifies this receipt" % label,
+                    "written_at": now()}
+         rsha = write_json_x(rpath, receipt)
++        at_commit = stop.get("signal")  # (F4) sampled after the receipt is durable
++        want = "PASS" if it["kind"] == "gb" else it["preregistered_verdict"]
++        commit = {"schema": COMMIT_SCHEMA, "label": label, "receipt": rel(rpath), "receipt_sha256": rsha,
++                  "verdict": verdict, "qualifying_verdict": want, "stop_signal_at_commit": at_commit,
++                  "qualified": verdict == want and at_commit is None and late is None
++                               and receipt["stop_latched"] is None,
++                  "rule": "qualified iff the receipt's verdict is the qualifying verdict and no driver signal was "
++                          "latched at the pre-evaluation check, after evaluation, or when the receipt was durable",
++                  "written_at": now()}
++        csha = write_json_x(os.path.join(DESK, "receipts", label + ".commit.json"), commit)
+         entry.update({"status": "RECEIPT", "verdict": verdict, "reasons": reasons, "receipt": rel(rpath),
+-                      "receipt_sha256": rsha, "pipeline_seconds": rec.get("pipeline_seconds"),
++                      "receipt_sha256": rsha, "commit_sha256": csha, "qualified": commit["qualified"],
++                      "pipeline_seconds": rec.get("pipeline_seconds"),
+                       "gate_waited_seconds": g["waited_seconds"],
+                       "peak_pipeline_aggregate_rss_bytes": rec.get("peak_pipeline_aggregate_rss_bytes"),
+                       "safety_stop_reason": rec.get("safety_stop_reason"), "stop_latched": stop.get("signal")})
+         for ev in rec.get("events", []):
+             summary["events"].append(dict(ev, item=it["item"]))
+-        log("%s verdict %s reasons %s receipt sha256 %s" % (label, verdict, reasons, rsha))
++        log("%s verdict %s reasons %s receipt sha256 %s commit qualified %s"
++            % (label, verdict, reasons, rsha, commit["qualified"]))
+         if rec.get("sigterm_grace_exceeded"):
+             summary["stopped_reason"] = "SIGTERM grace exceeded at %s; a child may still be alive" % label
+             break
+@@ -2486,14 +2725,15 @@
+             summary["stopped_reason"] = ("spawn error at %s: %s; desk launches nothing more"
+                                          % (label, rec.get("checker_spawn_error") or rec.get("solver_spawn_error")))
+             break
+-        vetoes = [k for k in ("no_driver_signal_latched", "lane_scanner_clean", "all_threads_finished",
+-                              "all_fds_settled", "children_reaped", "no_helper_survivor") if not crit.get(k)]
++        vetoes = [k for k in ("no_driver_signal_latched", "no_exclusion_breach", "lane_scanner_clean",
++                              "all_threads_finished", "all_fds_settled", "children_reaped", "no_helper_survivor")
++                  if not crit.get(k)]
+         if vetoes:
+             summary["stopped_reason"] = "%s at %s; desk launches nothing more" % (", ".join(vetoes), label)
+             break
+-        if it["kind"] == "control" and verdict != it["preregistered_verdict"]:
+-            summary["stopped_reason"] = "control %s gave %s, expected %s" % (label, verdict,
+-                                                                             it["preregistered_verdict"])
++        if it["kind"] == "control" and not commit["qualified"]:
++            summary["stopped_reason"] = "control %s gave %s (expected %s), commit qualified %s" % (
++                label, verdict, it["preregistered_verdict"], commit["qualified"])
+             break
+         if solver_reported_sat(rec):
+             summary["stopped_reason"] = ("kissat reported SATISFIABLE at %s; its output is kept in %s; desk stopped"

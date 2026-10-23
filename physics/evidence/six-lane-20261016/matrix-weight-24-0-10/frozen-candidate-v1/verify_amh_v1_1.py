@@ -1,0 +1,254 @@
+"""verify_amh v1.1 — INDEPENDENT exact verifier of a matrix-weight table against Angles Munne-Huber
+arXiv:2603.19901v1 Eq. (31) + (32) pure + (33) self-dual + (34) additive + (35) Type II, for n=24, K=1, delta=10,
+A_j of Eq. (38).
+
+Changes from v1 (verify_amh.py, preserved unchanged): no floating-point value can arise anywhere — every
+(q-2)^e and (q-1)^e factor is evaluated only for e >= 0 or as an exact Fraction, and summands whose binomial
+factor vanishes are skipped BEFORE any power is formed (v1 formed 2**negative = float in such zero summands);
+an assertion rejects any non-exact type; header documents the actual inputs and arithmetic; exit status is 0
+only when every check passes (also in v1's final version).
+
+Arithmetic: Python ints / fractions.Fraction; block entries in Q(sqrt 3) via the exact class Q3 (needed only
+when i+j is odd); PSD by exact symmetric elimination (LDL^T with diagonal pivoting; a zero pivot requires the
+remaining rows to vanish). gamma, beta, alpha: AMH Eq. (41)-(42) with the orbit-cardinality gamma (Eq. (41) is
+typeset with a duplicated multinomial; the intended value is the orbit size, = authors' fun.jl gamma_field).
+
+Input (either form):
+  {"entries": [[i, j, t, p, lambda], ...]}   full AMH-indexed table; every other (i,j,t,p) in I(n) is 0
+  {"counts": {"[[a,b,c],d]": lambda}}         S3-symmetric pair-type table, sorted (n0x,nx0,nxx)=[a,b,c], n_xy=d
+Usage: verify_amh_v1_1.py table.json      (prints a JSON report; exit 0 iff ALL_PASS)
+"""
+import argparse
+import json
+from fractions import Fraction
+from math import comb, factorial
+
+A38 = {0: 1, 10: 18216, 12: 156492, 14: 1147608, 16: 3736557, 18: 6248088, 20: 4399164, 22: 1038312, 24: 32778}
+
+
+def binom(a, b):
+    return comb(a, b) if 0 <= b <= a else 0
+
+
+def gam(i, j, t, p, n, q=4):
+    # number of ordered pairs (u,v) in F_q^n with |S(u)|=i,|S(v)|=j,|S(u)&S(v)|=t, #{u_l=v_l!=0}=p
+    return ((q - 1) ** (i + j - t) * (q - 2) ** (t - p) * factorial(n)
+            // (factorial(p) * factorial(t - p) * factorial(i - t) * factorial(j - t) * factorial(n - i - j + t)))
+
+
+_beta_cache = {}
+
+
+def bet(m, t, i, j, k):
+    key = (m, t, i, j, k)
+    if key not in _beta_cache:
+        tot = 0
+        for u in range(m + 1):
+            tot += (-1) ** abs(t - u) * binom(u, t) * binom(m - 2 * k, m - k - u) * binom(m - k - u, i - u) \
+                   * binom(m - k - u, j - u)
+        _beta_cache[key] = tot
+    return _beta_cache[key]
+
+
+class Q3:
+    """Exact element a + b*sqrt(3) of Q(sqrt 3) (a, b Fractions) with exact sign / ordering."""
+    __slots__ = ("a", "b")
+
+    def __init__(self, a=0, b=0):
+        self.a, self.b = Fraction(a), Fraction(b)
+
+    def _c(o):
+        return o if isinstance(o, Q3) else Q3(o)
+
+    def __add__(s, o):
+        o = Q3._c(o); return Q3(s.a + o.a, s.b + o.b)
+    __radd__ = __add__
+
+    def __sub__(s, o):
+        o = Q3._c(o); return Q3(s.a - o.a, s.b - o.b)
+
+    def __rsub__(s, o):
+        return Q3._c(o) - s
+
+    def __mul__(s, o):
+        o = Q3._c(o); return Q3(s.a * o.a + 3 * s.b * o.b, s.a * o.b + s.b * o.a)
+    __rmul__ = __mul__
+
+    def __truediv__(s, o):
+        o = Q3._c(o)
+        den = o.a * o.a - 3 * o.b * o.b
+        return Q3((s.a * o.a - 3 * s.b * o.b) / den, (s.b * o.a - s.a * o.b) / den)
+
+    def sign(s):
+        a, b = s.a, s.b
+        if a >= 0 and b >= 0:
+            return 0 if (a == 0 and b == 0) else 1
+        if a <= 0 and b <= 0:
+            return -1
+        d = a * a - 3 * b * b          # a, b of opposite strict signs
+        return (1 if d > 0 else -1 if d < 0 else 0) * (1 if a > 0 else -1)
+
+    def __lt__(s, o): return (s - o).sign() < 0
+    def __gt__(s, o): return (s - o).sign() > 0
+    def __le__(s, o): return (s - o).sign() <= 0
+    def __ge__(s, o): return (s - o).sign() >= 0
+    def __eq__(s, o): return (s - Q3._c(o)).sign() == 0
+    def __hash__(s): return hash((s.a, s.b))
+    def __bool__(s): return s.sign() != 0
+
+
+def alp(i, j, t, p, a, k, n, q=4):
+    """AMH Eq. (42): beta^{n-a,t-a}_{i-a,j-a,k-a} (q-1)^{(i+j)/2 - t} sum_g ..., exactly in Q(sqrt 3) for q=4.
+    Summands with a vanishing binomial are skipped before any power is formed, so (q-2)^e has e >= 0 always."""
+    s = 0
+    for g in range(p + 1):
+        b1, b2 = binom(a, g), binom(t - a, p - g)
+        if b1 == 0 or b2 == 0:
+            continue
+        e = t - a - p + g
+        assert e >= 0, "nonzero binomials imply a nonnegative exponent"
+        s += (-1) ** abs(a - g) * b1 * b2 * (q - 2) ** e
+    bb = bet(n - a, t - a, i - a, j - a, k - a)
+    assert type(s) is int and type(bb) is int, "non-exact intermediate"
+    c = Fraction(bb * s)
+    if c == 0:
+        return Q3(0)
+    e2 = (i + j) - 2 * t                      # exponent of sqrt(q-1) = sqrt(3)
+    if e2 % 2 == 0:
+        return Q3(c * Fraction(q - 1) ** (e2 // 2))
+    return Q3(0, c * Fraction(q - 1) ** ((e2 - 1) // 2))
+
+
+def krawtchouk(j, i, n):
+    return sum((-1) ** a * 3 ** (j - a) * binom(i, a) * binom(n - i, j - a) for a in range(j + 1))
+
+
+def lam_table(counts, n):
+    lam = {}
+    for i in range(n + 1):
+        for j in range(n + 1):
+            for t in range(min(i, j) + 1):
+                for p in range(t + 1):
+                    if i + j > t + n:
+                        continue
+                    n0x, nx0, nxx, nxy = j - t, i - t, p, t - p
+                    key = json.dumps([sorted([n0x, nx0, nxx]), nxy])
+                    lam[(i, j, t, p)] = Fraction(counts.get(key, 0))
+    return lam
+
+
+def psd(M):
+    A = [row[:] for row in M]
+    alive = list(range(len(A)))
+    while alive:
+        pv = max(alive, key=lambda r: A[r][r])
+        d = A[pv][pv]
+        if d < 0:
+            return False
+        if d == 0:
+            return all(A[r][c] == 0 for r in alive for c in alive)
+        alive.remove(pv)
+        for r in alive:
+            if A[r][pv]:
+                f = A[r][pv] / d
+                for c in alive:
+                    A[r][c] -= f * A[pv][c]
+    return True
+
+
+def lam_from_entries(entries, n):
+    """Full AMH-indexed table: entries = [[i,j,t,p,lambda], ...]; every other (i,j,t,p) in I(n) has lambda = 0."""
+    lam = {}
+    for i in range(n + 1):
+        for j in range(n + 1):
+            for t in range(min(i, j) + 1):
+                for p in range(t + 1):
+                    if i + j <= t + n:
+                        lam[(i, j, t, p)] = Fraction(0)
+    for i, j, t, p, v in entries:
+        assert (i, j, t, p) in lam, ("index outside I(n)", i, j, t, p)
+        assert lam[(i, j, t, p)] == 0, "duplicate entry"
+        lam[(i, j, t, p)] = Fraction(v)
+    return lam
+
+
+def verify(counts=None, n=24, delta=10, K=1, A=A38, k_logical=0, entries=None):
+    lam = lam_from_entries(entries, n) if entries is not None else lam_table(counts, n)
+    x = {o: v / gam(*o, n) for o, v in lam.items()}
+    rep = {}
+    # (34) integrality and nonnegativity
+    rep["34_integral"] = all(v.denominator == 1 for v in lam.values())
+    rep["34_nonnegative"] = all(v >= 0 for v in x.values())
+    # (31) normalization
+    rep["31_x0000_is_1"] = x[(0, 0, 0, 0)] == 1
+    # (31) anticommuting pairs vanish
+    rep["31_odd_t_minus_p_zero"] = all(v == 0 for (i, j, t, p), v in x.items() if (t - p) % 2)
+    # (31) triple permutation symmetry
+    groups = {}
+    for (i, j, t, p), v in x.items():
+        if (t - p) % 2:
+            continue
+        kk = i + j - t - p
+        groups.setdefault((tuple(sorted((i, j, kk))), t - p), set()).add(v)
+    rep["31_triple_symmetry"] = all(len(s) == 1 for s in groups.values())
+    # (31) projector row sums: sum_{k=i+j-t-p} gamma x = (2^n/K) gamma_{k,0}^{0,0} x_{k,0}^{0,0}
+    rs = {}
+    for (i, j, t, p), v in lam.items():
+        rs[i + j - t - p] = rs.get(i + j - t - p, 0) + v
+    rep["31_row_sums"] = all(rs.get(kk, 0) == Fraction(2 ** n, K) * lam[(kk, 0, 0, 0)] for kk in range(n + 1))
+    # (31) Knill-Laflamme, 0 < j < delta
+    rep["31_KL"] = all(Fraction(K, 2 ** n) * sum(krawtchouk(j, i, n) * lam[(i, 0, 0, 0)] for i in range(n + 1))
+                       == lam[(j, 0, 0, 0)] for j in range(1, delta))
+    # (32) pure
+    rep["32_pure"] = all(v == 0 for (i, j, t, p), v in x.items()
+                         if {i, j, i + j - t - p} & set(range(1, delta)))
+    # (33) self-dual
+    diag = {i: lam[(i, i, i, i)] for i in range(n + 1)}
+    rep["33_shadow_odd"] = all(sum((-1) ** i * krawtchouk(j, i, n) * diag[i] for i in range(n + 1)) == 0
+                               for j in range(n + 1) if (n - j) % 2)
+    rep["33_B_equals_A"] = all(Fraction(K, 2 ** n) * sum(krawtchouk(j, i, n) * diag[i] for i in range(n + 1))
+                               == diag[j] for j in range(n + 1))
+    # (35) Type II
+    rep["35_typeII"] = sum(diag[j] for j in range(0, n + 1, 2)) == 2 ** (n - k_logical)
+    # Eq. (38) weight distribution
+    rep["38_weights"] = all(lam[(i, 0, 0, 0)] == A.get(i, 0) for i in range(n + 1))
+    # (31) PSD of every Terwilliger block
+    bad = []
+    nblocks = 0
+    for a in range(n + 1):
+        for k in range(a, n + 1):
+            if k > n + a - k:
+                continue
+            idx = list(range(k, n + a - k + 1))
+            M = [[Q3(0) for _ in idx] for _ in idx]
+            nonzero = False
+            for r, i in enumerate(idx):
+                for c, j in enumerate(idx):
+                    for t in range(min(i, j) + 1):
+                        for p in range(t + 1):
+                            v = x.get((i, j, t, p), 0)
+                            if v:
+                                M[r][c] += alp(i, j, t, p, a, k, n) * v
+                                nonzero = True
+            nblocks += 1
+            if nonzero and not psd(M):
+                bad.append((a, k))
+    rep["31_blocks_psd"] = not bad
+    rep["31_blocks_failing"] = bad
+    rep["n_blocks"] = nblocks
+    rep["ALL_PASS"] = all(v for kk, v in rep.items() if kk not in ("31_blocks_failing", "n_blocks"))
+    return rep
+
+
+if __name__ == "__main__":
+    ap = argparse.ArgumentParser()
+    ap.add_argument("candidate")
+    a = ap.parse_args()
+    cand = json.load(open(a.candidate))
+    if "entries" in cand:
+        rep = verify(entries=[[int(v) for v in e] for e in cand["entries"]])
+    else:
+        rep = verify({k: int(v) for k, v in cand["counts"].items()})
+    rep["input"] = a.candidate
+    print(json.dumps(rep, indent=1))
+    raise SystemExit(0 if rep["ALL_PASS"] else 1)

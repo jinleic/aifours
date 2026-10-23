@@ -1,0 +1,237 @@
+# Six-lane phys-2 (sixth target): determine M(7) — does a non-classical set of 3 MOQLS(7) exist?
+
+Lane: `physics/evidence/six-lane-20261016/moqls7-maximum/` (owns `sources/ code/ evidence/ explore/ review/
+archive/`). Contract: `institute/runs/six-lane-2026-10-16/screening/phys-2-moqls7-maximum-contract.json` (SHA-256
+21b1b38bf82e2923518ce8fd1a8885f38427d2a07ac968fbec53e0150744d372, recorded 16:50:58 PDT). Screen:
+`screening/phys-next-screen-v3.md` (3975fba4…19a). Read-only: the AME lane, `moqls7-problem16/`, `moqls8-problem16/`,
+all parent run directories. Accepted baseline: 2 ≤ M(7) ≤ 3 (`review/moqls7-parent-verdict.md`, a39911fd…a3ff2).
+
+## 0. Frozen protocol (written 2026-10-17 from 16:59:37 PDT, before any computation in this lane)
+
+### 0.1 Sources and definitions
+Pinned copies in `sources/` (SHA-256 equal to the old lane's pins):
+- Ball–Simoens arXiv:2607.12933v2: PDF 2d60d45f…21afe, layout text df1d8b14…4219 (the contract's pin);
+- Egan–Wanless arXiv:1406.3681v2: PDF f01b494f…27e0, layout text 4d0d009e…1965.
+
+Definitions (Ball–Simoens §2.2–2.3, layout LF90–116; re-read for this lane):
+- A QLS(7) is a 7 × 7 array of unit vectors of C^7 whose rows and columns are orthonormal bases (ONBs).
+- Two QLS Ψ, Φ are orthogonal if {ψ_ij ⊗ φ_ij} is an ONB of C^7 ⊗ C^7.
+- Set isotopy consists of entry phases, simultaneous row/column permutations, and a separate unitary per square.
+- A set is classical if, up to isotopy, all entries lie in one fixed ONB.
+- M(n) is the largest t such that a non-classical set of t MOQLS(n) exists (LF29–31).
+
+Consequences used throughout (to be proved in `review/LEMMAS.md`):
+- **(C0)** A set is classical iff every square is classical, since isotopy (iii) acts per square. A QLS(7) is
+  classical iff its entries span exactly 7 projective rays. Hence a set is non-classical iff some square has more
+  than 7 rays (contract wording).
+- **(C1)** A QLS Ψ is orthogonal to a classical square L iff, for every symbol a, the entries of Ψ on the cells with
+  L = a form an ONB.
+
+### 0.2 Target and readings
+- **Target:** does a non-classical set {Ψ1, Ψ2, Ψ3} of 3 MOQLS(7) exist (arbitrary complex entries)?
+  - Positive: an exact witness, i.e. all 147 vectors in exact algebraic form, with an exact verification of the
+    row/column ONBs, the three pairwise 49-element tensor ONBs and the ray count. This gives M(7) = 3.
+  - Negative: an unrestricted nonexistence proof covering exactly 1, 2 or 3 non-classical squares. This gives
+    M(7) = 2.
+- **Case names** (contract): K1, K2, K3 = exactly 1, 2, 3 non-classical squares. With (C1):
+  - **K1** ⟺ a 4-net of order 7 (two classical squares, i.e. a pair of MOLS(7), plus rows and columns) carrying an
+    ONB-assignment (a unit vector at each of the 49 points, with every one of the 28 lines an ONB) that is
+    non-classical. This is symmetric in the 4 parallel classes, so net isomorphism (Egan–Wanless paratopy) is the
+    right equivalence: 7 classes (Table 6, k = 2), 5 of them maximal (Table 5).
+  - For a maximal 4-net every ONB-assignment is non-classical, because a classical one is a 5th parallel class.
+  - **K2** ⟺ a 3-net (one classical Latin square) carrying two orthogonal non-classical ONB-assignments.
+  - **K3** ⟺ three mutually orthogonal non-classical QLS.
+- Partial results are reported only as partial: e.g. "no K1 witness on net X in ansatz Y" is a search miss, not
+  nonexistence.
+
+### 0.3 Fresh necessary conditions (derived anew for 3 squares; nothing imported from the old 4-square proof)
+- **(W)** Put every square in standard form, with row 0 equal to |0⟩, …, |6⟩. At each cell (i, j) with i ≥ 1:
+  - the three supports are pairwise disjoint, by rule #3, which holds for every pair of the three squares;
+  - each support avoids j, by rule #2 (column ONB);
+  - so the weights w1 + w2 + w3 ≤ 6 with each wi ≥ 1, i.e. wi ≤ 4, and a weight-4 entry forces weight 1 in the
+    other two squares. Weight 2 and 3 entries, and weight-2 non-classical squares, remain allowed.
+- **(K1 frame)** For an ONB-assignment on a 4-net in the frame of one line ℓ (that line equal to the standard basis):
+  every point p ∉ ℓ has support avoiding the 3 coordinates of the points where the other 3 lines through p meet ℓ.
+  So it has at most 4 coordinates.
+- **Pattern conditions** for any orthogonal pair (u, v) of vectors: their supports never meet in exactly one
+  coordinate. On every ONB line, each coordinate is covered by some support; a coordinate covered exactly once forces
+  that entry to have weight 1. On every line the supports form a unitary pattern.
+- **Lemma 10** (Ball–Simoens, used through its printed proof): an assignment with all weights ≤ 2 in some fixed basis
+  can be classicalized, preserving every orthogonality. Hence a K1 assignment on a maximal net has, in every line's
+  frame, an entry of weight ≥ 3.
+
+### 0.4 Route (frozen order; search choices are not exclusions)
+**Phase A — K1 positive search.**
+- A1 nets:
+  - The 2 extendable classes: the harmonic and the equianharmonic 4-subnets of AG(2,7). These are to be verified
+    against Egan–Wanless: |par| 2352 and 3528 give 360 + 240 = 600 = 342480 − 341880 reduced sets (Theorem 3.2).
+  - The 5 maximal classes: generated in this lane, then source-bound by computing |par| for each representative and
+    checking Σ 846720/|par| = 341880 (Table 5, k = 2).
+- A2 searches, per net:
+  - (a) numerical exploration of ONB-assignments, which is never evidence;
+  - (b) structured ansätze: a Weyl–Heisenberg-equivariant fiducial unbiased to the 4 MUBs of the net's directions
+    (Desarguesian nets), and automorphism-equivariant assignments;
+  - (c) support-pattern SAT under §0.3 feeding exact reconstruction.
+- A3: any numerical zero becomes an exact algebraic reconstruction and an exact verification (§0.5).
+
+**Phase B — K2 and K3 positive search.** Numerical 3-MOQLS(7) search with a non-classicality requirement; the
+Theorem-6/ring/orthomorphism and pandiagonal constructions as search choices only.
+
+**Phase C — negative direction**, only if Phase A and B searches fail and time remains. A written reduction plus
+pattern SAT covering K1, K2 and K3 completely, with two encodings, drat-trim-checkable proofs and the parent route.
+No transfer of the old 4-square Theorems A/B/F3/P4 or forced-weight-3 claims.
+
+### 0.5 Controls and verification
+- **Exact controls:**
+  - the published non-classical pair (Corollary 7 / Example 15 at q = 7: Ψ(f) with the order-3 subgroup H, plus one
+    Φ(m));
+  - classical triples from AG(2,7);
+  - a genuinely non-classical small QLS (the 4 × 4 example of source §2.4);
+  - intended mutations.
+- Every necessary-condition encoding must admit all matched genuine controls before production.
+- A witness checker must be exact and definition-first: row/column ONBs, 3 × 49-element tensor ONBs and the ray
+  count, computed from the vectors. A second, separately written checker is required before any claim.
+
+### 0.6 Stop rules
+- Chunks are at most 3 h, with a change of representation after a calibrated concrete obstruction and no blind
+  reruns.
+- UNKNOWN or a timeout is never UNSAT. A numerical near-zero is never a witness.
+- Any exact candidate is reported to the parent immediately with its full SHA-256, and no claim is made before
+  parent verification.
+
+### 0.7 Resources and permissions
+- At most 4 busy processes, 8 GiB aggregate RSS, 10 GiB of new data, and a global free floor of 12e9 B (17.69e9 B
+  free at 16:59). Chunks at most 3 h, checkpoints at most every 30 min, host-clock labels.
+- Python: `../depolarizing/env/bin/python -B` (numpy, scipy, sympy) and `/usr/bin/python3` (stdlib). Also clang,
+  CaDiCaL and kissat.
+- Native solver limits or SIGTERM with a bounded wait only. No SIGKILL, no `subprocess.run(timeout=…)`, and no native
+  children under eval deadlines.
+- No deletion (retire to `archive/`), no overwriting of old evidence, no `/tmp`, no publication or contact, no Git
+  mutation, no paid API, no global config.
+
+## 1. Status (checkpoints)
+- 16:59:37 lane created; sources copied, with SHAs verified equal to the pins.
+- 17:20:57 the 7 classes of 4-nets of order 7 were found (`evidence/nets7_classes.json`); the orbit sums equal the
+  Egan–Wanless totals.
+- 17:51:49 **K1 excluded (lane result, awaiting parent verification)**: `review/K1-THEOREM.r1.md` (b702b021…8767).
+  - Maximal nets: no ONB-assignment at all.
+  - Harmonic net: only classical assignments.
+  - Equianharmonic net: the only non-classical pattern has weight 4 everywhere off the frame line, and an exact
+    7-relation phase cycle refutes it.
+  - Two independent encoders were run (CaDiCaL and kissat); every DRAT proof gave `s VERIFIED` under drat-trim. The
+    controls include the genuine non-classical Ψ(f) and the 4 × 4 QLS.
+  - Reduction: K2 and K3 remain, with every non-classical square having an entry of weight ≥ 3.
+  - Next: the K2 pattern SAT with a free classical square, then K3.
+- 18:30:13 status:
+  - The single-frame K2 (W3) and K3 (W3+sym) CNFs ended UNKNOWN at their 1800 s CaDiCaL caps. This is not
+    evidence either way.
+  - Parent steering: until parent verification finishes, the lane runs at most 2 busy processes and at most 4 GiB.
+  - New frame-free encoder `code/gram_enc.py`, with Gram-support variables, consistency in every line frame, and
+    the tensor ONB written exactly as edge-disjoint Gram supports. Its controls passed
+    (`explore/gram/gram_controls_v1.json`).
+  - Minimal-counterexample reduction: every non-classical square is heavy in every ONB basis (Lemma 10 in an
+    arbitrary basis + Theorem K1). So the frame-free heavy condition holds on every own line.
+  - Running: the K3 Gram CNF with heavy and sym (3600 s cap), and the main-class enumeration of Latin squares of
+    order 7 (`code/ls_classes.c`, by canonical form plus cycle switching; completeness requires Σ reduced =
+    16942080). The enumeration feeds per-class K2 Gram instances.
+- 19:28:00: both K2 exploratory screens finished: all 147 classes UNSAT under encoder A/CaDiCaL and encoder
+  B/kissat; these are not yet certified exclusions. The K3 Gram run ended UNKNOWN at 19:26:33 after 3600 seconds.
+  All exploratory solvers have finished. Certification now uses the frozen driver-only delta
+  `review/CERTIFY-DRIVER-DELTA.r2.json`; both encoder hashes and the Gram proof text are unchanged. The first batch
+  is class 0 under both encoders, with native caps and FIFO-streamed DRAT checks, at most 2 busy processes.
+- 19:33:35: first K2 class certificates passed for A and B, with exact DRAT verification and sampled aggregate RSS
+  below 563 MB. Driver r2/r3 startup/transport failures were rejected and preserved; r4 is the corrected stdin
+  binary-proof transport (`review/CERTIFY-DRIVER-DELTA.r4.json`). Classes 1–146 under A are certifying sequentially.
+  K3 `AMENDMENT-2.r1.md` freezes three covering row-frame cubes and forced singleton same-ray identities; its
+  finite coverage control passed before search (18 assignments, three disjoint orbits). K3 cube search is pending.
+- 19:55:28: encoder A has 147/147 verified K2 certificates (inventory
+  `evidence/gram/k2A_cert_summary_r4.json`, 31aa7eb2…dc29). Encoder B classes 0–73 have also certified;
+  classes 74–146 are next. All completed runs returned exact `s VERIFIED`, rc 20/0, without a safety stop.
+  K3 cube search has not overlapped this two-process pipeline.
+- 20:14:20: candidate K2 exclusion has both full producer routes: 147 A and 147 B DRAT-verified UNSATs. B inventory
+  `evidence/gram/k2B_cert_summary_r4.json` is ed29e3a1…20f4b. Full write-up `review/K2-THEOREM.r1.md`
+  (e846e1d9…ef05b) remains pending parent bridge/classification/replay/CLI acceptance; no K3 or exact-M(7) claim.
+  K3 A screening is now sequential on C311/C321/C411 with native 1800-second caps and RSS/floor guards
+  (`explore/k3cubes/screenA_r1/`), after all K2 certificate pipelines ended.
+- 21:18:13: saved K3 cube checkpoints: A/C311 UNKNOWN at 20:43:35 (1800-second cap); A/C321 UNSAT exploratory
+  at 21:06:29 (1373.284 seconds); A/C411 is the final sequential screen. C321 is not yet certified.
+  `review/G6-G2-DERIVATION.r1.md` shows the singleton equalities are already implied by G1/G2 plus cube units;
+  no new encoder restriction or CNF change is introduced. The finite coverage and exact G6 control receipts are
+  in `evidence/k3cubes/`.
+- 21:41:14: original A cube screen completed: C311 UNKNOWN; C321 UNSAT exploratory (1373.284 s);
+  C411 UNSAT exploratory (1755.924 s). The only native science job is now A/C321's regenerated binary-DRAT
+  certification pipeline, with 3600-second child caps and persisted 15-minute resource checkpoints.
+  New matched component controls passed 26/26 outcomes on unchanged encoders; end-to-end proof transport
+  controls accepted both UNSAT streams and rejected SAT/invalid-proof/premature-writer cases while retaining
+  valid SAT models. Explicit chronology and review corrections are in `review/REVIEW-CORRECTIONS.r2.json`;
+  corrected proof snapshots are `K1-THEOREM.r3.md` and `GRAM-ENCODING.r2.md`.
+- 22:11:46: A/C321's regenerated original cube is now producer-certified UNSAT, with rc20/0 and exact
+  `s VERIFIED`. Receipt `evidence/k3cubes/cert_r2/A_C321.json` is c3a30df3…e9314; CNF is d598507d…8388.
+  Pipeline time 1906.802 s, maximum sampled aggregate RSS 1275789312 bytes, no safety stop. This is one cube,
+  not a K3 theorem. A/C411 certification is now the sole two-child pipeline; C311 lex search and B routes wait.
+  Updated candidate K2 text is `review/K2-THEOREM.r2.md` (a73a9007…532cd), preserving all original evidence.
+- 22:39:37: parent disk steering applied. Fresh observation was 13,557,416 KiB available and lane644,984 KiB
+  retained; the 12e9-byte floor remains continuously guarded. A/C411 certification is still the only pipeline.
+  New `K3-CERTIFICATION-DRIVER-DELTA.r3.json` requires future certificates to regenerate/hash CNFs in memory and
+  certify the one existing search input, never retain duplicate CNF copies. No proof file is retained, no old
+  evidence is removed, and every future launch gets a fresh floor check plus projected log/receipt growth.
+- 22:43:50: at the parent's request, froze `review/K1-COROLLARY.r1.md`
+  (7ded3c69…f6b6d): every 2-RQLS(7) and every pandiagonal QLS(7) is classical/cardinality7, so neither
+  maximal-cardinality 2-RQLS(7) nor MCPQLS(7) exists. The note proves the harmonic-net shear and cites/acknowledges
+  Zhang–Cao Lemma2.2 and Ball–Simoens Lemma21 (order6) as prior art for the reformulation. It inherits K1 status
+  and makes no exact-M(7) or priority claim. Parent K2 replay desk is separate; own pipeline remains <=2 busy.
+- 23:05:47: A/C411 also producer-certified UNSAT (3143.930 s, sampled peak1899347968 bytes, rc20/0,
+  exact `s VERIFIED`, no safety stop). Receipt `evidence/k3cubes/cert_r2/A_C411.json` is 5f117b60…a23cf.
+  C311 remains the unresolved A case; independent B cases remain. The sole solver now screens the existing
+  A/C311 residual-lex CNF for1800 seconds. Fresh launch floor13040176 KiB, projected new logs/model<=10 MiB.
+  New no-duplicate A/B in-memory regeneration controls passed without writing CNFs or proofs
+  (`evidence/k3cubes/no_duplicate_regen_controls_r1.json`).
+- Parent23:17 disk notice: NEW solver/checker/enumerator/compiler/reviewer stages are deferred under the reported
+  12.16e9-byte free space, below the new12.2e9-byte launch gate. Deferral is recorded once in
+  `evidence/DISK-DEFERRAL-2317.json`; no disk polling or >10 MB snapshots/copies. Only the already-in-flight
+  A/C311 lex screen may finish under its existing guards, with small logs/receipt. After its outcome, await parent
+  resource release; none of these resource statuses is a scientific nonexistence result.
+- 23:18:55: the in-flight A/C311 residual-lex stage stopped cooperatively on its free-space floor:
+  UNKNOWN safety stop,769.881 s, rc-15, sampled aggregate RSS527564800 bytes. Its completed receipt is
+  `explore/k3lex/screenA_r1/A_C311.json`; no solver/checker owned by this worker remains. No new stage was
+  launched and disk was not polled after the parent notice. Research is resource-blocked, not complete.
+  On parent release and a fresh>=12.2e9-byte growth-qualified gate before the original deadline, the immediate
+  continuation is the interrupted C311 lex screen on the existing059be616…a8c4f input, using a new output directory.
+- 23:26:41: parent resource release received. Fresh outer gate14309265408 available bytes exceeds12.2e9 plus
+  projected10 MiB logs/model/receipt growth (`evidence/RESUME-GATE-2326.json`). Restarted the interrupted C311
+  residual-lex screen as one fresh1800-second solver on the same existing CNF, new output `screenA_r2`;
+  no input/proof copy or modification of the interrupted receipt. Parent release/floor policy remains in force.
+- 23:47:55: the authorized C311 lex resumption also stopped on the continuous free-space floor:
+  UNKNOWN safety stop,1229.385 s, rc-15, sampled aggregate492994560 bytes. All own science processes ended;
+  renewed deferral is recorded once in `evidence/DISK-DEFERRAL-2347.json`, without disk polling or a new launch.
+  Both lex runs were interrupted before their1800-second caps. The prepared text-only
+  `review/drafts/AMENDMENT-4.r2.md` clarifies a proof-assisted alternative from the checked C321/C411 cases;
+  it is unfrozen/inactive, without a generator/control/search. Await parent resource release and launch gates.
+- Parent23:56 release: K1 and both requested order7 corollaries are parent-accepted
+  (`evidence/PARENT-K1-ACCEPTANCE-2356.json`); M(7) remains undecided. Prioritize direct original B/C321, then
+  B/C411 certification; no identical C311 retry and no all-frame-cut activation.
+- 23:58:07: froze `K3-DIRECT-B-DELTA.r4.json` and dedicated `code/k3_direct_B_r4.py`
+  (bbed0b09…6631e). The B/C321 attempt uses tested in-memory regeneration, existing B cube input, fresh
+  internal12.2e9-plus10MiB gates before regeneration/native launch and the controlled3600/3600 proof pipeline.
+  No prior B screen is claimed or fabricated; all outcomes are retained accurately, and no CNF/proof copy is made.
+- 23:59:59: direct B/C321 stopped UNKNOWN on the continuous global free-space floor after77.704 s; both
+  children rc-15, no checker verdict, sampled aggregate917635072 bytes. Both fresh outer gates had passed
+  (12584103936/12584140800 bytes, each>=12.2e9+10MiB). Receipt and renewed deferral are retained under
+  `evidence/k3cubes/cert_B_r4/B_C321.json` and `evidence/DISK-DEFERRAL-2359.json`.
+  No own science process remains; B/C411 was not launched. Await parent release, without disk polling, C311
+  retry, cut activation or CNF/proof copies. No B case exclusion or exact M(7) follows.
+- 00:53:26 (2026-10-18): **K2 is parent CORRECTNESS-ACCEPTED** (`moqls7-k2-parent-verdict.md`, 25ecb6ba…1242;
+  accepted text K2-THEOREM.r2.md with the parent's corrections). With K1, every MOQLS(7) triple is either classical
+  or has three non-classical squares; M(7) is still 2 or 3. The K3 cover disposition (fbfc0e10…f369) accepts the
+  cover, G6 and lex steps with text fixes and asks for provenance sidecars; AMENDMENT-4 stays inactive.
+  - (a) Runtime B-map oracle PASS: `evidence/k3cubes/bmap_oracle_r1.json` (6e2bd95e…952c), script pinned in
+    `review/K3-BMAP-ORACLE.r1.json` before execution; 0 of 2646 B variables differ from A's map.
+  - (b) B/C321 certification running with the oracle-gated driver `code/k3_direct_B_r5.py` (0e391cc7…e4f6).
+  - (d) Sidecars `review/K3-Q4-SIDECAR.r1.json` and `review/K3-ERRATA.r1.md`. (e) Draft
+    `review/drafts/AMENDMENT-4.r1.md` (not frozen, inactive). Records: `evidence/PARENT-K2-K3COVER-0046.json`.
+- 01:02:35: parent-requested AMENDMENT-4 cut generator `code/k3_cuts_r1.py` (0ec92c86…1b0a), pinned before execution
+  in `review/AMENDMENT-4.GENERATOR.r1.json` (4c23ec44…5dd3). Its controls PASS (`evidence/k3cubes/cuts_r1_receipt.json`,
+  9cfc0e81…babbf): exactly 238140 distinct clauses in 588 groups of 45+360; C1 rejects exactly the 450 forbidden local
+  assignments; classical triples 0 violations; genuine weight-5 Ψ(f) exactly (2940,0); six mutations caught;
+  invariance under all 22 lex generators and transposition; A and B emissions equal (B map decoded at run time).
+  Clause block SHA 05f31da4…e6dd, not written. AMENDMENT-4 stays NOT FROZEN; no C311+cuts CNF or solve.

@@ -1,0 +1,1027 @@
+--- scripts/launch_B_v11.py
++++ scripts-v12/launch_B_v12.py
+@@ -1,5 +1,29 @@
+ #!/usr/bin/env python3
+-"""Capacity-gated launcher of the parent B-side K3 cube replay desk (review/moqls7-k3-B-cube-parent-replay-v1), v11.
++"""Capacity-gated launcher of the parent B-side K3 cube replay desk (review/moqls7-k3-B-cube-parent-replay-v1), v12.
++
++v12 = launch_B_v11.py with Main's approvals and Codex's v11 MINOR (review/m7-launch-v11-codex-v1.note.md
++d7ed4c3a...c61a, GO-WITH-FIXES):
++  (a) slots. 'run ITEM --label LABEL --slot {1,2} [--regen-tag TAG]'. A slot holds at most one attempt of this desk;
++      the other slot may be busy.
++        * Attribution: each desk attempt process (a native, supervise_r*, replay_B_*, compose_[AB]*, or 'launch_B_* run'
++          with cwd in this desk) is attributed to a slot by the first launcher in its ancestry. '--slot N' gives N. The
++          launchers up to v11 have no --slot, so they use LEGACY_SLOTS: B_C321-a3 (v8) slot 2, B_C411-p1 (v11) slot 1.
++          Any other launcher without a slot, or no launcher at all (e.g. a regen precheck), is 'unknown' and blocks
++          both slots.
++        * Admission requires the target slot to be free of desk attempts and no 'unknown' attribution. This replaces
++          v11's desk_idle condition.
++        * Admissions run one at a time. An exclusive flock on locks/admission.lock is taken before the final census
++          and held through spawn and the gate receipt. It is released 90 s after the spawn (by then the new attempt's
++          natives are visible to a later census), at once on refusal, or at process exit.
++        * The lane totals are unchanged: <= 2 busy lane natives at launch (so <= 4 after), lane RSS + 2 GiB <= 8 GiB,
++          and ancestry headroom >= the fixed 2,797,076,480 B cap (two caps fit);
++  (b) the route-A item A_C311cuts. v12 imports bklib_v4 and runs driver replay_B_v5.py; kissat replays the item
++      (item deviation). The set runs from scripts-v12/: bklib_v4 takes SCRIPTS from its own directory, so adding the
++      set never changes the scripts/ set recorded by the live v11 run B_C411-p1;
++  (c) Codex v11 MINOR: the pre-spawn guard compares the UNROUNDED monitor-sample age with 0..30 s; only the recorded
++      value is rounded.
++The single-admitter invariant, the monitor rules, the census, the helpers, run_owned() and the outcome receipt are
++unchanged from v11. 'selftest-v12 LABEL' adds slot-attribution and lock cases.
+ 
+ v11 = launch_B_v10.py with the repairs required by Codex's HOLD on v10 (review/m7-launch-v10-codex-v1.note.md
+ f8f86f0d...53f8, items 1-4; item 5 is the review packet):
+@@ -125,11 +149,11 @@
+ receipts/*.QUARANTINE.json exists, the wait-start watcher, pins, limits, supervisor arguments and the RSS-cap rule are
+ as in v2/v3.
+ 
+-Usage: launch_B_v11.py run ITEM --label ITEM-<suffix> [--regen-tag TAG]
+-       launch_B_v11.py wait-start LABEL
+-       launch_B_v11.py test-exception-path LABEL         (LABEL: test-...; the v5 test mode, unchanged)
+-       launch_B_v11.py selftest-v11 LABEL                (LABEL: test-...; helper bounds, parsers, census, monitor;
+-                                                          no launch)
++Usage: launch_B_v12.py run ITEM --label ITEM-<suffix> --slot {1,2} [--regen-tag TAG]
++       launch_B_v12.py wait-start LABEL
++       launch_B_v12.py test-exception-path LABEL         (LABEL: test-...; the v5 test mode, unchanged)
++       launch_B_v12.py selftest-v12 LABEL                (LABEL: test-...; helper bounds, parsers, slots, lock, census,
++                                                          monitor; no launch)
+ 
+ run waits, with bounded sleeps of 90 s (never spinning), until admission (rules above plus v6's <= 2 busy lane
+ natives, lane RSS headroom for the projected peak, fixed cap with ancestry headroom and the slot-2 condition). If
+@@ -141,6 +165,7 @@
+ No SIGKILL, no Popen.kill, no subprocess timeouts.
+ """
+ import datetime
++import fcntl
+ import glob
+ import io
+ import json
+@@ -154,7 +179,7 @@
+ import time
+ 
+ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+-import bklib_v3 as K  # noqa: E402
++import bklib_v4 as K  # noqa: E402
+ 
+ DEADLINE = datetime.datetime.fromisoformat("2026-10-18T17:30:00-07:00")
+ NO_LAUNCH_AFTER = datetime.datetime.fromisoformat("2026-10-18T17:30:00-07:00")
+@@ -171,20 +196,24 @@
+ LSOF_CWD = ["/usr/sbin/lsof", "-a", "-u", str(os.getuid()), "-d", "cwd", "-Fpn"]
+ LSTART = re.compile(r"(Mon|Tue|Wed|Thu|Fri|Sat|Sun) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{1,2} "
+                     r"\d\d:\d\d:\d\d \d{4}")
+-DESK_ATTEMPT = re.compile(r"launch_B_v\d+\.py run |replay_B_v\d+\.py (run|regen) |compose_B\w*_v\d+\.py |"
++DESK_ATTEMPT = re.compile(r"launch_B_v\d+\.py run |replay_B_v\d+\.py (run|regen) |compose_[AB]\w*_v\d+\.py |"
+                           r"supervise_r\d+\.py ")
++LAUNCHER_SLOT = re.compile(r"launch_B_v(\d+)\.py run \S+ --label (\S+)(?: --slot ([12]))?")
++LEGACY_SLOTS = {"B_C321-a3": 2, "B_C411-p1": 1}   # pre-v12 launchers (no --slot): a3 (v8) slot 2; B_C411-p1 (v11) slot 1
++LOCK_PATH = os.path.join(K.DESK, "locks", "admission.lock")
++LOCK_SETTLE = 90                                # seconds the admission lock is held after a spawn
+ MONITOR = os.path.join(K.REVIEW, "disk-monitor-v1-20261018T0722-to-1810.jsonl")
+ MON = {"source": "Main 07:32 PDT amendment (long jobs >= 60 min)", "min_free": 13500000000, "window_seconds": 300,
+        "min_samples": 25, "min_span_seconds": 290, "max_age_seconds": 30, "drop_floor": 300000000,
+        "runway_divisor": 12, "tail_bytes": 262144}
+-ATTEMPT_RULE = ("Main messages 05:00-07:32 PDT 2026-10-18: attempts are UNKNOWN on any stop and never relabelled. "
+-                "B_C321-a3, B/C411 and B/C311+cuts are NEW attempts in slot 2, one at a time, each launched only on "
+-                "Main's explicit GO, with a fresh gate: free >= 12.2e9 + projected growth at both scans and again "
+-                "immediately before spawn; long-job stability per Main's 07:32 amendment (parent monitor: last free "
+-                ">= 13.5e9 B, max 5-min peak-to-later drop <= max(300 MB, (free_last - 13.5e9)/12)); lane caps "
+-                "(<= 2 busy lane natives by ancestry, lane RSS <= 8 GiB); RSS cap 2,797,076,480 B with ancestry "
+-                "headroom; no stacking; floor 12e9 in flight; no new launches after 17:30 PDT; native work ends by "
+-                "17:57 PDT.")
++ATTEMPT_RULE = ("Main messages 05:00-08:40 PDT 2026-10-18: attempts are UNKNOWN on any stop and never relabelled. "
++                "B_C411, B/C311+cuts and A/C311+cuts are NEW attempts of this desk in slots 1 and 2, at most one per "
++                "slot, admitted one at a time, each launched only on Main's explicit GO, with a fresh gate: free >= "
++                "12.2e9 + projected growth at both censuses and again immediately before spawn; long-job stability "
++                "per Main's 07:32 amendment (parent monitor: last free >= 13.5e9 B, max 5-min peak-to-later drop <= "
++                "max(300 MB, (free_last - 13.5e9)/12)); lane caps (<= 2 busy lane natives at launch, <= 4 after; lane "
++                "RSS <= 8 GiB with reservations); RSS cap 2,797,076,480 B with ancestry headroom; floor 12e9 in "
++                "flight; no new launches after 17:30 PDT; native work ends by 17:57 PDT.")
+ B411_R7 = re.compile(r"B_C411|k3_direct_B_r\d+\.py C411")
+ ROUTE_A5 = re.compile(r"C311cuts_A_r9(?![0-9A-Za-z])|k3_cuts_certify_r9\.py A(\s|$)")
+ ADMITTER_INVARIANT = ("Single-admitter invariant (Main, relaying Codex review m7-launch-v10-codex-v1.note.md "
+@@ -481,6 +510,23 @@
+     return not a or a == "<defunct>" or (a.startswith("(") and a.endswith(")"))
+ 
+ 
++def launcher_slot(chain_args):
++    """Slot of a desk attempt process from its argv chain (itself first, then its ancestors). The first launcher
++    found decides. '--slot N' gives N. A launcher up to v11 (no --slot) gives its LEGACY_SLOTS entry: B_C321-a3 ran in
++    slot 2 under v8, and B_C411-p1 runs in slot 1 under v11. Any other launcher without --slot, or no launcher at all,
++    gives 'unknown', which blocks both slots."""
++    for args in chain_args:
++        m = LAUNCHER_SLOT.search(args or "")
++        if m:
++            version, label, slot = int(m.group(1)), m.group(2), m.group(3)
++            if slot:
++                return int(slot)
++            if version <= 11 and label in LEGACY_SLOTS:
++                return LEGACY_SLOTS[label]
++            return "unknown"
++    return "unknown"
++
++
+ def census_once(own_root):
+     """One census: ps identity, ps args, lsof cwd, ps identity again. The second identity snapshot is classified; a
+     process is consistent only if present in both identity snapshots with equal ppid/pgid/uid/lstart/comm and with args
+@@ -602,6 +648,7 @@
+         ch = chain(p["pid"])
+         if not any(in_desk(q["cwd"]) for q in ch):
+             foreign_lane.append(dict(brief(p, 300), route_A5=any(ROUTE_A5.search(q["args"] or "") for q in ch)))
++    desk_slot = {p["pid"]: launcher_slot([q["args"] or "" for q in chain(p["pid"])]) for p in desk}
+ 
+     return {"at": at, "identity": "cwd/ancestry over a validated census (v11: identity agreement in A, B and C)",
+             "helpers": helpers,
+@@ -612,7 +659,9 @@
+             "unsupervised_native_groups": unsup, "other_lane_rss_bytes": others_rss, "reserved_bytes": reserved,
+             "computable_cap_by_ancestry": headroom,
+             "computable_cap": CAP_FIXED if headroom >= CAP_FIXED else headroom,
+-            "b411_matches": [brief(p, 300) for p in b411], "desk_attempt_processes": [brief(p, 300) for p in desk],
++            "b411_matches": [brief(p, 300) for p in b411],
++            "desk_attempt_processes": [dict(brief(p, 300), slot=desk_slot[p["pid"]]) for p in desk],
++            "desk_slots_occupied": sorted({str(s) for s in desk_slot.values()}),
+             "foreign_marker_matches_excluded": [brief(p, 160) for p in foreign],
+             "foreign_lane_natives": foreign_lane,
+             "foreign_lane_natives_outside_route_A5": [f for f in foreign_lane if not f["route_A5"]]}
+@@ -652,16 +701,31 @@
+             "end_record_exists": recorded, "ok": (not live) and recorded}
+ 
+ 
+-def admission_v11(scan, fb):
++def admission_v12(scan, fb, target):
+     adm = K.admission(scan, fb, deadline_ok())
+     slot = slot_condition(scan)
+     if "conditions" not in adm:
+-        return {"ok": False, "why": adm["why"], "slot": slot}
++        return {"ok": False, "why": adm["why"], "slot": slot, "target_slot": target}
++    occupied = scan["desk_slots_occupied"]
+     cond = dict(adm["conditions"], slot2_b411_r7_reaped_and_end_recorded=slot["ok"],
+                 ancestry_headroom_for_fixed_cap=scan["computable_cap_by_ancestry"] >= CAP_FIXED,
+-                desk_idle_no_other_attempt_process=not scan["desk_attempt_processes"],
++                target_slot_free_of_desk_attempts=str(target) not in occupied and "unknown" not in occupied,
+                 foreign_lane_natives_only_route_A5_slot1=not scan["foreign_lane_natives_outside_route_A5"])
+-    return {"ok": all(cond.values()), "conditions": cond, "why": [k for k, v in cond.items() if not v], "slot": slot}
++    return {"ok": all(cond.values()), "conditions": cond, "why": [k for k, v in cond.items() if not v], "slot": slot,
++            "target_slot": target, "desk_slots_occupied": occupied}
++
++
++def try_lock(fd):
++    """Non-blocking exclusive flock on the desk admission lock; False if another launcher of this desk holds it."""
++    try:
++        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
++        return True
++    except BlockingIOError:
++        return False
++
++
++def unlock(fd):
++    fcntl.flock(fd, fcntl.LOCK_UN)
+ 
+ 
+ def log_line(logfd, purpose, scan, fb, adm, reading):
+@@ -758,7 +822,7 @@
+     return not STATE["signals"] and deadline_ok()
+ 
+ 
+-def prepare(item, label, argv, cap, previous, regen_path, regen_sha0, summary_path, record, quarantine):
++def prepare(item, label, target, argv, cap, previous, regen_path, regen_sha0, summary_path, record, quarantine):
+     """The gate receipt without its admission evidence, computed before the final census (v10 (3)). ok only if the
+     supervisor equals its pin and the regeneration precheck receipt is unchanged since the launcher started."""
+     sup_sha = K.sha_file(K.SUPERVISOR)
+@@ -766,7 +830,9 @@
+     me = os.path.abspath(__file__)
+     rec = {"purpose": "run " + label, "item": item, "label": label, "previous_attempt": previous,
+            "launcher_pid": os.getpid(), "launcher": {"path": me, "sha256": K.sha_file(me)}, "prepared_at": K.now(),
+-           "attempt_rule": ATTEMPT_RULE, "admitter_invariant": ADMITTER_INVARIANT,
++           "attempt_rule": ATTEMPT_RULE, "admitter_invariant": ADMITTER_INVARIANT, "slot": target,
++           "admission_lock": {"path": LOCK_PATH, "held_from": "before the final census",
++                              "released": "%d s after the spawn, at once on refusal, or at exit" % LOCK_SETTLE},
+            "rss_cap": {"value": cap, "rule": "fixed by Main (about 07:05 PDT); ancestry headroom must be >= it",
+                        "CAP_FIXED": CAP_FIXED, "CAP_MAX": K.CAP_MAX, "LANE_RSS_LIMIT": K.LANE_RSS_LIMIT,
+                        "SAFETY_MARGIN": K.SAFETY_MARGIN, "MIN_CAP": K.MIN_CAP, "PROJECTED_PEAK": K.PROJECTED_PEAK,
+@@ -786,7 +852,7 @@
+     return rec, sup_sha == K.SUPERVISOR_SHA256 and regen_sha == regen_sha0
+ 
+ 
+-def mode_run(item, label, regen_tag=None):
++def mode_run(item, label, target, regen_tag=None):
+     regen_path = os.path.join(K.RECEIPTS, "regen-%s%s.json" % (item, "-" + regen_tag if regen_tag else ""))
+     summary_path = os.path.join(K.RECEIPTS, "selfcheck-summary.json")
+     with open(regen_path) as f:
+@@ -814,33 +880,43 @@
+                 "sha256": K.sha_file(prev_path) if os.path.isfile(prev_path) else None,
+                 "status": prev.get("status"), "stop_reason": (prev.get("stop") or {}).get("reason")}
+     regen_sha0 = K.sha_file(regen_path)
++    lock_fd = os.open(LOCK_PATH, os.O_RDONLY)       # v12: desk admission lock (created once, at copy-in)
+     logfd = K.open_append_x(os.path.join(K.LOGS, "launch-run-%s.log" % label))
+     out_fd = K.open_append_x(stdout_log)            # v10 (3): output file prepared before any admission census
+     cap = CAP_FIXED
+     argv = [K.PY, "-I", "-B", K.SUPERVISOR, "--name", label + "-parent-replay", "--wall", str(SUP_WALL),
+             "--rss-cap", str(cap), "--floor", str(K.FLOOR), "--lane", K.DESK, "--record", record,
+             "--quarantine", quarantine, "--grace", str(SUP_GRACE), "--",
+-            K.PY, "-I", "-B", os.path.join(K.SCRIPTS, "replay_B_v4.py"), "run", item, "--label", label,
++            K.PY, "-I", "-B", os.path.join(K.SCRIPTS, "replay_B_v5.py"), "run", item, "--label", label,
+             "--rss-stop", str(cap)]
++    adm2 = {}                                           # the final admission, once one has been evaluated
+     while True:
+         scan = census(os.getpid())
+         fb = K.free_bytes()
+-        adm = admission_v11(scan, fb)
++        adm = admission_v12(scan, fb, target)
+         log_line(logfd, "run " + label, scan, fb, adm, 1)
+         last = {"scan": scan, "free_bytes": fb, "admission": adm}
+         if adm["ok"] and not STATE["signals"]:
+             t1 = time.monotonic()
+             paused = pause(FIRST_TO_FINAL)
+-            rec, prepared_ok = prepare(item, label, argv, cap, previous, regen_path, regen_sha0, summary_path,
+-                                       record, quarantine)
++            rec, prepared_ok = prepare(item, label, target, argv, cap, previous, regen_path, regen_sha0,
++                                       summary_path, record, quarantine)
+             stab = monitor_stability()
+             os.write(logfd, (json.dumps({"at": K.now(), "paused_ok": paused, "prepared_ok": prepared_ok,
+                                          "stability": {k: stab.get(k) for k in (
+                                              "ok", "why", "age_seconds", "window_samples", "free_last", "max_drop",
+                                              "limit")}}) + "\n").encode())
+-            scan2 = census(os.getpid())                 # the final census
++            if not try_lock(lock_fd):                   # v12: admissions one at a time
++                busy = dict(adm, ok=False, why=adm["why"] + ["admission lock held by another launcher of this desk"])
++                log_line(logfd, "run " + label, scan, fb, busy, 2)
++                last = {"scan": scan, "free_bytes": fb, "admission": busy}
++                if not deadline_ok() or STATE["signals"]:
++                    break
++                time.sleep(SLEEP)
++                continue
++            scan2 = census(os.getpid())                 # the final census, under the admission lock
+             fb2 = K.free_bytes()
+-            adm2 = admission_v11(scan2, fb2)
++            adm2 = admission_v12(scan2, fb2, target)
+             stab2 = monitor_stability()                 # v11 (1): re-evaluated after the final census
+             gap = round(time.monotonic() - t1, 1)
+             extra = [w for w, bad in (("pause interrupted", not paused),
+@@ -851,13 +927,14 @@
+                                       ("a free reading below the gate", fb < K.GATE or fb2 < K.GATE)) if bad]
+             pre = None
+             if adm2["ok"] and not extra:                # immediate pre-spawn guard (microseconds)
++                age = time.time() - stab2["t_last_epoch"]
+                 pre = {"free_bytes": K.free_bytes(), "deadline_ok": deadline_ok(),
+                        "launcher_signals": len(STATE["signals"]),
+                        "quarantine_records": sorted(glob.glob(os.path.join(K.RECEIPTS, "*.QUARANTINE.json"))),
+-                       "monitor_last_sample_age_seconds": round(time.time() - stab2["t_last_epoch"], 3)}
++                       "monitor_last_sample_age_seconds": round(age, 3)}
+                 pre["ok"] = (pre["free_bytes"] >= K.GATE and pre["deadline_ok"] and not pre["launcher_signals"]
+                              and not pre["quarantine_records"]
+-                             and 0 <= pre["monitor_last_sample_age_seconds"] <= MON["max_age_seconds"])
++                             and 0 <= age <= MON["max_age_seconds"])     # v12: the unrounded age is compared
+                 if not pre["ok"]:
+                     extra.append("pre-spawn guard")
+             adm2.update(first=adm, stability=stab, stability_after_final_census=stab2, paused_ok=paused,
+@@ -868,11 +945,12 @@
+             adm2["ok"] = adm2["ok"] and not extra
+             adm2["why"] = adm2["why"] + extra
+             if adm2["ok"]:
+-                break
++                break                                   # the admission lock stays held through the spawn
++            unlock(lock_fd)
+             log_line(logfd, "run " + label, scan2, fb2, adm2, 2)
+             last = {"scan": scan2, "free_bytes": fb2, "admission": adm2}
+         if not deadline_ok() or STATE["signals"]:
+-            rec, _ = prepare(item, label, argv, cap, previous, regen_path, regen_sha0, summary_path, record,
++            rec, _ = prepare(item, label, target, argv, cap, previous, regen_path, regen_sha0, summary_path, record,
+                              quarantine)
+             rec.update(last, at=K.now(), not_launched="not admitted while deadline_ok() held, or launcher signals: "
+                        "%s / signals %s" % (last["admission"]["why"], STATE["signals"]))
+@@ -882,6 +960,16 @@
+             os.close(logfd)
+             return 2
+         time.sleep(SLEEP)
++    if not adm2.get("ok"):                              # left the loop through the lock-busy branch at the deadline
++        rec, _ = prepare(item, label, target, argv, cap, previous, regen_path, regen_sha0, summary_path, record,
++                         quarantine)
++        rec.update(last, at=K.now(), not_launched="admission lock busy when deadline_ok() ended, or launcher signals: "
++                   "%s / signals %s" % (last["admission"]["why"], STATE["signals"]))
++        print(json.dumps({"gate_sha256": K.write_json_x(gate_path, rec), "launched": False,
++                          "why": rec["not_launched"]}), flush=True)
++        os.close(out_fd)
++        os.close(logfd)
++        return 2
+     rec["rss_cap"].update(computable_cap_by_ancestry=scan2.get("computable_cap_by_ancestry"),
+                           reserved=scan2.get("reserved_bytes"))
+     rec.update(scan=scan2, free_bytes=fb2, admission=adm2)
+@@ -894,6 +982,9 @@
+         rec["at"] = K.now()
+         rec["gate_receipt_written_after_spawn"] = True
+         box["gate_sha"] = K.write_json_x(gate_path, rec)
++        releaser = threading.Timer(LOCK_SETTLE, unlock, args=(lock_fd,))
++        releaser.daemon = True
++        releaser.start()                                # v12: admission lock released LOCK_SETTLE s after the spawn
+         log_line(logfd, "run " + label, scan2, fb2, adm2, 2)
+         try:
+             print(json.dumps({"gate_sha256": box["gate_sha"], "launched": True, "rss_cap": cap, "free_bytes": fb2,
+@@ -1039,9 +1130,9 @@
+ 
+ 
+ def mode_selftest(label):
+-    """v11 self-test; launches nothing. run_helper() bounds, signals, session isolation and reader EOF with short
+-    python children; reader-exception recording; parser cases for the v11 rules; then one census, one informational
+-    admission evaluation and one monitor-stability evaluation (read-only)."""
++    """v12 self-test; launches nothing. run_helper() bounds, signals, session isolation and reader EOF with short
++    python children; reader-exception recording; parser cases (v11); slot-attribution and admission-lock cases (v12);
++    then one census, informational admissions for both slots and one monitor-stability evaluation (read-only)."""
+     receipt = os.path.join(K.RECEIPTS, label + ".selftest.json")
+     if os.path.lexists(receipt):
+         raise SystemExit("exists: " + receipt)
+@@ -1123,9 +1214,36 @@
+                                                      and not unresolved_args("/bin/ps -ax")),
+     }
+     checks.update(parser_checks)
++    py = "/Library/Developer/CommandLineTools/usr/bin/python3 -I -B "
++    natives = ["/opt/homebrew/Cellar/kissat/4.0.4/bin/kissat -q -f --time=5400 /dev/fd/11 fifo/X.drat.fifo",
++               py + "/d/scripts-v12/replay_B_v5.py run B_C311cuts --label B_C311cuts-p1 --rss-stop 2797076480",
++               py + "/c/supervise_r3.py --name B_C311cuts-p1-parent-replay --wall 10200 --rss-cap 2797076480"]
++    slot_cases = {
++        "v12_slot_2": (natives + [py + "../scripts-v12/launch_B_v12.py run B_C311cuts --label B_C311cuts-p1 --slot 2"], 2),
++        "v12_slot_1_tagged": ([py + "../scripts-v12/launch_B_v12.py run A_C311cuts --label A_C311cuts-p1 --slot 1 "
++                                    "--regen-tag r1"], 1),
++        "legacy_v11_B_C411_p1_slot_1": (natives + [py + "../scripts/launch_B_v11.py run B_C411 --label B_C411-p1 "
++                                                      "--regen-tag r2"], 1),
++        "legacy_v8_a3_slot_2": (natives + [py + "../scripts/launch_B_v8.py run B_C321 --label B_C321-a3"], 2),
++        "legacy_unlisted_label_unknown": ([py + "../scripts/launch_B_v11.py run B_C321 --label B_C321-a4"], "unknown"),
++        "v12_without_slot_unknown": ([py + "../scripts-v12/launch_B_v12.py run B_C321 --label B_C321-a5"], "unknown"),
++        "no_launcher_unknown": ([py + "/d/scripts-v12/replay_B_v5.py regen A_C311cuts"], "unknown"),
++    }
++    slot_results = {k: launcher_slot(v[0]) for k, v in slot_cases.items()}
++    checks.update({"slot_" + k: slot_results[k] == v[1] for k, v in slot_cases.items()})
++    fd1, fd2 = os.open(LOCK_PATH, os.O_RDONLY), os.open(LOCK_PATH, os.O_RDONLY)
++    try:
++        lock_steps = [try_lock(fd1), try_lock(fd2)]
++        unlock(fd1)
++        lock_steps += [try_lock(fd2)]
++        unlock(fd2)
++    finally:
++        os.close(fd1)
++        os.close(fd2)
++    checks["admission_lock_exclusive_then_released"] = lock_steps == [True, False, True]
+     scan = census(os.getpid())
+     fb = K.free_bytes()
+-    adm = admission_v11(scan, fb)
++    adm = {"slot_1": admission_v12(scan, fb, 1), "slot_2": admission_v12(scan, fb, 2)}
+     stab = monitor_stability()
+     checks["census_complete"] = "error" not in scan
+     keep = ("pid", "pgid", "sid", "rc", "term_sent_after", "unreaped_after_term_wait", "blocking_wait", "exception",
+@@ -1136,7 +1254,8 @@
+            "own_pid": os.getpid(), "own_pgid": own_pgid, "own_sid": os.getsid(0),
+            "cases": {k: dict({x: v[x] for x in keep}, argv=v["argv"], stdout=v["stdout"][:200],
+                              stderr=v["stderr"][:200]) for k, v in cases.items()},
+-           "kills": kills, "census": scan, "free_bytes": fb, "admission_informational": adm,
++           "kills": kills, "slot_results": slot_results, "lock_steps": lock_steps, "census": scan, "free_bytes": fb,
++           "admission_informational": adm,
+            "monitor_stability": stab, "checks": checks, "all_ok": all(checks.values()),
+            "note": "no launch; census, admission and stability are observations only",
+            "scripts_sha256": K.script_hashes()}
+@@ -1150,7 +1269,8 @@
+                       "foreign_lane_natives": [[p["pid"], os.path.basename(p["comm"]), p["route_A5"]]
+                                                for p in scan.get("foreign_lane_natives", [])],
+                       "census_try_results": [t["result"] for t in scan.get("census_tries", [])],
+-                      "admission_why": adm.get("why"),
++                      "desk_slots_occupied": scan.get("desk_slots_occupied"),
++                      "admission_why": {k: v.get("why") for k, v in adm.items()},
+                       "stability": {k: stab.get(k) for k in ("ok", "why", "age_seconds", "window_samples", "free_last",
+                                                              "max_drop", "limit")}}), flush=True)
+     return 0 if out["all_ok"] else 1
+@@ -1159,18 +1279,20 @@
+ def main():
+     a = sys.argv[1:]
+     if a and a[0] == "run":
+-        tagged = len(a) == 6 and a[4] == "--regen-tag" and re.fullmatch(r"[A-Za-z0-9]+", a[5])
+-        if ((len(a) != 4 and not tagged) or a[1] not in K.ITEMS or a[2] != "--label"
+-                or not (re.fullmatch(r"[A-Za-z0-9_.-]+", a[3]) and a[3].startswith(a[1] + "-"))):
+-            raise SystemExit("usage: launch_B_v11.py run ITEM --label ITEM-<suffix> [--regen-tag TAG]")
++        ok = (len(a) in (6, 8) and a[1] in K.ITEMS and a[2] == "--label"
++              and bool(re.fullmatch(r"[A-Za-z0-9_.-]+", a[3])) and a[3].startswith(a[1] + "-")
++              and a[4] == "--slot" and a[5] in ("1", "2")
++              and (len(a) == 6 or (a[6] == "--regen-tag" and bool(re.fullmatch(r"[A-Za-z0-9]+", a[7])))))
++        if not ok:
++            raise SystemExit("usage: launch_B_v12.py run ITEM --label ITEM-<suffix> --slot {1,2} [--regen-tag TAG]")
+         signal.signal(signal.SIGTERM, on_term)
+         signal.signal(signal.SIGINT, on_term)
+-        sys.exit(mode_run(a[1], a[3], a[5] if tagged else None))
++        sys.exit(mode_run(a[1], a[3], int(a[5]), a[7] if len(a) == 8 else None))
+     if a and a[0] == "wait-start" and len(a) == 2 and re.fullmatch(r"[A-Za-z0-9_.-]+", a[1]):
+         sys.exit(mode_wait_start(a[1]))
+     if a and a[0] == "test-exception-path" and len(a) == 2 and re.fullmatch(r"test-[A-Za-z0-9_.-]+", a[1]):
+         sys.exit(mode_test_exception_path(a[1]))
+-    if a and a[0] == "selftest-v11" and len(a) == 2 and re.fullmatch(r"test-[A-Za-z0-9_.-]+", a[1]):
++    if a and a[0] == "selftest-v12" and len(a) == 2 and re.fullmatch(r"test-[A-Za-z0-9_.-]+", a[1]):
+         sys.exit(mode_selftest(a[1]))
+     raise SystemExit(__doc__)
+ 
+--- scripts/assemble_B_v11.py
++++ scripts-v12/assemble_B_v12.py
+@@ -1,6 +1,14 @@
+ #!/usr/bin/env python3
+ """Assemble the attempt receipt, deviations, RESULT and REPORT of a labelled replay attempt of the parent B-side K3
+-cube replay desk (review/moqls7-k3-B-cube-parent-replay-v1), v11.
++cube replay desk (review/moqls7-k3-B-cube-parent-replay-v1), v12.
++
++v12 = assemble_B_v11.py for attempts launched by launch_B_v12.py from scripts-v12/ (bklib_v4). Changes:
++  * the route-A item A_C311cuts;
++  * the scope, title and regeneration line name the item's encoder and composition instead of 'encoder B';
++  * the read-only list adds the producer delta (and the lex metadata for route A);
++  * texts D16, D18, D21, D29, D32, D36 and the A_C311cuts deviations D37/D38;
++  * result entries for the v11-to-v12 diff, the v12 selftest and the v12 packet.
++Acceptance conditions, measured feeds, strict parsing, output names and the regen binding are unchanged.
+ 
+ v11 = assemble_B_v10.py for attempts launched by launch_B_v11.py. It has texts only (D16, D18, D21, D29, D35) and
+ four result entries: the v10-to-v11 diff, the v11 selftest receipt, the v11 review packet, and the gate receipt's
+@@ -30,7 +38,7 @@
+ and title taken from the item pins, the item's attempt-1 summary only where it exists, and the deviation set for the
+ v6 gate. assemble_B_v7.py is the import-only bump (bklib_v2) for B/C411.
+ 
+-Usage: assemble_B_v11.py ITEM LABEL [--regen-tag TAG]     (e.g. B_C411 B_C411-p1 --regen-tag r2)
++Usage: assemble_B_v12.py ITEM LABEL [--regen-tag TAG]     (e.g. B_C311cuts B_C311cuts-p1)
+ 
+ Reads the desk's receipts and logs (never modifies them), re-hashes every referenced file, checks the hash bindings
+ recorded at run time, and re-hashes the read-only lane inputs and both binaries. No native or other subprocess launch.
+@@ -42,14 +50,15 @@
+ import sys
+ 
+ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+-import bklib_v3 as K  # noqa: E402
++import bklib_v4 as K  # noqa: E402
+ 
+ REGEN = {"rel": None}                           # set from argv in main(); see the module docstring
+ 
+ DEVIATIONS = [
+     {"id": "D16-versioned-scripts",
+-     "what": "B_C321 attempt a3 was launched by launch_B_v8.py (bklib_v2, driver replay_B_v3.py). B/C411 and B/C311+cuts "
+-             "are launched by launch_B_v11.py (bklib_v3, driver replay_B_v4.py, compose_Bcuts_v1.py for B/C311+cuts). "
++     "what": "B_C321 attempt a3 was launched by launch_B_v8.py (bklib_v2, driver replay_B_v3.py) and B_C411-p1 by "
++             "launch_B_v11.py from scripts/ (bklib_v3, replay_B_v4.py). B/C311+cuts and A/C311+cuts are launched by "
++             "launch_B_v12.py from scripts-v12/ (bklib_v4, replay_B_v5.py, compose_Bcuts_v1.py / compose_Acuts_v1.py). "
+              "bklib_v3 pins B_C321 and B_C411 exactly as bklib_v2 did. History: v2 attempt labels "
+              "(scripts-v1-to-v2.r2.diff); v3 slot-2-only rule (scripts-v2-to-v3.diff); v4 flag-only signal handling "
+              "and owned-child loop (scripts-v3-to-v4.diff); v5 cleanup obligation (scripts-v4-to-v5.diff); v6 "
+@@ -58,14 +67,18 @@
+              "superseding scripts-v8-to-v9-Bcuts.diff); v10 Codex HOLD repairs and Main's 07:32 stability amendment "
+              "(scripts-v9-to-v10.diff). compose_B_v1.py and supervise_r3.py are unchanged; native limits (kissat "
+              "--time=5400, drat-trim -t 9000) and supervisor arguments (wall 10200 s, grace 180 s, floor 12e9) are "
+-             "unchanged. v11 Codex v10-HOLD repairs and the single-admitter invariant: scripts-v10-to-v11.diff."},
++             "unchanged. v11 Codex v10-HOLD repairs and the single-admitter invariant: scripts-v10-to-v11.diff; v12 "
++             "slots, admission lock, Codex v11 MINOR and the route-A item: scripts-v11-to-v12.diff."},
+     {"id": "D17-selfcheck-reused-and-regen-precheck",
+      "what": "Self-checks were not rerun: every attempt reuses receipts/selfcheck-summary.json (ec246769...739b, "
+              "all_ok; same binaries, same bklib transport code). The regeneration-only precheck is "
+              "receipts/regen-<ITEM>.json (MATCH required by the launcher), and each run regenerates and hash-checks "
+              "the CNF again before any native launch."},
+     {"id": "D18-v6-gate",
+-     "what": "launch_B_v11 admission. Lane identity is by cwd/ancestry (cwd inside moqls7-maximum or a review/moqls7-* "
++     "what": "launch_B_v11/v12 admission (v12 adds slots: at most one attempt of this desk per slot, slot attributed "
++             "through the launcher ancestry, 'unknown' blocks both, and admissions serialized by an flock on "
++             "locks/admission.lock held from before the final census to 90 s after the spawn). Lane identity is by "
++             "cwd/ancestry (cwd inside moqls7-maximum or a review/moqls7-* "
+              "desk, or a descendant) over a validated census: two ps identity snapshots bracket a ps args snapshot "
+              "and an lsof cwd listing. A process is consistent only if it is present in both identity snapshots with "
+              "equal ppid/pgid/uid/lstart/comm and has args of the same lstart. Helpers are bounded and fail-closed, "
+@@ -89,8 +102,8 @@
+              "which process caused a decline or a reclaim; cause and recurrence period are UNESTABLISHED. Every "
+              "floor-stopped attempt is UNKNOWN and never relabelled."},
+     {"id": "D21-assembler-before-run",
+-     "what": "assemble_B_v8.py, v9, v10 and v11 were created before the attempts they assemble were launched; their "
+-             "SHA-256s are part of every recording made by those runs."},
++     "what": "assemble_B_v8.py, v9, v10, v11 and v12 were created before the attempts they assemble were launched; "
++             "their SHA-256s are part of every recording made by those runs."},
+     {"id": "D25-armed-after-go",
+      "what": "Each launcher was armed only after Main's explicit GO; the arming time is the first line of "
+              "logs/launch-run-<LABEL>.log."},
+@@ -133,14 +146,23 @@
+              "and any lane native outside this desk that is not in the route-A attempt-5 group refuses. The census "
+              "tries rise to 15. Evidence: receipts/test-v11-selftest-r2.selftest.json. receipts/test-v11-selftest."
+              "selftest.json is the run before the census-tries change."},
++    {"id": "D36-v12-slots-lock-and-route-A",
++     "what": "Codex GO-WITH-FIXES on v11 (review/m7-launch-v11-codex-v1.note.md, d7ed4c3a...c61a). Main then "
++             "approved slot-aware launching and the route-A item. launch_B_v12.py: (a) '--slot {1,2}', at most one "
++             "attempt of this desk per slot; legacy launchers are attributed by label (B_C321-a3 slot 2, B_C411-p1 "
++             "slot 1); anything unattributable blocks both slots; (b) an admission flock serializes this desk's "
++             "admissions; (c) the Codex v11 MINOR: the unrounded monitor age is compared at the pre-spawn guard; "
++             "(d) the set runs from scripts-v12/ (bklib_v4 SCRIPTS = its own directory), so the live v11 run's "
++             "scripts/ recording is untouched. Evidence: receipts/test-v12-selftest.selftest.json."},
+ ]
+ ITEM_DEVIATIONS = {
+     "B_C411": [{"id": "D29-B_C411-pins-and-slot",
+                 "what": "B/C411 pins (bklib_v2) come from PhysEpQutrit's r7 producer receipt cert_B_r7/B_C411.json "
+                         "(644b5b23...6f75; VERIFIED_UNSAT_CASE with the lane drat-trim build): CNF 01acf464...8bf8, "
+                         "metadata B_C411.meta.json c0f769bb...8a12, base 42a5f304...0aac, encoder c7583efe...2b45. "
+-                        "Main first assigned this replay to slot 1; it then moved to slot 2 after B_C321-a3. It is "
+-                        "launched only by launch_B_v11.py, after Codex's re-review and Main's explicit GO."},
++                        "Main first assigned this replay to slot 1; it then moved to slot 2 after B_C321-a3, and after "
++                        "route A attempt 5 ended (08:3x PDT) back to slot 1. Launched by launch_B_v11.py on Main's GO "
++                        "following Codex's v11 review (GO-WITH-FIXES)."},
+                {"id": "D31-B_C411-regen-precheck-deferral",
+                 "what": "The first B_C411 regeneration-only precheck (receipts/regen-B_C411.json, 982f5a0d...35db2) "
+                         "was deferred by the driver's free-space gate at 07:12:31 (12,012,662,784 < 12,201,048,576 B) "
+@@ -155,8 +177,24 @@
+                             "05f31da4...e6dd (238,140 clauses), base 42a5f304...0aac. compose_Bcuts_v1.py executes the "
+                             "hash-verified gram_enc, k3_cubes, k3_lex, k3_cuts_r1 and gram_encB bytes and restates "
+                             "only k3_cubes.make's encoder-B composition and k3_cuts_certify_r6.prepare's route-B "
+-                            "append. The producer's driver and generator are not run. Slot 2 after B/C411-p1, on "
+-                            "Main's explicit GO."}]}
++                            "append. The producer's driver and generator are not run. Slot 2, after B_C321-a3 ended, "
++                            "under launch_B_v12.py on Main's explicit GO."}],
++    "A_C311cuts": [{"id": "D37-A_C311cuts-pins-and-composition",
++                    "what": "A/C311+cuts pins (bklib_v4) come from PhysEpQutrit's route-A attempt-5 receipt "
++                            "C311cuts_A_r9/C311cuts_A.json (88c154b7...f37f; VERIFIED_UNSAT_CASE, cadical 3.0.1 with the "
++                            "lane drat-trim build; driver k3_cuts_certify_r9.py 2f0ced45...7ed3; delta "
++                            "K3-CUTS-CERT-DELTA.r9.json 76f68d34...5487): strengthened CNF 18583aab...2e5e "
++                            "(24,477,803 B, p cnf 107513 897308), input explore/k3lex/A_C311.cnf 059be616...8c4f (lex "
++                            "metadata 7bef0b78...190d), source cube 7fca33f1...2001 (metadata 3b2ab04f...d9ed), base "
++                            "d0d884f9...4388, cut block 05f31da4...e6dd (238,140 clauses). compose_Acuts_v1.py executes "
++                            "the hash-verified gram_enc, k3_cubes, k3_lex and k3_cuts_r1 bytes and restates only route "
++                            "A's composition (base + C311 cube + lex generators + cut block), asserting every pin."},
++                   {"id": "D38-A_C311cuts-solver-kissat",
++                    "what": "Main approved: the desk replays A/C311+cuts with its pinned kissat 4.0.4 "
++                            "(05d6f3e9...a848), not the producer's cadical (601c9fa8...d1fa). The acceptance predicate "
++                            "is solver-agnostic, the transport self-checks (kissat + parent drat-trim) apply unchanged, "
++                            "and a different solver with the parent drat-trim makes the replay more independent of the "
++                            "producer run. The solver-log comparison with the producer is informational only."}]}
+ 
+ 
+ def load(rel):
+@@ -340,11 +378,13 @@
+                                                                  "checker_binary_sha256", "solver_log_sha256",
+                                                                  "checker_log_sha256",
+                                                                  "peak_sampled_aggregate_rss_bytes")}},
+-        "scope": ("Attempt-level replay record (label %s) for the exact B/%s CNF only (SHA-256 %s). PASS means this CNF "
+-                  "is UNSAT by a freshly streamed kissat binary DRAT proof accepted by the parent drat-trim; UNKNOWN "
++        "scope": ("Attempt-level replay record (label %s) for the exact %s/%s CNF only (SHA-256 %s). PASS means this "
++                  "CNF is UNSAT by a freshly streamed kissat binary DRAT proof accepted by the parent drat-trim; UNKNOWN "
+                   "means this attempt neither confirms nor refutes the producer's certificate. No K3, M(7), coverage, "
+-                  "bridge or theorem verdict." % (label, it["cube"] + (" + AMENDMENT-4 cuts" if it.get("kind") == "cuts"
+-                                                                         else ""), it["cnf_sha256"])),
++                  "bridge or theorem verdict." % (
++                      label, it["encoder"], it["cube"] + ({"A": " + lex (AMENDMENT-3) + AMENDMENT-4 cuts",
++                                                            "B": " + AMENDMENT-4 cuts"}.get(it.get("route"), "")
++                                                           if it.get("kind") == "cuts" else ""), it["cnf_sha256"])),
+     }
+ 
+ 
+@@ -357,8 +397,8 @@
+     sf = r["strict_fields"]
+     t = r["times"]
+     lines = [
+-        "# Parent replay of the phys-2 K3 cube certificate %s (MOQLS(7), encoder B), attempt %s" % (
+-            r["item"], r["label"]), "",
++        "# Parent replay of the phys-2 K3 cube certificate %s (MOQLS(7), encoder %s), attempt %s" % (
++            r["item"], K.ITEMS[r["item"]]["encoder"], r["label"]), "",
+         "Desk: `review/moqls7-k3-B-cube-parent-replay-v1/`, 2026-10-18 PDT. RESULT.%s.json sha256 `%s`." % (
+             r["label"], result_sha),
+         "Generated by `scripts/%s` from the same data as RESULT.%s.json. Attempt 1 of this item: %s." % (
+@@ -382,9 +422,9 @@
+         "Observed outcome: %s." % r["observed_outcome"], "",
+         "Scope: %s" % r["scope"], "",
+         "## What happened", "",
+-        "- Regeneration (desk composition driver, pinned encoder B + cube wrapper, in memory): `%s`, %s bytes, "
+-        "header `%s`, %s s." % (sf["regenerated_cnf_sha256"], fmt(sf["cnf_bytes"]), sf["cnf_header"],
+-                                t["regeneration_seconds"]),
++        "- Regeneration (desk composition driver %s, pinned lane sources, in memory): `%s`, %s bytes, header `%s`, "
++        "%s s." % (K.ITEMS[r["item"]].get("compose", "compose_B_v1.py"), sf["regenerated_cnf_sha256"],
++                   fmt(sf["cnf_bytes"]), sf["cnf_header"], t["regeneration_seconds"]),
+         "- Pipeline %s to %s (%s s). kissat wall %s s, user %s s, rc %s; drat-trim wall %s s, user %s s, rc %s." % (
+             t["pipeline_started_at"], t["pipeline_finished_at"], t["pipeline_seconds"], t["solver"]["wall_seconds"],
+             t["solver"]["user_seconds"], sf["solver_rc"], t["checker"]["wall_seconds"], t["checker"]["user_seconds"],
+@@ -464,7 +504,7 @@
+     lines += ["", "## Integrity", "",
+               "Receipts, logs, RESULT.%s.json, REPORT.%s.md and deviations-%s.json were created exclusively (mode "
+               "'x' / O_EXCL). The versioned scripts were copied with cp -n and edited before their first recorded use; "
+-              "diffs scripts-v1-to-v2.r2.diff through scripts-v10-to-v11.diff. No earlier attempt's files were "
++              "diffs scripts-v1-to-v2.r2.diff through scripts-v11-to-v12.diff. No earlier attempt's files were "
+               "modified, deleted or renamed. No lane file "
+               "was written. There were no /tmp writes and no Git, network or model CLI. __pycache__ present: %s. "
+               "Desk regular files before RESULT.%s.json: %d, %s bytes in total. FIFO nodes, never opened outside the "
+@@ -521,10 +561,12 @@
+     regen_r, regen_sha = load(REGEN["rel"])
+     summ, summ_sha = load("receipts/selfcheck-summary.json")
+     sgate, sgate_sha = load("receipts/selfcheck.gate.json")
++    it_ro = K.ITEMS[item]
+     ro = [os.path.join(K.CODE, n) for n in ("gram_enc.py", "k3_cubes.py", "gram_encB.py", "supervise_r3.py")
+-          + (("k3_lex.py", "k3_cuts_r1.py") if K.ITEMS[item].get("kind") == "cuts" else ())]
+-    ro += [K.ITEMS[item]["producer_receipt"], K.ITEMS[item]["meta"], K.ORACLE_RECEIPT,
+-           K.ITEMS[item]["producer_checker_log"], K.ITEMS[item]["producer_solver_log"], K.ITEMS[item]["lane_cnf"]]
++          + (("k3_lex.py", "k3_cuts_r1.py") if it_ro.get("kind") == "cuts" else ())]
++    ro += [it_ro["producer_receipt"], it_ro["meta"], K.ORACLE_RECEIPT,
++           it_ro["producer_checker_log"], it_ro["producer_solver_log"], it_ro["lane_cnf"]]
++    ro += [it_ro[k] for k in ("delta", "lex_meta") if k in it_ro]
+     files, fifos, total = desk_listing(exclude=(names["result"], names["report"]))
+     seen = {"run.gate": load("receipts/%s.gate.json" % label)[0].get("scripts_sha256"),
+             "run.pre": load("receipts/%s.pre.json" % label)[0].get("scripts_sha256"),
+@@ -570,7 +612,13 @@
+                                  K.RECEIPTS, "test-v11-selftest-r2.selftest.json"))).get("all_ok")),
+         "v11_selftest_before_census_tries_change": file_entry("receipts/test-v11-selftest.selftest.json"),
+         "review_packet_v11": file_entry("review-packet-v11.md"),
++        "scripts_diff_v11_to_v12": file_entry("scripts-v11-to-v12.diff"),
++        "v12_selftest": dict(file_entry("receipts/test-v12-selftest.selftest.json"),
++                             all_ok=json.loads(K.read_regular(os.path.join(
++                                 K.RECEIPTS, "test-v12-selftest.selftest.json"))).get("all_ok")),
++        "review_packet_v12": file_entry("review-packet-v12.md"),
+         "admitter_invariant": gate0.get("admitter_invariant"),
++        "slot": gate0.get("slot"),
+         "signal_smoke": dict(file_entry("receipts/smoke-v4-signal.smoke.json"),
+                              all_ok=json.loads(K.read_regular(os.path.join(
+                                  K.RECEIPTS, "smoke-v4-signal.smoke.json"))).get("all_ok")),
+--- scripts/bklib_v3.py
++++ scripts-v12/bklib_v4.py
+@@ -1,5 +1,20 @@
+ #!/usr/bin/env python3
+-"""Library of the parent B-side K3 cube replay desk review/moqls7-k3-B-cube-parent-replay-v1, v3. Imports no lane code.
++"""Library of the parent B-side K3 cube replay desk review/moqls7-k3-B-cube-parent-replay-v1, v4. Imports no lane code.
++
++v4 = bklib_v3.py plus the route-A item "A_C311cuts" (kind "cuts", route "A"; Main's GO with v12). It is pinned from
++PhysEpQutrit's route-A attempt-5 receipt evidence/k3cubes/C311cuts_A_r9/C311cuts_A.json (88c154b7...f37f):
++  * strengthened CNF 18583aab...2e5e, built by compose_Acuts_v1.py;
++  * input explore/k3lex/A_C311.cnf 059be616...8c4f (lex metadata 7bef0b78...190d);
++  * source cube 7fca33f1...2001 (cube metadata 3b2ab04f...d9ed);
++  * base d0d884f9...4388; block 05f31da4...e6dd;
++  * driver k3_cuts_certify_r9.py 2f0ced45...7ed3; delta K3-CUTS-CERT-DELTA.r9.json 76f68d34...5487;
++  * producer solver cadical 601c9fa8...d1fa.
++The desk replays this item with its pinned kissat (Main approved; item deviation). producer_evidence_cuts() now
++handles both routes. Every cuts item also checks the receipt's driver and delta pins (B: r6 12b141fd...db91 /
++899a0437...0681), and the oracle check compares the B base against its own constant. check_regen() adds the
++lex-metadata agreement for route A. Items B_C321, B_C411 and B_C311cuts keep their pins. SCRIPTS is now this file's
++own directory. The v12 set therefore runs from scripts-v12/ with its own script hashes, and adding it never changes
++the scripts/ set recorded by the v11 run B_C411-p1 while that run is live.
+ 
+ v3 = bklib_v2.py plus the B/C311+cuts item "B_C311cuts" (kind "cuts"). It is pinned from PhysEpQutrit's route-B r6
+ receipt evidence/k3cubes/C311cuts_B_r6/C311cuts_B.json (1f003634...c535): strengthened CNF ae3b8309...783a, input
+@@ -55,13 +70,16 @@
+ CODE = os.path.join(LANE, "code")
+ K3DIR = os.path.join(LANE, "evidence", "k3cubes")
+ EXPLORE = os.path.join(LANE, "explore", "k3cubes")
++EXPLORE_LEX = os.path.join(LANE, "explore", "k3lex")
++LANE_REVIEW = os.path.join(LANE, "review")
++B_BASE_SHA256 = "42a5f30453bba3eb423e78b99b1a8fe6039e1c91c32b6ff1dd72f498fa8e0aac"   # encoder-B base (oracle B_base)
+ KISSAT = "/opt/homebrew/Cellar/kissat/4.0.4/bin/kissat"
+ DRAT = os.path.join(REVIEW, "moqls7-parent-proofcheck-v1", "drat-trim")
+ LANE_DRAT_SHA256 = "111b0405566d55629f5d391b80b3220cc7a3ebc3cd406a35895ff65cc9acd5e4"   # never used here
+ PY = "/Library/Developer/CommandLineTools/usr/bin/python3"
+ SUPERVISOR = os.path.join(CODE, "supervise_r3.py")
+ SUPERVISOR_SHA256 = "0ee8f39496fa3d6051639e99f10d907b8adadcb5d3446f2bb6242c924a83ec4d"
+-SCRIPTS = os.path.join(DESK, "scripts")
++SCRIPTS = os.path.dirname(os.path.abspath(__file__))  # v4: the set's own directory (scripts-v12/), not DESK/scripts
+ RECEIPTS = os.path.join(DESK, "receipts")
+ LOGS = os.path.join(DESK, "logs")
+ FIFO_DIR = os.path.join(DESK, "fifo")
+@@ -123,7 +141,11 @@
+                "encoder_sha256": "c7583efe838816d39fe33456af09897cc2a1f5633d1e57e1ee63b3e5238e2b45",
+                "regen_code_sha256_prefix_suffix": ["da9c210e", "ac78"],
+                "lane_cnf": os.path.join(EXPLORE, "B_C411.cnf")},
+-    "B_C311cuts": {"kind": "cuts", "encoder": "B", "cube": "C311", "compose": "compose_Bcuts_v1.py",
++    "B_C311cuts": {"kind": "cuts", "route": "B", "encoder": "B", "cube": "C311", "compose": "compose_Bcuts_v1.py",
++                   "producer_driver_sha256": "12b141fd8e1e2997dec8966d66b2e5b1532069b3bd579f676201514cf271db91",
++                   "delta": os.path.join(LANE_REVIEW, "K3-CUTS-CERT-DELTA.r6.json"),
++                   "delta_sha256": "899a04375ca79ca39de9d315a6a3be2bc8157746fa278d6741f7432c72830681",
++                   "producer_solver_sha256": "05d6f3e9c402a1fe8853b0746e384e1b3d1c4a550e255f11daa2461d279aa848",
+                    "producer_receipt": os.path.join(K3DIR, "C311cuts_B_r6", "C311cuts_B.json"),
+                    "producer_receipt_sha256": "1f00363467d3ed30787cd1b3e4c2e695b8b4d7249623fc6e3994130f4be6c535",
+                    "producer_checker_log": os.path.join(K3DIR, "C311cuts_B_r6", "C311cuts_B.checker.log"),
+@@ -137,6 +159,27 @@
+                    "meta_sha256": "bfa298eea4a6b102a16e15663d42c2cdf86ab7ab093f86bdecb7d8bf8d28a056",
+                    "encoder_sha256": "c7583efe838816d39fe33456af09897cc2a1f5633d1e57e1ee63b3e5238e2b45",
+                    "lane_cnf": os.path.join(EXPLORE, "B_C311.cnf")},
++    "A_C311cuts": {"kind": "cuts", "route": "A", "encoder": "A", "cube": "C311", "compose": "compose_Acuts_v1.py",
++                   "producer_receipt": os.path.join(K3DIR, "C311cuts_A_r9", "C311cuts_A.json"),
++                   "producer_receipt_sha256": "88c154b75e9fa7acb3ec05867d0542b6be4b349c189931ad5217a4f16235f37f",
++                   "producer_checker_log": os.path.join(K3DIR, "C311cuts_A_r9", "C311cuts_A.checker.log"),
++                   "producer_solver_log": os.path.join(K3DIR, "C311cuts_A_r9", "C311cuts_A.solver.log"),
++                   "producer_driver_sha256": "2f0ced454369242c47ee0f1446f433f92230aa58da4af3c3311aed7476077ed3",
++                   "delta": os.path.join(LANE_REVIEW, "K3-CUTS-CERT-DELTA.r9.json"),
++                   "delta_sha256": "76f68d348e2265796696ae4dd9626a3855478748f8c236bfaa4ad57c90525487",
++                   "producer_solver_sha256": "601c9fa8ba5d09fd81bb00c89b3e54832f138bccc3422bd8652e8cda4d74d1fa",
++                   "cnf_sha256": "18583aabb486b2d7fdf2159ed2172c9dfc9b29bbd2e50c63a5d7d94d44ba2e5e",
++                   "input_sha256": "059be6164176ee93c94d93bd47fa1d365477b6c94f3aa867df991f677e1a8c4f",
++                   "source_cube_sha256": "7fca33f1e6324cbe17bc44bbea7f8d9188bcac187252d766fb0fa5e39e1c2001",
++                   "block_sha256": "05f31da497315877347f7d780e0e6f4c9c4799c8becee3bdb192a8420ff6e6dd",
++                   "block_clauses": 238140,
++                   "base_cnf_sha256": "d0d884f9a0f9715b256da68be97408ae4a55c88d76183c02246a570f115a4388",
++                   "meta": os.path.join(EXPLORE, "A_C311.meta.json"),
++                   "meta_sha256": "3b2ab04f2b42b799169bdccf3d868f544ba571ff1d72e18d0cf68187a0f4d9ed",
++                   "lex_meta": os.path.join(EXPLORE_LEX, "A_C311.meta.json"),
++                   "lex_meta_sha256": "7bef0b78007151d94661181244fa8614c114705522b58fc16cf287014bde190d",
++                   "encoder_sha256": "b2c206d8bf4896868fb4e45cd87c633a6cfbb0d62c8fdb62b146ac84a7d38833",
++                   "lane_cnf": os.path.join(EXPLORE_LEX, "A_C311.cnf")},
+ }
+ STOP = {"requested": None}            # set by the driver's SIGTERM handler
+ 
+@@ -281,10 +324,19 @@
+ 
+ 
+ def producer_evidence_cuts(item):
+-    """Cuts-kind producer evidence: the route-B C311+cuts receipt, the B_C311 input metadata, the B-map oracle and the
+-    lane input-CNF copy (hashed only). Receipt fields are flattened into the cube-receipt names."""
++    """Cuts-kind producer evidence, for route B (C311cuts_B_r6) or route A (C311cuts_A_r9). It reads, read-only and
++    regular files only:
++      * the producer receipt and the item's cube metadata;
++      * for route A, the lex metadata;
++      * the producer delta and the B-map oracle receipt;
++      * the lane input-CNF copy (hashed only).
++    Receipt fields are flattened into the cube-receipt names. Common checks: receipt, driver and delta pins;
++    strengthened, input and block pins; base; module pins; the producer solver binary; producer logs; oracle. Then the
++    route-specific metadata checks."""
+     it = ITEMS[item]
++    route = it["route"]
+     rb, mb, ob = read_regular(it["producer_receipt"]), read_regular(it["meta"]), read_regular(ORACLE_RECEIPT)
++    db = read_regular(it["delta"])
+     r, m, o = json.loads(rb), json.loads(mb), json.loads(ob)
+     res, prep, bind = r.get("result") or {}, r.get("prepared") or {}, r.get("bindings") or {}
+     regen, mods = prep.get("regeneration") or {}, (r.get("environment") or {}).get("modules") or {}
+@@ -300,10 +352,11 @@
+                                        "native_limits_seconds")}
+     fields.update({"started_at": r.get("started_at"), "finished_at": r.get("finished_at"),
+                    "verified_unsat": r.get("verified_unsat"), "status": r.get("status"), "route": r.get("route"),
+-                   "cnf_sha256": prep.get("strengthened_sha256"), "encoder": "B", "cube": "C311+cuts",
+-                   "prepared": prep, "bindings": bind})
++                   "cnf_sha256": prep.get("strengthened_sha256"), "encoder": it["encoder"], "cube": "C311+cuts",
++                   "driver_sha256": r.get("driver_sha256"), "prepared": prep, "bindings": bind})
+     out = {"receipt": {"path": it["producer_receipt"], "sha256": sha_bytes(rb), "bytes": len(rb)},
+            "meta": {"path": it["meta"], "sha256": sha_bytes(mb), "bytes": len(mb)},
++           "delta": {"path": it["delta"], "sha256": sha_bytes(db), "bytes": len(db)},
+            "oracle_receipt": {"path": ORACLE_RECEIPT, "sha256": sha_bytes(ob), "bytes": len(ob)},
+            "lane_cnf_copy": {"path": it["lane_cnf"], "sha256": cnf_sha, "bytes": cnf_len,
+                              "use": "input CNF; hashed read-only for the record; never given to the solver or checker"},
+@@ -312,35 +365,57 @@
+                                                    "oracle_sha256", "encoder_A_sha256", "encoder_B_sha256",
+                                                    "cube_wrapper_sha256", "A_map_equals_wrapper_map", "B_base",
+                                                    "finished_at", "claim")}}
++    pin = lambda name: CODE_PINS[os.path.join(CODE, name)]  # noqa: E731
+     checks = {
+         "receipt_sha256_equals_pin": out["receipt"]["sha256"] == it["producer_receipt_sha256"],
+-        "receipt_route_B": r.get("route") == "B",
++        "receipt_route": r.get("route") == route,
++        "receipt_driver_equals_pin": r.get("driver_sha256") == it["producer_driver_sha256"],
++        "receipt_delta_equals_pin": (bind.get("delta_sha256") == it["delta_sha256"]
++                                     and out["delta"]["sha256"] == it["delta_sha256"]),
+         "receipt_strengthened_equals_pin": (prep.get("strengthened_sha256") == it["cnf_sha256"]
+                                             and bind.get("expected_strengthened_sha256") == it["cnf_sha256"]),
+         "receipt_input_equals_pin": prep.get("input_sha256") == it["input_sha256"],
+         "receipt_block_equals_pin": (prep.get("block_sha256") == it["block_sha256"]
+                                      and prep.get("block_clauses") == it["block_clauses"]),
+         "receipt_base_equals_pin": regen.get("base_sha256") == it["base_cnf_sha256"],
+-        "receipt_meta_equals_pin": regen.get("B_C311_metadata_sha256") == it["meta_sha256"],
+-        "receipt_solver_binary_equals_pin": res.get("solver_binary_sha256") == BIN_PINS[KISSAT],
++        "receipt_solver_binary_equals_producer_pin": res.get("solver_binary_sha256") == it["producer_solver_sha256"],
+         "receipt_oracle_receipt_sha_equals_file": bind.get("oracle_receipt_sha256") == out["oracle_receipt"]["sha256"],
+-        "receipt_module_pins_equal": all((mods.get(n) or {}).get("sha256") == CODE_PINS[os.path.join(CODE, n + ".py")]
++        "receipt_module_pins_equal": all((mods.get(n) or {}).get("sha256") == pin(n + ".py")
+                                          for n in ("gram_enc", "k3_cubes", "k3_lex", "k3_cuts_r1")),
+         "meta_sha256_equals_pin": out["meta"]["sha256"] == it["meta_sha256"],
+-        "meta_cnf_equals_input_pin": m.get("cnf_sha256") == it["input_sha256"],
++        "meta_wrapper_equals_pin": m.get("wrapper_sha256") == pin("k3_cubes.py"),
++        "meta_encoder_equals_pin": m.get("base_encoder_sha256") == it["encoder_sha256"],
+         "meta_base_equals_pin": m.get("base_cnf_sha256") == it["base_cnf_sha256"],
+-        "meta_wrapper_equals_pin": m.get("wrapper_sha256") == CODE_PINS[os.path.join(CODE, "k3_cubes.py")],
+-        "meta_encoder_equals_pin": m.get("base_encoder_sha256") == it["encoder_sha256"],
+-        "meta_encoder_cube": m.get("encoder") == "B" and m.get("cube") == "C311",
++        "meta_encoder_cube": m.get("encoder") == it["encoder"] and m.get("cube") == "C311",
+         "oracle_status_pass": o.get("status") == "PASS" and o.get("decoded_identity_mismatches") == 0,
+-        "oracle_pins_equal": (o.get("encoder_B_sha256") == it["encoder_sha256"]
+-                              and o.get("encoder_A_sha256") == CODE_PINS[os.path.join(CODE, "gram_enc.py")]
+-                              and o.get("cube_wrapper_sha256") == CODE_PINS[os.path.join(CODE, "k3_cubes.py")]
+-                              and (o.get("B_base") or {}).get("sha256") == it["base_cnf_sha256"]),
++        "oracle_pins_equal": (o.get("encoder_B_sha256") == pin("gram_encB.py")
++                              and o.get("encoder_A_sha256") == pin("gram_enc.py")
++                              and o.get("cube_wrapper_sha256") == pin("k3_cubes.py")
++                              and (o.get("B_base") or {}).get("sha256") == B_BASE_SHA256),
+         "producer_logs_equal_receipt": (plog["producer_checker_log"]["sha256"] == res.get("checker_log_sha256")
+                                         and plog["producer_solver_log"]["sha256"] == res.get("solver_log_sha256")),
+         "lane_input_copy_equals_input_pin": cnf_sha == it["input_sha256"],
+     }
++    if route == "B":
++        checks.update({"receipt_meta_equals_pin": regen.get("B_C311_metadata_sha256") == it["meta_sha256"],
++                       "meta_cnf_equals_input_pin": m.get("cnf_sha256") == it["input_sha256"]})
++    else:
++        lb = read_regular(it["lex_meta"])
++        lm = json.loads(lb)
++        out["lex_meta"] = {"path": it["lex_meta"], "sha256": sha_bytes(lb), "bytes": len(lb)}
++        out["lex_meta_fields"] = lm
++        checks.update({
++            "receipt_source_cube_equals_pin": regen.get("source_cube_sha256") == it["source_cube_sha256"],
++            "meta_cnf_equals_source_cube_pin": m.get("cnf_sha256") == it["source_cube_sha256"],
++            "lex_meta_sha256_equals_pin": out["lex_meta"]["sha256"] == it["lex_meta_sha256"],
++            "lex_meta_cnf_equals_input_pin": lm.get("cnf_sha256") == it["input_sha256"],
++            "lex_meta_source_equals_pin": lm.get("source_cube_cnf_sha256") == it["source_cube_sha256"],
++            "lex_meta_wrappers_equal_pins": (lm.get("wrapper_sha256") == pin("k3_lex.py")
++                                             and lm.get("cube_wrapper_sha256") == pin("k3_cubes.py")),
++            "lex_meta_controls_pass": lm.get("finite_controls_status") == "PASS",
++            "lex_meta_counts_equal_receipt": (lm.get("extra_clauses") == regen.get("lex_clauses")
++                                              and lm.get("new_auxiliaries") == regen.get("lex_auxiliaries")),
++        })
+     out["checks"] = checks
+     out["consistent"] = all(checks.values())
+     return out
+@@ -409,6 +484,16 @@
+                        "block_sha256_equals_pin": ci.get("block_sha256") == it["block_sha256"],
+                        "block_clauses_equal_pin": ci.get("block_clauses") == it["block_clauses"],
+                        "input_header": ci.get("input_header"), "out_header": ci.get("out_header")}
++    if it.get("route") == "A":
++        lm = json.loads(read_regular(it["lex_meta"]))
++        rec["lex_agreement"] = {
++            "source_cube_equals_pin": ci.get("source_cube_sha256") == it["source_cube_sha256"],
++            "lex_clauses_equal_meta": ci.get("lex_clauses") == lm.get("extra_clauses"),
++            "lex_auxiliaries_equal_meta": ci.get("lex_auxiliaries") == lm.get("new_auxiliaries"),
++            "per_generator_counts_equal_meta": ([g.get("clauses") for g in ci.get("lex_generators") or []]
++                                                == [g.get("clauses") for g in lm.get("generators") or []]),
++            "generators_equal_meta": ([g.get("generator") for g in ci.get("lex_generators") or []]
++                                      == [g.get("generator") for g in lm.get("generators") or []])}
+     return rec
+ 
+ 
+--- scripts/replay_B_v4.py
++++ scripts-v12/replay_B_v5.py
+@@ -1,5 +1,10 @@
+ #!/usr/bin/env python3
+-"""Parent replay driver for phys-2 K3 cube certificates, encoder B (review/moqls7-k3-B-cube-parent-replay-v1), v4.
++"""Parent replay driver for phys-2 K3 cube certificates (review/moqls7-k3-B-cube-parent-replay-v1), v5.
++
++v5 = replay_B_v4.py with two changes. The import is bklib_v4 (adds the route-A item A_C311cuts and its composition
++script compose_Acuts_v1.py). The driver receipt's scope names the item and its composition script instead of
++'encoder B + K3 cube wrapper'. The solver (kissat), checker, transport and strict conditions are unchanged for every
++item.
+ 
+ v4 = replay_B_v3.py with two changes: the import is bklib_v3 (adds the B_C311cuts item and its composition script),
+ and the pre-execution receipt's "planned" compose command names the item's composition script (compose_Bcuts_v1.py
+@@ -42,7 +47,7 @@
+ import time
+ 
+ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+-import bklib_v3 as K  # noqa: E402
++import bklib_v4 as K  # noqa: E402
+ 
+ SOLVER_SECONDS = 5400
+ CHECKER_SECONDS = 9000
+@@ -353,10 +358,10 @@
+                   "solver_log_equals_producer": (rec.get("solver_log_sha256")
+                                                  == prod["receipt_fields"].get("solver_log_sha256")) if rec else None,
+                   "finished_at": K.now(), "driver_seconds": round(time.monotonic() - t0, 3),
+-                  "scope": ("Instance only: the CNF regenerated from the pinned encoder B + K3 cube wrapper (SHA-256 "
+-                            "equal to the pin) is UNSAT by a streamed kissat binary DRAT proof checked by the "
+-                            "parent-built drat-trim, if and only if verdict is PASS. No K3, M(7), coverage, bridge "
+-                            "or theorem verdict.")})
++                  "scope": ("Instance only: the %s CNF regenerated by %s from the pinned lane sources (SHA-256 equal "
++                            "to the pin) is UNSAT by a streamed kissat binary DRAT proof checked by the parent-built "
++                            "drat-trim, if and only if verdict is PASS. No K3, M(7), coverage, bridge or theorem "
++                            "verdict." % (item, it.get("compose", "compose_B_v1.py")))})
+     h = K.write_json_x(paths["final"], final)
+     brief = {"label": label, "verdict": verdict, "failed_conditions": final["failed_conditions"],
+              "observed_outcome": final["observed_outcome"], "cnf_hash_match": hash_match,
+--- /dev/null
++++ scripts-v12/compose_Acuts_v1.py
+@@ -0,0 +1,152 @@
++#!/usr/bin/env python3
++"""Route-A C311 + AMENDMENT-4 cuts CNF regeneration (encoder A, lex C311), for the parent desk
++review/moqls7-k3-B-cube-parent-replay-v1.
++
++Usage: compose_Acuts_v1.py C311
++
++This is the desk's own composition driver. The producer's driver (k3_cuts_certify_r9.py, 2f0ced45...77ed3) is not
++imported or run. The pinned lane sources gram_enc.py, k3_cubes.py, k3_lex.py and k3_cuts_r1.py are read as bytes and
++SHA-256 checked against the pins below. Exactly those bytes are then compiled and executed as modules named after
++their files: never as __main__, with no import-system lookup and no bytecode. The modules are registered in
++sys.modules in dependency order, so the imports inside k3_cubes, k3_lex and k3_cuts_r1 bind the verified modules.
++
++Pinned functions run unchanged:
++  * gram_enc.build(3, None, True, True, None), the encoder-A base (F.nv, F.cl) and its literal map. The map must equal
++    the cube wrapper's k3_cubes.variable_map();
++  * k3_cubes.variable_map(), k3_cubes.cube_clauses(vmap, 'C311');
++  * k3_lex.generators('C311'), k3_lex.image(vmap, gen), k3_lex.lex_clauses(sorted(perm.items()), nv), in generator order;
++  * k3_cuts_r1.emit(k3_cubes.variable_map()), the AMENDMENT-4 cut block.
++Only route A's composition is restated (as k3_cuts_certify_r9.regenerate_a and prepare do):
++  base   = 'p cnf nv nbase' + lines(F.cl)                           pinned d0d884f9...4388;
++  source = 'p cnf nv (nbase + cube)' + base body + lines(cube)       pinned 7fca33f1...2001 (explore/k3cubes/A_C311.cnf);
++  input  = 'p cnf lex_nv (nbase + cube + lex)' + base body + cube lines + lex lines
++                                                                    pinned 059be616...8c4f (explore/k3lex/A_C311.cnf);
++  output = 'p cnf lex_nv (nc_input + block)' + input body + block lines
++                                                                    pinned 18583aab...2e5e (r9 receipt 88c154b7...f37f).
++Each clause line is ' '.join(map(str, lits)) + ' 0'. The output CNF goes to stdout and one JSON line to stderr. Nothing
++is written to any file.
++"""
++import hashlib
++import json
++import resource
++import sys
++import time
++import types
++
++LANE_CODE = "/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261016/moqls7-maximum/code"
++PINS = {"gram_enc": ("gram_enc.py", "b2c206d8bf4896868fb4e45cd87c633a6cfbb0d62c8fdb62b146ac84a7d38833"),
++        "k3_cubes": ("k3_cubes.py", "70c79c624dd4c4ad0929a41790b7674eaa7343f3fcb5802c5e0c1abdbfb30550"),
++        "k3_lex": ("k3_lex.py", "2b721e85812cd7b3438771868f63da1e10f3fbeed6551f7888f74a399e159b10"),
++        "k3_cuts_r1": ("k3_cuts_r1.py", "0ec92c861024a728aa38d238fda2d7f5f056fae12cb0f474a15db0335b6e1b0a")}
++BASE_SHA256 = "d0d884f9a0f9715b256da68be97408ae4a55c88d76183c02246a570f115a4388"
++SOURCE_CUBE_SHA256 = "7fca33f1e6324cbe17bc44bbea7f8d9188bcac187252d766fb0fa5e39e1c2001"
++INPUT_SHA256 = "059be6164176ee93c94d93bd47fa1d365477b6c94f3aa867df991f677e1a8c4f"
++BLOCK_SHA256 = "05f31da497315877347f7d780e0e6f4c9c4799c8becee3bdb192a8420ff6e6dd"
++BLOCK_CLAUSES = 238140
++OUTPUT_SHA256 = "18583aabb486b2d7fdf2159ed2172c9dfc9b29bbd2e50c63a5d7d94d44ba2e5e"
++BASE_HEADER, INPUT_HEADER, OUTPUT_HEADER = (96978, 627398), (107513, 659168), (107513, 897308)
++
++
++def load(name):
++    fname, pin = PINS[name]
++    path = LANE_CODE + "/" + fname
++    with open(path, "rb") as f:
++        src = f.read()
++    got = hashlib.sha256(src).hexdigest()
++    if got != pin:
++        raise SystemExit("pin mismatch for %s: %s != %s" % (path, got, pin))
++    mod = types.ModuleType(name)
++    mod.__file__ = path
++    code = compile(src, path, "exec", dont_inherit=True)
++    sys.modules[name] = mod
++    exec(code, mod.__dict__)
++    return mod, got, len(src)
++
++
++def lines(clauses):
++    return "".join(" ".join(map(str, cl)) + " 0\n" for cl in clauses).encode("ascii")
++
++
++def header(nv, nc):
++    return b"p cnf %d %d\n" % (nv, nc)
++
++
++def main():
++    t0 = time.monotonic()
++    if len(sys.argv) != 2 or sys.argv[1] != "C311":
++        raise SystemExit(__doc__)
++    mods = {}
++    for name in ("gram_enc", "k3_cubes", "k3_lex", "k3_cuts_r1"):
++        mods[name] = load(name)
++    enc, k3, lex, cuts = (mods[n][0] for n in ("gram_enc", "k3_cubes", "k3_lex", "k3_cuts_r1"))
++    if not (k3.gram_enc is enc and lex.k3_cubes is k3 and cuts.k3_cubes is k3 and cuts.k3_lex is lex
++            and cuts.gram_enc is enc):
++        raise SystemExit("a lane module bound an unverified dependency")
++    cov = k3.coverage()
++    vmap = k3.variable_map()
++    t_enc = time.monotonic()
++    F, amap = enc.build(3, None, True, True, None)
++    enc_seconds = round(time.monotonic() - t_enc, 3)
++    expected_map = {"%d|%d,%d|%d,%d" % (a, p[0], p[1], q[0], q[1]): v for (a, p, q), v in vmap.items()}
++    if amap != expected_map:
++        raise SystemExit("encoder A map differs from the cube wrapper map")
++    nv, nbase = F.nv, len(F.cl)
++    base_body = lines(F.cl)
++    del F, amap
++    if (nv, nbase) != BASE_HEADER or hashlib.sha256(header(nv, nbase) + base_body).hexdigest() != BASE_SHA256:
++        raise SystemExit("regenerated encoder-A base differs from the pin")
++    empty_clause_lines = sum(1 for ln in base_body.split(b"\n")[:-1] if ln.split() == [b"0"])
++    cube, units, twins = k3.cube_clauses(vmap, "C311")
++    cube_body = lines(cube)
++    source_sha = hashlib.sha256(header(nv, nbase + len(cube)) + base_body + cube_body).hexdigest()
++    if source_sha != SOURCE_CUBE_SHA256:
++        raise SystemExit("regenerated A original C311 %s differs from the pin" % source_sha)
++    lex_nv, lex_cl, per_gen = nv, [], []
++    for gen in lex.generators("C311"):
++        perm = lex.image(vmap, gen)
++        lex_nv, clauses = lex.lex_clauses(sorted(perm.items()), lex_nv)
++        lex_cl.extend(clauses)
++        per_gen.append({"generator": gen, "clauses": len(clauses)})
++    body = base_body + cube_body + lines(lex_cl)
++    del base_body, cube_body
++    nc_in = nbase + len(cube) + len(lex_cl)
++    input_sha = hashlib.sha256(header(lex_nv, nc_in) + body).hexdigest()
++    if input_sha != INPUT_SHA256 or (lex_nv, nc_in) != INPUT_HEADER:
++        raise SystemExit("regenerated lex input %s %r differs from the pin" % (input_sha, (lex_nv, nc_in)))
++    block_clauses = cuts.emit(k3.variable_map())
++    block = lines(block_clauses)
++    block_sha = hashlib.sha256(block).hexdigest()
++    if block_sha != BLOCK_SHA256 or len(block_clauses) != BLOCK_CLAUSES:
++        raise SystemExit("cut block %s (%d clauses) differs from the pin" % (block_sha, len(block_clauses)))
++    out = header(lex_nv, nc_in + len(block_clauses)) + body + block
++    out_sha = hashlib.sha256(out).hexdigest()
++    if out_sha != OUTPUT_SHA256 or (lex_nv, nc_in + len(block_clauses)) != OUTPUT_HEADER:
++        raise SystemExit("strengthened output %s differs from the pin" % out_sha)
++    info = {"cube": "C311", "encoder": "A", "kind": "lex C311 + AMENDMENT-4 cuts (route A)",
++            "modules": {n: {"path": LANE_CODE + "/" + PINS[n][0], "sha256": m[1], "bytes": m[2]}
++                        for n, m in mods.items()},
++            "gram_enc_build": {"call": "build(3, None, True, True, None)", "seconds": enc_seconds,
++                               "map_equals_wrapper_map": True},
++            "coverage": {"status": cov["status"], "n_valid": cov["n_valid"],
++                         "complete_disjoint_cover": cov["complete_disjoint_cover"]},
++            "vmap_entries": len(vmap),
++            "base_cnf_sha256": BASE_SHA256, "base_header": [nv, nbase], "base_empty_clause_lines": empty_clause_lines,
++            "support_sets": [sorted(S) for S in k3.CUBES["C311"]], "cube_unit_clauses": units,
++            "same_ray_identities": json.loads(json.dumps(twins)), "extra_clauses": len(cube),
++            "source_cube_sha256": source_sha,
++            "lex_generators": json.loads(json.dumps(per_gen)), "lex_clauses": len(lex_cl),
++            "lex_auxiliaries": lex_nv - nv,
++            "input_sha256": input_sha, "input_header": [lex_nv, nc_in],
++            "block_sha256": block_sha, "block_clauses": len(block_clauses), "block_bytes": len(block),
++            "out_header": [lex_nv, nc_in + len(block_clauses)], "out_bytes": len(out), "out_sha256": out_sha,
++            "python": sys.version.split()[0], "python_executable": sys.executable,
++            "ru_maxrss_bytes": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
++            "seconds": round(time.monotonic() - t0, 3)}
++    sys.stdout.buffer.write(out)
++    sys.stdout.buffer.flush()
++    sys.stderr.write(json.dumps(info, sort_keys=True) + "\n")
++    sys.stderr.flush()
++
++
++if __name__ == "__main__":
++    main()

@@ -1,0 +1,312 @@
+--- src/run_m2h_v6_2.py
++++ src/run_m2h_v6_3.py [normalized]
+@@ -1,5 +1,7 @@
+ #!/usr/bin/env python3
+-"""Historical-M2 (A2 ms01..ms08) measured re-solve over the v6_2 transport (parent Codex review v2 HOLD fixes).
++"""Historical-M2 (A2 ms01..ms08) measured re-solve over the v6_2 transport (parent Codex review v2 HOLD fixes, plus the
++v6_2 re-review fixes: ONE shared predicate for all five admissions; any signal/cancellation never qualifies, and the
++publication window is signal-blocked with a final cancellation check; exact covered/excluded universe).
+ Each item regenerates its ORIGINAL independent-B formula; a mismatch with the bound historical receipt CNF is an
+ explicit pre-pin BindingRefusal (no pin/job/group, unattempted, chunk ends, no veto). CaDiCaL at the original 300/600
+ limit, drat-trim 1200, the same exact measured predicate, one attempt, no automatic retry, ONE pipeline (singleton
+@@ -18,6 +20,7 @@
+ import json
+ import os
+ import re
++import signal
+ import time
+ 
+ import encode_skel_b as ENC
+@@ -41,6 +44,38 @@
+               ('partbatch',9):(STREAMED % 1200,['s VERIFIED'],False),('direct',12):(STAGED,['s VERIFIED'],True),
+               ('direct',14):(STAGED,['s VERIFIED'],True),('partbatch',14):(STAGED,['s VERIFIED'],True),
+               ('direct',15):(STAGED,['s VERIFIED'],True),('partbatch',15):(STAGED,['s VERIFIED'],True)}
++
++
++REQUIRED_ADMISSIONS = (('owner_preconstruction_gate','construct'),('owner_prespawn_gate','worker'),
++                       ('worker_preconstruction_gate','construct'),('worker_solver_gate','solver'),('worker_checker_gate','checker'))
++
++
++def admission_records(r):
++    native = r.get('native_result') if isinstance(r.get('native_result'),dict) else {}
++    gates = native.get('gates') if isinstance(native.get('gates'),list) else []
++    return ({'owner_preconstruction_gate':r.get('owner_preconstruction_gate'),'owner_prespawn_gate':r.get('owner_prespawn_gate'),
++             'worker_preconstruction_gate':native.get('worker_preconstruction_gate'),
++             'worker_solver_gate':gates[0] if len(gates) > 0 else None,'worker_checker_gate':gates[1] if len(gates) > 1 else None},len(gates))
++
++
++def admission_errors(r,cut,require_all):
++    """ONE shared predicate for the five admissions of an item: every present admission record carries its phase and the
++    frozen cutoff; every admitted one is timestamped strictly before the cutoff; a qualifying UNSAT needs all five admitted."""
++    errors = []
++    by,n = admission_records(r)
++    if n > 2: errors.append('unexpected worker phase gate count %d' % n)
++    for name,phase in REQUIRED_ADMISSIONS:
++        g = by[name]
++        if g is None:
++            if require_all: errors.append('required admission missing: '+name)
++            continue
++        if not isinstance(g,dict): errors.append('admission record invalid: '+name); continue
++        if g.get('phase') != phase: errors.append('admission phase differs: '+name)
++        if g.get('admission_cutoff_epoch') != cut: errors.append('admission cutoff differs: '+name)
++        if g.get('admitted') is True:
++            if type(g.get('at_epoch')) not in (int,float) or not g['at_epoch'] < cut: errors.append('admission at/after the frozen cutoff or untimed: '+name)
++        elif require_all: errors.append('required admission not admitted: '+name)
++    return errors
+ 
+ 
+ def epochs(c=None):
+@@ -148,7 +183,10 @@
+     assert c['cases_direct'] == len(direct) and c['cases_split'] == len(split) and c['split_intervals'] == sum(x['mode'] == 'partbatch' for x in c['items'])
+     excluded = [e['case'] for e in c['excluded_cases']]
+     covered = {'ms%02d_b%05d' % k for k in set(direct) | split}
+-    assert len(set(excluded)) == len(excluded) and not (set(excluded) & covered) and len(excluded)+len(covered) == sum(totals.values())
++    universe = {'ms%02d_b%05d' % (mi,bi) for mi,n in totals.items() for bi in range(n)}
++    assert len(set(excluded)) == len(excluded), 'duplicate excluded case'
++    assert not (set(excluded) & covered), 'excluded case is also covered'
++    assert set(excluded) | covered == universe, 'covered/excluded is not exactly the A2 ms01..ms08 skeleton universe'
+ 
+ 
+ def recipe(c,x):
+@@ -182,11 +220,11 @@
+         else:
+             assert not any(key in r for key in ('list_sha256','complete_denominator','enumerator'))
+         if r.get('group_started'): assert (r.get('supervisor') or {}).get('supervisor_sha256') == R.SUP_SHA
+-        cut = epochs(c)[0]
+-        gates = [r.get('owner_preconstruction_gate'),r.get('owner_prespawn_gate')]+list((r.get('native_result') or {}).get('gates') or [])
+-        for g in gates:
+-            if isinstance(g,dict) and g.get('admitted'):
+-                assert g.get('admission_cutoff_epoch') == cut and type(g.get('at_epoch')) in (int,float) and g['at_epoch'] < cut, 'admitted gate violates the frozen cutoff'
++        errs = admission_errors(r,epochs(c)[0],r.get('status') == 'UNSAT')
++        assert not errs, errs
++        if r.get('status') == 'UNSAT':
++            assert not r.get('owner_cancelled') and not r.get('observed_signal') and not (r.get('supervisor') or {}).get('observed_signal'), \
++                'UNSAT record carries a signal/cancellation'
+     except (OSError,ValueError,KeyError,TypeError,AssertionError,StopIteration) as exc:
+         return {'state':'INTEGRITY_VETO','errors':[repr(exc)]}
+     enc = 'encode_skel_b.build_v2' if x['mode'] == 'direct' else 'encode_skel_b.build_partbatch'
+@@ -294,12 +332,20 @@
+         if not r.get('pre_child_pin_sha256'):
+             COMMON.publish_json(logs/('binding-or-construction-'+x['id'].replace(':','_')+'.json'),r,stage)
+             TX.release_unattempted(it['claim'],'M2H construction refused before immutable pin/native'); stop = 'construction refusal'; break
+-        r.update(runner=RUNNER,count_for_scientific_coverage=True,historical_receipt=x['historical'])
+-        if x['mode'] == 'partbatch': r.update(list_sha256=x['list']['sha256'],complete_denominator=x['list']['n'],enumerator='extend_b.py')
+-        raw = (json.dumps(r,indent=1)+'\n').encode(); rh = hashlib.sha256(raw).hexdigest()
+-        COMMON.publish_json(L/it['commit'],{'schema':'PA19-K1-RECEIPT-v6_2','production_contract_sha256':args.sha256,'b_index':x['b_index'],
+-            'indices':x['indices'],'record_sha256':rh,'pin_sha256':r['pre_child_pin_sha256']},stage)
+-        COMMON.publish_bytes(L/it['new_record'],raw,stage)  # primary LAST
++        blocked = signal.pthread_sigmask(signal.SIG_BLOCK,{signal.SIGTERM,signal.SIGINT})  # v6_2 publication window
++        try:
++            if R._CANCEL[0] and not r.get('owner_cancelled'):  # a cancellation after the owner composed the outcome
++                r.update(status='UNKNOWN',checked=False,owner_cancelled=True,halt_production=True,chunk_stop=True,
++                         safety_veto=list(r.get('safety_veto') or [])+['cancellation before publication'])
++                OWNER.persist_veto(r,paths,args.sha256,recipe(c,x))
++            r.update(runner=RUNNER,count_for_scientific_coverage=True,historical_receipt=x['historical'])
++            if x['mode'] == 'partbatch': r.update(list_sha256=x['list']['sha256'],complete_denominator=x['list']['n'],enumerator='extend_b.py')
++            raw = (json.dumps(r,indent=1)+'\n').encode(); rh = hashlib.sha256(raw).hexdigest()
++            COMMON.publish_json(L/it['commit'],{'schema':'PA19-K1-RECEIPT-v6_2','production_contract_sha256':args.sha256,'b_index':x['b_index'],
++                'indices':x['indices'],'record_sha256':rh,'pin_sha256':r['pre_child_pin_sha256']},stage)
++            COMMON.publish_bytes(L/it['new_record'],raw,stage)  # primary LAST
++        finally:
++            signal.pthread_sigmask(signal.SIG_SETMASK,blocked)  # a signal in this window now reaches the cancel handler
+         attempts += 1
+         item = {'id':x['id'],'record':it['new_record'],'sha256':rh,'status':r['status'],'checked':r['checked'],'integrity_status':r['integrity_status'],
+                 'host_clock':time.strftime('%Y-%m-%dT%H:%M:%S%z')}
+--- src/check_m2h_v6_2.py
++++ src/check_m2h_v6_3.py [normalized]
+@@ -1,5 +1,9 @@
+ #!/usr/bin/env python3
+-"""PRIVATE M2H v6_2 control suite (parent Codex review v2 requirements); excluded from scientific coverage.
++"""PRIVATE M2H v6_2 control suite (parent Codex review v2 + v6_2 re-review requirements); excluded from scientific coverage.
++New in v6_2: O3/O4 settlement-window signal in the REAL owner; T12 publication-window signal (deferred, record consistent,
++runner stops); T13 cancellation between owner return and publication (UNKNOWN + persistent HALT); R15-R19 the shared
++five-admission predicate (worker preconstruction gate missing/wrong cutoff/post-cutoff, valid five, UNSAT with cancellation);
++V1-V3 exact covered/excluded universe (out-of-domain, duplicate, overlapping exclusion names).
+ No solver, checker or native child is started. All writes go to private shadow lanes under
+ cycle2/m2h-v6_2-controls-<ns>/ (symlinked read-only inputs, real new directories for outputs); module-global lane roots
+ of run_m2h_v6_2 / run_m2_ms09_k1_v6_2 / m2_item_owner_v6_2 / final_m2h_inventory_v6_2 are rebound to the shadow for one
+@@ -22,7 +26,9 @@
+ import fcntl
+ import hashlib
+ import json
++import copy
+ import os
++import signal
+ import sys
+ import time
+ import types
+@@ -141,6 +147,61 @@
+             rows.append({'name':name,'flags':flags,'files':files,'unattempted':r.get('unattempted'),'integrity':r.get('integrity_status'),'ok':ok})
+     finally:
+         R.full_gate = orig_gate
++    return rows
++
++
++def settlement_controls(root,c,h):
++    """O3/O4: the REAL owner composes the outcome after a (fake) clean supervision; O3 delivers SIGTERM during settlement."""
++    rows, x = [], next(i for i in c['items'] if i['mode'] == 'direct')
++    orig = (R.full_gate,R.supervisor,R.Capacity._settle)
++    try:
++        R.full_gate = lambda lease,phase,lane=None,providers=None: {'admitted':True,'errors':[],'phase':phase}
++        for name,signal_in_settle in [('O3 SIGTERM during settlement -> owner_cancelled UNKNOWN + HALT',True),('O4 same flow without a signal -> no cancellation, no veto',False)]:
++            sub = root/name.split()[0]; make_shadow(sub,{'items':[x]})
++            with Rebind(sub):
++                it = H.task(x); paths = TX.item_paths(it,sub/'scratch/stage')
++                def fake_supervise(command,nm,wall,cap,floor,lane,record,quarantine,grace=60,owner_child=None):
++                    rec = {'leader_pid':None,'completed_cleanly':True,'uncertain':False,'observed_signal':None,'trip_reason':None,'stop':None,
++                           'supervisor_sha256':R.SUP_SHA,'CONTROL':True}
++                    dump(record,rec)
++                    dump(paths['worker_result'],{'schema':'PA19-NATIVE-RESULT-v6_2','status':'UNKNOWN','integrity_status':'NOT_EVALUATED',
++                         'integrity_errors':[],'sat_candidate':False,'halt_production':False,'bounded_unknown':'CONTROL'})
++                    return rec
++                R.supervisor = lambda: types.SimpleNamespace(supervise=fake_supervise)
++                def fake_settle(self,rec,_sig=signal_in_settle):
++                    if _sig: os.kill(os.getpid(),signal.SIGTERM)
++                    self.settlement = {'group_quiescent':True,'leader_reaped':True,'explicit_owned_popen_wait':True,'owned_leader_pid':None,'CONTROL':True}
++                    self.safe = True
++                R.Capacity._settle = fake_settle
++                admission = {'binary_authority':c['binary_authority'],'census_reference':{'path':'x'},'whole_plan_remaining_bound_bytes':R.ALL_PLANNED_RETAINED_BOUND,
++                             'admission_cutoff_epoch':time.time()+3600}
++                r = OWNER.execute(lambda: b'p cnf 1 1\n1 0\n',H.recipe(c,x),h,c['source_sha256'],paths,time.monotonic()+5000,admission,'cadical',600)
++            cancelled = R._CANCEL[0]; R._CANCEL[0] = False
++            flags = sorted(p.name for p in (sub/'cycle2').glob('m2k3-*.flag'))
++            ok = (r.get('owner_cancelled') is True and r.get('status') == 'UNKNOWN' and r.get('halt_production') is True and flags == ['m2k3-HALT.flag'] and cancelled) \
++                 if signal_in_settle else (not r.get('owner_cancelled') and r.get('status') == 'UNKNOWN' and not r.get('halt_production') and not flags)
++            rows.append({'name':name,'owner_cancelled':r.get('owner_cancelled'),'status':r.get('status'),'halt':r.get('halt_production'),'flags':flags,'ok':ok})
++    finally:
++        R.full_gate,R.supervisor,R.Capacity._settle = orig
++        R._CANCEL[0] = False
++    return rows
++
++
++def five_gates(cut):
++    g = lambda phase: {'phase':phase,'admitted':True,'errors':[],'admission_cutoff_epoch':cut,'at_epoch':cut-3600.0}
++    return g('construct'),g('worker'),{'worker_preconstruction_gate':g('construct'),'gates':[g('solver'),g('checker')]}
++
++
++def universe_controls(c):
++    rows = []
++    covered = next(i for i in c['items'] if i['mode'] == 'direct')
++    for name,mut,msg in [('V1 out-of-domain excluded name',lambda cc: cc['excluded_cases'][0].update(case='ms01_b99999'),'skeleton universe'),
++                         ('V2 duplicate excluded name',lambda cc: cc['excluded_cases'].append(dict(cc['excluded_cases'][0])),'duplicate excluded case'),
++                         ('V3 excluded name that is also covered',lambda cc: cc['excluded_cases'][0].update(case='ms%02d_b%05d' % (covered['multiset'],covered['b_index'])),'also covered')]:
++        cc = copy.deepcopy(c); cc.pop('_path',None); mut(cc)
++        try: H.verify(cc); err = None
++        except AssertionError as exc: err = repr(exc)
++        rows.append({'name':name,'error':err,'ok':err is not None and msg in err})
+     return rows
+ 
+ 
+@@ -187,6 +248,20 @@
+              ('R11 pin binds the v3 supervisor',d[8],lambda p,r,k:p.update(supervisor_sha256='79c463589c9c5d60fddff7c4397a4e90339bdb0f5a0b2542c865c02a387573b3'),None,'INTEGRITY_VETO'),
+              ('R12 direct record carrying list fields',d[9],lambda p,r,k:r.update(list_sha256='5'*64),None,'INTEGRITY_VETO'),
+              ('R13 evidence-free UNSAT',d[10],unsat,None,'INTEGRITY_VETO')]
++    def gated(kind):
++        def m(p,r,k):
++            unsat(p,r,k); g1,g2,nat = five_gates(cut); r.update(owner_preconstruction_gate=g1,owner_prespawn_gate=g2,native_result=nat)
++            w = r['native_result']
++            if kind == 'missing': del w['worker_preconstruction_gate']
++            if kind == 'cutoff': w['worker_preconstruction_gate']['admission_cutoff_epoch'] = cut+1.0
++            if kind == 'late': w['worker_preconstruction_gate']['at_epoch'] = cut+5.0
++            if kind == 'cancelled': r['owner_cancelled'] = True
++        return m
++    predicate = [('R15 UNSAT missing worker preconstruction admission',d[12],gated('missing'),'required admission missing: worker_preconstruction_gate'),
++                 ('R16 worker preconstruction admission with a wrong cutoff',d[13],gated('cutoff'),'admission cutoff differs: worker_preconstruction_gate'),
++                 ('R17 worker preconstruction admission after the cutoff',d[14],gated('late'),'admission at/after the frozen cutoff or untimed: worker_preconstruction_gate'),
++                 ('R18 UNSAT carrying an owner cancellation',d[15],gated('cancelled'),'UNSAT record carries a signal/cancellation'),
++                 ('R19 all five admissions valid: predicate passes, evidence reader still rejects',d[16],gated('valid'),None)]
+     sub = root/'R'; make_shadow(sub,c)
+     with Rebind(sub):
+         for name,x,mut,special,want in cases:
+@@ -194,6 +269,13 @@
+             bound_record(c,h,x,sub,mut,override)
+             q = H.inspect(c,h,x)
+             rows.append({'name':name,'id':x['id'],'state':q['state'],'errors':[str(e)[:200] for e in q.get('errors') or []][:3],'ok':q['state'] == want})
++        for name,x,mut,msg in predicate:
++            bound_record(c,h,x,sub,mut,None)
++            q = H.inspect(c,h,x); text = ' '.join(str(e) for e in q.get('errors') or [])
++            own = ('required admission missing','admission cutoff differs','admission at/after the frozen cutoff','admission phase differs',
++                   'required admission not admitted','admission record invalid','UNSAT record carries a signal/cancellation')
++            ok = q['state'] == 'INTEGRITY_VETO' and ((msg in text) if msg else not any(o in text for o in own))
++            rows.append({'name':name,'id':x['id'],'state':q['state'],'errors':[str(e)[:240] for e in q.get('errors') or []][:3],'ok':ok})
+         q = H.inspect(c,h,d[11])
+         rows.append({'name':'R14 missing record','id':d[11]['id'],'state':q['state'],'ok':q['state'] == 'MISSING'})
+     return rows
+@@ -218,18 +300,27 @@
+         if self.mode == 'pre-worker':
+             dump(paths['job'],{'schema':'PA19-NATIVE-JOB-v6_2','CONTROL':True})
+             return dict(base,unattempted='after-pin-before-worker',chunk_stop=True,resource_refusal=['CONTROL refusal'])
++        if self.mode in ('unknown-continue','unknown-continue-cancel'):
++            if self.mode == 'unknown-continue-cancel': os.kill(os.getpid(),signal.SIGTERM)  # cancel handler runs before the runner publishes
++            return dict(base,chunk_stop=False,bounded_unknown='CONTROL native limit')
+         return dict(base,chunk_stop=True,resource_refusal=['CONTROL worker admission refusal'])
+ 
+ 
+-def run_main(c,h,sub,owner=None,max_attempts=2,formula=None,epochs=None,real_gate_admit=False):
+-    saved = (H.OWNER,H.formula,H.epochs,H.verify,R.create_census,R.census_for_gate,R.full_gate,sys.argv)
++def run_main(c,h,sub,owner=None,max_attempts=2,formula=None,epochs=None,real_gate_admit=False,publish_signal=False):
++    saved = (H.OWNER,H.formula,H.epochs,H.verify,R.create_census,R.census_for_gate,R.full_gate,sys.argv,COMMON.publish_bytes)
+     orig_verify = H.verify
+     def verify_real(cc):
+         keep = H.L; H.L = REAL
+         try: return orig_verify(cc)
+         finally: H.L = keep
+     try:
+-        if owner is not None: H.OWNER = types.SimpleNamespace(execute=owner.execute,BindingRefusal=OWNER.BindingRefusal)
++        if owner is not None: H.OWNER = types.SimpleNamespace(execute=owner.execute,BindingRefusal=OWNER.BindingRefusal,persist_veto=OWNER.persist_veto)
++        if publish_signal:
++            orig_pb, sent = COMMON.publish_bytes, []
++            def pb(path,raw,stage):
++                if str(path).endswith('_h6_2.json') and not sent: sent.append(1); os.kill(os.getpid(),signal.SIGTERM)
++                return orig_pb(path,raw,stage)
++            COMMON.publish_bytes = pb
+         if formula is not None: H.formula = formula
+         if epochs is not None: H.epochs = epochs
+         H.verify = verify_real
+@@ -239,7 +330,8 @@
+         sys.argv = ['run_m2h_v6_2.py',str(c['_path']),h,'--max-attempts',str(max_attempts)]
+         with Rebind(sub): H.main()
+     finally:
+-        H.OWNER,H.formula,H.epochs,H.verify,R.create_census,R.census_for_gate,R.full_gate,sys.argv = saved
++        H.OWNER,H.formula,H.epochs,H.verify,R.create_census,R.census_for_gate,R.full_gate,sys.argv,COMMON.publish_bytes = saved
++        R._CANCEL[0] = False
+     chunks = sorted((sub/'cycle2/m2h6_2-chunks').glob('*'))
+     return chunks[-1] if chunks else None
+ 
+@@ -310,6 +402,21 @@
+         with Rebind(sub): setup(sub)
+         own = StubOwner(c,h,'pre-pin'); ch = run_main(c,h,sub,own)
+         rows.append({'name':name,'calls':own.calls,'ok':own.calls == [] and ch is not None and (ch/'initialization-deferred.json').exists()})
++    # T12 signal inside the publication window: deferred, the published record stays consistent, the runner then stops
++    sub = make_shadow(root/'T12',c); own = StubOwner(c,h,'unknown-continue'); ch = run_main(c,h,sub,own,max_attempts=3,publish_signal=True)
++    sm = summary(ch); it = H.task(first); q = H_inspect_in(sub,c,h,first)
++    rec = json.loads((sub/it['new_record']).read_bytes()) if (sub/it['new_record']).exists() else {}
++    rows.append({'name':'T12 signal in the publication window is deferred; runner stops','calls':own.calls,'stop':sm and sm['stop_reason'],'state':q['state'],
++                 'ok':own.calls == [first['id']] and sm['stop_reason'] == 'deadline/cancellation; no new native' and q['state'] == 'UNQUALIFIED'
++                      and 'owner_cancelled' not in rec and not list((sub/'cycle2').glob('m2k3-*.flag'))})
++    # T13 cancellation after the owner returned and before publication: UNKNOWN + persistent HALT, never qualified
++    sub = make_shadow(root/'T13',c); own = StubOwner(c,h,'unknown-continue-cancel'); ch = run_main(c,h,sub,own,max_attempts=3)
++    sm = summary(ch); it = H.task(first)
++    rec = json.loads((sub/it['new_record']).read_bytes()) if (sub/it['new_record']).exists() else {}
++    flags = sorted(p.name for p in (sub/'cycle2').glob('m2k3-*.flag'))
++    rows.append({'name':'T13 cancellation before publication marks UNKNOWN + HALT','stop':sm and sm['stop_reason'],'flags':flags,
++                 'ok':own.calls == [first['id']] and rec.get('owner_cancelled') is True and rec.get('status') == 'UNKNOWN'
++                      and rec.get('halt_production') is True and flags == ['m2k3-HALT.flag'] and sm['stop_reason'] == 'persistent veto'})
+     return rows
+ 
+ 
+@@ -348,11 +455,13 @@
+     with R.Capacity(time.monotonic()+3600,metadata=True,wait_allowance=60):  # one token; tests below never nest tokens
+         fams['G_runtime_gates'] = gate_controls(root)
+     fams['C_capacity'] = capacity_controls(root)
+-    fams['O_owner'] = owner_controls(root,c,args.sha256)
++    fams['O_owner'] = owner_controls(root,c,args.sha256)+settlement_controls(root,c,args.sha256)
+     with R.Capacity(time.monotonic()+3600,metadata=True,wait_allowance=60):
+         fams['R_exact_reader'] = reader_controls(root,c,args.sha256)
+     fams['T_runner_flow'] = flow_controls(root,c,args.sha256)
+     fams['I_inventory'] = inventory_controls(root,c,args.sha256)
++    with R.Capacity(time.monotonic()+3600,metadata=True,wait_allowance=60):
++        fams['V_exact_universe'] = universe_controls(c)
+     allok = all(r['ok'] for rows in fams.values() for r in rows)
+     out = {'schema':'PA19-M2H-V6_2-CONTROLS-v1','started_host_clock':started,'finished_host_clock':time.strftime('%Y-%m-%dT%H:%M:%S%z'),
+         'control_source_sha256':E.digest(SELF),'contract':str(c['_path'].relative_to(REAL)),'contract_sha256':args.sha256,

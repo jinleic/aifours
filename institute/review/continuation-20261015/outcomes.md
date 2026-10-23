@@ -1,0 +1,101 @@
+# Authorized continuation — outcome ledger, 2026-10-16 PT
+
+## Outcome and authority
+
+**No headline book problem is solved. The continuation produced checkable, scoped contributions, not a demonstrated breakthrough:** a longer finite projective-plane exclusion, a structural Boolean residue-type exclusion, and explicit near-cavity random-SAT certificates with weaker kernel-checked endpoints.
+
+The owner authorized continued scientifically reasonable work beyond the completed six-hour allocations. This superseded the old cutoff, not the old verdicts. Batches 01–03 and their `attack-e*` snapshots remain unchanged. Their generated records still say **unverified / PROOF-OBLIGATION**; this ledger records later, separately checked research and does not manufacture a new engine verdict. No batch 04, scheduler or automatic refill was run. The previous engine outcomes are in [the batch ledger](../hard-2026-10-15-outcomes.md).
+
+Correctness, priority and significance are separate. Model acceptance is not human peer review. A failed search is not nonexistence; a search miss is not novelty; an interval upper bound and a Lean theorem are different verification levels.
+
+## Results in scope
+
+| Problem | Completed continuation result | Verification | Still unresolved |
+|---|---|---|---|
+| Mathematics `math-p0039` | Under Kantor/CFSG, the Thas–Zagier reduction and Feit's valid conditions, no non-Desarguesian flag-transitive plane has order **n < 2,582,236,504,064**. The old low range was recomputed rather than imported from Thas–Zagier's search. | Exact per-member factor or modular-residue computation; complete coverage check; libmpdec cross-checks; parent GMP samples; separate structural-proof review. | All orders; priority beyond the sources checked. The imported mathematical premises are not re-proved or formalized here. |
+| Information science `info-p0403` | All **252** remaining classes in the pinned restricted fixed-half corpus are excluded. A reviewed universal argument gives quadratic residue distance at least **112**. A further written proof excludes the entire balanced residue type **(polar rank 4, weight 128)**. | Corpus replay and independent parent checks; Opus review of the zero-set/next-bit lemmas; fresh Codex **ACCEPT** of the full type exclusion and its application; exact classification and corruption controls. | Whether a balanced nine-variable function of nonlinearity 242 exists. **Seven** residue types remain; these are large families, not seven truth tables. No Lean verification or human peer review. |
+| Physics `phys-p0422` | Explicit finite rational certificates for whp unsatisfiability at **4.26679 (3-SAT), 9.9325 (4-SAT), 21.1175 (5-SAT)**. Separate Lean endpoints: **4.26718, 9.934, 21.123**, respectively, through a general-arity criterion. | Two rigorous numerical producers, independently implemented parent arithmetic and rejection controls; statement/axiom checks and fresh Lean-kernel replays at the formal endpoints. | Exact thresholds, human peer review and priority of the explicit constants. The strongest numerical rows are not kernel theorems. The interpolation principle and near-cavity upper-bound claims are prior art. |
+
+### Mathematics: what was actually recomputed
+
+This is the geometric conjecture explicitly stated in the book, not its inconsistent diameter-two Cayley-graph formulation. The imported reduction restricts a nonclassical candidate to `n = 8 (mod 24)`, with `p = n²+n+1` prime and `D = mu_(n+1)` planar.
+
+| Segment | Progression interval | Members | Evidence |
+|---|---|---:|---|
+| Fresh low-range replay | [8, 200,000,000,000) | 8,333,333,333 | Every unsieved residue checked with both CPython and libmpdec |
+| Previously accepted exact prefix | [200,000,000,000, 251,539,607,552) | 2,147,483,648 | Pinned attack-e2 Python replay records checked, **not recomputed in this continuation** |
+| Fresh extension | [251,539,607,552, 2,582,236,504,064) | 97,112,370,688 | Every unsieved residue computed with CPython; every 32nd also with libmpdec; every block matches both preserved C digests |
+
+The new computation covers **105,445,704,021 members in 12,571 blocks**: 91,040,739,086 checked proper-factor rejections and 14,404,964,935 full modular residues. Across the new segments, libmpdec recomputed 1,552,266,804 residues. The only unsieved base-two survivors were `n=8` (classical) and `n=512`, eliminated by an explicitly re-derived difference collision. The named candidate `n=2^27` is rejected by the proper factor 2593.
+
+The 446 resumable chunk commands reported no failures, 18,198 seconds wall time on four workers, 72,582.402 summed process-seconds, and a maximum process RSS of 315,506,688 bytes. This is one full exact computation, not two independent complete reruns. Digest agreement is a consistency check; the arithmetic is the rejection evidence.
+
+The [package](../../../mathematics/evidence/hard-continuation-20261015/README.md), [coverage receipt](../../../mathematics/evidence/hard-continuation-20261015/evidence/coverage-v4.json) and [compact handoff](../../../mathematics/evidence/hard-continuation-20261015/handoff/README.md) supply the assumptions and commands. The parent's final [coverage check](math-parent-coverage-final.json) reaches the exact endpoint, and a [one-integer-beyond control](math-parent-coverage-final-negative-control.json) rejects it. The parent's [GMP sample audit](math-independent-gmp-spot-check.json) checked 2,634 stratified members, including 384 residues with CPython, GMP and libmpdec. **Those samples do not certify the full range.**
+
+The [algorithm audit](math-certificate-code-codex-review.md) found no false-exclusion path in the fixed-scope producer arithmetic, but exposed malformed-receipt weaknesses: modular collision aliases, fractional factors and a replay stride that could skip libmpdec. A [follow-up review](math-certificate-code-codex-rereview.md) caught boolean/float aliases in replay equality. The final replay and coverage checker now share strict typed witness/block rules, verify source pins and compare canonical JSON. The [14-case fail-before/pass-after receipt](../../../mathematics/evidence/hard-continuation-20261015/evidence/regressions-validation-fix-v3.json) records the fix. All 446 original receipt bytes are preserved: the archived producer remains `f6eaa1a8…941a6`, while the guarded verifier is `07cc2bf9…bf566`. The arithmetic was not changed or re-pinned. Coverage checks remain checks of execution records, not a kernel proof that billions of operations ran.
+
+The final focused [Codex re-review](math-certificate-code-codex-final-review.md) returned **ACCEPT for validation/provenance only**, after 67 in-memory path checks. The parent's [final inspection](math-parent-final-inspection.json) independently verifies all 446 original receipt hashes and the 62-file handoff manifest. That acceptance does not purport to certify the endpoint by itself; the endpoint rests on the exact computation plus the checked coverage and stated imported premises.
+
+Two separate side results are scoped narrowly:
+
+- The elementary [forced-subgroup Sidon theorem](../../../mathematics/evidence/hard-continuation-20261015/proofs/FORCED-SUBGROUP.md) shows that repeated-difference certificates confined to the specified forced subgroup cannot exclude power-of-two orders. Codex returned [ACCEPT-WITH-FIXES](math-structure-codex-review.md); the necessity overstatement was corrected. This is a limitation on that method, not a new nonexistence theorem. Singer/Cohen give a classical explanation; no novelty is asserted. The Opus attempt timed out without a verdict.
+- A base-three Fermat witness excludes the next cyclotomic member at exponent `a=59049`, extending the separately checked power-of-two exponent range to `3 < a < 177147`. Staged CPython and GMP agree on the full residue. This is another finite exclusion, not a proof for the infinite family; see the package's `power_two_family` evidence.
+
+### Information science: restricted computation versus universal theorem
+
+The [252-class package](../../../information-science/evidence/hard-continuation-20261015/README.md) closes a **restricted corpus**, not arbitrary eight-variable halves. The new exclusions split as 152 quadratic/Parseval-zero, 71 autocorrelation, 28 canonical inverse-energy and one parity-coset certificate. Its [parent replay](boolean-all252-parent-check.json), [independent final-class audit](boolean-final-class-audit.json), [Codex review](boolean-corpus-codex-review.md) and [fix resolution](boolean-review-resolution.json) record the actual scope and genuine relaxed positive controls. The imported earlier exclusions were not rerun.
+
+The [quadratic-distance result](../../../information-science/evidence/hard-continuation-20261015/quadratic-distance/README.md) is universal: for odd eight-variable halves with `|G|+|H| <= 28`, their quadratic residue difference has weight at least 112. For a balanced nine-variable target this originally left eight rank/weight types. The accepted [zero-geometry proof](../../../information-science/evidence/hard-continuation-20261015/quadratic-distance/zero-geometry/PROOF.md) removes `(4,128)`:
+
+1. Reviewed zero moments and exact slack accounting force eight Walsh zeros forming a linear three-flat, and an exact magnitude pattern on `s-perp`.
+2. Complete geometry gives three orbits of zero-flats: 1680, 210 and one. The Pfaffian quartic rules out the first orbit.
+3. Each surviving representative has an explicit affine 13-bit next-residue family. A fixed translation character preserves squared norm at least 1152, whereas Parseval bounds it by 1024 or 512. This is a contradiction, without a sign search.
+
+The [fresh Codex referee](info-zero-exclusion-codex-review.md) accepted both the conditional theorem and the derivation of its hypotheses for the actual balanced target. The [parent replay](info-zero-exclusion-parent-check.json) checked all geometric certificates and both 8192-element residue families; kernel and projection corruptions were rejected, including under `python -O`. Earlier zero-set arithmetic has [601 relaxed controls](boolean-zero-geometry-audit.json), [two genuine odd-pair controls outside the cap](boolean-zero-genuine-pair-audit.json), and a [negative control](boolean-zero-geometry-negative-control.json). These controls are not NL242 examples.
+
+A separate accepted corollary uses only the first zero moments: **a nine-variable function with exactly one, two or three Walsh zeros has nonlinearity at most 240**. It does not claim attainment. The full text of Carlet–Méaux–Broll's one-zero paper was unavailable, so priority of this explicit statement is unresolved.
+
+After the accepted exclusion, three further attempts targeted the seven remaining types: a parent-commissioned [Codex pure-theory attempt](info-remaining-types-codex-attempt.md), [round 1](../../../information-science/evidence/hard-continuation-20261015/quadratic-distance/remaining-types/README.md) and [round 2](../../../information-science/evidence/hard-continuation-20261015/quadratic-distance/remaining-types-round2/README.md). **None excluded another type.** They produced candidate necessary conditions and sub-case bounds, including rank-6/8 zero-count restrictions, `(6,144)` zero-set bounds and per-coset cubic constraints for `(2,192)`. These results are **unreviewed and not promoted**. Parent replays of the finite audits ([round 1](info-remaining-types-parent-check.json), [round 2](info-remaining-types-round2-parent-check.json)) reproduce arithmetic, not universal proofs. Explicit count or energy profiles remain feasible under the levers tried; they are not Boolean functions. No UNSAT or impossibility claim comes from solver UNKNOWN, cancellation, or a non-find. After three stopped attempts, more rounds on these types require a genuinely new representation.
+
+### Physics: separate numerical and formal endpoints
+
+The model has independent uniformly signed clauses on distinct variables, sampled with replacement across clauses, with `floor(alpha*n)` clauses. The [written proof](../../../physics/evidence/hard-continuation-20261015/notes/PROOF.md) uses the established energetic/1RSB interpolation framework, followed by model transfer and concentration. Its [adversarial Opus review](physics-adversarial-review.json) found no mathematical gap after the stated exposition fixes.
+
+The k=4/5 [parent checker](sat-independent-method.md) does not import either producer: it uses dyadic alternating-Taylor exponential brackets and certifies log bounds through an inverse exponential inequality. The [improved-bound receipt](sat-independent-improved-bounds.json) and [same-law controls](sat-independent-improved-controls.json) show the negative-certificate gate working on both sides of the selected densities.
+
+The [3-SAT extension](../../../physics/evidence/hard-continuation-20261015/k3-extension/README.md) improves the explicit **4.268** endpoint in Vorobyev's preprint by **0.00121**. Its final producer replay ran 42 commands with every expected outcome met. At 1536 bits, the [independent parent checker](sat-independent-k3-1536.json) gives `Psi_1024 <= -0.000000430631052284`; [same-law controls](sat-independent-k3-controls-1536.json) reject the just-below and lower-cutoff cases. A 768-bit attempt was too coarse for the alternating sums at cutoff 1024 and failed safely; it is preserved, not hidden. The exact laws were unchanged between these checks.
+
+The [Lean package](../../../physics/evidence/hard-continuation-20261015/formal/README.md) proves a general-arity criterion and the weaker explicit endpoints in the results table. It uses only `propext`, `Classical.choice` and `Quot.sound`, with no `sorry` or `native_decide`:
+
+- The final k=4/5 imported closure passed fresh lean4checker replay (exit 0, 1178 s).
+- The new 3-SAT theorem at **4.26718** uses chunked, kernel-proved rational table and moment bounds. Its whole imported closure passed a fresh replay (exit 0, 919 s), with each process below 4 GiB. Altered densities, a corrupted table entry, too-strong bound and shortened edge truncation were rejected. The [parent inspection](sat-k3-formal-parent-inspection.json) records the exact source and bundle hashes.
+- **Resource correction:** the earlier monolithic k=4/5 kernel checks actually require about 12 GB per process; that had not been measured initially. They remain mathematically checked, but do not meet the lane's 4 GiB resource target. The k=3 redesign fixes that resource problem for its own closure, not for the old modules.
+- The stronger numerical rows remain outside these kernel theorems. Failed monolithic attempts at k3 cutoff 256 and k4 cutoff 512 are **UNKNOWN**, not accepted proofs. Comparator used an unsandboxed macOS shim, imported prebuilt library modules and has no independent external kernel; fresh Lean-kernel replay is a separate recorded check, not a security-sandbox claim.
+
+## Attribution, priority and calibrated value
+
+| Result | Primary comparison | Defensible value |
+|---|---|---|
+| Finite plane exclusion | [Thas–Zagier, JEMS 2008](https://people.mpim-bonn.mpg.de/zagier/files/doi/10.4171/JEMS/107/fulltext.pdf): published `n < 2e11`; later sources checked still cite it | About **12.91×** the located published range, with replayable exact arithmetic. Same sieve/base-two method; modest conditional computational extension, not an all-orders advance. |
+| Boolean structural exclusion | Wang–Lou–Wang [2610.17871](https://arxiv.org/abs/2610.17871) and Lou–Xu–Wang [2610.17897](https://arxiv.org/abs/2610.17897) supply the residue/canonical-sign/rank strategy and still list balanced NL242 as open | A scoped specialist obstruction removing one of eight types. No equivalent zero-flat/13-bit/character-projection exclusion was located in the bounded screen; priority unestablished. |
+| One-to-three-zero corollary | [Carlet–Méaux–Broll 2026/037](https://eprint.iacr.org/2026/037), abstract only; Lou–Wang's earlier one-zero construction, abstract-level comparison | Corollary-level result; inaccessible full texts are a material priority hole. |
+| Random-SAT certificates | Vorobyev [2610.10599](https://arxiv.org/abs/2610.10599), established interpolation antecedents, and [Chatterjee et al. Section 2.6](https://arxiv.org/html/2506.01359v2) | Reproducible numerical/formal instantiations near expected cavity bounds. The 3-SAT value refines a recent explicit endpoint; neither the principle nor the location is newly discovered. |
+
+The [original math/info source audit](math-info-priority.json), [physics ledger](physics-prior-art.json), [live physics audit](physics-novelty-live-review.md), [3-SAT comparison](sat-k3-priority-check.json) and [new-claim priority audit](new-claims-priority-20261016.json) separate sources actually inspected from metadata-only leads. The latter audit predates the final 3-SAT kernel handoff; its statement that the bridge is unformalized is superseded by the scoped formal results above. No global best-known, first-result or publication-ready claim is established.
+
+## Reproduction, safety and stopping boundaries
+
+- The engine, its configuration and generated scientific records were not changed by this continuation. More engine time still requires `ri.py requeue`; this ledger is not a requeue.
+- Numerical laws and accepted snapshots stay pinned. Parent documentation integration preserved prior numerical `result.json` copies under `numeric-pre-integration/`; only current documentation pins and cross-lane verification pointers were updated, not arithmetic outcomes.
+- An early mathematics control runner used automatically cleaned temporary test fixtures outside the repository. This violated the continuation's write/preservation boundary. The corrected runner retains unique fixtures under the lane's `controls/fixtures/`, simulates gaps by omission from a copy, and passed its affected controls. Original research inputs and prior attack snapshots were not deleted.
+- No commit, push, publication, external contact, paid-API fallback, global configuration change or live-infrastructure mutation was performed.
+- Remaining worthwhile obligations are concrete: a genuinely new representation for the seven Boolean families, or independent review of the unreviewed sub-case conditions; memory-bounded kernel certificates for the stronger numerical SAT rows; human expert review or closure of the priority holes. More fixed-sieve range or same-family optimizer time is not a substitute for the unresolved mathematics.
+
+## Report review
+
+Codex `gpt-6.1-sol` at maximum effort returned **ACCEPT, no required fixes** on the pinned
+57-file closeout snapshot: [review](continuation-outcomes-codex-review.md) and
+[provenance](continuation-outcomes-review.json). It checked reporting consistency, authority,
+counts, scopes and limitations; it did not rerun the large computation, certify novelty or
+provide human peer review. The reviewed ledger SHA-256 was `71c93edb…a996ffc`; this provenance
+paragraph was added afterward without changing the scientific claims.

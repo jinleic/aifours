@@ -1,0 +1,330 @@
+--- src/run_m2h_v6_3.py
++++ src/run_m2h_v6_4.py [M2H renames normalized]
+@@ -1,5 +1,11 @@
+ #!/usr/bin/env python3
+-"""Historical-M2 (A2 ms01..ms08) measured re-solve over the v6_3 transport (parent Codex review v2 HOLD fixes, plus the
++"""M2H v6_3 = M2H v6_3 plus ONE feature: an EXPLICIT-SUBSET plan (--plan/--plan-sha256, mandatory). The runner reads the
++full frozen contract (identical items, order and denominators to the v6_3 contract), validates the plan with plan_items
++(unique well-formed ids, contract membership at the stated position, identical canonical item SHA-256, contract order,
++complete split cases, no selected item with any v6_3 attempt) and attempts ONLY the selected items, each at most once,
++through the unchanged admission/pin/lease/stop/publication/reader path. v6_4 attempts use their own namespace (_h6_3)
++and also hold the v6_3 singleton lock, so v6_3 and v6_4 pipelines never run together.
++Historical-M2 (A2 ms01..ms08) measured re-solve over the v6_3 transport (parent Codex review v2 HOLD fixes, plus the
+ v6_2 re-review fixes: ONE shared predicate for all five admissions; any signal/cancellation never qualifies, and the
+ publication window is signal-blocked with a final cancellation check; exact covered/excluded universe).
+ Each item regenerates its ORIGINAL independent-B formula; a mismatch with the bound historical receipt CNF is an
+@@ -36,6 +42,9 @@
+ EXTRA_SOURCES = ('src/freeze_m2h_v6_3.py','src/run_m2h_v6_3.py','src/final_m2h_inventory_v6_3.py')
+ POLICY_CLOCKS = {'admission_cutoff':'2026-10-18T17:20:00-07:00','native_end':'2026-10-18T17:57:00-07:00','cleanup_allowance_seconds':120}
+ SINGLETON = 'cycle2/m2h-v6_3-singleton.lock'
++PRIOR_SINGLETON = 'cycle2/m2h-v6_3-singleton.lock'  # also held: one M2H pipeline across versions
++PLAN_SCHEMA = 'PA19-M2H-SUBSET-PLAN-v6_4'
++ID_RE = re.compile(r'ms\d{2}_b\d{5}(:\d{5}-\d{5})?')
+ SHA_RE = re.compile(r'[0-9a-f]{64}')
+ STAGED = r'^/opt/homebrew/bin/cadical -q -t (300|600) CNF PROOF; binary DRAT staged \(zstd-1 in memory\) then drat-trim -i -t 1200$'
+ STREAMED = r'^/opt/homebrew/bin/cadical -q -t (600) CNF PROOF; binary DRAT streamed to drat-trim -i -t %d$'
+@@ -124,16 +133,54 @@
+     return errors
+ 
+ 
+-def task(item):
++def task(item,tag='h6_4'):
+     if item['mode'] == 'direct':
+-        base = 'cycle2/m2skel_drat/ms%02d_b%05d_h6_3' % (item['multiset'],item['b_index'])
+-        claim = 'cycle2/claims/m2h6_3_ms%02d_b%05d.claim' % (item['multiset'],item['b_index'])
++        base = 'cycle2/m2skel_drat/ms%02d_b%05d_%s' % (item['multiset'],item['b_index'],tag)
++        claim = 'cycle2/claims/m2%s_ms%02d_b%05d.claim' % (tag,item['multiset'],item['b_index'])
+     else:
+         lo,hi = item['indices']
+-        base = 'cycle2/m2part_drat/ms%02d_b%05d/batch_%05d_%05d_h6_3' % (item['multiset'],item['b_index'],lo,hi)
+-        claim = 'cycle2/claims/m2h6_3_ms%02d_b%05d_%05d_%05d.claim' % (item['multiset'],item['b_index'],lo,hi)
++        base = 'cycle2/m2part_drat/ms%02d_b%05d/batch_%05d_%05d_%s' % (item['multiset'],item['b_index'],lo,hi,tag)
++        claim = 'cycle2/claims/m2%s_ms%02d_b%05d_%05d_%05d.claim' % (tag,item['multiset'],item['b_index'],lo,hi)
+     return {'id':item['id'],'indices':item['indices'],'new_record':base+'.json','pin':base+'.cnf-pin.json',
+             'commit':base+'.receipt.json','claim':claim}
++
++
++def item_sha256(x):
++    """Canonical identity of one contract item (sorted-key compact JSON)."""
++    return hashlib.sha256(json.dumps(x,sort_keys=True,separators=(',',':')).encode()).hexdigest()
++
++
++def plan_items(c,h,plan):
++    """Exact explicit subset of the frozen full contract; items are never copied, mutated or renumbered. Requires unique
++    well-formed ids, each a contract member (not an excluded case) at its stated position with an identical canonical item,
++    contract order, every selected split case complete, and no selected item with any v6_3 attempt (record, pin, commit or
++    claim). Returns the selected contract items in contract order."""
++    assert isinstance(plan,dict) and plan.get('schema') == PLAN_SCHEMA, 'plan schema differs'
++    assert plan.get('contract_sha256') == h, 'plan bound to another contract'
++    sel = plan.get('items')
++    assert isinstance(sel,list) and sel, 'empty selection'
++    assert all(isinstance(s,dict) and set(s) == {'id','contract_position','item_sha256'} for s in sel), 'plan entry fields differ'
++    ids = [s['id'] for s in sel]
++    assert all(isinstance(i,str) and ID_RE.fullmatch(i) for i in ids), 'malformed selected id'
++    assert len(set(ids)) == len(ids), 'duplicate selected id'
++    excluded = {e['case'] for e in c['excluded_cases']}
++    where = {x['id']:p for p,x in enumerate(c['items'])}
++    out = []
++    for s in sel:
++        assert s['id'] not in excluded, 'selected id names an excluded case: '+s['id']
++        assert s['id'] in where, 'selected id is not a member of the contract: '+s['id']
++        assert type(s['contract_position']) is int and s['contract_position'] == where[s['id']], 'selected position differs: '+s['id']
++        x = c['items'][s['contract_position']]
++        assert item_sha256(x) == s['item_sha256'], 'selected item identity differs: '+s['id']
++        old = task(x,'h6_3')
++        assert not any((L/old[k]).exists() for k in ('new_record','pin','commit','claim')), 'selected item has a v6_3 attempt: '+s['id']
++        out.append(x)
++    pos = [s['contract_position'] for s in sel]
++    assert pos == sorted(pos), 'selected positions not in contract order'
++    for case in sorted({(x['multiset'],x['b_index']) for x in out if x['mode'] == 'partbatch'}):
++        need = {x['id'] for x in c['items'] if x['mode'] == 'partbatch' and (x['multiset'],x['b_index']) == case}
++        assert need <= set(ids), 'selected split case is incomplete: ms%02d_b%05d' % case
++    return out
+ 
+ 
+ def verify_sources(c):
+@@ -248,20 +295,25 @@
+ 
+ def main():
+     ap = argparse.ArgumentParser(); ap.add_argument('contract'); ap.add_argument('sha256'); ap.add_argument('--max-attempts',type=int)
++    ap.add_argument('--plan',required=True); ap.add_argument('--plan-sha256',required=True)
+     args = ap.parse_args(); R.install_handlers()
+     cut,end,cleanup = epochs()
+     logs = L/'cycle2/m2h6_3-chunks'/('%s-%d' % (time.strftime('%Y%m%dT%H%M%S'),time.time_ns())); logs.mkdir(parents=True,exist_ok=False)
+     stage = L/'scratch/m2h-publish'/logs.name
+-    lock = os.open(L/SINGLETON,os.O_CREAT|os.O_RDWR,0o644)
+-    try: fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
++    locks = []
++    try:
++        for name in (PRIOR_SINGLETON,SINGLETON):
++            locks.append(os.open(L/name,os.O_CREAT|os.O_RDWR,0o644)); fcntl.flock(locks[-1],fcntl.LOCK_EX|fcntl.LOCK_NB)
+     except BlockingIOError:
+-        COMMON.publish_json(logs/'singleton-refusal.json',{'status':'REFUSED','reason':'another M2H v6_3 pipeline holds the singleton lock',
++        COMMON.publish_json(logs/'singleton-refusal.json',{'status':'REFUSED','reason':'another M2H v6_3/v6_4 pipeline holds a singleton lock',
+             'host_clock':time.strftime('%Y-%m-%dT%H:%M:%S%z')},stage)
+-        print('M2H singleton refusal',flush=True); os.close(lock); return
++        print('M2H singleton refusal',flush=True)
++        for fd in locks: os.close(fd)
++        return
+     try:
+         run_locked(args,cut,end,cleanup,logs,stage)
+     finally:
+-        fcntl.flock(lock,fcntl.LOCK_UN); os.close(lock)
++        for fd in locks: fcntl.flock(fd,fcntl.LOCK_UN); os.close(fd)
+ 
+ 
+ def run_locked(args,cut,end,cleanup,logs,stage):
+@@ -275,6 +327,8 @@
+         st = os.statvfs(L); assert st.f_bavail*st.f_frsize >= R.BASE_GATE+1024**2
+         assert E.digest(args.contract) == args.sha256
+         c = COMMON.read(args.contract); verify(c)
++        assert E.digest(args.plan) == args.plan_sha256, 'plan hash differs'
++        selected = plan_items(c,args.sha256,COMMON.read(args.plan))
+         union = R.admission_union(L)
+         record_vetoes = {x['id']:s for x in c['items'] if (L/task(x)['new_record']).exists()
+                          for s in [inspect(c,args.sha256,x)['state']] if s in ('INTEGRITY_VETO','SAT_VETO','HALT_UNKNOWN')}
+@@ -291,7 +345,7 @@
+                      'admission_cutoff_epoch':cut}
+         skeletons = {int(k):COMMON.read(L/v['path']) for k,v in c['skeletons'].items()}
+     records,attempts,stop = [],0,None
+-    for x in c['items']:
++    for x in selected:
+         if args.max_attempts is not None and attempts >= args.max_attempts: stop = 'operational tranche reached'; break
+         if time.time() >= cut: stop = 'admission closed by the frozen 17:20 policy clock'; break
+         if R._CANCEL[0] or time.monotonic()+2550 > deadline: stop = 'deadline/cancellation; no new native'; break
+@@ -355,7 +409,8 @@
+         if r.get('sat_candidate') or r.get('integrity_status') == 'INVALID' or r.get('halt_production'): stop = 'persistent veto'; break
+         if r.get('chunk_stop'): stop = 'worker admission refusal recorded UNKNOWN; chunk ends'; break
+     COMMON.publish_json(logs/'summary.json',{'host_clock':time.strftime('%Y-%m-%dT%H:%M:%S%z'),'contract_sha256':args.sha256,'attempts':attempts,
+-        'records':records,'stop_reason':stop,'automatic_retry_allowed':False,'policy_clocks':POLICY_CLOCKS},stage)
++        'records':records,'stop_reason':stop,'automatic_retry_allowed':False,'policy_clocks':POLICY_CLOCKS,
++        'selection_plan':{'path':os.path.realpath(args.plan),'sha256':args.plan_sha256,'selected_ids':[x['id'] for x in selected]}},stage)
+     print(logs,flush=True)
+ 
+ 
+--- src/freeze_m2h_v6_3.py
++++ src/freeze_m2h_v6_4.py [M2H renames normalized]
+@@ -1,5 +1,8 @@
+ #!/usr/bin/env python3
+-"""Freeze the HISTORICAL-M2 measured re-solve contract (M2H, A2 ms01..ms08) over the v6_3 transport.
++"""Freeze the M2H v6_3 contract: the SAME historical-M2 item derivation as v6_3, then a hard check that items, order,
++exclusions, skeletons, binaries, clocks, resource policy and denominators equal the frozen v6_3 contract exactly; only the
++M2H source bindings (v6_4 runner/freezer/inventory) and the schema differ.
++Freeze the HISTORICAL-M2 measured re-solve contract (M2H, A2 ms01..ms08) over the v6_3 transport.
+ Every item is bound to its immutable historical checked-UNSAT receipt (path+SHA) whose identity is validated with
+ the EXPLICIT per-revision layout of run_m2h_v6_3.historical_errors (revisions 5, 9, 12, 14, 15; multiset, B index,
+ exact integer interval, encoder, CNF SHA/positive bytes, native limit, checker verdict). Production regenerates
+@@ -23,6 +26,9 @@
+ import run_m2h_v6_3 as H
+ 
+ L = COMMON.LANE
++BASE = ('cycle2/m2h-a2-v6_3-contract-20261018T110631.json','835ca4b2a9e11313b1663c5c14bba7e1e9c325b06a866abc09838cac6c5a1930')
++SAME = ('items','order','excluded_cases','skeletons','binary_authority','policy_clocks','resource_policy','check_seconds',
++        'cases_direct','cases_split','split_intervals','automatic_retry_allowed','single_pipeline')
+ 
+ 
+ def digest(p):
+@@ -102,6 +108,10 @@
+         'recorded_old_transport_service_hours':sum(x['historical']['recorded_service_seconds'] for x in items)/3600,
+         'scope':'A2 ms01..ms08 only; ms09 in M9 contract; E0 pending reviewed worker mode; historical receipts remain ORIGINAL-QUALIFIED',
+         'automatic_retry_allowed':False,'single_pipeline':True,'deviation':'rev5/rev9 recorded checker 1800s run at reviewed 1200s (stricter)'}
++    assert digest(L/BASE[0]) == BASE[1]
++    base = json.loads((L/BASE[0]).read_bytes())
++    for k in SAME: assert out[k] == base[k], ('v6_4 contract differs from the frozen v6_3 contract in',k)
++    out['identical_to_contract'] = {'path':BASE[0],'sha256':BASE[1],'fields':list(SAME)}
+     H.verify(out)
+     dest = L/'cycle2'/('m2h-a2-v6_3-contract-%s.json' % time.strftime('%Y%m%dT%H%M%S'))
+     stage = L/'scratch/m2h-publish'/('contract-'+str(time.time_ns()))
+--- src/check_m2h_v6_3.py
++++ src/check_m2h_v6_4.py [M2H renames normalized]
+@@ -1,5 +1,12 @@
+ #!/usr/bin/env python3
+-"""PRIVATE M2H v6_3 control suite (parent Codex review v2 + v6_2 re-review requirements); excluded from scientific coverage.
++"""PRIVATE M2H v6_3 control suite: every v6_3 family re-run on v6_4 (flow tests now drive the mandatory explicit-subset plan)
++plus family S (explicit-subset selector): plan_items positive control and rejection of malformed, unknown, out-of-domain,
++excluded-case, whole-split-case, duplicate, wrong-position, wrong-identity, other-contract, empty, out-of-order,
++incomplete-split, extra-field, wrong-schema and v6_3-attempted selections; runner-level: ONLY the selected items are
++claimed/attempted (in contract order), no plan / wrong plan hash / invalid plan refuse before any claim, the v6_3
++singleton lock also excludes a v6_4 pipeline; I2 the full-contract inventory counts one complete selected split case.
++Excluded from scientific coverage. Earlier header (v6_3 suite):
++PRIVATE M2H v6_3 control suite (parent Codex review v2 + v6_2 re-review requirements); excluded from scientific coverage.
+ New in v6_3: O3/O4 settlement-window signal in the REAL owner; T12 publication-window signal (deferred, record consistent,
+ runner stops); T13 cancellation between owner return and publication (UNKNOWN + persistent HALT); R15-R19 the shared
+ five-admission predicate (worker preconstruction gate missing/wrong cutoff/post-cutoff, valid five, UNSAT with cancellation);
+@@ -306,7 +313,15 @@
+         return dict(base,chunk_stop=True,resource_refusal=['CONTROL worker admission refusal'])
+ 
+ 
+-def run_main(c,h,sub,owner=None,max_attempts=2,formula=None,epochs=None,real_gate_admit=False,publish_signal=False):
++def make_plan(c,h,sub,ids,duplicate=False):
++    where = {x['id']:p for p,x in enumerate(c['items'])}
++    items = [{'id':i,'contract_position':where[i],'item_sha256':H.item_sha256(c['items'][where[i]])} for i in ids]
++    if duplicate: items.append(dict(items[0]))
++    p = sub/'cycle2'/('control-plan-%d.json' % time.time_ns())
++    return p,dump(p,{'schema':H.PLAN_SCHEMA,'contract_sha256':h,'items':items})
++
++
++def run_main(c,h,sub,owner=None,max_attempts=2,formula=None,epochs=None,real_gate_admit=False,publish_signal=False,plan_ids=None,plan_mode='ok'):
+     saved = (H.OWNER,H.formula,H.epochs,H.verify,R.create_census,R.census_for_gate,R.full_gate,sys.argv,COMMON.publish_bytes)
+     orig_verify = H.verify
+     def verify_real(cc):
+@@ -327,7 +342,11 @@
+         R.create_census = lambda: {'path':'cycle2/accounting-v3/CONTROL'}
+         R.census_for_gate = lambda ref,force=False,lane=None: {'reference':ref,'current_data_upper_bytes':0,'age_seconds':0.0,'finished_monotonic':time.monotonic(),'record':{}}
+         if real_gate_admit: R.full_gate = lambda lease,phase,lane=None,providers=None: {'admitted':True,'errors':[],'phase':phase}
+-        sys.argv = ['run_m2h_v6_3.py',str(c['_path']),h,'--max-attempts',str(max_attempts)]
++        plan_argv = []
++        if plan_mode != 'none':
++            pp,ps = make_plan(c,h,sub,plan_ids or [x['id'] for x in c['items'][:3]],duplicate=(plan_mode == 'invalid'))
++            plan_argv = ['--plan',str(pp),'--plan-sha256','0'*64 if plan_mode == 'badsha' else ps]
++        sys.argv = ['run_m2h_v6_3.py',str(c['_path']),h,'--max-attempts',str(max_attempts)]+plan_argv
+         with Rebind(sub): H.main()
+     finally:
+         H.OWNER,H.formula,H.epochs,H.verify,R.create_census,R.census_for_gate,R.full_gate,sys.argv,COMMON.publish_bytes = saved
+@@ -420,6 +439,75 @@
+     return rows
+ 
+ 
++def target_ids(c):
++    return [x['id'] for x in c['items'] if x['mode'] == 'partbatch' and (x['multiset'],x['b_index']) == (1,957)]
++
++
++def plan_unit_controls(c,h):
++    """plan_items on the LIVE lane (read-only): positive control and every rejection class."""
++    rows, tg = [], target_ids(c)
++    where = {x['id']:p for p,x in enumerate(c['items'])}
++    base = {'schema':H.PLAN_SCHEMA,'contract_sha256':h,'items':[{'id':i,'contract_position':where[i],'item_sha256':H.item_sha256(c['items'][where[i]])} for i in tg]}
++    got = [x['id'] for x in H.plan_items(c,h,copy.deepcopy(base))]
++    rows.append({'name':'S0 the frozen four-interval plan is accepted in contract order','ids':got,'positions':[where[i] for i in got],
++                 'ok':got == tg and [where[i] for i in got] == [617,4801,5151,5161]})
++    bad = lambda i: {'id':i,'contract_position':0,'item_sha256':'0'*64}
++    excl = c['excluded_cases'][0]['case']
++    def v63(p):
++        x = c['items'][0]; p['items'] = [{'id':x['id'],'contract_position':0,'item_sha256':H.item_sha256(x)}]
++    cases = [('S1 malformed id',lambda p: p['items'].append(bad('garbage')),'malformed selected id'),
++             ('S2 unknown well-formed interval id',lambda p: p['items'].append(bad('ms01_b00957:00400-00499')),'not a member of the contract'),
++             ('S3 out-of-contract domain id (ms09)',lambda p: p['items'].append(bad('ms09_b00005')),'not a member of the contract'),
++             ('S4 excluded case id',lambda p: p['items'].append(bad(excl)),'names an excluded case'),
++             ('S5 whole split-case id',lambda p: p['items'].append(bad('ms01_b00957')),'not a member of the contract'),
++             ('S6 duplicate id',lambda p: p['items'].append(dict(p['items'][0])),'duplicate selected id'),
++             ('S7 wrong position',lambda p: p['items'][0].update(contract_position=p['items'][0]['contract_position']+1),'selected position differs'),
++             ('S8 wrong item identity',lambda p: p['items'][0].update(item_sha256='0'*64),'selected item identity differs'),
++             ('S9 plan bound to another contract',lambda p: p.update(contract_sha256='1'*64),'plan bound to another contract'),
++             ('S10 empty selection',lambda p: p.update(items=[]),'empty selection'),
++             ('S11 out of contract order',lambda p: p['items'].reverse(),'not in contract order'),
++             ('S12 incomplete split case',lambda p: p['items'].pop(),'selected split case is incomplete'),
++             ('S13 extra entry field',lambda p: p['items'][0].update(note='x'),'plan entry fields differ'),
++             ('S14 wrong plan schema',lambda p: p.update(schema='PA19-M2H-SUBSET-PLAN-v6_3'),'plan schema differs'),
++             ('S15 item with an existing v6_3 attempt (live pilot record)',v63,'selected item has a v6_3 attempt')]
++    for name,mut,msg in cases:
++        p = copy.deepcopy(base); mut(p)
++        try: H.plan_items(c,h,p); err = None
++        except AssertionError as exc: err = repr(exc)
++        rows.append({'name':name,'error':err,'ok':err is not None and msg in err})
++    return rows
++
++
++def selector_runner_controls(root,c,h):
++    rows, tg = [], target_ids(c)
++    where = {x['id']:p for p,x in enumerate(c['items'])}
++    # S16 runner-level: only the selected items are claimed/attempted, in contract order
++    sub = make_shadow(root/'S16',c); own = StubOwner(c,h,'unknown-continue'); ch = run_main(c,h,sub,own,max_attempts=10,plan_ids=tg)
++    sm = json.loads((ch/'summary.json').read_bytes())
++    claims = sorted(p.name for p in (sub/'cycle2/claims').glob('*'))
++    want = sorted(Path(H.task(c['items'][where[i]])['claim']).name for i in tg)
++    recs = sorted(str(p.relative_to(sub)) for p in sub.glob('cycle2/m2*_drat/**/*_h6_3.json'))
++    rows.append({'name':'S16 runner claims and attempts ONLY the four selected intervals','calls':own.calls,'claims':claims,'records':recs,
++                 'stop':sm['stop_reason'],'ok':own.calls == tg and claims == want and len(recs) == 4 and sm['selection_plan']['selected_ids'] == tg
++                      and [r['id'] for r in sm['records']] == tg and not list(sub.glob('cycle2/**/*_h6_3*'))})
++    for name,mode,expect in [('S17 runner without --plan refuses before any claim','none',SystemExit),
++                             ('S18 plan hash argument differs: refused before any claim','badsha',AssertionError),
++                             ('S19 invalid plan (duplicate id): refused before any claim','invalid',AssertionError)]:
++        sub = make_shadow(root/name.split()[0],c); own = StubOwner(c,h,'unknown-continue'); err = None
++        try: run_main(c,h,sub,own,max_attempts=10,plan_ids=tg,plan_mode=mode)
++        except expect as exc: err = repr(exc)
++        rows.append({'name':name,'error':err,'calls':own.calls,'ok':err is not None and own.calls == [] and not (sub/'cycle2/claims').exists()})
++    sub = make_shadow(root/'S20',c)
++    fd = os.open(sub/H.PRIOR_SINGLETON,os.O_CREAT|os.O_RDWR,0o644); fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
++    try:
++        own = StubOwner(c,h,'unknown-continue'); ch = run_main(c,h,sub,own,max_attempts=10,plan_ids=tg)
++    finally:
++        fcntl.flock(fd,fcntl.LOCK_UN); os.close(fd)
++    rows.append({'name':'S20 a held v6_3 singleton lock refuses the v6_4 pipeline','calls':own.calls,
++                 'ok':own.calls == [] and ch is not None and (ch/'singleton-refusal.json').exists() and not (sub/'cycle2/claims').exists()})
++    return rows
++
++
+ def H_inspect_in(sub,c,h,x):
+     with Rebind(sub): return H.inspect(c,h,x)
+ 
+@@ -440,8 +528,19 @@
+     finally:
+         H.inspect, sys.argv = saved, argv
+     out = json.loads(sorted((sub/'cycle2').glob('m2h-inventory-*.json'))[-1].read_bytes())
+-    return [{'name':'I1 split case with one MISSING interval stays open','covered':out['covered_cases'],'open':out['open_cases'],
++    rows = [{'name':'I1 split case with one MISSING interval stays open','covered':out['covered_cases'],'open':out['open_cases'],
+              'ready':out['final_component_ready'],'ok':out['covered_cases'] == 1 and out['open_cases'] == out['cases']-1 and out['final_component_ready'] is False}]
++    sub2 = make_shadow(root/'I2',c); tg = set(target_ids(c))
++    try:
++        H.inspect = lambda cc,hh,x: {'state':'QUALIFIED' if x['id'] in tg else 'MISSING'}
++        sys.argv = ['final_m2h_inventory_v6_3.py',str(c['_path']),h]
++        with Rebind(sub2,(INV,)): INV.main()
++    finally:
++        H.inspect, sys.argv = saved, argv
++    o2 = json.loads(sorted((sub2/'cycle2').glob('m2h-inventory-*.json'))[-1].read_bytes())
++    rows.append({'name':'I2 full-contract inventory counts the complete selected split case once; denominators unchanged','cases':o2['cases'],
++                 'covered':o2['covered_cases'],'ok':o2['cases'] == c['cases_direct']+c['cases_split'] and o2['covered_cases'] == 1 and o2['open_cases'] == o2['cases']-1})
++    return rows
+ 
+ 
+ def main():
+@@ -459,6 +558,9 @@
+     with R.Capacity(time.monotonic()+3600,metadata=True,wait_allowance=60):
+         fams['R_exact_reader'] = reader_controls(root,c,args.sha256)
+     fams['T_runner_flow'] = flow_controls(root,c,args.sha256)
++    with R.Capacity(time.monotonic()+3600,metadata=True,wait_allowance=60):
++        fams['S_selector_units'] = plan_unit_controls(c,args.sha256)
++    fams['S_selector_runner'] = selector_runner_controls(root,c,args.sha256)
+     fams['I_inventory'] = inventory_controls(root,c,args.sha256)
+     with R.Capacity(time.monotonic()+3600,metadata=True,wait_allowance=60):
+         fams['V_exact_universe'] = universe_controls(c)

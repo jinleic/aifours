@@ -1,0 +1,213 @@
+--- scripts/bklib_v1.py
++++ scripts/bklib_v2.py
+@@ -1,4 +1,8 @@
+ #!/usr/bin/env python3
+-"""Library of the parent B-side K3 cube replay desk review/moqls7-k3-B-cube-parent-replay-v1. Imports no lane code.
++"""Library of the parent B-side K3 cube replay desk review/moqls7-k3-B-cube-parent-replay-v1, v2. Imports no lane code.
++
++v2 = bklib_v1.py plus one change: ITEMS gains B_C411, pinned from PhysEpQutrit's r7 producer receipt
++evidence/k3cubes/cert_B_r7/B_C411.json (644b5b23...6f75): CNF 01acf464...8bf8, base 42a5f304...0aac, metadata
++explore/k3cubes/B_C411.meta.json c0f769bb...8a12, encoder B c7583efe...2b45, regeneration code da9c210e...ac78.
+ 
+ Design reused from the A-side desk review/moqls7-k3-cube-parent-replay-v1/scripts/k3lib_v1.py (read, not imported):
+@@ -96,4 +100,16 @@
+                "regen_code_sha256_prefix_suffix": ["da9c210e", "ac78"],
+                "lane_cnf": os.path.join(EXPLORE, "B_C321.cnf")},
++    "B_C411": {"encoder": "B", "cube": "C411",
++               "producer_receipt": os.path.join(K3DIR, "cert_B_r7", "B_C411.json"),
++               "producer_receipt_sha256": "644b5b23d98a55c44df88f15531644b9e8f825b790a9391791d0f50d082a6f75",
++               "producer_checker_log": os.path.join(K3DIR, "cert_B_r7", "B_C411.checker.log"),
++               "producer_solver_log": os.path.join(K3DIR, "cert_B_r7", "B_C411.solver.log"),
++               "cnf_sha256": "01acf46491feef2fc26060266af8c2dead0cec9832c9e9ecbed83f886ecb8bf8",
++               "base_cnf_sha256": "42a5f30453bba3eb423e78b99b1a8fe6039e1c91c32b6ff1dd72f498fa8e0aac",
++               "meta": os.path.join(EXPLORE, "B_C411.meta.json"),
++               "meta_sha256": "c0f769bb56342c2fe78df4051fa15900f8d2de67eff0f41a2471990b2fb58a12",
++               "encoder_sha256": "c7583efe838816d39fe33456af09897cc2a1f5633d1e57e1ee63b3e5238e2b45",
++               "regen_code_sha256_prefix_suffix": ["da9c210e", "ac78"],
++               "lane_cnf": os.path.join(EXPLORE, "B_C411.cnf")},
+ }
+ STOP = {"requested": None}            # set by the driver's SIGTERM handler
+--- scripts/replay_B_v2.py
++++ scripts/replay_B_v3.py
+@@ -1,4 +1,10 @@
+ #!/usr/bin/env python3
+-"""Parent replay driver for phys-2 K3 cube certificates, encoder B (review/moqls7-k3-B-cube-parent-replay-v1), v2.
++"""Parent replay driver for phys-2 K3 cube certificates, encoder B (review/moqls7-k3-B-cube-parent-replay-v1), v3.
++
++v3 = replay_B_v2.py with the import bumped to bklib_v2 (adds the B_C411 item pin) and one addition: the regen mode
++takes an optional '--tag TAG' and then writes receipts/regen-ITEM-TAG.json and logs/driver-regen-ITEM-TAG.log. This is
++needed because receipts/regen-B_C411.json was spent by a free-space-gate deferral at 07:12:31. Without a tag the regen
++mode is unchanged.
++  replay_B_v3.py regen ITEM [--tag TAG]   (TAG: [A-Za-z0-9]+)
+ 
+ v2 = replay_B_v1.py plus one change: the run mode takes an attempt LABEL (ITEM-<suffix>, never equal to ITEM) and
+@@ -33,5 +39,5 @@
+ 
+ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+-import bklib_v1 as K  # noqa: E402
++import bklib_v2 as K  # noqa: E402
+ 
+ SOLVER_SECONDS = 5400
+@@ -73,6 +79,6 @@
+ 
+ 
+-def mode_regen(item):
+-    label = "regen-" + item
++def mode_regen(item, tag=None):
++    label = "regen-" + item + ("-" + tag if tag else "")
+     path = os.path.join(K.RECEIPTS, label + ".json")
+     if os.path.lexists(path):
+@@ -365,7 +371,10 @@
+         raise SystemExit(__doc__)
+     mode, args = sys.argv[1], sys.argv[2:]
+-    rss_stop, label = None, None
+-    if mode == "regen" and (len(args) != 1 or args[0] not in K.ITEMS):
+-        raise SystemExit("regen takes one item among %s" % sorted(K.ITEMS))
++    rss_stop, label, tag = None, None, None
++    if mode == "regen" and (len(args) not in (1, 3) or args[0] not in K.ITEMS or (len(args) == 3 and (
++            args[1] != "--tag" or not re.fullmatch(r"[A-Za-z0-9]+", args[2])))):
++        raise SystemExit("regen takes one item among %s and an optional --tag TAG" % sorted(K.ITEMS))
++    if mode == "regen" and len(args) == 3:
++        tag = args[2]
+     if mode == "selfcheck" and args:
+         raise SystemExit("selfcheck takes no arguments")
+@@ -379,5 +388,5 @@
+     signal.signal(signal.SIGTERM, _on_term)
+     signal.signal(signal.SIGINT, _on_term)
+-    name = "driver-%s%s.log" % (mode, "-" + (label or args[0]) if args else "")
++    name = "driver-%s%s.log" % (mode, "-" + (label or args[0] + ("-" + tag if tag else "")) if args else "")
+     LOGFD["fd"] = K.open_append_x(os.path.join(K.LOGS, name))
+     log("driver pid %d ppid %d mode %s args %s" % (os.getpid(), os.getppid(), mode, args))
+@@ -385,5 +394,5 @@
+     try:
+         if mode == "regen":
+-            rc = mode_regen(args[0])
++            rc = mode_regen(args[0], tag)
+         elif mode == "selfcheck":
+             rc = mode_selfcheck()
+--- scripts/launch_B_v6.py
++++ scripts/launch_B_v7.py
+@@ -1,4 +1,9 @@
+ #!/usr/bin/env python3
+-"""Capacity-gated launcher of the parent B-side K3 cube replay desk (review/moqls7-k3-B-cube-parent-replay-v1), v6.
++"""Capacity-gated launcher of the parent B-side K3 cube replay desk (review/moqls7-k3-B-cube-parent-replay-v1), v7.
++
++v7 = launch_B_v6.py with an import bump for B/C411: bklib_v2 (B_C411 item pin) instead of bklib_v1, and the driver
++replay_B_v3.py. One addition: 'run ITEM --label LABEL [--regen-tag TAG]' takes the regeneration precheck from
++receipts/regen-ITEM-TAG.json instead of receipts/regen-ITEM.json, which a 07:12:31 free-space deferral spent for B_C411.
++Gate, slot condition, cap, readings, run_owned and everything else are byte-identical to v6.
+ 
+ v6 = launch_B_v5.py with one change, the admission gate (Main's a3 GO, about 07:05 PDT):
+@@ -57,5 +62,5 @@
+ 
+ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+-import bklib_v1 as K  # noqa: E402
++import bklib_v2 as K  # noqa: E402
+ 
+ DEADLINE = datetime.datetime.fromisoformat("2026-10-18T17:30:00-07:00")
+@@ -329,6 +334,6 @@
+ 
+ 
+-def mode_run(item, label):
+-    regen_path = os.path.join(K.RECEIPTS, "regen-%s.json" % item)
++def mode_run(item, label, regen_tag=None):
++    regen_path = os.path.join(K.RECEIPTS, "regen-%s%s.json" % (item, "-" + regen_tag if regen_tag else ""))
+     summary_path = os.path.join(K.RECEIPTS, "selfcheck-summary.json")
+     with open(regen_path) as f:
+@@ -362,5 +367,5 @@
+             "--rss-cap", str(cap), "--floor", str(K.FLOOR), "--lane", K.DESK, "--record", record,
+             "--quarantine", quarantine, "--grace", str(SUP_GRACE), "--",
+-            K.PY, "-I", "-B", os.path.join(K.SCRIPTS, "replay_B_v2.py"), "run", item, "--label", label,
++            K.PY, "-I", "-B", os.path.join(K.SCRIPTS, "replay_B_v3.py"), "run", item, "--label", label,
+             "--rss-stop", str(cap)]
+     sup_sha = K.sha_file(K.SUPERVISOR)
+@@ -529,10 +534,11 @@
+     a = sys.argv[1:]
+     if a and a[0] == "run":
+-        if (len(a) != 4 or a[1] not in K.ITEMS or a[2] != "--label"
++        tagged = len(a) == 6 and a[4] == "--regen-tag" and re.fullmatch(r"[A-Za-z0-9]+", a[5])
++        if ((len(a) != 4 and not tagged) or a[1] not in K.ITEMS or a[2] != "--label"
+                 or not (re.fullmatch(r"[A-Za-z0-9_.-]+", a[3]) and a[3].startswith(a[1] + "-"))):
+-            raise SystemExit("usage: launch_B_v6.py run ITEM --label ITEM-<suffix>")
++            raise SystemExit("usage: launch_B_v7.py run ITEM --label ITEM-<suffix> [--regen-tag TAG]")
+         signal.signal(signal.SIGTERM, on_term)
+         signal.signal(signal.SIGINT, on_term)
+-        sys.exit(mode_run(a[1], a[3]))
++        sys.exit(mode_run(a[1], a[3], a[5] if tagged else None))
+     if a and a[0] == "wait-start" and len(a) == 2 and re.fullmatch(r"[A-Za-z0-9_.-]+", a[1]):
+         sys.exit(mode_wait_start(a[1]))
+--- scripts/assemble_B_v6.py
++++ scripts/assemble_B_v7.py
+@@ -1,5 +1,8 @@
+ #!/usr/bin/env python3
+ """Assemble the attempt receipt, deviations, RESULT and REPORT of a labelled replay attempt of the parent B-side K3
+-cube replay desk (review/moqls7-k3-B-cube-parent-replay-v1), v6.
++cube replay desk (review/moqls7-k3-B-cube-parent-replay-v1), v7.
++
++v7 = assemble_B_v6.py with an import bump for B/C411 (bklib_v2, B_C411 item pin) and one addition matching
++launch_B_v7.py: 'ITEM LABEL [--regen-tag TAG]' reads the regeneration precheck from receipts/regen-ITEM-TAG.json.
+ 
+ v6 = assemble_B_v5.py made item-generic for launch_B_v6/v7 attempts: outputs named by label
+@@ -20,5 +23,7 @@
+ 
+ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+-import bklib_v1 as K  # noqa: E402
++import bklib_v2 as K  # noqa: E402
++
++REGEN = {"rel": None}                           # set from argv in main(); see the module docstring
+ 
+ DEVIATIONS = [
+@@ -72,5 +77,11 @@
+                         "metadata B_C411.meta.json c0f769bb...8a12, base 42a5f304...0aac, encoder c7583efe...2b45. "
+                         "Main assigned this replay to slot 1 after PhysEpQutrit hands it over; launch only on "
+-                        "Main's explicit GO."}]}
++                        "Main's explicit GO."},
++               {"id": "D31-B_C411-regen-precheck-deferral",
++                "what": "The first B_C411 regeneration-only precheck (receipts/regen-B_C411.json, 982f5a0d...35db2) "
++                        "was deferred by the driver's free-space gate at 07:12:31 (12,012,662,784 < 12,201,048,576 B) "
++                        "with all producer pin checks consistent and no compose run. The precheck was repeated "
++                        "under replay_B_v3.py 'regen B_C411 --tag TAG'; launch_B_v7.py and assemble_B_v7.py read that "
++                        "tagged receipt (--regen-tag)."}]}
+ 
+ 
+@@ -117,5 +128,5 @@
+     gate, gate_sha = load("receipts/%s.gate.json" % label)
+     outc, outc_sha = load("receipts/%s.launch-outcome.json" % label)
+-    regen_r, regen_sha = load("receipts/regen-%s.json" % item)
++    regen_r, regen_sha = load(REGEN["rel"])
+     summ, summ_sha = load("receipts/selfcheck-summary.json")
+     rec = drv.get("pipeline") or {}
+@@ -210,5 +221,5 @@
+                      "gate": {"path": "receipts/%s.gate.json" % label, "sha256": gate_sha},
+                      "launch_outcome": {"path": "receipts/%s.launch-outcome.json" % label, "sha256": outc_sha},
+-                     "regen_precheck": {"path": "receipts/regen-%s.json" % item, "sha256": regen_sha},
++                     "regen_precheck": {"path": REGEN["rel"], "sha256": regen_sha},
+                      "selfcheck_summary": {"path": "receipts/selfcheck-summary.json", "sha256": summ_sha}},
+         "logs": logs,
+@@ -409,7 +420,10 @@
+ 
+ def main():
+-    if len(sys.argv) != 3 or sys.argv[1] not in K.ITEMS or not sys.argv[2].startswith(sys.argv[1] + "-"):
++    a = sys.argv[1:]
++    tagged = len(a) == 4 and a[2] == "--regen-tag" and a[3].isalnum()
++    if (len(a) != 2 and not tagged) or a[0] not in K.ITEMS or not a[1].startswith(a[0] + "-"):
+         raise SystemExit(__doc__)
+-    item, label = sys.argv[1], sys.argv[2]
++    item, label = a[0], a[1]
++    REGEN["rel"] = "receipts/regen-%s%s.json" % (item, "-" + a[3] if tagged else "")
+     names = {"result": "RESULT.%s.json" % label, "report": "REPORT.%s.md" % label, "dev": "deviations-%s.json" % label}
+     paths = {"item": os.path.join(K.RECEIPTS, label + ".json"), "dev": os.path.join(K.DESK, names["dev"]),
+@@ -425,5 +439,5 @@
+         if row["stop"] else [])
+     dev_sha = K.write_json_x(paths["dev"], dev)
+-    regen_r, regen_sha = load("receipts/regen-%s.json" % item)
++    regen_r, regen_sha = load(REGEN["rel"])
+     summ, summ_sha = load("receipts/selfcheck-summary.json")
+     sgate, sgate_sha = load("receipts/selfcheck.gate.json")
+@@ -478,5 +492,5 @@
+                           "rss": row["rss"], "free_bytes": row["free_bytes"],
+                           "checker_log_vs_producer": row["checker_log_vs_producer"]}},
+-        "regeneration_precheck": {"receipt": "receipts/regen-%s.json" % item, "sha256": regen_sha,
++        "regeneration_precheck": {"receipt": REGEN["rel"], "sha256": regen_sha,
+                                   "result": regen_r.get("result"),
+                                   "cnf_sha256": (regen_r.get("regen") or {}).get("cnf_sha256"),

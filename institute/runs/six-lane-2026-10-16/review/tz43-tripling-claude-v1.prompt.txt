@@ -1,0 +1,1213 @@
+You are a hostile static reviewer for a parent research verification desk. Review CORRECTNESS ONLY:
+no novelty, priority or significance judgement is wanted (the desk claims none; Lemma 1 may be folklore).
+
+Objects under review
+(A) lemma-v1.md - Lemma 1 (the zero-sum Z3 blow-up of any 3-regular 3-partite 3-graph splits into 9 perfect
+    matchings, via a proper 3-edge-colouring u of the incidence bipartite graph and labels
+    P = (x+u(a,e), y+u(b,e))), Lemma 2 (missing-group families of a GDD(2,3,4g) of type g^4 are (g/2)-regular),
+    Theorem 3 (every zero-sum-tripled GDD(3,4,30) of type 6^5, i.e. H(5,6,4,3), is an FDGDD(3,4,5{18}) whose
+    Kirkman frames are written down explicitly). The only permitted external import is Hall's theorem.
+(B) code/build_tripled_fdgdd.py - stdlib generator implementing Theorem 3 on one pinned master; writes a Format D
+    certificate (same 14580 blocks as an earlier SAT-framed certificate, new constructive frames) and four
+    intentionally broken mutation fixtures.
+(C) code/run_checker_matrix.py - runner executing two pre-existing, unchanged checkers on the certificate and
+    fixtures with hash binding and intended-failure categories.
+
+Mandatory hostile checks
+1. Lemma 1 Step 5(iii), third part: verify BOTH existence and uniqueness of the member of C_P through (c,z), the
+   exact use of (U3), and that nothing silently assumes more (linearity, simple H, equal part sizes, the same s for
+   all edges, a particular orientation of parts).
+2. Lemma 1 Steps 1-4: regularity of the incidence graph, the Hall argument (including |L| = |R|), (U1)/(U2)/(U3),
+   and "every lift has exactly one label".
+3. Lemma 2: re-derive n_b = n_c = n_d = g/2 from the GDD definition; check every counting step.
+4. Theorem 3 (a)-(d): inflation gives a GDD(3,4,90) of type 18^5; the derived design at (p,beta) is the zero-sum
+   lift with s = -beta (check the sign); triples missing G_i are exactly the lifts of F_i(p); the 36 classes satisfy
+   the Kirkman-frame definition D3 exactly (each class a PC of (X minus G_x) minus G_i). Check that frames on the
+   derived triples are not conflated with resolving the 4-blocks (RH) or with resolvable derived designs (RDGDD).
+5. Code: does (B) implement exactly the lemma (label 3p+beta, s = (-beta) mod 3, P = (x+u_a, y+u_b) with parts in
+   increasing group order)? Are its internal checks strong enough that no wrong positive certificate can be
+   written? Are the four mutations exactly as described (mut_b keeps u a bijection at every vertex and breaks only
+   the zero sum on the edges at a*; mut_c uses s' = s + 1)? Do the expected checker categories follow from the two
+   checkers' logic? Any Python 3.9 incompatibility, nondeterminism, overwrite risk or hash-binding gap in (C)?
+
+Output format (strict)
+Line 1 exactly one of: DISPOSITION: ACCEPT | DISPOSITION: ACCEPT-WITH-FIXES | DISPOSITION: REJECT
+Then "Findings:" and a numbered list, each item: [FATAL|MAJOR|MINOR] <file>:<LF line(s)> - problem - exact
+correction. Write "Findings: none" if there are none.
+Then "Third-part audit:" (at most 10 lines, your own derivation outcome) and "Degree-count audit:" (at most 10
+lines). Do not discuss novelty. Do not restate the documents.
+
+
+You have no tools. Everything you need is inlined below; cite lines as <file>:<LF>. The two checkers are
+pre-existing and are NOT under review; excerpts are given only so that you can judge whether the expected failure
+categories in (B)/(C) follow from their logic.
+
+===== BEGIN lemma-v1.md (sha256 ff2569b3725aec04307121afa450a12a40a8653d4b634e14369a6bc05295337d), LF-numbered =====
+    1| # Zero-sum tripling lemma and SAT-free frames for FDGDD(3,4,5{18})
+    2| 
+    3| Parent desk Tz43TriplingAudit, 2026-10-18 PT. This note is a written proof with no novelty or priority claim. Its
+    4| scope is the §4(3) frame step that has already been closed. It does not open a new problem slot. The only external
+    5| import is Hall's theorem, in the form of König's edge-colouring theorem for regular bipartite graphs, stated and
+    6| proved in §1 Step 3. The proof uses no finite census, solver output or symmetry assumption.
+    7| 
+    8| ## 0. Definitions
+    9| 
+   10| Quoted from Tan–Zhou arXiv:2503.11934v1. Pinned text `mathematics/kirkman-large-sets-57-87/sources/tan-zhou-2503.11934.txt`,
+   11| SHA-256 `df52a8f11a46974eef129fa115bb3305831f7c8edc3e2102e4fd22c64c3c8164`; LF line numbers.
+   12| 
+   13| * **D1 GDD(t,K,v)** (LF 48–59). A triple (X, G, B), where G is a partition of X into groups:
+   14|   "(1) B is a family of subsets of X (called blocks), each having cardinality in K;
+   15|   (2) each block of B intersects any given group in at most one point;
+   16|   (3) each t-subset of X from t distinct groups is contained in exactly one block."
+   17| * **D2 PPC and PC** (LF 69–70). "A partial parallel class (PPC) of Y is a collection of pairwise disjoint blocks
+   18|   contained in Y. A parallel class (PC) of Y is a PPC that partitions Y."
+   19| * **D3 Kirkman frame** (LF 237–239). KF(m^v) "is a GDD(2,3,mv) of type m^v (X,G,B) such that the block set B can
+   20|   be partitioned into subsets P_r, r ∈ R, each P_r being a PC of X \ G for some group G ∈ G."
+   21| * **D4 derived design** (LF 241–242). For a GDD(3,4,mv) (X,G,A) of type m^v and x ∈ X, let
+   22|   A_x = {A \ {x} : x ∈ A ∈ A}. The derived design is (X \ G, G \ {G}, A_x), where G is the group containing x.
+   23| * **D5 FDGDD(3,4,v{m})** (LF 246–247). "a GDD(3,4,mv) of type m^v whose derived design at every point is a
+   24|   KF(m^(v−1))".
+   25| * **H(5,6,4,3).** Used here only as a name for a GDD(3,4,30) of type 6^5.
+   26| 
+   27| **Hypergraph terms.**
+   28| 
+   29| * A *3-partite 3-graph* H = (V, E) with parts A, B, C has V = A ⊔ B ⊔ C, and E is a finite family of triples.
+   30|   Each triple e ∈ E meets each part in exactly one vertex, written e = (a_e, b_e, c_e).
+   31| * Edges are indexed, so repeated triples would be distinct members. No simplicity or linearity is assumed.
+   32| * H is *r-regular* if every vertex lies in exactly r members of E.
+   33| * A *perfect matching* is a subfamily M ⊆ E such that every vertex lies in exactly one member of M.
+   34| * For s ∈ Z3, the **zero-sum blow-up** H^s has vertex set V × Z3 and edge family
+   35|   E^s = { L(e; x, y, z) : e ∈ E, (x, y, z) ∈ Z3³, x + y + z = s },
+   36|   where L(e; x, y, z) = {(a_e, x), (b_e, y), (c_e, z)}.
+   37| * Each lift contains exactly one vertex over each of a_e, b_e and c_e. Each e has exactly 9 lifts: x and y are free
+   38|   and z = s − x − y. Hence |E^s| = 9|E|.
+   39| 
+   40| ## 1. Lemma 1 (zero-sum tripling)
+   41| 
+   42| **Lemma 1.** Let H be a 3-regular 3-partite 3-graph with parts A, B, C, and let s ∈ Z3. Then E^s is partitioned into
+   43| 9 perfect matchings of H^s. More precisely, the label classes C_P, P ∈ Z3², defined in Step 4 below, are pairwise
+   44| disjoint perfect matchings of H^s whose union is E^s.
+   45| 
+   46| **Step 1 (sizes).**
+   47| 
+   48| * Every edge has exactly one vertex in A, so Σ_{a∈A} deg(a) = |E|. By 3-regularity, 3|A| = |E|.
+   49| * The same argument for B and C gives |A| = |B| = |C| = |E|/3 =: n.
+   50| * Hence |V| = 3n = |E|.
+   51| 
+   52| **Step 2 (incidence graph).**
+   53| 
+   54| * Let I be the bipartite graph with left nodes V and right nodes E. It has one edge (v, e) for each incidence
+   55|   v ∈ e. I is simple: the three vertices of e lie in different parts, so they are distinct.
+   56| * Every left node v has degree deg_H(v) = 3.
+   57| * Every right node e has degree |e| = 3.
+   58| * So I is 3-regular on both sides.
+   59| 
+   60| **Step 3 (the only import: Hall's theorem).** Hall: a bipartite graph with sides L and R has a matching saturating L
+   61| iff |N(S)| ≥ |S| for every S ⊆ L.
+   62| 
+   63| * Let the bipartite graph be k-regular with k ≥ 1, and let S ⊆ L.
+   64| * The k|S| edges leaving S all end in N(S). The set N(S) receives at most k|N(S)| edges in total. Hence
+   65|   |N(S)| ≥ |S|, and a matching saturating L exists.
+   66| * Since k|L| = (number of edges) = k|R|, we have |L| = |R|, so this matching is perfect.
+   67| * Deleting it leaves a (k−1)-regular bipartite graph.
+   68| * Induction on k therefore splits the edge set of I into three perfect matchings M_0, M_1, M_2. This is König's
+   69|   edge-colouring theorem for I.
+   70| 
+   71| Define u(v, e) = i iff (v, e) ∈ M_i. Then:
+   72| 
+   73| * **(U1)** For each v ∈ V, the map e ↦ u(v, e) is a bijection from the three edges at v onto Z3. Each M_i is
+   74|   perfect, so it contains exactly one incidence at v.
+   75| * **(U2)** For each e ∈ E, the map v ↦ u(v, e) is a bijection from the three vertices of e onto Z3. Each M_i
+   76|   contains exactly one incidence at the right node e.
+   77| * **(U3)** Consequently u(a_e, e) + u(b_e, e) + u(c_e, e) = 0 + 1 + 2 ≡ 0 (mod 3) for every e.
+   78| 
+   79| **Step 4 (labels).**
+   80| 
+   81| * For L = L(e; x, y, z) ∈ E^s, put λ(L) = (x + u(a_e, e), y + u(b_e, e)) ∈ Z3².
+   82| * Let C_P = {L ∈ E^s : λ(L) = P}.
+   83| * λ is a function on the (indexed) family E^s. So every lift has exactly one label, the nine C_P are pairwise
+   84|   disjoint, and their union is E^s.
+   85| 
+   86| **Step 5 (each C_P is a perfect matching).** Fix P = (p1, p2). Every vertex of H^s lies in exactly one member of
+   87| C_P.
+   88| 
+   89| * **(i) Vertex (a, x), a ∈ A.** A lift contains (a, x) iff it is a lift of an edge e with a_e = a and has first copy
+   90|   coordinate x. It lies in C_P iff, in addition:
+   91|   * u(a, e) = p1 − x;
+   92|   * its second coordinate is y = p2 − u(b_e, e); and
+   93|   * z = s − x − y.
+   94| 
+   95|   By (U1) at a, exactly one edge e at a has u(a, e) = p1 − x. The coordinates y and z are then forced. The resulting
+   96|   triple satisfies x + y + z = s, so it lies in E^s, and its label is (p1, p2).
+   97| * **(ii) Vertex (b, y), b ∈ B.** This is symmetric.
+   98|   * By (U1) at b, exactly one e at b has u(b, e) = p2 − y.
+   99|   * Then x = p1 − u(a_e, e) and z = s − x − y are forced.
+  100| * **(iii) Vertex (c, z), c ∈ C (third part).**
+  101|   * Let e be an edge with c_e = c. A lift of e that contains (c, z) and has label P must have
+  102|     x = p1 − u(a_e, e) and y = p2 − u(b_e, e). It is a member of E^s iff x + y + z = s, that is, iff
+  103|     p1 + p2 − (u(a_e, e) + u(b_e, e)) + z = s.
+  104|   * By (U3), u(a_e, e) + u(b_e, e) = −u(c, e). So the condition is equivalent to **u(c, e) = s − z − p1 − p2**.
+  105|   * By (U1) at c, exactly one of the three edges at c satisfies it. For that edge the triple with the forced x and y
+  106|     lies in E^s and has label P. No other edge at c contributes a member of C_P containing (c, z).
+  107| 
+  108|   So C_P covers every vertex exactly once. ∎
+  109| 
+  110| **Where each hypothesis is used.**
+  111| 
+  112| * (U1) is used at A-vertices in (i), at B-vertices in (ii) and at C-vertices in (iii).
+  113| * The zero-sum identity (U3) is used **only** in (iii).
+  114| * What (iii) really needs is that, for each c ∈ C, the map e ↦ −(u(a_e, e) + u(b_e, e)) is a bijection on the edges
+  115|   at c. (U3) together with (U1) at c supplies this.
+  116| * Suppose u were a bijection at every vertex but failed (U2) on some edges. Then (i) and (ii) still hold, but (iii)
+  117|   can fail. Mutation (b) in §5 realises exactly this case.
+  118| 
+  119| **Counts.**
+  120| 
+  121| * |C_P| = |V × Z3|/3 = 3n.
+  122| * The total 9 · 3n = 27n = 9|E| = |E^s|.
+  123| * Neither linearity nor any condition on s is used. The colouring u depends only on H, so one u serves all three
+  124|   values of s.
+  125| 
+  126| ## 2. Lemma 2 (missing-group families are (g/2)-regular)
+  127| 
+  128| **Lemma 2.** Let (Y, {G_1, …, G_4}, D) be a GDD(2,3,4g) of type g^4. Every triple of D meets exactly three groups,
+  129| so it misses exactly one group. Let F_i = {T ∈ D : T ∩ G_i = ∅}. Then:
+  130| 
+  131| * F_i is a 3-partite 3-graph whose parts are the three groups G_j, j ≠ i;
+  132| * every vertex of ∪_{j≠i} G_j has degree exactly g/2 in F_i; and
+  133| * in particular g is even.
+  134| 
+  135| **Proof.**
+  136| 
+  137| * By D1(2), a triple has its three points in three distinct groups. So it misses exactly one of the four groups.
+  138|   Every triple of F_i therefore meets each G_j, j ≠ i, in exactly one point.
+  139| * Fix y ∈ G_a, and for each i ≠ a let n_i = n_i(y) be the number of triples through y that miss G_i.
+  140|   * Every triple through y misses exactly one group.
+  141|   * That group is not G_a, because y ∈ G_a.
+  142| * Fix b ≠ a.
+  143|   * A triple through y contains a point of G_b iff it misses neither G_a nor G_b. That holds iff it misses one of the
+  144|     other two groups.
+  145|   * Such a triple contains exactly one point of G_b.
+  146|   * By D1(3), every pair {y, w} with w ∈ G_b lies in exactly one triple.
+  147|   * Counting the pairs {y, w}, w ∈ G_b, therefore gives g = Σ_{i ∉ {a, b}} n_i.
+  148| * Name the three groups other than G_a as G_b, G_c, G_d. Then n_c + n_d = g, n_b + n_d = g and n_b + n_c = g.
+  149|   Hence n_b = n_c = n_d = g/2.
+  150| * The degree of y in F_i (i ≠ a) is n_i(y) = g/2. ∎
+  151| 
+  152| **Case g = 6.** Each F_i is 3-regular and 3-partite, with parts of size 6 and 18 edges, and |D| = 72. Pair
+  153| uniqueness also makes D linear, but nothing here uses linearity.
+  154| 
+  155| ## 3. Theorem 3 (every zero-sum-tripled H(5,6,4,3) is an FDGDD(3,4,5{18}) with explicit frames)
+  156| 
+  157| **Setup.**
+  158| 
+  159| * Let (X0, {G0_1, …, G0_5}, A0) be a GDD(3,4,30) of type 6^5.
+  160| * Put X = X0 × Z3 and G_i = G0_i × Z3, so |G_i| = 18.
+  161| * Let A be the family of all {(p_0, β_0), …, (p_3, β_3)} with {p_0, …, p_3} ∈ A0 and β_0 + β_1 + β_2 + β_3 = 0 in Z3.
+  162| 
+  163| **(a) (X, {G_i}, A) is a GDD(3,4,90) of type 18^5.**
+  164| 
+  165| * A block projects onto a master block, so it has 4 points in 4 distinct groups.
+  166| * Take a 3-subset {(q_1, γ_1), (q_2, γ_2), (q_3, γ_3)} from three distinct groups.
+  167|   * {q_1, q_2, q_3} meets three distinct master groups. By D1(3) it lies in exactly one master block
+  168|     {q_1, q_2, q_3, q_4}.
+  169|   * A block of A containing the 3-subset projects onto a master block containing {q_1, q_2, q_3}, hence onto this
+  170|     one.
+  171|   * Its fourth point is then (q_4, γ_4) with γ_4 = −(γ_1 + γ_2 + γ_3), which is forced. That block lies in A.
+  172|   * So the 3-subset lies in exactly one block.
+  173| * Distinct master blocks have distinct projections, and each gives 27 distinct blocks. So |A| = 27·540 = 14580.
+  174| * This is inflation by the zero-sum TD(3,4,3), {β ∈ Z3⁴ : Σβ = 0}. Any three coordinates of that design determine the
+  175|   fourth.
+  176| 
+  177| **(b) Derived design.**
+  178| 
+  179| * Let x = (p, β) with p ∈ G0_a, and put s = −β.
+  180| * A block contains x iff it is {(p, β), (q_1, γ_1), (q_2, γ_2), (q_3, γ_3)} with {p, q_1, q_2, q_3} ∈ A0 and
+  181|   β + γ_1 + γ_2 + γ_3 = 0. Hence
+  182| 
+  183|   A_x = { {(q_1, γ_1), (q_2, γ_2), (q_3, γ_3)} : {q_1, q_2, q_3} ∈ D_p, γ_1 + γ_2 + γ_3 = s },
+  184| 
+  185|   where D_p = {B \ {p} : p ∈ B ∈ A0} is the master derived design.
+  186| * D_p is a GDD(2,3,24) of type 6^4 on X0 \ G0_a.
+  187|   * Its triples avoid G0_a and meet each group at most once.
+  188|   * For a cross pair {q, q′}, the transverse triple {p, q, q′} lies in exactly one master block, by D1(3).
+  189| * The same one-line argument applied to (a) shows that A_x is a GDD(2,3,72) of type 18^4 on X \ G_a.
+  190| * Distinct pairs (T, γ) give distinct triples, because T is the projection. So |A_x| = 72 · 9 = 648.
+  191| 
+  192| **(c) One missed group at a time.**
+  193| 
+  194| * For i ≠ a, let F_i(p) be the missing-group family of D_p. By Lemma 2 with g = 6 it is 3-regular and 3-partite.
+  195|   Its parts are G0_j for the three j ∉ {a, i}, taken in increasing index order as (A, B, C).
+  196| * A triple of A_x misses G_i iff its projection misses G0_i. So the triples of A_x that miss G_i are exactly the
+  197|   zero-sum lifts of F_i(p) with constant s.
+  198| * By Lemma 1 these 162 triples split into 9 classes. Each class is a perfect matching of
+  199|   ∪_{j∉{a,i}} G0_j × Z3 = (X \ G_a) \ G_i, that is, a PC of (X \ G_a) \ G_i in the sense of D2.
+  200| 
+  201| **(d) KF and FDGDD.**
+  202| 
+  203| * Every triple of A_x misses exactly one G_i with i ≠ a.
+  204| * Hence the 4 × 9 = 36 classes from (c) partition A_x. Each class is a PC of (X \ G_a) \ G_i for a group G_i of the
+  205|   derived design.
+  206| * With (b), this is exactly D3 for the derived design at x: a KF(18⁴).
+  207| * Since x was arbitrary, (X, {G_i}, A) satisfies D5: it is an FDGDD(3,4,5{18}). ∎
+  208| 
+  209| **What is and is not claimed.**
+  210| 
+  211| * The 36 classes at x partition the **derived triples** A_x into holey parallel classes. Nothing is said about
+  212|   resolving the 4-blocks A (an RH), and nothing about resolvable derived designs (an RDGDD).
+  213| * A KF class is a PC of (X \ G_x) \ G_i, not a PC of X \ G_x. So no RDGDD(3,4,5{18}) is claimed.
+  214| * The master is not required to be frame-derived, and the frames are not lifts of master frames.
+  215|   * The pinned master is in fact not frame-derived. This is a worker diagnosis and is not used here.
+  216|   * Lemma 1 builds new 9-class decompositions of the lifted size-18 families. One colouring u of F_i(p) serves all
+  217|     three copies (p, β); only the constant s = −β changes.
+  218| * Only g = 6 is covered, which gives group size 18 with r = g/2 = 3.
+  219|   * No statement is made for g = 4, g = 8 or general g.
+  220|   * No statement is made for other numbers of groups.
+  221|   * The odd-r conjecture and the even-r parity remarks in the scout note are not reviewed here.
+  222| * Existence of H(5,6,4,3) is classical, according to the scout's quotation of Zhang–Ge 2013. It is not re-proved or
+  223|   re-read here.
+  224|   * Theorem 3 is applied below only to the explicitly pinned master. That master was found by an earlier
+  225|     Kramer–Mesner SAT model and checked directly.
+  226|   * Theorem 3 makes the **frame** step SAT-free. The master's own provenance is unchanged.
+  227| 
+  228| ## 4. Finite instance (implementation outline; results in `verdict-v1.md` and `receipt-v1.json`)
+  229| 
+  230| The generator is `code/build_tripled_fdgdd.py`. It is stdlib only, imports no lane, producer, SAT or checker code,
+  231| and reads only `groups` and `blocks` from the pinned master JSON (SHA-256 `89133772…db2c`). It does the following.
+  232| 
+  233| 1. It checks that the master is a GDD(3,4,30) of type 6^5. All 2160 transverse triples occur once; this is a
+  234|    direct count, not SAT.
+  235| 2. It checks that each master derived design D_p is a 3-GDD of type 6^4.
+  236| 3. It builds the 14,580 zero-sum blocks with labels 3p + β.
+  237| 4. For each of the 30 × 4 = 120 pairs (p, i), it forms F_i(p) and checks that F_i(p) is 3-partite and 3-regular with
+  238|    18 edges.
+  239| 5. It colours the incidence graph by three successive augmenting-path perfect matchings, then checks (U1) and (U2)
+  240|    at every vertex node and every edge node.
+  241| 6. At every inflated point 3p + β it writes the 9 label classes of each family, with s = −β, as `FRAME i` classes.
+  242| 7. It checks internally that each class covers the 54 points of (X \ G_a) \ G_i exactly once, and that the 36
+  243|    classes list exactly the 648 derived triples of the inflated blocks.
+  244| 8. It writes the certificate only after every check passes.
+  245| 
+  246| ## 5. Mutations (intended failures)
+  247| 
+  248| Each mutation changes only one POINT section of the positive certificate.
+  249| 
+  250| * **(a) Vertex-permutation break.**
+  251|   * At POINT 7 the generator swaps u(a_e, e) and u(b_e, e) on one edge of one family.
+  252|   * (U2) and (U3) still hold at e, but (U1) fails at a_e and at b_e.
+  253|   * Classes overlap.
+  254| * **(b) Zero-sum break with (U1) kept everywhere.**
+  255|   * At POINT 31 it adds 1 to u(a*, e) for the three edges at one A-vertex a*.
+  256|   * (U1) holds at every vertex, and (U3) fails on those three edges.
+  257|   * Only the third-part step (iii) can fail. Coverage defects must therefore occur only at C-copies.
+  258| * **(c) Wrong sum constant.** At POINT 56 the lifts use s′ = s + 1.
+  259|   * The classes are still parallel classes of the correct 54 points, by Lemma 1 for s′.
+  260|   * None of the listed triples is a derived triple of that point.
+  261| * **(d) Duplicated class.** At POINT 89 one FRAME 0 class is replaced by a copy of another FRAME 0 class.
+  262| 
+  263| ## 6. Status
+  264| 
+  265| * **Correctness.** This parent proof has been executed on one instance; see `verdict-v1.md`. CLI review is
+  266|   commissioned separately as `tz43-tripling-codex-v1` and `tz43-tripling-claude-v1`.
+  267| * **Novelty.** NOT CLAIMED. Lemma 1 is an elementary corollary of König's theorem and may be folklore. No
+  268|   literature screen was run at this desk.
+===== END lemma-v1.md =====
+
+===== BEGIN code/build_tripled_fdgdd.py (sha256 6c0db3937a6722eaab2b690042e794724e8e3de66b84a03cfd59dd8f54a82d02), LF-numbered =====
+    1| #!/usr/bin/env python3
+    2| r"""tz43 tripling desk: constructive Kirkman frames for the zero-sum tripled bare H(5,6,4,3) master.
+    3| 
+    4| Stdlib only. Written by the parent desk Tz43TriplingAudit from lemma-v1.md; no lane, producer, SAT or
+    5| checker code is imported or read. Only the pinned master JSON fields 'groups' and 'blocks' are used.
+    6| 
+    7| Construction (lemma-v1.md, Lemma 1 and Theorem 2):
+    8|   * master: an H(5,6,4,3) = GDD(3,4,30) of type 6^5 (5 groups of 6, 540 blocks).
+    9|   * inflation: point (p, b), b in Z3, gets label 3p+b; each master block {p0,p1,p2,p3} gives the 27 blocks
+   10|     {(p_i, b_i)} with b0+b1+b2+b3 = 0 (mod 3).  This yields 14580 blocks.
+   11|   * the derived design at the inflated point (p, beta) is the zero-sum lift, with constant s = -beta, of the
+   12|     master derived design D_p (a 3-GDD of type 6^4 on the other four groups).
+   13|   * for each group j other than the group of p, the missing-group family F = {T in D_p : T misses G_j} is
+   14|     3-partite with parts (A, B, C) = the three remaining groups in increasing index order, and 3-regular.
+   15|   * a proper 3-edge-colouring u of the incidence bipartite graph (vertex nodes vs edge nodes) of F is computed
+   16|     as three successive perfect matchings (augmenting paths; existence by Hall for regular bipartite graphs).
+   17|   * the lift ((a,x),(b,y),(c,z)) of T = (a,b,c), with x+y+z = s, gets the label P = (x+u(a,T), y+u(b,T)) in
+   18|     Z3^2; the 9 label classes are written as the 9 FRAME j classes of POINT 3p+beta.
+   19| 
+   20| Every positive output is checked internally (each class is a parallel class of the 54 points outside the two
+   21| groups, and the 36 classes partition exactly the derived triples at that point) before anything is written.
+   22| Four mutation fixtures are produced on purpose to fail; they are analysed, not checked.
+   23| 
+   24| Usage:
+   25|   python3 -B build_tripled_fdgdd.py --master M --master-sha S --orig O --orig-sha S \
+   26|       --cert-out NEW.txt --fixtures-dir DIR --colourings-out NEW.json --manifest-out NEW.json
+   27|   python3 -B build_tripled_fdgdd.py --master M --master-sha S --orig O --orig-sha S --hashes-only
+   28| All outputs are created exclusively (open mode 'x'); nothing is written if any internal check fails.
+   29| """
+   30| import argparse
+   31| import collections
+   32| import hashlib
+   33| import itertools
+   34| import json
+   35| import os
+   36| import platform
+   37| import sys
+   38| from datetime import datetime
+   39| from zoneinfo import ZoneInfo
+   40| 
+   41| Z3 = (0, 1, 2)
+   42| LABELS = tuple(itertools.product(Z3, Z3))
+   43| K, M_MASTER, COPIES = 5, 6, 3
+   44| 
+   45| MUTATIONS = collections.OrderedDict([
+   46|     ('mut_a_colour_vertex_swap', collections.OrderedDict([
+   47|         ('point', 7), ('family_group', 'first group other than the group of p'), ('edge_index', 0),
+   48|         ('change', 'at POINT 7 = (p=2, beta=1), family missing group 1, swap u(a,T) and u(b,T) on the first '
+   49|                    'edge T: zero-sum at T is kept, but u(a,.) and u(b,.) stop being bijections'),
+   50|         ('expected_parent_failed_checks', ['F05_CLASS_PAIRWISE_DISJOINT',
+   51|                                            'F06_CLASS_IS_PC_OF_X_MINUS_GX_AND_ONE_GROUP']),
+   52|         ('expected_claude_invariant', 'frame.parallel')])),
+   53|     ('mut_b_colour_shift_A_vertex', collections.OrderedDict([
+   54|         ('point', 31), ('family_group', 'first group other than the group of p'), ('vertex', 'first vertex of part A'),
+   55|         ('change', 'at POINT 31 = (p=10, beta=1), family missing group 0, add 1 to u(a*,T) for the three edges T '
+   56|                    'at the first A-vertex a*: u stays a bijection at every vertex, but the three edges at a* lose '
+   57|                    'the zero sum, so only the third-part (C) uniqueness step can fail'),
+   58|         ('expected_parent_failed_checks', ['F05_CLASS_PAIRWISE_DISJOINT',
+   59|                                            'F06_CLASS_IS_PC_OF_X_MINUS_GX_AND_ONE_GROUP']),
+   60|         ('expected_claude_invariant', 'frame.parallel')])),
+   61|     ('mut_c_wrong_third_sum_constant', collections.OrderedDict([
+   62|         ('point', 56),
+   63|         ('change', 'at POINT 56 = (p=18, beta=2), every lift is built with z = s\' - x - y where s\' = s + 1 '
+   64|                    '(s = -beta is the correct constant): classes stay parallel classes of the right 54 points, '
+   65|                    'but no listed triple is a derived triple of POINT 56'),
+   66|         ('expected_parent_failed_checks', ['F04_CLASSES_PARTITION_DERIVED']),
+   67|         ('expected_claude_invariant', 'derived.not_block')])),
+   68|     ('mut_d_duplicate_frame_class', collections.OrderedDict([
+   69|         ('point', 89),
+   70|         ('change', 'at POINT 89 = (p=29, beta=2), the second FRAME 0 class (label P=(0,1)) is replaced by a copy '
+   71|                    'of the first FRAME 0 class (label P=(0,0)); class and label counts are unchanged'),
+   72|         ('expected_parent_failed_checks', ['F04_CLASSES_PARTITION_DERIVED']),
+   73|         ('expected_claude_invariant', 'derived.repeat')])),
+   74| ])
+   75| 
+   76| 
+   77| class ConstructionError(Exception):
+   78|     pass
+   79| 
+   80| 
+   81| def sha256(data):
+   82|     return hashlib.sha256(data).hexdigest()
+   83| 
+   84| 
+   85| def stamp():
+   86|     return datetime.now(ZoneInfo('America/Los_Angeles')).isoformat()
+   87| 
+   88| 
+   89| def read_pinned(path, expected):
+   90|     with open(path, 'rb') as f:
+   91|         data = f.read()
+   92|     got = sha256(data)
+   93|     if got != expected:
+   94|         raise ConstructionError('sha256 of %s is %s, expected %s' % (path, got, expected))
+   95|     return data
+   96| 
+   97| 
+   98| # ---------------------------------------------------------------- master H(5,6,4,3)
+   99| 
+  100| def load_master(data):
+  101|     d = json.loads(data.decode('ascii'))
+  102|     groups = [list(g) for g in d['groups']]
+  103|     v = K * M_MASTER
+  104|     if len(groups) != K or any(len(g) != M_MASTER for g in groups):
+  105|         raise ConstructionError('master groups are not of type 6^5')
+  106|     if any(type(p) is not int for g in groups for p in g) or sorted(p for g in groups for p in g) != list(range(v)):
+  107|         raise ConstructionError('master groups do not partition 0..29')
+  108|     grp = [None] * v
+  109|     for i, g in enumerate(groups):
+  110|         for p in g:
+  111|             grp[p] = i
+  112|     blocks = []
+  113|     for b in d['blocks']:
+  114|         if len(b) != 4 or any(type(p) is not int or not 0 <= p < v for p in b) or len(set(b)) != 4:
+  115|             raise ConstructionError('master block %r is not a 4-subset of 0..29' % (b,))
+  116|         if len(set(grp[p] for p in b)) != 4:
+  117|             raise ConstructionError('master block %r is not transverse' % (b,))
+  118|         blocks.append(tuple(sorted(b)))
+  119|     if len(set(blocks)) != len(blocks):
+  120|         raise ConstructionError('repeated master block')
+  121|     return groups, grp, blocks
+  122| 
+  123| 
+  124| def check_master_is_h(groups, blocks):
+  125|     """Direct (non-SAT) precondition: every transverse triple of the master lies in exactly one block."""
+  126|     cnt = collections.Counter(t for b in blocks for t in itertools.combinations(b, 3))
+  127|     universe = set()
+  128|     for ga, gb, gc in itertools.combinations(range(K), 3):
+  129|         for a in groups[ga]:
+  130|             for b in groups[gb]:
+  131|                 for c in groups[gc]:
+  132|                     universe.add(tuple(sorted((a, b, c))))
+  133|     if len(universe) != 2160 or set(cnt) != universe or max(cnt.values()) != 1 or len(blocks) != 540:
+  134|         raise ConstructionError('master is not an H(5,6,4,3)')
+  135|     return len(universe)
+  136| 
+  137| 
+  138| def master_derived(groups, grp, blocks):
+  139|     der = collections.defaultdict(list)
+  140|     for b in blocks:
+  141|         for p in b:
+  142|             der[p].append(tuple(q for q in b if q != p))
+  143|     for p in range(K * M_MASTER):
+  144|         D = der[p]
+  145|         pairs = collections.Counter()
+  146|         for T in D:
+  147|             if grp[p] in set(grp[q] for q in T) or len(set(grp[q] for q in T)) != 3:
+  148|                 raise ConstructionError('derived triple %r at master point %d is not transverse' % (T, p))
+  149|             for e in itertools.combinations(sorted(T), 2):
+  150|                 pairs[e] += 1
+  151|         want = set()
+  152|         others = [i for i in range(K) if i != grp[p]]
+  153|         for ga, gb in itertools.combinations(others, 2):
+  154|             for a in groups[ga]:
+  155|                 for b in groups[gb]:
+  156|                     want.add(tuple(sorted((a, b))))
+  157|         if len(D) != 72 or set(pairs) != want or max(pairs.values()) != 1:
+  158|             raise ConstructionError('master derived design at %d is not a 3-GDD of type 6^4' % p)
+  159|     return der
+  160| 
+  161| 
+  162| def missing_family(groups, grp, der, p, j):
+  163|     """Return (parts, vertices, oriented edges (a,b,c)) of F_{p,j}; check 3-partite and 3-regular."""
+  164|     parts = [i for i in range(K) if i not in (grp[p], j)]
+  165|     edges = []
+  166|     for T in sorted(der[p]):
+  167|         if any(grp[q] == j for q in T):
+  168|             continue
+  169|         by = dict((grp[q], q) for q in T)
+  170|         if sorted(by) != parts:
+  171|             raise ConstructionError('family (%d,%d): triple %r is not 3-partite on %r' % (p, j, T, parts))
+  172|         edges.append((by[parts[0]], by[parts[1]], by[parts[2]]))
+  173|     verts = [q for i in parts for q in sorted(groups[i])]
+  174|     deg = collections.Counter(q for e in edges for q in e)
+  175|     if len(edges) != 18 or set(deg) != set(verts) or any(deg[q] != 3 for q in verts):
+  176|         raise ConstructionError('family (%d,%d) is not 3-regular with 18 edges' % (p, j))
+  177|     return parts, verts, edges
+  178| 
+  179| 
+  180| # ---------------------------------------------------------------- incidence colouring (Hall / Konig)
+  181| 
+  182| def incidence_colouring(verts, edges):
+  183|     """u[e][pos] in Z3 for the incidence (edges[e][pos], e); three successive perfect matchings."""
+  184|     remaining = dict((q, [e for e, E in enumerate(edges) if q in E]) for q in verts)
+  185|     colour = {}
+  186|     for c in range(3):
+  187|         match = {}
+  188| 
+  189|         def augment(q, seen):
+  190|             for e in remaining[q]:
+  191|                 if e in seen:
+  192|                     continue
+  193|                 seen.add(e)
+  194|                 if e not in match or augment(match[e], seen):
+  195|                     match[e] = q
+  196|                     return True
+  197|             return False
+  198| 
+  199|         for q in verts:
+  200|             if not augment(q, set()):
+  201|                 raise ConstructionError('round %d: no perfect matching (impossible for a regular bipartite graph)' % c)
+  202|         if len(match) != len(edges) or len(set(match.values())) != len(verts):
+  203|             raise ConstructionError('round %d: matching is not perfect on both sides' % c)
+  204|         for e, q in match.items():
+  205|             colour[(q, e)] = c
+  206|             remaining[q].remove(e)
+  207|     u = [tuple(colour[(q, e)] for q in E) for e, E in enumerate(edges)]
+  208|     for e, row in enumerate(u):
+  209|         if sorted(row) != [0, 1, 2]:
+  210|             raise ConstructionError('colouring not proper at edge node %d' % e)
+  211|     for q in verts:
+  212|         if sorted(u[e][E.index(q)] for e, E in enumerate(edges) if q in E) != [0, 1, 2]:
+  213|             raise ConstructionError('colouring not proper at vertex node %d' % q)
+  214|     return u
+  215| 
+  216| 
+  217| def lift_classes(edges, u, s):
+  218|     """The 9 label classes of the zero-sum lift with constant s (inflated labels 3q+x)."""
+  219|     classes = collections.OrderedDict((P, []) for P in LABELS)
+  220|     for (a, b, c), (ua, ub, _uc) in zip(edges, u):
+  221|         for x in Z3:
+  222|             for y in Z3:
+  223|                 z = (s - x - y) % 3
+  224|                 classes[((x + ua) % 3, (y + ub) % 3)].append(tuple(sorted((3 * a + x, 3 * b + y, 3 * c + z))))
+  225|     return classes
+  226| 
+  227| 
+  228| def class_defects(cls, verts, parts, grp):
+  229|     """Per-part counts of inflated points covered 0 times or >= 2 times by one class."""
+  230|     cov = collections.Counter(t for tri in cls for t in tri)
+  231|     out = collections.OrderedDict()
+  232|     for name, gi in zip('ABC', parts):
+  233|         pts = [3 * q + x for q in verts if grp[q] == gi for x in Z3]
+  234|         out[name] = [sum(1 for t in pts if cov[t] == 0), sum(1 for t in pts if cov[t] >= 2)]
+  235|     return out
+  236| 
+  237| 
+  238| # ---------------------------------------------------------------- inflation and certificate
+  239| 
+  240| def inflate(blocks):
+  241|     out = []
+  242|     for b in blocks:
+  243|         for b0, b1, b2 in itertools.product(Z3, Z3, Z3):
+  244|             b3 = (-(b0 + b1 + b2)) % 3
+  245|             out.append(tuple(sorted((3 * b[0] + b0, 3 * b[1] + b1, 3 * b[2] + b2, 3 * b[3] + b3))))
+  246|     if len(out) != 14580 or len(set(out)) != len(out):
+  247|         raise ConstructionError('inflated block list is not 14580 distinct blocks')
+  248|     return sorted(out)
+  249| 
+  250| 
+  251| def orig_prefix_blocks(orig):
+  252|     """Strictly read the original certificate's header, GROUPS and BLOCKS records (POINT sections ignored)."""
+  253|     text = orig.decode('ascii')
+  254|     lines = text.split('\n')
+  255|     if lines[-1] != '' or lines[0] != 'GDD34 FDGDD 5 18' or lines[1] != 'GROUPS' or lines[7] != 'BLOCKS':
+  256|         raise ConstructionError('original certificate header/GROUPS/BLOCKS layout not as pinned')
+  257|     end = lines.index('POINT 0')
+  258|     blocks = []
+  259|     for ln in lines[8:end]:
+  260|         t = ln.split(' ')
+  261|         if len(t) != 4:
+  262|             raise ConstructionError('original block line %r' % ln)
+  263|         blocks.append(tuple(sorted(int(z) for z in t)))
+  264|     return lines[:end], blocks
+  265| 
+  266| 
+  267| def render(groups_inf, blocks_inf, sections):
+  268|     out = ['GDD34 FDGDD 5 18', 'GROUPS']
+  269|     out.extend(' '.join(str(p) for p in g) for g in groups_inf)
+  270|     out.append('BLOCKS')
+  271|     out.extend(' '.join(str(p) for p in b) for b in blocks_inf)
+  272|     for X in range(len(sections)):
+  273|         out.append('POINT %d' % X)
+  274|         for j, cls in sections[X]:
+  275|             out.append('FRAME %d' % j)
+  276|             out.extend(' '.join(str(p) for p in t) for t in sorted(cls))
+  277|     return ('\n'.join(out) + '\n').encode('ascii')
+  278| 
+  279| 
+  280| def build(master_data, orig_data):
+  281|     groups, grp, blocks = load_master(master_data)
+  282|     n_universe = check_master_is_h(groups, blocks)
+  283|     der = master_derived(groups, grp, blocks)
+  284|     v_inf = K * M_MASTER * COPIES
+  285|     groups_inf = [sorted(3 * p + x for p in g for x in Z3) for g in groups]
+  286|     grp_inf = [grp[X // 3] for X in range(v_inf)]
+  287|     blocks_inf = inflate(blocks)
+  288|     orig_head, orig_blocks = orig_prefix_blocks(orig_data)
+  289|     same_set = set(orig_blocks) == set(blocks_inf) and len(orig_blocks) == len(blocks_inf)
+  290|     if not same_set:
+  291|         raise ConstructionError('re-inflated blocks differ from the original certificate blocks as a set')
+  292|     der_inf = collections.defaultdict(set)
+  293|     for b in blocks_inf:
+  294|         for X in b:
+  295|             der_inf[X].add(tuple(q for q in b if q != X))
+  296| 
+  297|     families, colourings, degree_hist = {}, [], collections.Counter()
+  298|     for p in range(K * M_MASTER):
+  299|         for j in range(K):
+  300|             if j == grp[p]:
+  301|                 continue
+  302|             parts, verts, edges = missing_family(groups, grp, der, p, j)
+  303|             u = incidence_colouring(verts, edges)
+  304|             families[(p, j)] = (parts, verts, edges, u)
+  305|             degree_hist.update(collections.Counter(q for e in edges for q in e).values())
+  306|             colourings.append(collections.OrderedDict([('p', p), ('j', j), ('parts', parts),
+  307|                                                        ('edges', [list(e) for e in edges]),
+  308|                                                        ('u', [list(r) for r in u])]))
+  309| 
+  310|     sections, class_count = [], 0
+  311|     for X in range(v_inf):
+  312|         p, beta = divmod(X, 3)
+  313|         s = (-beta) % 3
+  314|         sec, listed = [], []
+  315|         for j in range(K):
+  316|             if j == grp[p]:
+  317|                 continue
+  318|             parts, verts, edges, u = families[(p, j)]
+  319|             target = set(Y for Y in range(v_inf) if grp_inf[Y] not in (grp[p], j))
+  320|             for P, cls in lift_classes(edges, u, s).items():
+  321|                 pts = [t for tri in cls for t in tri]
+  322|                 if len(cls) != 18 or len(set(pts)) != 54 or set(pts) != target:
+  323|                     raise ConstructionError('POINT %d FRAME %d label %r is not a parallel class' % (X, j, P))
+  324|                 sec.append((j, cls))
+  325|                 listed.extend(cls)
+  326|                 class_count += 1
+  327|         if len(listed) != 648 or set(listed) != der_inf[X] or len(set(listed)) != 648:
+  328|             raise ConstructionError('POINT %d: classes do not partition the derived design' % X)
+  329|         sections.append(sec)
+  330|     cert = render(groups_inf, blocks_inf, sections)
+  331|     head_lines = cert.decode('ascii').split('\n')[:len(orig_head)]
+  332|     prefix_identical = head_lines == orig_head
+  333| 
+  334|     fixtures = collections.OrderedDict()
+  335|     analyses = collections.OrderedDict()
+  336|     # mutation a: swap u(a,T), u(b,T) on the first edge of the first family at POINT 7
+  337|     X = MUTATIONS['mut_a_colour_vertex_swap']['point']
+  338|     p, beta = divmod(X, 3)
+  339|     sec = list(sections[X])
+  340|     j0 = min(j for j in range(K) if j != grp[p])
+  341|     parts, verts, edges, u = families[(p, j0)]
+  342|     bad = [list(r) for r in u]
+  343|     bad[0][0], bad[0][1] = bad[0][1], bad[0][0]
+  344|     bad = [tuple(r) for r in bad]
+  345|     new = lift_classes(edges, bad, (-beta) % 3)
+  346|     idx = [i for i, (j, _) in enumerate(sec) if j == j0]
+  347|     for i, (P, cls) in zip(idx, new.items()):
+  348|         sec[i] = (j0, cls)
+  349|     fixtures['mut_a_colour_vertex_swap'] = render(groups_inf, blocks_inf, sections[:X] + [sec] + sections[X + 1:])
+  350|     analyses['mut_a_colour_vertex_swap'] = collections.OrderedDict([
+  351|         ('p', p), ('beta', beta), ('family_group', j0), ('edge', list(edges[0])), ('u_before', list(u[0])),
+  352|         ('u_after', list(bad[0])), ('edge_sum_after_mod3', sum(bad[0]) % 3),
+  353|         ('vertex_colours_after', dict((str(q), sorted(bad[e][E.index(q)] for e, E in enumerate(edges) if q in E))
+  354|                                       for q in edges[0][:2])),
+  355|         ('class_defects_uncovered_multicovered_by_part', [class_defects(c, verts, parts, grp) for c in new.values()])])
+  356| 
+  357|     # mutation b: shift u at the first A-vertex by +1 (vertex-proper, zero sum broken on its 3 edges) at POINT 31
+  358|     X = MUTATIONS['mut_b_colour_shift_A_vertex']['point']
+  359|     p, beta = divmod(X, 3)
+  360|     sec = list(sections[X])
+  361|     j0 = min(j for j in range(K) if j != grp[p])
+  362|     parts, verts, edges, u = families[(p, j0)]
+  363|     a_star = min(q for q in verts if grp[q] == parts[0])
+  364|     bad = [((r[0] + 1) % 3, r[1], r[2]) if E[0] == a_star else r for E, r in zip(edges, u)]
+  365|     new = lift_classes(edges, bad, (-beta) % 3)
+  366|     idx = [i for i, (j, _) in enumerate(sec) if j == j0]
+  367|     for i, (P, cls) in zip(idx, new.items()):
+  368|         sec[i] = (j0, cls)
+  369|     fixtures['mut_b_colour_shift_A_vertex'] = render(groups_inf, blocks_inf, sections[:X] + [sec] + sections[X + 1:])
+  370|     vertex_proper = all(sorted(bad[e][E.index(q)] for e, E in enumerate(edges) if q in E) == [0, 1, 2] for q in verts)
+  371|     analyses['mut_b_colour_shift_A_vertex'] = collections.OrderedDict([
+  372|         ('p', p), ('beta', beta), ('family_group', j0), ('a_star', a_star),
+  373|         ('edges_at_a_star', [list(E) for E in edges if E[0] == a_star]),
+  374|         ('still_vertex_proper_everywhere', vertex_proper),
+  375|         ('edge_sums_mod3_at_a_star', [sum(r) % 3 for E, r in zip(edges, bad) if E[0] == a_star]),
+  376|         ('class_defects_uncovered_multicovered_by_part', [class_defects(c, verts, parts, grp) for c in new.values()])])
+  377| 
+  378|     # mutation c: wrong sum constant s' = s + 1 for every family at POINT 56
+  379|     X = MUTATIONS['mut_c_wrong_third_sum_constant']['point']
+  380|     p, beta = divmod(X, 3)
+  381|     s_bad = ((-beta) + 1) % 3
+  382|     sec = []
+  383|     perfect = True
+  384|     for j in range(K):
+  385|         if j == grp[p]:
+  386|             continue
+  387|         parts, verts, edges, u = families[(p, j)]
+  388|         for P, cls in lift_classes(edges, u, s_bad).items():
+  389|             sec.append((j, cls))
+  390|             pts = [t for tri in cls for t in tri]
+  391|             perfect = perfect and len(set(pts)) == 54 == len(pts)
+  392|     fixtures['mut_c_wrong_third_sum_constant'] = render(groups_inf, blocks_inf, sections[:X] + [sec] + sections[X + 1:])
+  393|     listed = set(t for _, c in sec for t in c)
+  394|     analyses['mut_c_wrong_third_sum_constant'] = collections.OrderedDict([
+  395|         ('p', p), ('beta', beta), ('correct_s', (-beta) % 3), ('used_s', s_bad),
+  396|         ('all_classes_still_parallel_classes', perfect),
+  397|         ('listed_triples_that_are_derived_at_point', len(listed & der_inf[X])), ('listed_triples', len(listed))])
+  398| 
+  399|     # mutation d: duplicate the first FRAME 0 class over the second one at POINT 89
+  400|     X = MUTATIONS['mut_d_duplicate_frame_class']['point']
+  401|     sec = list(sections[X])
+  402|     idx = [i for i, (j, _) in enumerate(sec) if j == 0]
+  403|     sec[idx[1]] = (0, list(sec[idx[0]][1]))
+  404|     fixtures['mut_d_duplicate_frame_class'] = render(groups_inf, blocks_inf, sections[:X] + [sec] + sections[X + 1:])
+  405|     analyses['mut_d_duplicate_frame_class'] = collections.OrderedDict([
+  406|         ('p', X // 3), ('beta', X % 3), ('replaced_class_index_in_section', idx[1]), ('copied_class_index', idx[0])])
+  407| 
+  408|     pos_lines = cert.decode('ascii').split('\n')
+  409|     for name, data in fixtures.items():
+  410|         mut_lines = data.decode('ascii').split('\n')
+  411|         diff = [i + 1 for i, (x, y) in enumerate(zip(pos_lines, mut_lines)) if x != y]
+  412|         analyses[name]['line_count_equal_to_positive'] = len(mut_lines) == len(pos_lines)
+  413|         analyses[name]['first_last_differing_lf'] = [diff[0], diff[-1]] if diff else None
+  414|         analyses[name]['differing_lines'] = len(diff)
+  415|         X = MUTATIONS[name]['point']
+  416|         lo = pos_lines.index('POINT %d' % X) + 1
+  417|         hi = pos_lines.index('POINT %d' % (X + 1)) if X + 1 < v_inf else len(pos_lines) - 1
+  418|         analyses[name]['positive_section_lf_range'] = [lo, hi]
+  419|         analyses[name]['all_differences_inside_that_point_section'] = bool(diff) and all(lo <= d <= hi for d in diff)
+  420| 
+  421|     stats = collections.OrderedDict([
+  422|         ('master_points', K * M_MASTER), ('master_blocks', len(blocks)), ('master_transverse_triples', n_universe),
+  423|         ('master_derived_triples_per_point', 72), ('missing_families', len(families)),
+  424|         ('family_vertex_degree_histogram', dict((str(k), v) for k, v in sorted(degree_hist.items()))),
+  425|         ('inflated_points', v_inf), ('inflated_blocks', len(blocks_inf)),
+  426|         ('re_inflated_blocks_equal_original_as_set', same_set),
+  427|         ('header_groups_blocks_prefix_byte_identical_to_original', prefix_identical),
+  428|         ('original_prefix_lines', len(orig_head)),
+  429|         ('points_with_frames', len(sections)), ('frame_classes_total', class_count),
+  430|         ('frame_classes_per_point', class_count // v_inf), ('triples_per_class', 18),
+  431|         ('derived_triples_per_point', 648)])
+  432|     colour_json = (json.dumps(colourings, separators=(',', ':')) + '\n').encode('ascii')
+  433|     return cert, fixtures, analyses, stats, colour_json
+  434| 
+  435| 
+  436| def own_sha():
+  437|     with open(os.path.abspath(__file__), 'rb') as f:
+  438|         return sha256(f.read())
+  439| 
+  440| 
+  441| def main(argv):
+  442|     ap = argparse.ArgumentParser()
+  443|     for name in ('--master', '--master-sha', '--orig', '--orig-sha'):
+  444|         ap.add_argument(name, required=True)
+  445|     ap.add_argument('--cert-out')
+  446|     ap.add_argument('--fixtures-dir')
+  447|     ap.add_argument('--colourings-out')
+  448|     ap.add_argument('--manifest-out')
+  449|     ap.add_argument('--hashes-only', action='store_true')
+  450|     a = ap.parse_args(argv[1:])
+  451|     started = stamp()
+  452|     master = read_pinned(a.master, a.master_sha)
+  453|     orig = read_pinned(a.orig, a.orig_sha)
+  454|     cert, fixtures, analyses, stats, colour_json = build(master, orig)
+  455|     files = collections.OrderedDict([('positive', cert)] + list(fixtures.items()) + [('colourings', colour_json)])
+  456|     hashes = collections.OrderedDict((k, collections.OrderedDict([('sha256', sha256(v)), ('bytes', len(v)),
+  457|                                                                   ('lf_count', v.count(b'\n'))]))
+  458|                                      for k, v in files.items())
+  459|     base = collections.OrderedDict([
+  460|         ('generator', collections.OrderedDict([('path', os.path.abspath(__file__)), ('sha256', own_sha())])),
+  461|         ('python', collections.OrderedDict([('executable', sys.executable), ('version', platform.python_version()),
+  462|                                             ('optimize_flag', sys.flags.optimize)])),
+  463|         ('inputs', collections.OrderedDict([
+  464|             ('master', collections.OrderedDict([('path', os.path.abspath(a.master)), ('sha256', a.master_sha)])),
+  465|             ('original_certificate', collections.OrderedDict([('path', os.path.abspath(a.orig)),
+  466|                                                               ('sha256', a.orig_sha)]))])),
+  467|         ('started_at_pt', started), ('stats', stats), ('outputs', hashes)])
+  468|     if a.hashes_only:
+  469|         base['finished_at_pt'] = stamp()
+  470|         sys.stdout.write(json.dumps(base, indent=1) + '\n')
+  471|         return 0
+  472|     if not (a.cert_out and a.fixtures_dir and a.colourings_out and a.manifest_out):
+  473|         raise SystemExit('write mode needs --cert-out --fixtures-dir --colourings-out --manifest-out')
+  474|     paths = collections.OrderedDict([('positive', a.cert_out)])
+  475|     for name in fixtures:
+  476|         paths[name] = os.path.join(a.fixtures_dir, name + '.txt')
+  477|     paths['colourings'] = a.colourings_out
+  478|     for p in list(paths.values()) + [a.manifest_out]:
+  479|         if os.path.exists(p):
+  480|             raise SystemExit('refusing to overwrite ' + p)
+  481|     for k, p in paths.items():
+  482|         with open(p, 'xb') as f:
+  483|             f.write(files[k])
+  484|     manifest = base
+  485|     manifest['written'] = collections.OrderedDict((k, os.path.abspath(p)) for k, p in paths.items())
+  486|     manifest['mutations'] = collections.OrderedDict(
+  487|         (name, collections.OrderedDict(list(MUTATIONS[name].items()) + [('analysis', analyses[name])]))
+  488|         for name in fixtures)
+  489|     manifest['finished_at_pt'] = stamp()
+  490|     with open(a.manifest_out, 'x') as f:
+  491|         f.write(json.dumps(manifest, indent=1) + '\n')
+  492|     sys.stdout.write(json.dumps(collections.OrderedDict(
+  493|         [('stats', stats), ('outputs', hashes)]), indent=1) + '\n')
+  494|     return 0
+  495| 
+  496| 
+  497| if __name__ == '__main__':
+  498|     try:
+  499|         sys.exit(main(sys.argv))
+  500|     except ConstructionError as exc:
+  501|         sys.stderr.write('ConstructionError: %s\n' % exc)
+  502|         sys.exit(3)
+===== END code/build_tripled_fdgdd.py =====
+
+===== BEGIN code/run_checker_matrix.py (sha256 08c9ba0711d13fc8c7ee2df12714b7845076a2e2d8bcb6e77905f953a2e34084), LF-numbered =====
+    1| #!/usr/bin/env python3
+    2| """Tz43TriplingAudit runner: both existing FDGDD checkers on the constructive certificate and its mutations.
+    3| 
+    4| Runs, one child at a time, the unchanged parent definition checker (check_fdgdd_format_d.py) and the unchanged
+    5| prompt-only Claude-authored checker (checker.py, KIND fdgdd, EXPECTED_V 90, EXPECTED_SHA) under /usr/bin/python3
+    6| and /opt/homebrew/bin/python3, each with -B and -O -B. Native RLIMIT_CPU only; no timeouts, no kills.
+    7| Every fixture is hash-checked against the build manifest before and after its runs, and the hash each checker
+    8| reports or is bound to must equal it. Outputs are new files only (mode 'x').
+    9| Usage: /usr/bin/python3 -B run_checker_matrix.py MANIFEST MANIFEST_SHA PARENT_CHECKER_SHA CLAUDE_CHECKER_SHA
+   10| """
+   11| import hashlib
+   12| import json
+   13| import os
+   14| import resource
+   15| import subprocess
+   16| import sys
+   17| import time
+   18| from datetime import datetime
+   19| from zoneinfo import ZoneInfo
+   20| 
+   21| DESK = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+   22| REVIEW = os.path.dirname(DESK)
+   23| PARENT = os.path.join(REVIEW, 'tz43-fdgdd18-parent-v1', 'code', 'check_fdgdd_format_d.py')
+   24| CLAUDE = os.path.join(REVIEW, 'tz43-claude-verifier-v1', 'checker.py')
+   25| INTERPRETERS = [('sys39', '/usr/bin/python3'), ('brew', '/opt/homebrew/bin/python3')]
+   26| MODES = [('B', ['-B']), ('OB', ['-O', '-B'])]
+   27| ENV = {'PATH': '/usr/bin:/bin', 'TMPDIR': os.path.join(DESK, 'tmp'), 'LC_ALL': 'C'}
+   28| RUNS = os.path.join(DESK, 'runs')
+   29| ORIG_SHA = '3e22f5021631ac82ea5b5fa6f884984bb874f1f9a384fd35bfeff523e731a998'
+   30| 
+   31| 
+   32| def stamp():
+   33|     return datetime.now(ZoneInfo('America/Los_Angeles')).isoformat()
+   34| 
+   35| 
+   36| def sha_file(path):
+   37|     with open(path, 'rb') as f:
+   38|         return hashlib.sha256(f.read()).hexdigest()
+   39| 
+   40| 
+   41| def limit():
+   42|     resource.setrlimit(resource.RLIMIT_CPU, (120, 130))
+   43| 
+   44| 
+   45| def run_child(tag, argv):
+   46|     out_path = os.path.join(RUNS, tag + '.stdout.txt')
+   47|     err_path = os.path.join(RUNS, tag + '.stderr.txt')
+   48|     with open(out_path, 'x') as fo, open(err_path, 'x') as fe:
+   49|         t0 = time.monotonic()
+   50|         proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=fo, stderr=fe, cwd=DESK, env=ENV,
+   51|                                 preexec_fn=limit)
+   52|         _, status, ru = os.wait4(proc.pid, 0)
+   53|         wall = time.monotonic() - t0
+   54|     code = os.waitstatus_to_exitcode(status)
+   55|     with open(out_path, 'rb') as f:
+   56|         out = f.read()
+   57|     with open(err_path, 'rb') as f:
+   58|         err = f.read()
+   59|     return {'tag': tag, 'argv': argv, 'exit': code, 'stdout': out.decode('utf-8', 'replace'),
+   60|             'stdout_sha256': hashlib.sha256(out).hexdigest(), 'stderr_bytes': len(err),
+   61|             'stderr_tail': err[-1500:].decode('utf-8', 'replace'), 'wall_s': round(wall, 3),
+   62|             'user_s': round(ru.ru_utime, 3), 'maxrss_bytes': ru.ru_maxrss}
+   63| 
+   64| 
+   65| def parent_case(name, path, sha, expect_failed, extra=()):
+   66|     rows = []
+   67|     for iname, py in INTERPRETERS:
+   68|         for mname, flags in MODES:
+   69|             tag = 'parent__%s__%s__%s' % (name, iname, mname)
+   70|             rep_path = os.path.join(RUNS, tag + '.report.json')
+   71|             r = run_child(tag, [py] + flags + [PARENT, path, '--out', rep_path] + list(extra))
+   72|             rep = None
+   73|             if os.path.exists(rep_path):
+   74|                 with open(rep_path) as f:
+   75|                     rep = json.load(f)
+   76|             failed = rep.get('failed_checks') if rep else None
+   77|             ok = (rep is not None and r['stderr_bytes'] == 0
+   78|                   and rep['input']['sha256'] == sha and rep['checker']['sha256'] == PARENT_SHA
+   79|                   and rep['python']['optimize_flag'] == (1 if mname == 'OB' else 0))
+   80|             if expect_failed:
+   81|                 ok = ok and r['exit'] == 1 and rep['verdict'] == 'FAIL' and set(failed) == set(expect_failed)
+   82|             else:
+   83|                 ok = ok and r['exit'] == 0 and rep['verdict'] == 'PASS' and failed == [] \
+   84|                     and rep.get('definition_core_verdict') == 'PASS' and not rep.get('not_run_checks')
+   85|             fexamples = {}
+   86|             if rep and failed:
+   87|                 for c in failed:
+   88|                     d = rep['checks'].get(c, {})
+   89|                     fexamples[c] = {'violations': d.get('violations'), 'first_example': (d.get('examples') or [None])[0]}
+   90|             r.pop('stdout')
+   91|             r.update({'checker': 'parent', 'case': name, 'interpreter': iname, 'mode': mname,
+   92|                       'report_path': rep_path, 'report_sha256': sha_file(rep_path) if rep else None,
+   93|                       'python_version': rep['python']['version'] if rep else None,
+   94|                       'verdict': rep.get('verdict') if rep else None, 'failed_checks': failed,
+   95|                       'expected_failed_checks': expect_failed, 'failed_check_examples': fexamples,
+   96|                       'reported_input_sha256': rep['input']['sha256'] if rep else None,
+   97|                       'reported_checker_sha256': rep['checker']['sha256'] if rep else None,
+   98|                       'stats_frames_status_hist': (rep.get('stats', {}).get('frames', {}) or {}).get(
+   99|                           'class_status_histogram') if rep else None,
+  100|                       'ok': bool(ok)})
+  101|             rows.append(r)
+  102|             print(json.dumps({'tag': tag, 'exit': r['exit'], 'failed': failed, 'ok': r['ok']}), flush=True)
+  103|     return rows
+  104| 
+  105| 
+  106| def claude_case(name, path, bound_sha, expect_invariant, expected_v='90', actual_sha=None):
+  107|     actual_sha = actual_sha or bound_sha
+  108|     rows = []
+  109|     for iname, py in INTERPRETERS:
+  110|         for mname, flags in MODES:
+  111|             tag = 'claude__%s__%s__%s' % (name, iname, mname)
+  112|             r = run_child(tag, [py] + flags + [CLAUDE, 'fdgdd', expected_v, path, bound_sha])
+  113|             text = r.pop('stdout')
+  114|             lines = text.split('\n')
+  115|             one_line = len(lines) == 2 and lines[1] == ''
+  116|             try:
+  117|                 j = json.loads(text)
+  118|             except ValueError:
+  119|                 j = None
+  120|             ok = j is not None and one_line and r['stderr_bytes'] == 0 and j.get('sha256') == actual_sha
+  121|             if expect_invariant is None:
+  122|                 ok = ok and r['exit'] == 0 and j.get('valid') is True and j.get('invariant') is None \
+  123|                     and j.get('sha256') == bound_sha
+  124|             else:
+  125|                 ok = ok and r['exit'] == 1 and j.get('valid') is False and j.get('invariant') == expect_invariant
+  126|             r.update({'checker': 'claude', 'case': name, 'interpreter': iname, 'mode': mname,
+  127|                       'bound_sha256': bound_sha, 'actual_sha256': actual_sha, 'expected_v': expected_v,
+  128|                       'valid': j.get('valid') if j else None, 'invariant': j.get('invariant') if j else None,
+  129|                       'expected_invariant': expect_invariant, 'reason': j.get('reason') if j else None,
+  130|                       'counts': j.get('counts') if j else None, 'stdout_one_json_line': one_line,
+  131|                       'ok': bool(ok)})
+  132|             rows.append(r)
+  133|             print(json.dumps({'tag': tag, 'exit': r['exit'], 'invariant': r['invariant'], 'ok': r['ok']}), flush=True)
+  134|     return rows
+  135| 
+  136| 
+  137| def main():
+  138|     global PARENT_SHA
+  139|     if len(sys.argv) != 5:
+  140|         raise SystemExit('usage: run_checker_matrix.py MANIFEST MANIFEST_SHA PARENT_CHECKER_SHA CLAUDE_CHECKER_SHA')
+  141|     manifest_path, manifest_sha, PARENT_SHA, claude_sha = sys.argv[1:]
+  142|     if sha_file(manifest_path) != manifest_sha:
+  143|         raise SystemExit('manifest hash mismatch')
+  144|     if sha_file(PARENT) != PARENT_SHA or sha_file(CLAUDE) != claude_sha:
+  145|         raise SystemExit('checker hash mismatch')
+  146|     with open(manifest_path) as f:
+  147|         man = json.load(f)
+  148|     fixtures = [('positive', man['written']['positive'], man['outputs']['positive']['sha256'], [], None)]
+  149|     for name, spec in man['mutations'].items():
+  150|         fixtures.append((name, man['written'][name], man['outputs'][name]['sha256'],
+  151|                          spec['expected_parent_failed_checks'], spec['expected_claude_invariant']))
+  152|     out = {'runner': os.path.abspath(__file__), 'runner_sha256': sha_file(os.path.abspath(__file__)),
+  153|            'manifest': os.path.abspath(manifest_path), 'manifest_sha256': manifest_sha,
+  154|            'parent_checker': PARENT, 'parent_checker_sha256': PARENT_SHA,
+  155|            'claude_checker': CLAUDE, 'claude_checker_sha256': claude_sha,
+  156|            'interpreters': dict(INTERPRETERS), 'started_at_pt': stamp(), 'rows': [], 'hash_checks': []}
+  157|     t0 = time.monotonic()
+  158|     for name, path, sha, exp_failed, exp_inv in fixtures:
+  159|         before = sha_file(path)
+  160|         if before != sha:
+  161|             raise SystemExit('fixture hash mismatch before runs: ' + name)
+  162|         out['rows'] += parent_case(name, path, sha, exp_failed)
+  163|         out['rows'] += claude_case(name, path, sha, exp_inv)
+  164|         after = sha_file(path)
+  165|         out['hash_checks'].append({'case': name, 'path': path, 'expected': sha, 'before': before, 'after': after,
+  166|                                    'ok': before == after == sha})
+  167|     pos_path, pos_sha = fixtures[0][1], fixtures[0][2]
+  168|     out['rows'] += parent_case('control_wrong_target_m6', pos_path, pos_sha, ['C01_HEADER'], ['--k', '5', '--m', '6'])
+  169|     out['rows'] += claude_case('control_wrong_expected_sha', pos_path, ORIG_SHA, 'sha256', actual_sha=pos_sha)
+  170|     out['rows'] += claude_case('control_wrong_expected_v89', pos_path, pos_sha, 'order', expected_v='89')
+  171|     out['hash_checks'].append({'case': 'positive-after-controls', 'path': pos_path, 'expected': pos_sha,
+  172|                                'after': sha_file(pos_path), 'ok': sha_file(pos_path) == pos_sha})
+  173|     rows = out['rows']
+  174|     out['summary'] = {
+  175|         'executions': len(rows), 'ok': sum(r['ok'] for r in rows),
+  176|         'not_ok': [r['tag'] for r in rows if not r['ok']],
+  177|         'positive_executions_ok': sum(r['ok'] for r in rows if r['case'] == 'positive'),
+  178|         'positive_executions': sum(1 for r in rows if r['case'] == 'positive'),
+  179|         'rejection_executions_ok': sum(r['ok'] for r in rows if r['case'] != 'positive'),
+  180|         'rejection_executions': sum(1 for r in rows if r['case'] != 'positive'),
+  181|         'all_hash_checks_ok': all(h['ok'] for h in out['hash_checks']),
+  182|         'all_stderr_empty': all(r['stderr_bytes'] == 0 for r in rows),
+  183|         'max_child_maxrss_bytes': max(r['maxrss_bytes'] for r in rows),
+  184|         'max_child_wall_s': max(r['wall_s'] for r in rows), 'suite_wall_s': round(time.monotonic() - t0, 3)}
+  185|     out['finished_at_pt'] = stamp()
+  186|     with open(os.path.join(DESK, 'checker-matrix-v1.json'), 'x') as f:
+  187|         json.dump(out, f, indent=1)
+  188|         f.write('\n')
+  189|     print(json.dumps(out['summary']))
+  190|     return 0 if not out['summary']['not_ok'] and out['summary']['all_hash_checks_ok'] else 1
+  191| 
+  192| 
+  193| if __name__ == '__main__':
+  194|     raise SystemExit(main())
+===== END code/run_checker_matrix.py =====
+
+===== Parent checker excerpt check_fdgdd_format_d.py (sha256 0312f859e74f3e5aee650a3e41ee92cf2dfa5f674906e65b503ed35b0eaaa9d4): classify_class and frame checks =====
+  210| def classify_class(union, disjoint, invalid, Y, gx, group_sets, grp, k):
+  211|     """Return (status, missed_group). status 'OK' iff the class is a PC of Y minus one whole group."""
+  212|     if invalid:
+  213|         return 'HAS_INVALID_TRIPLE', None
+  214|     if not disjoint:
+  215|         return 'OVERLAP', None
+  216|     if not union <= Y:
+  217|         return 'MEETS_GROUP_OF_X', None
+  218|     missing = Y - union
+  219|     for gj in range(k):
+  220|         if gj != gx and missing == group_sets[gj]:
+  221|             return 'OK', gj
+  222|     for gj in range(k):
+  223|         if gj != gx and group_sets[gj] < missing:
+  224|             return 'NOT_FULL', gj
+  225|     missed = set(grp[p] for p in missing)
+  226|     if len(missed) >= 2:
+  227|         return 'SPANS_TWO_OR_MORE_MISSING_GROUPS', None
+  228|     if len(missed) == 1:
+  229|         return 'MISSES_PART_OF_ONE_GROUP', None
+  230|     return 'COVERS_ALL_OF_X_MINUS_GX', None
+  461|     for x in range(v):
+  462|         gx = grp[x]
+  463|         Y = Y_by_group[gx]
+  464|         classes = sec_by_x[x][1] if x in sec_by_x else []
+  465|         classes_per_point[len(classes)] += 1
+  466|         listed = collections.Counter()
+  467|         declared = collections.Counter()
+  468|         actual = collections.Counter()
+  469|         for cl, j, triples in classes:
+  470|             if j >= k or j == gx:
+  471|                 C.violation('F02_FRAME_LABEL_VALID', {'x': x, 'line': cl, 'label': j, 'group_of_x': gx})
+  472|             declared[j] += 1
+  473|             valid = []
+  474|             invalid = 0
+  475|             for tl, t in triples:
+  476|                 if any(p >= v for p in t):
+  477|                     invalid += 1
+  478|                     continue
+  479|                 if len(set(t)) != 3:
+  480|                     C.violation('F03_FRAME_TRIPLE_IS_3_SUBSET', {'x': x, 'line': tl, 'triple': t})
+  481|                     invalid += 1
+  482|                     continue
+  483|                 s = sorted(t)
+  484|                 valid.append(s)
+  485|                 listed[key3(s[0], s[1], s[2])] += 1
+  486|             size_hist[len(triples)] += 1
+  487|             pts = collections.Counter(p for s in valid for p in s)
+  488|             union = frozenset(pts)
+  489|             disjoint = all(c == 1 for c in pts.values())
+  490|             if not disjoint:
+  491|                 C.violation('F05_CLASS_PAIRWISE_DISJOINT', collections.OrderedDict([
+  492|                     ('x', x), ('line', cl), ('label', j),
+  493|                     ('shared_points', sorted(p for p, c in pts.items() if c > 1)[:5])]))
+  494|             st, gj = classify_class(union, disjoint, invalid, Y, gx, group_sets, grp, k)
+  495|             status_hist[st] += 1
+  496|             if st != 'OK':
+  497|                 C.violation('F06_CLASS_IS_PC_OF_X_MINUS_GX_AND_ONE_GROUP', collections.OrderedDict([
+  498|                     ('x', x), ('line', cl), ('label', j), ('status', st), ('triples', len(triples)),
+  499|                     ('covered_points', len(union)),
+  500|                     ('missing_by_group', dict((str(g), len((Y - union) & group_sets[g]))
+  501|                                               for g in range(k) if g != gx))]))
+  502|             else:
+  503|                 actual[gj] += 1
+  504|                 if gj != j:
+  505|                     C.violation('F07_FRAME_LABEL_MATCHES_MISSED_GROUP',
+  506|                                 {'x': x, 'line': cl, 'declared': j, 'missed_group': gj})
+  507|         der = derived[x]
+  508|         if listed != der:
+  509|             not_derived = sum(c for t, c in listed.items() if t not in der)
+  510|             repeated = sum(c - der[t] for t, c in listed.items() if t in der and c > der[t])
+  511|             unlisted = sum(c - listed[t] for t, c in der.items() if listed[t] < c)
+  512|             C.violation('F04_CLASSES_PARTITION_DERIVED', collections.OrderedDict([
+  513|                 ('x', x), ('listed_not_derived', not_derived), ('listed_extra_repeats', repeated),
+  514|                 ('derived_not_listed', unlisted), ('listed_total', sum(listed.values())),
+  515|                 ('derived_total', sum(der.values()))]))
+  516|         if len(classes) != n_cls:
+  517|             C.violation('F08_CLASS_COUNT', {'x': x, 'classes': len(classes), 'expected': n_cls})
+  518|         want = collections.Counter(dict((g, per_group) for g in range(k) if g != gx))
+  519|         if declared != want:
+  520|             C.violation('F09_DECLARED_MISSED_GROUP_COUNTS', {'x': x, 'declared_label_counts':
+  521|                                                             dict((str(a), b) for a, b in sorted(declared.items()))})
+  522|         actual_counts[str(x)] = [None if g == gx else actual[g] for g in range(k)]
+  523|         declared_counts[str(x)] = [None if g == gx else declared[g] for g in range(k)]
+  524|     for name in ('F02_FRAME_LABEL_VALID', 'F03_FRAME_TRIPLE_IS_3_SUBSET', 'F04_CLASSES_PARTITION_DERIVED',
+  525|                  'F05_CLASS_PAIRWISE_DISJOINT', 'F06_CLASS_IS_PC_OF_X_MINUS_GX_AND_ONE_GROUP',
+  526|                  'F07_FRAME_LABEL_MATCHES_MISSED_GROUP', 'F08_CLASS_COUNT', 'F09_DECLARED_MISSED_GROUP_COUNTS'):
+  527|         C.close(name)
+
+===== Claude-authored checker excerpt checker.py (sha256 2b2a7f19362b263c25721e7cb1db4ba3231cbcd7f68d636a624cf00b26bddd10): sha binding, fdgdd header, class checks =====
+   77|     # Read once; hash the bytes before decoding or parsing anything.
+   78|     try:
+   79|         with open(path, 'rb') as fh:
+   80|             data = fh.read()
+   81|     except Exception as exc:
+   82|         raise Fail('io', 'cannot open or read FILE: %s' % type(exc).__name__)
+   83|     digest = hashlib.sha256(data).hexdigest()
+   84|     out['sha256'] = digest
+   85|     if digest != sha:
+   86|         raise Fail('sha256', 'sha256 of FILE is %s, expected %s' % (digest, sha))
+   87| 
+  170|     elif kind == 'fdgdd':
+  171|         if not recs:
+  172|             raise Fail('format.header', 'end of file: missing GDD34 FDGDD k m record')
+  173|         ln, text = recs[0]
+  174|         fields = text.split(' ')
+  175|         if len(fields) != 4 or fields[:2] != ['GDD34', 'FDGDD'] or not all(canon(f) for f in fields[2:]):
+  176|             raise Fail('format.header', 'LF %d: expected "GDD34 FDGDD k m", found %s' % (ln, clip(text)))
+  177|         k, m = int(fields[2]), int(fields[3])
+  178|         v = k * m
+  179|         counts.update(v=v, k=k, m=m)
+  180|         if v != ev:
+  181|             raise Fail('order', 'LF %d: v = km = %d but EXPECTED_V = %d' % (ln, v, ev))
+  182|         if k < 4 or m < 1:
+  183|             raise Fail('params', 'LF %d: GDD34 FDGDD %d %d needs k >= 4 and m >= 1' % (ln, k, m))
+  426|     for tag, x, sln, classes in sections:
+  427|         word = clsword[tag]
+  428|         derived = dset[x]
+  429|         hole = (set(members[gi[x]]) | stemset) - {x} if kind == 'gcdcqs' and tag == 'POINT' else set()
+  430|         listed = {}
+  431|         holefree = 0
+  432|         per = [0] * nlab
+  433|         for lbl, cln, triples in classes:
+  434|             cname = '%s %d (LF %d) of section %s %d' % (word, lbl, cln, tag, x)
+  435|             if word == 'FRAME':
+  436|                 if kind == 'fdgdd' and lbl == gi[x]:
+  437|                     raise Fail('class.label', 'LF %d: FRAME %d in section POINT %d (LF %d) names the group G_%d '
+  438|                                'of the section point' % (cln, lbl, x, sln, lbl))
+  439|                 if (gi[x], lbl) not in targets:
+  440|                     targets[gi[x], lbl] = (set(range(v)) - set(members[lbl])
+  441|                                            - (set(members[gi[x]]) if kind == 'fdgdd' else stemset))
+  442|                 target = targets[gi[x], lbl]
+  443|                 tname = 'X \\ (G_%d u G_%d)' % (gi[x], lbl) if kind == 'fdgdd' else 'X \\ (S u G_%d)' % lbl
+  444|             used = {}
+  445|             for tln, tri in triples:
+  446|                 code = key3(*sorted(tri))
+  447|                 if code not in derived:
+  448|                     raise Fail('derived.not_block', 'LF %d: triple %s in %s: %s'
+  449|                                % (tln, fmt(tri), cname, 'it contains the section point' if x in tri
+  450|                                   else '%s is not a block' % fmt(sorted(tri + (x,)))))
+  451|                 if code in listed:
+  452|                     raise Fail('derived.repeat', 'LF %d: triple %s in %s is already listed at LF %d'
+  453|                                % (tln, fmt(tri), cname, listed[code]))
+  454|                 listed[code] = tln
+  455|                 if word == 'FRAME':
+  456|                     outside = [p for p in tri if p not in target]
+  457|                     if outside:
+  458|                         raise Fail('frame.parallel', 'LF %d: triple %s in %s has point %d outside %s'
+  459|                                    % (tln, fmt(tri), cname, outside[0], tname))
+  460|                 clash = [p for p in tri if p in used]
+  461|                 if clash:
+  462|                     raise Fail('frame.parallel' if word == 'FRAME' else 'class.ppc',
+  463|                                'LF %d: triple %s in %s meets the triple at LF %d in point %d'
+  464|                                % (tln, fmt(tri), cname, used[clash[0]], clash[0]))
+  465|                 for p in tri:
+  466|                     used[p] = tln
+  467|             if word == 'FRAME':
+  468|                 if len(used) != len(target):
+  469|                     lack = sorted(target - set(used))
+  470|                     raise Fail('frame.parallel', '%s ends at LF %d covering %d of the %d points of %s; missing %s%s'
+  471|                                % (cname, triples[-1][0], len(used), len(target), tname, fmt(lack[:12]),
+  472|                                   ' ...' if len(lack) > 12 else ''))
+  473|                 per[lbl] += 1
+  474|             elif not hole.intersection(used):
+  475|                 holefree += 1
+  476|         total += sum(len(cl[2]) for cl in classes)
+  477|         if len(listed) != len(derived):
+  478|             lack = sorted(derived - set(listed))
+  479|             c0 = lack[0]
+  480|             raise Fail('derived.missing', 'section %s %d (LF %d) lists %d of the %d derived triples; %d missing, '
+  481|                        'e.g. %s' % (tag, x, sln, len(listed), len(derived), len(lack),
+  482|                                     fmt((c0 >> 20, (c0 >> 10) & 1023, c0 & 1023))))
+
+Parent-reported execution results (context only; do not trust them as proof):
+Generator stats (build-manifest.json sha256 0bab3d48981e2335c3cdba49e81d1b6f25c75e721b90292ef8e9b2953e9e0cc4):
+{"master_points": 30, "master_blocks": 540, "master_transverse_triples": 2160, "master_derived_triples_per_point": 72, "missing_families": 120, "family_vertex_degree_histogram": {"3": 2160}, "inflated_points": 90, "inflated_blocks": 14580, "re_inflated_blocks_equal_original_as_set": true, "header_groups_blocks_prefix_byte_identical_to_original": true, "original_prefix_lines": 14588, "points_with_frames": 90, "frame_classes_total": 3240, "frame_classes_per_point": 36, "triples_per_class": 18, "derived_triples_per_point": 648}
+Written files: {"positive": "5442b8c71612f9e021bdb990ea8931cf0919514bf4685f70d59dd80ce804ff12", "mut_a_colour_vertex_swap": "7fef95676163539da16d880a34d9eb465653ff836392caa2a7628526fbc9f522", "mut_b_colour_shift_A_vertex": "9cbb24a7fb3c533142972e134969a40278b2ce4b9e9c040d95ff8ad7e0bea86e", "mut_c_wrong_third_sum_constant": "0a786662fc313e418cc86767432946ed3e8c61111be33571d7153413675879ad", "mut_d_duplicate_frame_class": "84afd6b0e3d37790507caedba683297c1e7ecdc13b205b056c5fd1d0ca6181d7", "colourings": "d70a8e6b43d8076cefd0f4b27db302ca5ab1064cc21ad38b1b206e50dcb4734f"}
+mut_a_colour_vertex_swap: {"p": 2, "beta": 1, "family_group": 1, "edge": [12, 19, 26], "u_before": [0, 1, 2], "u_after": [1, 0, 2], "edge_sum_after_mod3": 0, "vertex_colours_after": {"12": [1, 1, 2], "19": [0, 0, 2]}, "line_count_equal_to_positive": true, "first_last_differing_lf": [19386, 19540], "differing_lines": 18, "positive_section_lf_range": [19384, 20068], "all_differences_inside_that_point_section": true, "per_class_[uncovered,multicovered]_by_part_A_B_C": [[[1, 1], [1, 1], [0, 0]], [[1, 1], [1, 1], [0, 0]], [[1, 1], [1, 1], [0, 0]], [[1, 1], [1, 1], [0, 0]], [[1, 1], [1, 1], [0, 0]], [[1, 1], [1, 1], [0, 0]], [[1, 1], [1, 1], [0, 0]], [[1, 1], [1, 1], [0, 0]], [[1, 1], [1, 1], [0, 0]]]}
+mut_b_colour_shift_A_vertex: {"p": 10, "beta": 1, "family_group": 0, "a_star": 12, "edges_at_a_star": [[12, 18, 28], [12, 19, 29], [12, 23, 27]], "still_vertex_proper_everywhere": true, "edge_sums_mod3_at_a_star": [1, 1, 1], "line_count_equal_to_positive": true, "first_last_differing_lf": [35826, 35980], "differing_lines": 27, "positive_section_lf_range": [35824, 36508], "all_differences_inside_that_point_section": true, "per_class_[uncovered,multicovered]_by_part_A_B_C": [[[0, 0], [0, 0], [3, 3]], [[0, 0], [0, 0], [3, 3]], [[0, 0], [0, 0], [3, 3]], [[0, 0], [0, 0], [3, 3]], [[0, 0], [0, 0], [3, 3]], [[0, 0], [0, 0], [3, 3]], [[0, 0], [0, 0], [3, 3]], [[0, 0], [0, 0], [3, 3]], [[0, 0], [0, 0], [3, 3]]]}
+mut_c_wrong_third_sum_constant: {"p": 18, "beta": 2, "correct_s": 1, "used_s": 2, "all_classes_still_parallel_classes": true, "listed_triples_that_are_derived_at_point": 0, "listed_triples": 648, "line_count_equal_to_positive": true, "first_last_differing_lf": [52951, 53633], "differing_lines": 648, "positive_section_lf_range": [52949, 53633], "all_differences_inside_that_point_section": true}
+mut_d_duplicate_frame_class: {"p": 29, "beta": 2, "replaced_class_index_in_section": 1, "copied_class_index": 0, "line_count_equal_to_positive": true, "first_last_differing_lf": [75575, 75592], "differing_lines": 18, "positive_section_lf_range": [75554, 76238], "all_differences_inside_that_point_section": true}
+Checker matrix (checker-matrix-v1.json sha256 9ec69c1a5bd36216dd98bf4d7c27d2f63fad36e4160e265014ccfaafdbd9cd48) summary: {"executions": 52, "ok": 52, "not_ok": [], "positive_executions_ok": 8, "positive_executions": 8, "rejection_executions_ok": 44, "rejection_executions": 44, "all_hash_checks_ok": true, "all_stderr_empty": true, "max_child_maxrss_bytes": 67715072, "max_child_wall_s": 0.456, "suite_wall_s": 16.044}
+  claude / control_wrong_expected_sha: [(1, '"sha256"', True)] over 4 interpreter-mode runs
+  claude / control_wrong_expected_v89: [(1, '"order"', True)] over 4 interpreter-mode runs
+  claude / mut_a_colour_vertex_swap: [(1, '"frame.parallel"', True)] over 4 interpreter-mode runs
+  claude / mut_b_colour_shift_A_vertex: [(1, '"frame.parallel"', True)] over 4 interpreter-mode runs
+  claude / mut_c_wrong_third_sum_constant: [(1, '"derived.not_block"', True)] over 4 interpreter-mode runs
+  claude / mut_d_duplicate_frame_class: [(1, '"derived.repeat"', True)] over 4 interpreter-mode runs
+  claude / positive: [(0, 'null', True)] over 4 interpreter-mode runs
+  parent / control_wrong_target_m6: [(1, '["C01_HEADER"]', True)] over 4 interpreter-mode runs
+  parent / mut_a_colour_vertex_swap: [(1, '["F05_CLASS_PAIRWISE_DISJOINT", "F06_CLASS_IS_PC_OF_X_MINUS_GX_AND_ONE_GROUP"]', True)] over 4 interpreter-mode runs
+  parent / mut_b_colour_shift_A_vertex: [(1, '["F05_CLASS_PAIRWISE_DISJOINT", "F06_CLASS_IS_PC_OF_X_MINUS_GX_AND_ONE_GROUP"]', True)] over 4 interpreter-mode runs
+  parent / mut_c_wrong_third_sum_constant: [(1, '["F04_CLASSES_PARTITION_DERIVED"]', True)] over 4 interpreter-mode runs
+  parent / mut_d_duplicate_frame_class: [(1, '["F04_CLASSES_PARTITION_DERIVED"]', True)] over 4 interpreter-mode runs
+  parent / positive: [(0, '[]', True)] over 4 interpreter-mode runs

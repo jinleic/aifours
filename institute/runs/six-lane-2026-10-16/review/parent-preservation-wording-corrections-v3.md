@@ -1,0 +1,11 @@
+# Parent preservation and wording corrections, supplemental record
+
+Recorded at 2026-10-18T15:11:28-07:00.
+
+1. Four final inventory v1 files were saved through a truncating renderer; long table cells and a rendering footer were preserved, rather than the complete agent text. All four authors restored their original full text directly to `final-report-inventories-v1/*-full-v2.md`. The new hashes are in [manifest addendum2](final-report-inventories-v1/manifest-addendum-2.json). The draft author noticed the defect and read the authoritative verdicts instead. Original v1 files remain unchanged. No original scientific result changed.
+2. [ROT-KP verdict v1](olson-rotkp-parent-verdict-v1.md) miscounts Claude's per-item dispositions as six ACCEPT/four AWF. The actual note has **five ACCEPT and five ACCEPT-WITH-FIXES**, with0FATAL/MAJOR and9MINOR. The ten items and mathematical acceptance are unchanged.
+3. The14:52:45 checkpoint abbreviates the StageB parent replay receipt hash ending as `a425`; the actual SHA is `533113137250e4f7bd0e7de2b6342fd4ae328e8d7a7aa5a4e963f93025efa423`. The bound file itself is unchanged.
+4. [StageC NO-GO](sun-coset7-stageC-parent-no-go-v1.json) says that a new format/checker/replay cannot be completed before17:30. This is a scheduling **forecast**, not a measured impossibility. NO-GO remains in effect; no smoke or StageC was launched.
+5. The deviation carry list was initially written to a `local://` session artifact outside aifours, then copied exclusively into [the run-local record](parent-deviation-carry-list-v1.md). That out-of-root write violated the run's write boundary; no credential/personal content was written, and no deletion was attempted. All subsequent report artifacts are inside aifours.
+6. Some parent fact-reading commands used shell `ls/head/awk` and shell heredocs contrary to the specialized-tool workflow; no scientific premise rests on those commands. Subsequent source reads use the read/grep tools.
+7. The StageA manifest/result uses approximate host-time labels, explicitly labelled approximate. Do not promote them to exact instants; the parent replay has directly observed clock records. The existing post-creation/pre-hash edits and tool-timeout hash-check interruption reported in Olson rotation bundle-v4 must be included in the final deviation list.

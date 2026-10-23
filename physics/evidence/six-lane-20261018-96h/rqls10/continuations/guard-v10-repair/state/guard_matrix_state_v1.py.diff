@@ -1,0 +1,250 @@
+--- /Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10/code/guard_matrix_state_v1.py
++++ /Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10/continuations/guard-v10-repair/state/guard_matrix_state_v1.py
+@@ -1,7 +1,7 @@
+ #!/usr/bin/env python3
+ """Fixed STATE_ONLY matrix; WRITTEN_ONLY, no invocation or release authority.
+ 
+-CLI: guard_matrix_state_v1.py CASE_ID PARENT_APPROVAL_SHA256
++CLI: guard_matrix_state_v2.py CASE_ID PARENT_APPROVAL_SHA256
+ All source methods run from the SHA-pinned original AST, never a source import.
+ The namespace is MODIFIED_QUALIFICATION_FIXTURE: os/time/signal/LP/LC/sys/threading
+ are closed MODEL backends. No model PID/FD ever reaches a native process API.
+@@ -31,9 +31,10 @@
+ 
+ LANE = "/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10"
+ ROOT = LANE + "/qual-matrix-v1-v19"
+-DRIVER = LANE + "/code/guard_matrix_state_v1.py"
+-ORACLE = LANE + "/code/guard_matrix_state_check_v1.py"
+-SPECS = LANE + "/review/rqls10-matrix-state-v1-cases.json"
++# Successor install paths (parent-pinned at integration; originals stay frozen at their v1 paths).
++DRIVER = LANE + "/code/guard_matrix_state_v2.py"
++ORACLE = LANE + "/code/guard_matrix_state_check_v2.py"
++SPECS = LANE + "/review/rqls10-matrix-state-v2-cases.json"
+ # Review candidate only; source readiness is not runtime, qualification or release authority.
+ SUPERVISOR = LANE + "/code/owned_supervisor_v19.py"
+ SUPERVISOR_SHA = "cb828a78367dc2023bfc6e330696745f186f186811752361472747e5fe547e93"
+@@ -346,6 +347,10 @@
+         self.civil_shift = 0.0
+         self.rules = []
+ 
++    def snapshot_epoch(self):
++        """UNHOOKED MODEL civil value for replacement dependency responses; never an original clock call."""
++        return self.epoch_origin + self.mono - MONO + self.civil_shift
++
+     def reading(self, clock):
+         self.model.guard()
+         stack = source_frames()
+@@ -659,24 +664,31 @@
+         if not helper and argv != self.model.cfg["argv"]:
+             self.model.bad("model arbitrary command")
+         pid = self.model.next_helper if helper else MODEL_MAIN
+-        if helper:
+-            self.model.next_helper += 1
+         p = self.model.process(pid)
+         p["helper"] = helper
+         p["hold"] = self.model.helper_holds if helper else True
+         p.update(self.model.spawn_overrides.get("helper" if helper else "child", {}))
+-        self.model.procs[pid] = p
++        pipes, text = [], None
+         if helper:
+-            text = datetime.datetime.fromtimestamp(math.floor(self.model.clock.time()), datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S%z")
++            # Replacement /bin/date bytes use an UNHOOKED model-clock snapshot; no supervisor clock hook can fire here.
++            text = datetime.datetime.fromtimestamp(math.floor(self.model.clock.snapshot_epoch()), datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S%z").encode("ascii") + b"\n"
+             for action in file_actions:
+                 if action[0] == self.POSIX_SPAWN_DUP2 and action[2] == 1:
+-                    pipe = self.fds[action[1]]["pipe"]
+-                    pipe["data"].extend(text.encode("ascii") + b"\n")
+-                    pipe["eof"] = not self.model.helper_holds
+-                    p["pipe"] = pipe
++                    item = self.fds.get(action[1])
++                    if item is None or item["kind"] != "pipe_write":
++                        self.model.bad("model helper stdout action")
++                    pipes.append(item["pipe"])
+         self.model.record("posix_spawn", {"pid": pid, "pgid": pid, "argv": argv, "setsid": setsid,
+                                            "setsigmask": list(setsigmask), "helper": helper,
+                                            "scope": "MODEL_PROCESS_NOT_NATIVE"})
++        # Every fallible response is constructed: commit the process side effect, then return its PID (no later raise).
++        if helper:
++            self.model.next_helper += 1
++        self.model.procs[pid] = p
++        for pipe in pipes:
++            pipe["data"].extend(text)
++            pipe["eof"] = not self.model.helper_holds
++            p["pipe"] = pipe
+         return pid
+ 
+     WIFEXITED = staticmethod(os.WIFEXITED)
+@@ -766,7 +778,8 @@
+             struct.pack_into("=II", raw, 32, 2 if p["traced"] else 0, p["euid"])
+             struct.pack_into("=I", raw, 44, p["ruid"])
+         elif flavor == 4 and size == 96:
+-            ticks = int(max(0.0, self.model.clock.time() - p["start_epoch"]) * 1e9 * p["cpu_rate"])
++            # Persistent monotonic CPU accumulator over declared rate history; civil time never alters ticks.
++            ticks = self.model.cpu_ticks(p)
+             struct.pack_into("=QQQ", raw, 8, p["rss"], ticks, 0)
+         elif flavor == 3 and size == 136:
+             seconds = int(p["start_epoch"])
+@@ -862,12 +875,37 @@
+     def process(pid, uid=MODEL_UID):
+         return {"pid": pid, "uniqueid": pid + 1000000000, "idversion": 1, "ppid": MODEL_PID if pid != 1 else 0,
+                 "pgid": pid, "status": 2, "euid": uid, "ruid": uid, "traced": False, "comm": "MODEL",
+-                "rss": 4096, "cpu_rate": 0.0, "start_epoch": EPOCH - 100.0}
++                "rss": 4096, "cpu_rate": 0.0, "start_epoch": EPOCH - 100.0,
++                # Declared MODEL start in UNHOOKED monotonic time (same 100s age); accumulated CPU ns since then.
++                "cpu_ns": 0.0, "cpu_mono": MONO - 100.0, "cpu_observed": False}
+ 
+     @staticmethod
+     def identity(p):
+         return {k: p[k] for k in ("pid", "ppid", "pgid", "status", "euid", "ruid", "traced", "comm", "uniqueid", "idversion")}
++
++    def accrue_cpu(self, p):
++        """Settle the declared rate over UNHOOKED elapsed MODEL monotonic time; returned counters never decrease."""
++        now = self.clock.mono
++        if now > p["cpu_mono"]:
++            p["cpu_ns"] += (now - p["cpu_mono"]) * 1e9 * p["cpu_rate"]
++            p["cpu_mono"] = now
++
++    def cpu_ticks(self, p):
++        self.accrue_cpu(p)
++        p["cpu_observed"] = True
++        return int(p["cpu_ns"])
++
++    def set_cpu_rate(self, p, rate):
++        """Declared rate transition: the previous rate is settled first; history is never rewritten."""
++        self.accrue_cpu(p)
++        p["cpu_rate"] = rate
+ 
++    def declare_cpu_history(self, p, rate):
++        """Declared constant rate since the declared MODEL start; refused once any counter was returned."""
++        if p["cpu_observed"]:
++            self.bad("retroactive MODEL CPU history after a returned counter")
++        p.update(cpu_rate=rate, cpu_ns=0.0, cpu_mono=MONO - 100.0)
++
+     def site(self, function, snippet):
+         nodes = [n for n in ast.walk(self.tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name == function]
+         if len(nodes) != 1:
+@@ -950,13 +988,14 @@
+             if self.scan_mode == "unproved":
+                 self.procs[unknown["pid"]] = unknown
+             elif self.scan_mode == "busy":
+-                self.procs[MODEL_MAIN]["cpu_rate"] = 1.0
++                self.declare_cpu_history(self.procs[MODEL_MAIN], 1.0)
+                 other = self.process(700000020)
+-                other["cpu_rate"] = 1.0
++                self.declare_cpu_history(other, 1.0)
+                 self.procs[other["pid"]] = other
+                 acquired = self.s.observed_identity(other["pid"], "MODEL_RUNNING_EXTRA", True)
+                 self.s.register_owned(acquired, "child")
+                 self.disclosures.append("Declared MODEL listing-callback insertion: extra pid700000020 is acquired/registered by original methods before listing return; no native sampled-ownership claim.")
++                self.disclosures.append("MODEL CPU ticks are persistent accumulators over UNHOOKED monotonic MODEL time and declared rate history (busy history declared before any returned counter); civil-clock shifts never alter ticks.")
+             elif self.scan_mode == "rss":
+                 self.procs[MODEL_MAIN]["rss"] = self.cfg["rss_trip_bytes"] + 1
+             self.procs[broken["pid"]] = broken
+@@ -965,7 +1004,8 @@
+             for pid in (700000020, 700000030, 700000031):
+                 self.procs.pop(pid, None)
+             if MODEL_MAIN in self.procs:
+-                self.procs[MODEL_MAIN].update(rss=4096, cpu_rate=0.0)
++                self.procs[MODEL_MAIN]["rss"] = 4096
++                self.set_cpu_rate(self.procs[MODEL_MAIN], 0.0)
+ 
+ 
+ def config(run, wall=10.0):
+@@ -1121,7 +1161,10 @@
+ 
+ 
+ def step(m, label, function, *args):
+-    before = {"mono": m.clock.mono, "history_charge": None if m.s is None else m.s.history_charge}
++    if not m.verbose:
++        raise ModelBoundary("step operation trace must be retained")
++    # The model call counter brackets this step so the oracle can prove its event slice is complete.
++    before = {"mono": m.clock.mono, "history_charge": None if m.s is None else m.s.history_charge, "calls": m.calls}
+     item = {"label": label, "before": before, "args": safe(list(args)), "return": None, "exception": None}
+     item["event_begin"] = len(m.operations)
+     item["counts_before"] = {name: None if m.s is None else len(getattr(m.s, name)) for name in
+@@ -1135,7 +1178,7 @@
+     except BaseException as error:
+         item["exception"] = {"type": type(error).__name__, "code": m.ns["exception_code"](error),
+                              "text": utf8_hex(repr(error))}
+-    item["after"] = {"mono": m.clock.mono, "history_charge": None if m.s is None else m.s.history_charge}
++    item["after"] = {"mono": m.clock.mono, "history_charge": None if m.s is None else m.s.history_charge, "calls": m.calls}
+     item["event_end"] = len(m.operations)
+     item["counts_after"] = {name: None if m.s is None else len(getattr(m.s, name)) for name in item["counts_before"]}
+     m.steps.append(item)
+@@ -1202,7 +1245,8 @@
+                main_wait=None if s.child is None else {key: s.child.get(key) for key in
+                    ("pid", "native_wait_result", "raw_wait_status", "leader_reaped", "rc", "wait_lost",
+                     "mono_reaped", "epoch_reaped", "mono_reaped_error", "epoch_reaped_error")},
+-               cancellation_target_installed=m.ns["CANCEL_FAILURE_TARGET"] is s)
++               cancellation_target_installed=m.ns["CANCEL_FAILURE_TARGET"] is s,
++               anchor_fds={"lane": s.lane_fd, "tmp": s.tmp_fd, "roots": sorted(fd for fd, _ in s.root_fds.values())})
+     return safe(out)
+ 
+ 
+@@ -1695,7 +1739,7 @@
+             # Actual original date_now future branch; model civil floor is behind pinned model stability floor.
+             m.clock.civil_shift = -201.0
+             m.inputs.update(receipt_stability_epoch=s.authorization["stability_epoch"],
+-                            model_epoch_floor=math.floor(m.clock.time()))
++                            model_epoch_floor=math.floor(m.clock.snapshot_epoch()))
+             step(m, "date_now", s.date_now, "admission")
+         else:
+             value = {"st_date_missing": None, "st_date_malformed": "MODEL_NOT_A_DATE",
+@@ -1854,7 +1898,7 @@
+     readback = snapshot(runfd, "fixture-outcome.json", budget)
+     if readback["raw"] != raw or readback["inode"] != identity:
+         raise Invalid("outcome readback mismatch")
+-    return facts(readback)
++    return facts(readback), identity
+ 
+ 
+ def main():
+@@ -1876,7 +1920,11 @@
+             pass
+         else:
+             raise Invalid("current-run outcome already exists")
+-        ap, rq, sources, approval, request, spec, validation_epoch = authority(case, digest, runfd, budget)
++        ap, rq, sources, approval, request, spec, binding_epoch = authority(case, digest, runfd, budget)
++        # Fresh live-lease proof AFTER every source/spec binding step, immediately before dispatch; otherwise no dispatch.
++        validation_epoch = time.time()  # Native raw epoch telemetry for authority only, never a human timestamp.
++        if not native_epoch_begin <= binding_epoch <= validation_epoch <= rq["not_after_epoch"] <= validation_epoch + MAX_RUNTIME:
++            raise Invalid("expired authority or invalid native clock order before dispatch")
+         status, error, m = "RECORDED", None, None
+         try:
+             m = dispatch(case, sources["supervisor"]["raw"], budget)
+@@ -1900,9 +1948,10 @@
+         current_request = snapshot(runfd, "request.json", budget, 1 << 20)
+         if facts(current_approval) != facts(approval) or facts(current_request) != facts(request):
+             raise Invalid("authority changed during model work")
+-        if time.time() > ap["not_after_epoch"]:
++        final_epoch = time.time()  # Captured ONCE: this exact value is enforced and reported as raw_epoch_end.
++        if not validation_epoch <= final_epoch <= ap["not_after_epoch"]:
+             status = "HOLD"
+-            error = utf8_hex("native authority expired during model work")
++            error = utf8_hex("native authority expired or native clock order invalid at final proof")
+         owner["mono_end"] = time.monotonic()
+         model = None if m is None else {
+             "scope": "MODEL_INPUT_NOT_NATIVE", "inputs": safe(m.inputs), "config": safe(m.cfg),
+@@ -1927,7 +1976,7 @@
+                    "owner": owner, "observations": [{"scope": "NATIVE_OBSERVATION", "kind": "owner_runtime",
+                         "rss_peak_bytes": budget.max_rss, "budget_checks": budget.checks,
+                         "raw_epoch_begin": native_epoch_begin, "authority_validation_epoch": validation_epoch,
+-                        "raw_epoch_end": time.time(),
++                        "raw_epoch_end": final_epoch,
+                         "runtime_s": owner["mono_end"] - begin}],
+                    "source_outcome": {"status": status, "error": error, "selected_driver_status": 0,
+                                       "actual_exit": None, "fixture_identity": "MODIFIED_QUALIFICATION_FIXTURE",
+@@ -1943,9 +1992,10 @@
+                                              "Model live processes/FDs are pure Python objects and do not claim native ownership settlement."]},
+                    "accounting": {"scope": "MODEL_ONLY", "publication_stage": None, "native_payload": None,
+                                   "native_publication_resources": None, "native_ack_resources": None}, "model": model}
+-        got = exclusive_outcome(runfd, outcome, budget)
+-        os.write(1, canonical({"kind": "rqls10-state-outcome-written-v1", "case": case,
+-                               "scope": SCOPE, "outcome_sha256": got["sha256"], "bytes": got["bytes"]}))
++        got, created_inode = exclusive_outcome(runfd, outcome, budget)
++        # Exact six-key marker; the inode is fstat of the ORIGINAL O_EXCL-created descriptor (origin proof stays J18).
++        os.write(1, canonical({"kind": "rqls10-state-outcome-written-v1", "case": case, "scope": SCOPE,
++                               "outcome_sha256": got["sha256"], "bytes": got["bytes"], "outcome_inode": created_inode}))
+         return 0
+     finally:
+         os.close(runfd)

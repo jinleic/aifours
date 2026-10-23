@@ -1,0 +1,47 @@
+--- v7/src/check_m2_ms09_k1_v7.py
++++ v8/src/check_m2_ms09_k1_v8.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""v7 control harness (production v6 sources/contracts unchanged). PRIVATE controls; excluded from scientific coverage and executed only after parent GO.
++"""v8 control harness (production v6 sources/contracts unchanged; v7 path-classification bug fixed). PRIVATE controls; excluded from scientific coverage and executed only after parent GO.
+ Uses one real lane token, <=2 compute processes, frozen binary authorities, local reviewed r3 adapter and absolute
+ argv. No SIGKILL, deletion, shared-supervisor edit, RC3 rerun or automatic retry. Synthetic records test readers only.
+ Definite nonclean stops are distinguished from measurement uncertainty; the actual supervisor key is killpg_error.
+@@ -128,7 +128,7 @@
+     if cfg.get('feed_fault'):
+         base = N.feed_cnf
+         def short(fifo,data,record,stop,deadline):
+-            side = 'checker' if 'checker' in str(fifo) else 'solver'
++            side = 'checker' if Path(fifo).name == 'checker-cnf.fifo' else 'solver'  # basename only; case folders may contain role words
+             base(fifo,data[:len(data)//2] if side == cfg['feed_fault'] else data,record,stop,deadline)
+         N.feed_cnf = short
+     if cfg.get('fd_error'):
+@@ -170,7 +170,7 @@
+         def Thread(self,*args,**kwargs):
+             target = kwargs.get('target')
+             if cfg.get('thread_failure') and target is N.collector: return FailingStartThread(*args,**kwargs)
+-            if cfg.get('delayed_publication') and target is delayed_feed and 'solver-cnf' in str(kwargs.get('args',('',))[0]):
++            if cfg.get('delayed_publication') and target is delayed_feed and Path(kwargs.get('args',('',))[0]).name == 'solver-cnf.fifo':
+                 return AckJoinThread(*args,**kwargs)
+             return real_threading.Thread(*args,**kwargs)
+     N.threading = PipelineThreading()
+@@ -178,7 +178,7 @@
+     def delayed_feed(fifo,data,record,stop,deadline):
+         private = {}
+         real_feed(fifo,data,private,stop,deadline)
+-        if 'solver-cnf' in str(fifo):
++        if Path(fifo).name == 'solver-cnf.fifo':
+             if not join_entered.wait(120):  # only detects a broken handshake
+                 dump(cfg['handshake_failure'],{'broken':'settlement join never began'}); return
+             dump(cfg['injection_marker'],{'published_after_settlement_join_entered':True,'main_stop_seen':main_stop_seen.is_set(),'feed':private})
+@@ -876,8 +876,8 @@
+     ap = argparse.ArgumentParser(); ap.add_argument('contract'); ap.add_argument('sha256')
+     ap.add_argument('ms06_contract'); ap.add_argument('ms06_sha256'); args = ap.parse_args()
+     R.install_handlers()
+-    root = L/'cycle2'/('v7-required-controls-'+str(time.time_ns())); root.mkdir()
+-    out = {'host_clock':time.strftime('%Y-%m-%dT%H:%M:%S%z'),'schema':'PA19-V7-REQUIRED-CONTROLS-v1','production_coverage':False,
++    root = L/'cycle2'/('v8-required-controls-'+str(time.time_ns())); root.mkdir()
++    out = {'host_clock':time.strftime('%Y-%m-%dT%H:%M:%S%z'),'schema':'PA19-V8-REQUIRED-CONTROLS-v1','production_coverage':False,
+            'control_source_sha256':E.digest(SELF),'contract_sha256':args.sha256,'families':{}}
+     try:
+         with R.Capacity(time.monotonic()+10800):  # one real lane token; private shadow tokens for lifecycle fixtures

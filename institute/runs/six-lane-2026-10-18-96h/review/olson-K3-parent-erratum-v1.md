@@ -1,0 +1,9 @@
+# K3 parent erratum v1 — frame quantifier and unnecessary imports
+
+Recorded 2026-10-20T00:34:09-0700 (`/bin/date`). Governs immutable proof-K3-v1.md SHA256 35ea47b03ad4a2c57c5b1430dfd642d524a935ae0c152ad220d5bb388da4ab30 and its review package. No theorem-strengthening or new proof mechanism.
+
+1. **MINOR-1, precise p11 quantifier.** Theorem K3-11 reads: no avoider has a qualifying NF together with an admissible Section1 frame (P0, longest zero-sum Z, index-<1 generator g, and the resulting light-side choice) in which H11 holds. H11 depends on that frame; it is not a canonical property of an unlabelled word. The residual means H11 fails in the chosen frame. A putative avoider would have to evade the conditional theorem in every admissible frame; no claim that such frames or avoiders exist is made.
+2. **MINOR-2, direct zero-sum bound.** Replace the S1(a) citation at proof LF33 with: every zero-sum of Y has even length at most |Y|=p+5<2p; SR at the zero-target arc excludes every length from6 through |Y|, hence a longest zero-sum has size at most4. No extension of an S1(a) interface outside its displayed scope is used. The Setting fact is unnecessary here: s_j≤3≤m1+1 and the required density bounds follow from W parity and the explicit t=0/1/2 classification. NF, GRX, SC0 and ZSTRUCT/FB at the stated (S′) remain the frame inputs.
+3. **MINOR-3, placement of converse.** The review-package LF21 wording "exactly the two-signed ones" is replaced by "the two-signed ones are full" when citing the displayed Lemma FULL statement. The correct converse remains a separately written route observation at proof LF175–176 and supplies no load-bearing premise.
+
+The p≥13 theorem is unchanged; the p11 conditional is made explicit, not enlarged. No p11 closure, higher-kappa conclusion, novelty, formal verification or runtime approval.

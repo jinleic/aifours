@@ -1,0 +1,274 @@
+--- control/parent_release_v3.py
++++ control/parent_release_v4.py
+@@ -1,6 +1,7 @@
+-"""SOURCE ONLY, UNTESTED. Independent parent five-part release transaction v3.
++"""SOURCE ONLY, UNTESTED. Independent parent five-part release transaction v4.
+ 
+-Base contract 4d122872; repair scopes 2fdf13b4 (v2) and 1f9befdb (v3); checkpoints001-005 govern.
++Base contract 4d122872; repair scopes 2fdf13b4 (v2), 1f9befdb (v3) and 32d161b0 key prt_v4 (v4);
++checkpoints001-007 govern.
+ Definitions only at import: no I/O, environment, clock, process or signal operations.
+ The parent supplies a qualified raw adapter, authentic authority/execution observations,
+ exclusive immutable publication freeze and COMPLETE historical identity-union binding.
+@@ -9,7 +10,7 @@
+ Caps bound bytes/memory, NOT synchronous syscall time. A detected original-deadline crossing
+ starts no further callback/I/O; only cleanup of already-owned descriptors/iterators remains.
+ Every native blocking operation is checked before the call and after success or Exception.
+-V1/V2 stay immutable/HOLD. No v1/v2 import, alias, compatibility path or shim.
++V1/V2/V3 stay immutable/HOLD. No v1/v2/v3 import, alias, compatibility path or shim.
+ """
+ import copy
+ import datetime
+@@ -22,6 +23,7 @@
+ CONTRACT_SHA256 = '4d12287257f8bf74d9057a796a0c6f7a391387c411b95d5dcda1131aa4692d3e'
+ REPAIR_SCOPE_SHA256 = '2fdf13b45e946df4f07881b0e6e2b5bc5452ea33d1df022afe896dded698b407'
+ V3_REPAIR_SCOPE_SHA256 = '1f9befdb4d012800a8e2160c0ce8e822d255e34c88496fd26cb8875aac894030'
++V4_REPAIR_SCOPE_SHA256 = '32d161b0408bc297f0e95516980142d741eb219dc882e40bd93df9c79cd59f12'
+ AIFOURS_ROOT = '/Users/jinleic/repos/aifours'
+ RUN_ROOT = AIFOURS_ROOT + '/institute/runs/six-lane-2026-10-18-96h'
+ CAP = 16 << 20
+@@ -283,6 +285,7 @@
+         self.callback_digest = hashlib.sha256()
+         self.opened, self.closed, self.live, self.unresolved = 0, 0, {}, []
+         self.unresolved_total = 0
++        self.base_exceptions = []  # every recorded BaseException object, oldest first
+         self.streamed_bytes, self.hashed_files = 0, 0
+ 
+     def fire(self, cause, detail):
+@@ -677,9 +680,10 @@
+     for name, function in txn.callbacks.items():
+         if not callable(function):
+             txn.fire('P1_CALLBACKS_INVALID', name + ' not callable')
++    candidate = None  # ctx.commit_dir stays None on EVERY interrupted/incomplete shaping path
+     try:
+         _mutation_parts(commit_dir)
+-        ctx.commit_dir = commit_dir
++        candidate = commit_dir
+     except Exception as exc:
+         txn.fire('P5_COMMIT_DIR_INVALID', _why(exc))
+     source = {}
+@@ -721,12 +725,13 @@
+     _shape_captures(txn, ctx, oracle.get('captures'), 'oracle.captures', 'P3_ORACLE_CAPTURE_INVALID', 'P3_ORACLE_CAPTURE_INVALID')
+     if 'identities' in ctx.f:
+         ctx.driver = next(row for row in ctx.f['identities'] if row['role'] == 'driver')
+-    if ctx.commit_dir is not None:
++    if candidate is not None:
+         try:
+-            _require(not _under(ctx.commit_dir, [_job_dir(source)]), 'commit_dir is artifact job_dir or below it')
++            _require(not _under(candidate, [_job_dir(source)]), 'commit_dir is artifact job_dir or below it')
+         except Exception as exc:
+             txn.fire('P5_COMMIT_DIR_INVALID', 'independent destination exclusion: ' + _why(exc))
+-            ctx.commit_dir = None
++        else:
++            ctx.commit_dir = candidate  # sole assignment: last shaping step, after exclusion succeeded
+ 
+ 
+ def _load(txn, ref, cap=DOC_CAP):
+@@ -808,7 +813,7 @@
+ 
+ 
+ def _held_for(row, item, allocation_sha):
+-    return (row.get('format') == 'parent-release-registry-v3' and row.get('state') == 'HELD'
++    return (row.get('format') == 'parent-release-registry-v4' and row.get('state') == 'HELD'
+             and _exact(row.get('item'), item) and row.get('allocation_line_sha256') == allocation_sha)
+ 
+ 
+@@ -840,7 +845,7 @@
+             txn.fire('P1_ALLOCATION_BINDING', 'allocation item/reservation/GO/launch mismatch')
+     for later in rows[index + 1:]:
+         if _exact(later.get('item'), record['item']) and not _held_for(later, record['item'], ref['line_sha256']):
+-            txn.fire('P1_ALLOCATION_NOT_CURRENT', 'later non-v3-HELD/same-allocation entry for item')
++            txn.fire('P1_ALLOCATION_NOT_CURRENT', 'later non-v4-HELD/same-allocation entry for item')
+ 
+ 
+ def _part1(txn, ctx):
+@@ -1346,9 +1351,9 @@
+ def _record(txn, ctx, decision, reduced=False):
+     causes = [cause for cause in CAUSES if cause in txn.fired]
+     evidence = {cause: values[:1] if reduced else values for cause, values in txn.evidence.items()}
+-    return {'format': 'parent-release-disposition-v3', 'module': 'parent_release_v3.py',
++    return {'format': 'parent-release-disposition-v4', 'module': 'parent_release_v4.py',
+             'scope_contract_sha256': CONTRACT_SHA256,
+-            'repair_scope_sha256s': [REPAIR_SCOPE_SHA256, V3_REPAIR_SCOPE_SHA256],
++            'repair_scope_sha256s': [REPAIR_SCOPE_SHA256, V3_REPAIR_SCOPE_SHA256, V4_REPAIR_SCOPE_SHA256],
+             'item': ctx.f.get('item'), 'state': decision, 'causes': causes,
+             'evidence': evidence, 'suppressed_evidence_counts': txn.suppressed, 'parts': _statuses(txn),
+             'recorded_at': ctx.date_text, 'timestamp_source': 'owned bounded /bin/date only',
+@@ -1443,6 +1448,7 @@
+ def _ack(txn, dfd, name, data, retained, result):
+     if txn.crossed:
+         return False
++    result['ack'] = 'ACK_ATTEMPTED'  # conservative latch BEFORE readback I/O; promoted only on completion
+     try:
+         back = txn.observe('read_bytes', retained['path'], len(data), after_ack=True)
+     except Exception as exc:
+@@ -1480,7 +1486,7 @@
+         return False
+     _mutation_parts(ctx.commit_dir)
+     digest = hashlib.sha256(data).hexdigest()
+-    name = 'prt-v3-' + _slug(ctx.f.get('item')) + '-' + digest + '.json'
++    name = 'prt-v4-' + _slug(ctx.f.get('item')) + '-' + digest + '.json'
+     retained = {'path': ctx.commit_dir + '/' + name, 'sha256': digest, 'bytes': len(data),
+                 'create_attempted': False, 'created': False, 'bytes_written': 0, 'line_complete': False,
+                 'identity': None, 'file_fsync': False, 'directory_fsync': False}
+@@ -1499,7 +1505,6 @@
+         return False
+     except Exception as exc:
+         txn.fire('P5_COMMIT_WRITE_FAILED', _why(exc))
+-        result['ack'] = 'ACK_NOT_ATTEMPTED'
+         if retained['create_attempted']:
+             result['uncertainty'] = 'exclusive commit failed after O_EXCL attempt; partial object may exist; no ACK/registry'
+         return False
+@@ -1533,7 +1538,7 @@
+     allocation, owned = ctx.f['allocation'], []
+     _mutation_parts(allocation['registry_path'])
+     state = 'RELEASED' if releasable else 'HELD'
+-    row = {'format': 'parent-release-registry-v3', 'owner': 'parent_release_v3.py', 'item': ctx.f['item'],
++    row = {'format': 'parent-release-registry-v4', 'owner': 'parent_release_v4.py', 'item': ctx.f['item'],
+            'state': state, 'decision_in_disposition': result['decision'],
+            'disposition': result['disposition']['path'], 'disposition_sha256': result['disposition']['sha256'],
+            'allocation_line_sha256': allocation['line_sha256'], 'causes': [c for c in CAUSES if c in txn.fired],
+@@ -1542,6 +1547,7 @@
+            'release_effect': RELEASE_EFFECT}
+     line = (json.dumps(row, sort_keys=True, ensure_ascii=True, allow_nan=False) + '\n').encode('ascii')
+     retained.update({'state': state, 'line_sha256': hashlib.sha256(line[:-1]).hexdigest(), 'path': allocation['registry_path']})
++    retained['status'] = 'ATTEMPTED'  # conservative latch BEFORE registry I/O; promoted only on completion
+     try:
+         _require(len(line) <= 65536, 'registry line cap')
+         parts = _mutation_parts(allocation['registry_path'])
+@@ -1569,7 +1575,7 @@
+ 
+ 
+ def _new_result():
+-    return {'format': 'parent-release-result-v3', 'state': 'HELD', 'decision': 'HELD',
++    return {'format': 'parent-release-result-v4', 'state': 'HELD', 'decision': 'HELD',
+             'release_effective': False, 'ack': 'ACK_NOT_ATTEMPTED', 'disposition': None,
+             'registry': {'status': 'NOT_ATTEMPTED', 'bytes_written': 0, 'line_complete': False,
+                          'fsync': False, 'closed': False, 'state': None, 'line_sha256': None},
+@@ -1617,19 +1623,34 @@
+     return result
+ 
+ 
+-def _chain(exc, pending):
+-    if pending is not None and exc is not pending and exc.__context__ is None:
+-        exc.__context__ = pending
+-    raise exc
++def _link(exc, prior):
++    """Attach `prior` as implicit context only when free and provably acyclic; never overwrites/raises."""
++    if prior is None or exc is prior or exc.__context__ is not None:
++        return
++    node = prior
++    for _ in range(64):
++        if node is None:
++            exc.__context__ = prior
++            return
++        if node is exc:
++            return
++        node = node.__context__
+ 
+ 
+ def _absorb(txn, exc, pending):
++    """Record an evaluation/stamp exception and return the selected pending one; NEVER raises.
++
++    Exception: internal error, pending unchanged. BaseException: cause fired, object retained,
++    and it becomes the selected pending exception (newest wins, as for an exception raised while
++    handling another); every earlier one stays reachable (free acyclic __context__ and the
++    parent_release_prior_exceptions attachment). Normal attachment paths decide propagation.
++    """
+     if isinstance(exc, Exception):
+         txn.fire('P%d_INTERNAL_ERROR' % txn.part, _why(exc))
+         return pending
+-    if pending is not None:
+-        _chain(exc, pending)
+     txn.fire('P%d_BASE_EXCEPTION' % txn.part, _why(exc))
++    txn.base_exceptions.append(exc)
++    _link(exc, pending)
+     return exc
+ 
+ 
+@@ -1637,11 +1658,13 @@
+     return not txn.crossed and not txn.unsafe.intersection(('deadline_check', 'read_bytes', 'owned_date'))
+ 
+ 
+-def _attach_and_raise(exc, result):
+-    try:
+-        exc.parent_release_result = result
+-    except Exception:
+-        pass
++def _attach_and_raise(exc, result, txn):
++    prior = tuple(item for item in txn.base_exceptions if item is not exc)
++    for name, value in (('parent_release_result', result), ('parent_release_prior_exceptions', prior)):
++        try:
++            setattr(exc, name, value)
++        except Exception:
++            pass
+     raise exc
+ 
+ 
+@@ -1653,9 +1676,11 @@
+     caller-integration prerequisites. Any other outcome/exception holds the allocation.
+     BaseException in evaluation attempts HELD only while the ORIGINAL deadline/reader/date
+     remain safe; a commit BaseException propagates after one-close cleanup with a HELD report.
++    Several BaseExceptions: each is recorded, the newest propagates with the HELD report, and
++    earlier ones stay in exc.parent_release_prior_exceptions (plus free acyclic __context__).
+     The COMPLETE assembled result receives a final ORIGINAL-deadline check before return.
+-    No new clock, process or signal. No v1/v2 compatibility. Schemas/controls: v2 notes as
+-    amended by v3 design notes.
++    No new clock, process or signal. No v1/v2/v3 compatibility. Schemas/controls: v2 notes as
++    amended by v3 and v4 design notes.
+     """
+     txn, ctx, result, pending = _Txn(read_bytes, census, owned_date, deadline_check), _Ctx(), _new_result(), None
+     try:
+@@ -1665,14 +1690,14 @@
+     except BaseException as exc:
+         pending = _absorb(txn, exc, pending)
+     if pending is not None and not _commit_safe(txn):
+-        _attach_and_raise(pending, _final(txn, ctx, result))
++        _attach_and_raise(pending, _final(txn, ctx, result), txn)
+     if not txn.crossed:
+         try:
+             _stamp(txn, ctx)
+         except BaseException as exc:
+             pending = _absorb(txn, exc, pending)
+     if pending is not None and not _commit_safe(txn):
+-        _attach_and_raise(pending, _final(txn, ctx, result))
++        _attach_and_raise(pending, _final(txn, ctx, result), txn)
+     try:
+         _finish(txn, ctx, result)
+     except _Crossed:
+@@ -1681,20 +1706,21 @@
+         txn.fire('P5_INTERNAL_ERROR', _why(exc))
+     except BaseException as exc:
+         txn.fire('P5_BASE_EXCEPTION', 'commit phase: ' + _why(exc))
+-        if pending is not None and exc is not pending and exc.__context__ is None:
+-            exc.__context__ = pending
+-        _attach_and_raise(exc, _final(txn, ctx, result))  # in-memory HELD report only; no further I/O
++        txn.base_exceptions.append(exc)
++        _link(exc, pending)
++        _attach_and_raise(exc, _final(txn, ctx, result), txn)  # in-memory HELD report only; no further I/O
+     result = _final(txn, ctx, result)
+     if pending is not None:
+-        _attach_and_raise(pending, result)
++        _attach_and_raise(pending, result, txn)
+     already = txn.crossed
+     try:
+         timely = txn.tick('final assembled result completion')  # after COMPLETE assembly; no I/O follows
+     except BaseException as exc:
+         txn.fire('P5_BASE_EXCEPTION', 'final result check: ' + _why(exc))
++        txn.base_exceptions.append(exc)
+         result = _final(txn, ctx, result)
+         result['final_deadline_check'] = 'BASE_EXCEPTION'
+-        _attach_and_raise(exc, result)
++        _attach_and_raise(exc, result, txn)
+     if not timely:
+         result = _final(txn, ctx, result)  # in-memory HELD only
+     result['final_deadline_check'] = 'PASSED' if timely else 'NOT_PERFORMED_ALREADY_CROSSED' if already else 'CROSSED'
+@@ -1708,6 +1734,8 @@
+     all applicable lane-root coverage remains parent-authenticated. No v1 schema accepted.
+     No partial baseline or unavailable accounting returns as success. No generated timestamp.
+     Every native operation is original-deadline checked; root insertion counts toward the cap.
++    The 200000-entry cap is a count predicate only: a complete baseline must ALSO fit the 16MiB
++    canonical cap below, so far fewer entries can actually be produced or loaded (T106 limit).
+     """
+     selected = _roots(roots)
+     txn = _Txn(None, None, None, deadline_check)

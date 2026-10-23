@@ -1,0 +1,232 @@
+#!/usr/bin/env python3
+"""smoke_v4_v2 -- focused stop / terminal-signal / small-output smoke for core7_engine_v4 (lane sun-coset7).
+
+Harness version 2; replaces smoke_v3_v1 (NOT_STARTED). A sanity control, never gate evidence. Written under
+the parent HOLD; it may be executed only after an explicit parent GO, when the parent's checkers no longer
+hold the math-1 process slots.
+Usage:  python3 code/smoke_v4_v2.py ENGINE_SHA256
+
+Sequential: this harness plus at most ONE child at any time; no other helper process. No timeouts; never
+SIGKILL; signals only through the owned Popen handle. After the one owned SIGTERM (case S2) the harness waits
+at most 120 s; if the child has not settled it records UNSETTLED with the child's live identity (pid, argv,
+spawn time), stops (no further case) and leaves the child running for parent intervention.
+Before each child: clock <= 17:29:00 PDT and fresh statvfs >= 12.2e9 + 16 MiB, else the remaining cases
+are refused. Cases:
+ S1 search-loop budget stop   engine KII, budget 20 s: rc 0, UNKNOWN, stop_reason 'self-budget 20s exceeded',
+                              sigterm_received false, completed-profile frontier (0 <= profiles_done <
+                              profiles_total, profile_in_progress set), all files, outputs < 16 MiB.
+ S2 search-loop SIGTERM stop  engine KII, budget 600 s, one handle SIGTERM 15 s after spawn: settles within
+                              120 s, rc 0, UNKNOWN, stop_reason 'SIGTERM received (cooperative stop)',
+                              status_before_publication UNKNOWN, sigterm_received true, frontier, all files.
+ S3 small COMPLETE            engine MSP45: COMPLETE, sigterm_received false, and equal to the frozen Stage A
+                              v1 outputs (evidence/stageA-MSP45): stats (v1 keys), survivors, decompressed
+                              vfc_killed, non-empty leaf lines, parsed lp_duals object.
+ S4 small COMPLETE            engine X1: the same comparisons against evidence/stageA-X1.
+ T1, T2, T3 terminal signal   isolated child code/terminal_probe_v1.py MODE OUTDIR ENGINE (deterministic
+                              self-injection at three publication points; see that file): exit 0 and
+                              probe.json pass true, with T1/T2 published UNKNOWN by coercion and T3 published
+                              COMPLETE plus post_publication_sigterm.json.
+The harness stops after the first case whose child exits unexpectedly or leaves unreadable outputs.
+Frontier scope: profiles_done + profile_in_progress is a completed-profile frontier, not an alpha-prefix
+frontier. Records: evidence/smoke-v4-<stamp>/ (exclusive) with per-case stdout/stderr and summary.json.
+"""
+import datetime
+import gzip
+import hashlib
+import json
+import os
+import signal
+import subprocess
+import sys
+import time
+
+LANE = '/Users/jinleic/repos/aifours/mathematics/evidence/six-lane-20261016/sun-coset7'
+ENGINE = os.path.join(LANE, 'code', 'core7_engine_v4.py')
+PROBE = os.path.join(LANE, 'code', 'terminal_probe_v1.py')
+LAUNCH_DEADLINE = datetime.datetime.fromisoformat('2026-10-18T17:29:00-07:00').timestamp()
+GROWTH = 16 * 1024 * 1024
+SETTLE_AFTER_SIGTERM = 120
+CERT_FILES = ('leaves.jsonl.gz', 'vfc_killed.json.gz', 'lp_duals.json.gz', 'survivors.json')
+CASES = (
+    ('S1', 'engine', 'KII', 20, None, None),
+    ('S2', 'engine', 'KII', 600, 15, None),
+    ('S3', 'engine', 'MSP45', 60, None, 'stageA-MSP45'),
+    ('S4', 'engine', 'X1', 120, None, 'stageA-X1'),
+    ('T1', 'probe', 'T1', None, None, None),
+    ('T2', 'probe', 'T2', None, None, None),
+    ('T3', 'probe', 'T3', None, None, None),
+)
+
+
+def now_local():
+    return datetime.datetime.now().astimezone().isoformat(timespec='seconds')
+
+
+def sha_file(path):
+    with open(path, 'rb') as f:
+        return hashlib.sha256(f.read()).hexdigest()
+
+
+def free_bytes():
+    st = os.statvfs(LANE)
+    return st.f_bavail * st.f_frsize
+
+
+def load_outputs(d):
+    out = {}
+    with open(os.path.join(d, 'run.json')) as f:
+        out['run'] = json.load(f)
+    with open(os.path.join(d, 'survivors.json')) as f:
+        out['survivors'] = json.load(f)
+    with open(os.path.join(d, 'vfc_killed.json.gz'), 'rb') as f:
+        out['vfc'] = json.loads(gzip.decompress(f.read()))
+    with open(os.path.join(d, 'lp_duals.json.gz'), 'rb') as f:
+        out['duals'] = json.loads(gzip.decompress(f.read()))
+    with open(os.path.join(d, 'leaves.jsonl.gz'), 'rb') as f:
+        out['leaves'] = [x for x in gzip.decompress(f.read()).decode().split('\n') if x]
+    return out
+
+
+def frontier_ok(run):
+    st = run.get('stats', {})
+    return (isinstance(st.get('profiles_done'), int) and isinstance(run.get('profiles_total'), int)
+            and 0 <= st['profiles_done'] < run['profiles_total'] and st.get('profile_in_progress') is not None)
+
+
+def main():
+    engine_sha = sys.argv[1]
+    t0 = time.time()
+    summary = {'harness': 'smoke_v4_v2', 'harness_sha256': sha_file(os.path.abspath(__file__)), 'started': now_local(),
+               'engine': ENGINE, 'engine_sha256_expected': engine_sha, 'engine_sha256_actual': sha_file(ENGINE),
+               'probe': PROBE, 'probe_sha256': sha_file(PROBE), 'exploratory_control': True,
+               'frontier_scope': 'completed-profile frontier (not an alpha-prefix frontier)',
+               'cases': {}, 'stopped_because': None, 'unsettled': None}
+    rec = os.path.join(LANE, 'evidence', 'smoke-v4-%s' % datetime.datetime.fromtimestamp(t0).strftime('%Y%m%dT%H%M%S'))
+    os.mkdir(rec)
+    if summary['engine_sha256_actual'] != engine_sha:
+        summary['stopped_because'] = 'engine sha256 mismatch'
+    env = dict(os.environ)
+    env['TMPDIR'] = os.path.join(LANE, 'tmp')
+    for name, kind, arg, budget, term_after, ref in CASES:
+        if summary['stopped_because']:
+            break
+        case = {'kind': kind, 'arg': arg, 'budget_s': budget, 'sigterm_after_s': term_after, 'reference': ref,
+                'checks': {}}
+        summary['cases'][name] = case
+        f_now = free_bytes()
+        case['pre_spawn'] = {'free_bytes': f_now, 'at': now_local()}
+        if time.time() > LAUNCH_DEADLINE or f_now < 12.2e9 + GROWTH:
+            case['refused'] = 'clock past 17:29:00 PDT or statvfs below 12.2e9 + 16 MiB'
+            summary['stopped_because'] = 'refusal before %s' % name
+            break
+        outdir = os.path.join(rec, name + '-' + arg)
+        if kind == 'engine':
+            argv = [sys.executable, ENGINE, arg, outdir, str(budget)]
+        else:
+            argv = [sys.executable, PROBE, arg, outdir, ENGINE]
+        fo = open(os.path.join(rec, name + '.stdout'), 'x')
+        fe = open(os.path.join(rec, name + '.stderr'), 'x')
+        h = subprocess.Popen(argv, cwd=LANE, stdin=subprocess.DEVNULL, stdout=fo, stderr=fe, env=env, close_fds=True)
+        t_spawn = time.time()
+        case.update({'argv': argv, 'pid': h.pid, 'spawned': now_local()})
+        t_signal = None
+        rc = None
+        while True:
+            rc = h.poll()
+            if rc is not None:
+                break
+            if term_after is not None and t_signal is None and time.time() - t_spawn >= term_after:
+                if h.poll() is None:
+                    h.send_signal(signal.SIGTERM)
+                    t_signal = time.time()
+                    case['sigterm_sent'] = now_local()
+            if t_signal is not None and time.time() - t_signal > SETTLE_AFTER_SIGTERM:
+                break
+            time.sleep(1)
+        if rc is None:
+            case['outcome'] = 'UNKNOWN/UNSETTLED'
+            summary['unsettled'] = {'case': name, 'pid': h.pid, 'argv': argv, 'spawned': case['spawned'],
+                                    'sigterm_sent': case.get('sigterm_sent'), 'waited_s': SETTLE_AFTER_SIGTERM,
+                                    'live_at': now_local(), 'note': 'left running for parent intervention; '
+                                    'no SIGKILL, no further signal, no further case'}
+            summary['stopped_because'] = 'child %s unsettled %d s after its SIGTERM' % (name, SETTLE_AFTER_SIGTERM)
+            fo.close()
+            fe.close()
+            break
+        fo.close()
+        fe.close()
+        case['returncode'], case['settled'] = rc, now_local()
+        c = case['checks']
+        c['rc0'] = rc == 0
+        if kind == 'probe':
+            try:
+                with open(os.path.join(outdir, 'probe.json')) as f:
+                    pj = json.load(f)
+            except Exception as e:
+                case['load_error'] = repr(e)
+                summary['stopped_because'] = 'probe output of %s unreadable' % name
+                break
+            case['observed'] = pj
+            c['probe_pass'] = pj.get('pass') is True
+            c['probe_engine_sha'] = pj.get('engine_sha256') == engine_sha
+            if arg in ('T1', 'T2'):
+                c['published_unknown'] = pj.get('published_status') == 'UNKNOWN'
+            else:
+                c['published_complete_with_marker'] = (pj.get('published_status') == 'COMPLETE'
+                                                       and pj.get('marker_present') is True)
+        else:
+            try:
+                got = load_outputs(outdir)
+            except Exception as e:
+                case['load_error'] = repr(e)
+                summary['stopped_because'] = 'outputs of %s unreadable' % name
+                break
+            run = got['run']
+            st = run.get('stats', {})
+            case['observed'] = {k: run.get(k) for k in ('status', 'status_before_publication', 'stop_reason',
+                                                       'engine_sha256', 'sigterm_received', 'note',
+                                                       'peak_rss_bytes_at_write', 'output_sha256')}
+            case['observed'].update({'profiles_total': run.get('profiles_total'),
+                                     'profiles_done': st.get('profiles_done'),
+                                     'profile_in_progress': st.get('profile_in_progress')})
+            size = sum(os.path.getsize(os.path.join(outdir, x)) for x in os.listdir(outdir))
+            c['engine_sha_recorded'] = run.get('engine_sha256') == engine_sha
+            c['all_files_present'] = all(os.path.exists(os.path.join(outdir, x)) for x in CERT_FILES + ('run.json',))
+            c['no_post_publication_marker'] = not os.path.exists(os.path.join(outdir, 'post_publication_sigterm.json'))
+            c['outputs_lt_16MiB'] = size < GROWTH
+            if name == 'S1':
+                c['unknown'] = run.get('status') == 'UNKNOWN'
+                c['reason_budget'] = run.get('stop_reason') == 'self-budget 20s exceeded'
+                c['no_sigterm'] = run.get('sigterm_received') is False
+                c['frontier'] = frontier_ok(run)
+            elif name == 'S2':
+                c['signal_sent'] = 'sigterm_sent' in case
+                c['unknown'] = run.get('status') == 'UNKNOWN'
+                c['before_unknown'] = run.get('status_before_publication') == 'UNKNOWN'
+                c['reason_sigterm'] = run.get('stop_reason') == 'SIGTERM received (cooperative stop)'
+                c['sigterm_recorded'] = run.get('sigterm_received') is True
+                c['frontier'] = frontier_ok(run)
+            else:
+                refd = load_outputs(os.path.join(LANE, 'evidence', ref))
+                c['complete'] = (run.get('status') == 'COMPLETE' and run.get('stop_reason') is None
+                                 and run.get('sigterm_received') is False and st.get('profile_in_progress') is None)
+                c['stats_equal_v1'] = all(st.get(k) == v for k, v in refd['run']['stats'].items())
+                c['survivors_equal_v1'] = got['survivors'] == refd['survivors']
+                c['vfc_killed_equal_v1'] = got['vfc'] == refd['vfc']
+                c['leaf_lines_equal_v1'] = got['leaves'] == refd['leaves']
+                c['lp_duals_equal_v1'] = got['duals'] == refd['duals']
+        case['pass'] = all(c.values())
+        if rc != 0:
+            summary['stopped_because'] = 'child %s returned %s' % (name, rc)
+    summary['all_pass'] = (len(summary['cases']) == len(CASES) and not summary['stopped_because']
+                           and all(x.get('pass') for x in summary['cases'].values()))
+    summary['finished'] = now_local()
+    with open(os.path.join(rec, 'summary.json'), 'x') as f:
+        json.dump(summary, f, indent=1, default=str)
+    print(json.dumps({'record': rec, 'all_pass': summary['all_pass'], 'stopped_because': summary['stopped_because'],
+                      'unsettled': summary['unsettled'],
+                      'cases': {k: {'pass': v.get('pass'), 'checks': v.get('checks')} for k, v in summary['cases'].items()}}))
+
+
+if __name__ == '__main__':
+    main()

@@ -1,0 +1,3 @@
+Retired 2026-10-18 (host clock 11:28:58): core56_engine_v3-unused-copy.py was a plain cp of core56_engine_v2.py, made as a starting point for v3 and never run. The real v3 was written as a new file that imports v2.
+Retired 11:36:08 PDT (host clock): core56_checkB_v2-unrun.py, a same-author certificate verifier written before the parent instruction of ~11:40 ("do NOT write the independent checker yourself"). It was never run, and nothing relies on it.
+Correction 11:36:21 PDT: the line above says the parent instruction came at "~11:40". That was a guess. The instruction was received before 11:36:08.

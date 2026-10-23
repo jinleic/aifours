@@ -1,0 +1,1641 @@
+--- code/pilot_file_drat_v33.py
++++ code/pilot_file_drat_v34.py
+@@ -1,18 +1,21 @@
+ #!/usr/bin/env python3
+-"""PA19 96h D2 file-proof v33, ms09; CONTROLS-ONLY reviewed-source successor of immutable pilot_file_drat_v32.py (f5b7b37e...).
+-Combined guards G1-G9 and integration A1-A11 fixes. ITEMS=[] and PHASE='controls-only': run_plan RETURNS
+-before reading/executing encoder bytes or visiting any item. Science requires a distinct reviewed item pin and exact GO.
+-One single parent allocator; exact full reservation; NEW parent post-exit release dispositions for every prior attempt.
+-Uncertain ownership/census/publication/resource state -> retain parent block and return (never wait without bound).
+-WNOWAIT observations preserve the leader anchor; only owned waitpid consumes a real status; ECHILD is never rc0.
+-At most one verified group SIGTERM, bounded grace, no escalation or uncertain signalling. All cleanup stages share
+-one deadline. Every creation is inventoried; no existing evidence is edited, moved, removed or silently truncated.
+-Native executable pins/identities are bound at each launch and settlement under the parent's exclusive-writer premise;
+-this is not atomic fexecve. Verified Python source bytes are compiled/executed directly, not reopened by a loader.
+-All settlement/item/summary records are PROVISIONAL until completed publication is observed within bounds,
+-closeout.json binds the summary, and the parent independently observes the matching actual runner exit and raw-audits.
+-C6 uses unrounded monotonic observations and --time=2. Deferred science uses kissat --time=300; checker bound 1200 s.
+-No source approval here authorizes execution, qualification, science coverage or a PA(19,8,6) verdict.
++"""PA19 96h D2 file-proof v34 (ms09), combined successor of immutable D2 v33.
++CONTROLS ONLY: PHASE='controls-only', ITEMS=[]; exact GO returns before encoder/items; science needs a distinct pin.
++Carries all old20 G1-G9/A1-A11 repairs plus all three v5/v33 review HOLDs (guards 5F/2M, integration3M/1m,
++tests5M/1m) and the parent dual-disk clarification. Unproved Popen acquisition remains owned even with proc=None.
++No speculative PID signalling; one verified SIGTERM plus finite grace only. Successful census/reap completion
++is fenced by the ORIGINAL stop grace. Mandatory bounded /bin/date has no native-cutoff exemption.
++Every observed (pid,start) is retained; descendant census traverses every current group member and retained root.
++All namespace enumeration and user-space IO progress has bounded remaining work. Individual OS/filesystem calls
++may be uninterruptible: NO hard native-call latency promise or timeout/escalation is made. Late/unavailable
++completion is nonqualifying, retains parent block and reservation, and never supplies synthetic settlement.
++Disk accounting separately records distinct-inode logical payload and allocated st_blocks*512 incldirs/root;
++cap uses MAX of both, with actual statvfs floors. APFS shared allocation overcounts conservatively.
++Retained publications are provisional; NEW independent parent disposition binds complete owners, all known
++identity history, exact artifacts/tree census and summary/closeout/ACTUAL exit; any mismatch or missing mandatory
++launch publication needs explicit publication-failure disposition. Pinned-directory/exclusive-writer premises remain.
++Deferred science command: kissat --time=300; D2 checker1200s, P checker600s; C6 --time=2 with raw ordered finite times.
++No test/native/probe/preflight/review is authorized by this source freeze; PA(19,8,6) remains UNDECIDED.
+ """
+ import ctypes
+ import errno
+@@ -48,8 +51,7 @@
+ TREE_SUBDIRS = ("children", "cwd", "fifo", "controls")   # N8: created and anchored with the run tree
+ BUSY_SLOTS = 2                              # N3: contract resources.per_lane_busy_processes (runner + one child)
+ ALLOCATION_SCHEMA = "PA19-96H-PARENT-ALLOCATION-v2"
+-KNOWN_SUMMARY_SCHEMAS = {"PA19-96H-PILOT-SUMMARY-v14", "PA19-96H-PSTREAM-SUMMARY-v4",
+-                         "PA19-96H-PILOT-SUMMARY-v32", "PA19-96H-PSTREAM-SUMMARY-v5", "PA19-96H-PILOT-SUMMARY-v33"}
++KNOWN_SUMMARY_SCHEMAS = {'PA19-96H-PILOT-SUMMARY-v14', 'PA19-96H-PILOT-SUMMARY-v32', 'PA19-96H-PILOT-SUMMARY-v33', 'PA19-96H-PILOT-SUMMARY-v34', 'PA19-96H-PSTREAM-SUMMARY-v4', 'PA19-96H-PSTREAM-SUMMARY-v5', 'PA19-96H-PSTREAM-SUMMARY-v6'}
+ DISPOSITION_SCHEMA = "PA19-96H-PARENT-RELEASE-v2"
+ ENC = (LANE + "/code/vendor/encode_skel_b.py", "d0002e60d11ef5cba568309fde5b15e29280ca127bc0e6bb1f4d22929a5628e5")
+ SKEL = (OLD + "/cycle2/skel-b/skeletons-b-ms09.json", "7c46ebbad3389476407e99807593287a8b3bb6c6a80f34574f0e9c00134293d0")
+@@ -158,13 +160,12 @@
+ PARSE_LINE = re.compile(rb"\rc parsing input formula with ([0-9]+) variables and ([0-9]+) clauses\n")
+ 
+ 
+-KNOWN_CLOSEOUT_SCHEMAS = {"PA19-96H-PSTREAM-CLOSEOUT-v5", "PA19-96H-PILOT-CLOSEOUT-v33"}
++KNOWN_CLOSEOUT_SCHEMAS = {'PA19-96H-PILOT-CLOSEOUT-v33', 'PA19-96H-PILOT-CLOSEOUT-v34', 'PA19-96H-PSTREAM-CLOSEOUT-v5', 'PA19-96H-PSTREAM-CLOSEOUT-v6'}
+ PHASE = "controls-only"
+-LAUNCH_SCHEMA = "PA19-96H-PILOT-LAUNCH-v33"
+-SUMMARY_SCHEMA = "PA19-96H-PILOT-SUMMARY-v33"
+-CLOSEOUT_SCHEMA = "PA19-96H-PILOT-CLOSEOUT-v33"
+-KNOWN_LAUNCH_SCHEMAS = {"PA19-96H-PILOT-LAUNCH-v14", "PA19-96H-PSTREAM-LAUNCH-v4", "PA19-96H-PILOT-LAUNCH-v32",
+-                        "PA19-96H-PSTREAM-LAUNCH-v5", "PA19-96H-PILOT-LAUNCH-v33"}
++LAUNCH_SCHEMA = "PA19-96H-PILOT-LAUNCH-v34"
++SUMMARY_SCHEMA = "PA19-96H-PILOT-SUMMARY-v34"
++CLOSEOUT_SCHEMA = "PA19-96H-PILOT-CLOSEOUT-v34"
++KNOWN_LAUNCH_SCHEMAS = {'PA19-96H-PILOT-LAUNCH-v14', 'PA19-96H-PILOT-LAUNCH-v32', 'PA19-96H-PILOT-LAUNCH-v33', 'PA19-96H-PILOT-LAUNCH-v34', 'PA19-96H-PSTREAM-LAUNCH-v4', 'PA19-96H-PSTREAM-LAUNCH-v5', 'PA19-96H-PSTREAM-LAUNCH-v6'}
+ TREE_ENTRY_MAX, TREE_DEPTH_MAX, CENSUS_SECONDS, SHA_SECONDS = 50000, 24, 30.0, 30.0
+ ALL_PID_SLOTS = 65536
+ NATIVE_LAUNCH_STOP = datetime.fromisoformat("2026-10-22T20:56:33-07:00").timestamp()
+@@ -188,6 +189,10 @@
+          "pilot_entries": None, "runner_identity": None, "prior_census": {}, "cleanup_deadline": None}
+ 
+ 
++PUBLICATION_SECONDS = 30.0
++UNSETTLED_PUBLICATION_SECONDS = 5.0  # consumes already reserved cleanup allowance, never another stop grace
++
++
+ def on_term(signum, frame):
+     """r3#2: lock-free; only stamps a scalar order once."""
+     if STATE["cancel_order"] is None:
+@@ -234,13 +239,17 @@
+     STATE["written"] += n
+ 
+ 
+-def write_all(fd, data):
++def write_all(fd, data, deadline=None):
++    end = work_deadline(PUBLICATION_SECONDS, deadline)
+     view = memoryview(data)
++    deadline_check(end, "before write progress")
+     while view:
+-        k = os.write(fd, view)
+-        if not isinstance(k, int) or k <= 0 or k > len(view):
++        deadline_check(end, "before write progress")
++        k = os.write(fd, view[:65536])
++        if type(k) is not int or k <= 0 or k > min(len(view), 65536):
+             raise OSError(errno.EIO, "write made no valid forward progress")
+         view = view[k:]
++        deadline_check(end, "after write progress")
+ 
+ 
+ def register_written(path, digest, n):
+@@ -250,26 +259,51 @@
+         CREATED[path].update(state="complete", sha256=digest, bytes=n)
+ 
+ 
+-def write_x(path, obj):
+-    return write_bytes_x(path, serialize(obj))[0]
+-
+-
+-def write_bytes_x(path, data):
+-    """Publication completes only after write, file fsync, close AND anchored parent fsync return."""
++def write_x(path, obj, deadline=None):
++    try:
++        data = serialize(obj)
++    except BaseException as exc:
++        latch("required record serialization unavailable: %r" % (exc,))
++        raise
++    return write_bytes_x(path, data, deadline=deadline)[0]
++
++
++def write_bytes_x(path, data, deadline=None):
++    """One remaining publication allowance covers progress, file fsync/close and parent fsync. A syscall may
++    stall in kernel: no hard-latency guarantee is asserted. Missing/late completion retains a failed publication."""
++    end = work_deadline(PUBLICATION_SECONDS, deadline)
++    if deadline is None and STATE.get("cleanup_deadline") is None and STATE.get("mono_end") is not None:
++        end = min(end, STATE["mono_end"])
++    try:
++        deadline_check(end, "before publication creation")
++    except BaseException as exc:
++        latch("required publication not admitted within remaining budget: %r" % (exc,))
++        raise
+     charge_output(len(data))
+     fd = create_excl(path)
++    CREATED[path].update(writer_fd=fd, writer_fd_close_confirmed=False)
+     try:
+         try:
+-            write_all(fd, data)
++            write_all(fd, data, deadline=end)
++            deadline_check(end, "before publication fsync")
+             os.fsync(fd)
++            deadline_check(end, "after publication fsync")
+         finally:
+-            os.close(fd)
++            try:
++                os.close(fd)
++                CREATED[path]["writer_fd_close_confirmed"] = True
++            except BaseException as exc:
++                CREATED[path].update(writer_fd_close_confirmed=None, writer_close_error=repr(exc))
++                raise
++        deadline_check(end, "after publication close")
+         os.fsync(tree_path(path)[0])
++        deadline_check(end, "after publication parent fsync")
+     except BaseException as exc:
+-        CREATED[path].update(state="failed", error=repr(exc))
++        CREATED[path].update(state="failed", error=repr(exc), publication_complete=False)
+         raise
+     h = hashlib.sha256(data).hexdigest()
+     register_written(path, h, len(data))
++    CREATED[path]["publication_complete"] = True
+     return h, len(data)
+ 
+ 
+@@ -288,14 +322,16 @@
+     return fd, st
+ 
+ 
+-def read_regular_bounded(path, limit, dir_fd=None):
++def read_regular_bounded(path, limit, dir_fd=None, deadline=None):
+     """N7: whole-file read of a regular file of at most `limit` bytes; larger files and growth are refused."""
++    end = work_deadline(deadline=deadline)
+     fd, st = open_regular(path, dir_fd)
+     try:
+         if st.st_size > limit:
+             raise RuntimeError("%s is %d bytes > limit %d" % (path, st.st_size, limit))
+         parts, n = [], 0
+         while True:
++            deadline_check(end, "bounded metadata read")
+             b = os.read(fd, min(1 << 20, limit + 1 - n))
+             if not b:
+                 break
+@@ -303,14 +339,15 @@
+             n += len(b)
+             if n > limit:
+                 raise RuntimeError("%s grew beyond limit %d" % (path, limit))
++        deadline_check(end, "bounded metadata read completion")
+         return b"".join(parts)
+     finally:
+         os.close(fd)
+ 
+ 
+-def sha_file(path, limit=SHA_FILE_MAX, dir_fd=None):
++def sha_file(path, limit=SHA_FILE_MAX, dir_fd=None, deadline=None):
+     fd, before = open_regular(path, dir_fd)
+-    end = work_deadline(SHA_SECONDS)
++    end = work_deadline(SHA_SECONDS, deadline)
+     try:
+         h, n = hashlib.sha256(), 0
+         while True:
+@@ -336,10 +373,10 @@
+     return sha_file(name, limit, dfd)
+ 
+ 
+-def read_tree(path, limit):
++def read_tree(path, limit, deadline=None):
+     """N8: bounded read of a run-tree file through its anchored directory descriptor."""
+     dfd, name = tree_path(path)
+-    return read_regular_bounded(name, limit, dfd)
++    return read_regular_bounded(name, limit, dfd, deadline=deadline)
+ 
+ 
+ def read_pinned(path, expect, limit=META_MAX):
+@@ -424,19 +461,31 @@
+     raise RuntimeError("unavailable start identity %r" % (err,))
+ 
+ 
+-def descendants(pid, pgid, deadline=None):
+-    found = {p for p in list_pids(PROC_PGRP_ONLY, pgid) if p != pid}
+-    seen, todo = {pid}, [pid]
++def descendants(pid, pgid, deadline=None, roots=()):
++    """Traverse the leader, EVERY observed group member and every retained owned root. Reparenting a group
++    member must not hide its out-of-group children. Unknown/unlinked census coverage remains a parent block."""
+     end = work_deadline(deadline=deadline)
++    members = list_pids(PROC_PGRP_ONLY, pgid)
++    deadline_check(end, "process-group listing completion")
++    seeds = {pid} | set(members) | set(roots)
++    if len(seeds) > LIST_SLOTS or any(type(p) is not int or p <= 0 for p in seeds):
++        raise RuntimeError("descendant seed inventory invalid/over cap")
++    # Retained out-of-group roots remain known ownership, not merely traversal seeds that can disappear.
++    found = (set(members) | set(roots)) - {pid}
++    seen, todo = set(seeds), list(seeds)
+     while todo:
+-        if len(seen) > LIST_SLOTS or time.monotonic() > end:
+-            raise RuntimeError("descendant census incomplete: work cap")
++        deadline_check(end, "descendant traversal")
+         q = todo.pop()
+-        for c in list_pids(PROC_PPID_ONLY, q):
+-            if c not in seen:
+-                seen.add(c)
+-                found.add(c)
+-                todo.append(c)
++        children = list_pids(PROC_PPID_ONLY, q)
++        deadline_check(end, "PPID listing completion")
++        for child in children:
++            if child not in seen:
++                if len(seen) >= LIST_SLOTS:
++                    raise RuntimeError("descendant census incomplete: process cap")
++                seen.add(child)
++                found.add(child)
++                todo.append(child)
++    deadline_check(end, "descendant traversal completion")
+     return sorted(found)
+ 
+ 
+@@ -447,13 +496,17 @@
+ 
+ 
+ def census_entry(st):
+-    """N8: census evidence of one entry: directories (kind, dev, ino, mode) (their content is covered entry by
+-    entry); every other kind (kind, dev, ino, size, mtime_ns, ctime_ns, mode, nlink), so an in-place same-size
+-    rewrite or a replacement is visible."""
++    """Retained identity/metadata plus allocated st_blocks*512. Directory allocation is NOT omitted.
++    First four directory/eight non-directory fields retain their meanings; allocated bytes are appended."""
++    blocks = st.st_blocks
++    if type(blocks) is not int or blocks < 0:
++        raise RuntimeError("allocated-block accounting unavailable")
++    allocated = blocks * 512
+     k = _entry_kind(st.st_mode)
+     if k == "dir":
+-        return (k, st.st_dev, st.st_ino, stat.S_IMODE(st.st_mode))
+-    return (k, st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns, st.st_ctime_ns, stat.S_IMODE(st.st_mode), st.st_nlink)
++        return (k, st.st_dev, st.st_ino, stat.S_IMODE(st.st_mode), allocated)
++    return (k, st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns, st.st_ctime_ns,
++            stat.S_IMODE(st.st_mode), st.st_nlink, allocated)
+ 
+ 
+ def run_tree_census(root=None):
+@@ -462,13 +515,8 @@
+ 
+ 
+ def lane_usage(root=LANE):
+-    """G4/G6: measured physical logical consumption, bounded work, hard links counted once."""
+-    total, seen = 0, set()
+-    for v in walk_bounded(root).values():
+-        if v[0] != "dir" and (v[1], v[2]) not in seen:
+-            seen.add((v[1], v[2]))
+-            total += v[3]
+-    return total
++    """Budget metric: ENFORCED max(logical payload, allocated blocks incldirs), not 'physical st_size'."""
++    return disk_usage(root)["enforced_max_bytes"]
+ 
+ 
+ def ancestry_refusal(path):
+@@ -535,7 +583,8 @@
+     dfd, name = tree_path(path)
+     fd = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, mode, dir_fd=dfd)
+     try:
+-        CREATED[path] = {"state": "open", "kind": "file", "identity": None}
++        CREATED[path] = {"state": "open", "kind": "file", "identity": None,
++                         "acquired_fd": fd, "fd_owner": "raw_creation"}
+         st = os.fstat(fd)
+         CREATED[path]["identity"] = [st.st_dev, st.st_ino]
+     except BaseException:
+@@ -637,6 +686,7 @@
+     """G1: derive inventory from durable runner, child/helper intents/launches, settlements and full censuses.
+     Never infer complete ownership from summary booleans. Legacy/missing/partial evidence is explicit uncertainty
+     that only a NEW parent disposition can resolve; all known identities still get independent liveness checks."""
++    end = work_deadline()
+     ids, unknowns = [], []
+     if not isinstance(launch, dict):
+         launch = {}
+@@ -645,6 +695,10 @@
+         if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
+             unknowns.append("invalid/missing pid at %s" % source)
+             return
++        if isinstance(ident, dict) and type(ident.get("pid")) is int and ident["pid"] != pid:
++            unknowns.append("record/identity PID contradiction at %s" % source)
++            add(ident["pid"], ident, bound, leader, source)
++            ident = None
+         start = ident.get("start") if isinstance(ident, dict) else None
+         if start is not None and not (isinstance(start, list) and len(start) == 2
+                                      and all(isinstance(x, int) and not isinstance(x, bool) and x >= 0 for x in start)):
+@@ -664,6 +718,7 @@
+     snap = run_tree_census(entry_dir)
+     intents, launches, nolaunches = set(), set(), set()
+     for path, v in sorted(snap.items()):
++        deadline_check(end, "ownership manifest record traversal")
+         if not path.startswith(os.path.join(entry_dir, "children") + os.sep) or v[0] != "file":
+             continue
+         if not path.endswith((".intent.json", ".launch.json", ".nolaunch.json", ".QUARANTINE.json", ".settle.json")):
+@@ -678,7 +733,8 @@
+         if path.endswith(".intent.json"):
+             intents.add(path[:-len(".intent.json")])
+         elif path.endswith(".nolaunch.json"):
+-            if rec.get("no_launch") is True:
++            if rec.get("no_launch") is True and rec.get("no_launch_proof") == "popen_not_called" \
++                    and rec.get("popen_call_started") is False:
+                 nolaunches.add(path[:-len(".nolaunch.json")])
+             else:
+                 unknowns.append("unproved no-launch record " + path)
+@@ -686,9 +742,16 @@
+             launches.add(path[:-len(".launch.json")])
+             add(rec.get("pid"), rec.get("identity"), rec.get("started_by_epoch", rec.get("start_epoch")), True, path)
+         else:
++            # A readable settlement's OWN leader is evidence, even when launch/summary/census is absent.
++            leader_ids = [rec[key] for key in ("identity_at_start", "identity") if isinstance(rec.get(key), dict)]
++            if not leader_ids:
++                add(rec.get("pid"), None, rec.get("started_by_epoch"), True, path)
++            for identity in leader_ids:
++                add(rec.get("pid"), identity, rec.get("started_by_epoch"), True, path)
+             if path.endswith(".QUARANTINE.json"):
+                 unknowns.append("UNSETTLED receipt " + path)
+-                add(rec.get("pid"), rec.get("identity_at_start"), rec.get("started_by_epoch"), True, path)
++            if rec.get("launch_state") == "popen_exception_unproven":
++                unknowns.append("unproved kernel process acquisition " + path)
+             census = rec.get("live_census") or {}
+             extra = rec.get("known_identities") or []
+             for item in extra + (census.get("group_members") or []) + (census.get("descendants") or []):
+@@ -704,6 +767,7 @@
+     def collect_record(record, source):
+         stack, count = [record], 0
+         while stack:
++            deadline_check(end, "ownership JSON work allowance")
+             count += 1
+             if count > TREE_ENTRY_MAX:
+                 unknowns.append("ownership JSON traversal work cap: " + source)
+@@ -741,6 +805,7 @@
+             bounds = [b for b in (old.get("started_by_epoch"), x.get("started_by_epoch"))
+                       if isinstance(b, (int, float)) and not isinstance(b, bool)]
+             old["started_by_epoch"] = min(bounds) if bounds else None
++    deadline_check(end, "ownership manifest completion")
+     return {"identities": list(unique.values()), "unknowns": unknowns,
+             "runner_identity": {"pid": launch.get("pid"),
+                                 "start": ri.get("start") if isinstance(ri, dict) else None}}
+@@ -773,6 +838,7 @@
+     successful publication, prior-runner return, memory release or absence of unrecorded owners.
+     Parent binds launch/summary/closeout, a complete tree census and an after-exit audit; runner independently
+     checks all known/certified identities against a zombie-inclusive census. Unknown -> retain parent block."""
++    end = work_deadline()
+     disp = release.get("disposition")
+     if not (isinstance(disp, dict) and isinstance(disp.get("path"), str) and _hex64(disp.get("sha256"))):
+         return ["NEW parent release disposition missing; reservation retained"]
+@@ -795,8 +861,12 @@
+     observed_exit = d.get("observed_runner_exit_code")
+     if type(observed_exit) is not int or not -255 <= observed_exit <= 255:
+         return ["parent-observed runner exit missing/invalid"]
++    if any(proposed != observed_exit for field, proposed in manifest.get("summary_exit_proposals", [])) \
++            and d.get("publication_failure_disposed") is not True:
++        return ["summary proposed/declared versus actual runner exit mismatch requires explicit failure disposition"]
+     certified = {}
+     for x in d["identities"]:
++        deadline_check(end, "parent certified identity audit")
+         if not isinstance(x, dict) or not isinstance(x.get("pid"), int) or isinstance(x.get("pid"), bool) or x["pid"] <= 0:
+             return ["malformed parent identity"]
+         s = x.get("start")
+@@ -828,7 +898,9 @@
+     try:
+         present = set(list_pids(PROC_ALL_PIDS, 0))
+         for x in identities:
++            deadline_check(end, "complete known-owner liveness audit")
+             why += identity_ended_refusals(x, present)
++            deadline_check(end, "known-owner liveness completion")
+     except BaseException as exc:
+         why.append("complete liveness census unavailable: %r" % (exc,))
+     closeout_sha = release.get("closeout_sha256")
+@@ -852,6 +924,7 @@
+             why.append("closeout/observed exit/malformed publication needs explicit parent failure disposition")
+     elif d.get("publication_failure_disposed") is not True and d.get("legacy_audit") is not True:
+         why.append("missing closeout requires explicit legacy/failed-publication disposition")
++    deadline_check(end, "parent disposition validation completion")
+     return why
+ 
+ 
+@@ -862,11 +935,13 @@
+         if not stat.S_ISDIR(os.lstat(entry_dir).st_mode):
+             return ["attempt is not a real directory"]
+         publication_unknowns = []
++        summary_exit_proposals = []
+         launch_path = os.path.join(entry_dir, "launch-record.json")
+         launch = None
+         if release.get("launch_record_sha256") is None:
+             if os.path.lexists(launch_path):
+                 return ["launch exists but release does not bind its exact bytes"]
++            publication_unknowns.append("mandatory runner launch publication absent")
+         else:
+             raw = read_pinned(launch_path, release["launch_record_sha256"], RECORD_MAX)
+             try:
+@@ -894,12 +969,26 @@
+                 summary = json.loads(raw)
+                 if not isinstance(summary, dict) or summary.get("schema") not in KNOWN_SUMMARY_SCHEMAS:
+                     publication_unknowns.append("unknown/malformed summary")
++                else:
++                    for field in ("proposed_exit_code", "exit_code"):
++                        if field in summary:
++                            proposed = summary[field]
++                            if type(proposed) is not int or not -255 <= proposed <= 255:
++                                publication_unknowns.append("invalid summary exit proposal " + field)
++                            else:
++                                summary_exit_proposals.append([field, proposed])
++                    if not summary_exit_proposals:
++                        publication_unknowns.append("summary exit proposal unavailable")
++                    if summary["schema"] in ("PA19-96H-PSTREAM-SUMMARY-v6", "PA19-96H-PILOT-SUMMARY-v34") \
++                            and ("proposed_exit_code" not in summary or "exit_code" not in summary):
++                        publication_unknowns.append("mandatory current summary exit proposal missing")
+             except BaseException as exc:
+                 publication_unknowns.append("partial/unparseable summary: %r" % (exc,))
+         if release.get("closeout_sha256") is None and os.path.lexists(os.path.join(entry_dir, "closeout.json")):
+             return ["closeout exists but release does not bind its exact digest"]
+         manifest = attempt_owner_manifest(entry_dir, launch)
+         manifest["publication_unknowns"] = publication_unknowns
++        manifest["summary_exit_proposals"] = summary_exit_proposals
+         manifest["unknowns"].extend(publication_unknowns)
+         return disposition_refusals(entry_dir, release, manifest, smsha)
+     except BaseException as exc:
+@@ -917,25 +1006,29 @@
+     if a.get("out_dir") != out_dir or a.get("lane_ceiling_bytes") != LANE_CEILING or a.get("busy_slots") != BUSY_SLOTS:
+         why.append("parent allocation output/ceiling/busy slots mismatch")
+     releases = a.get("released_attempts")
+-    if not isinstance(releases, list):
+-        return why + ["release inventory is not a list"], None
+-    by_dir = {}
+-    for r in releases:
+-        if not isinstance(r, dict) or not isinstance(r.get("dir"), str) or os.path.dirname(r["dir"]) != root \
+-                or r["dir"] in by_dir \
+-                or (r.get("launch_record_sha256") is not None and not _hex64(r["launch_record_sha256"])) \
+-                or (r.get("summary_sha256") is not None and not _hex64(r["summary_sha256"])) \
+-                or (r.get("closeout_sha256") is not None and not _hex64(r["closeout_sha256"])):
+-            why.append("malformed/duplicate release entry")
+-            continue
+-        by_dir[r["dir"]] = r
+-    prior = {}
++    if not isinstance(releases, list) or len(releases) > TREE_ENTRY_MAX:
++        return why + ["release inventory missing or over bounded entry cap"], None
++    previous_end = STATE.get("cleanup_deadline")
++    end = work_deadline()
++    STATE["cleanup_deadline"] = end
+     try:
+-        entries = sorted(os.listdir(root))
+-        if len(entries) > TREE_ENTRY_MAX:
+-            raise RuntimeError("pilot entry cap")
+-        usage = lane_usage()
++        by_dir = {}
++        for r in releases:
++            deadline_check(end, "parent release entry validation")
++            if not isinstance(r, dict) or not isinstance(r.get("dir"), str) or os.path.dirname(r["dir"]) != root \
++                    or r["dir"] in by_dir \
++                    or (r.get("launch_record_sha256") is not None and not _hex64(r["launch_record_sha256"])) \
++                    or (r.get("summary_sha256") is not None and not _hex64(r["summary_sha256"])) \
++                    or (r.get("closeout_sha256") is not None and not _hex64(r["closeout_sha256"])):
++                why.append("malformed/duplicate release entry")
++                continue
++            by_dir[r["dir"]] = r
++        prior = {}
++        entries = bounded_names(root, deadline=end)
++        usage_detail = disk_usage()
++        usage = usage_detail["enforced_max_bytes"]
+         for e in entries:
++            deadline_check(end, "prior attempt release audit")
+             d = os.path.join(root, e)
+             if d == out_dir:
+                 why.append("output already exists; one-use GO")
+@@ -945,51 +1038,68 @@
+         if set(by_dir) != {os.path.join(root, e) for e in entries}:
+             why.append("release inventory != complete existing pilot inventory")
+         if type(res) is not int or usage + res > LANE_CEILING:
+-            why.append("measured lane usage plus exact full reservation exceeds ceiling")
++            why.append("max(logical,allocated) lane usage plus exact full reservation exceeds ceiling")
++        deadline_check(end, "allocation completion")
++        return why, {"allocation_id": a.get("allocation_id"), "reservation_bytes": res,
++                     "runner_reservation_bytes": full_reserve, "lane_usage_bytes": usage,
++                     "lane_usage_detail": usage_detail, "ceiling_bytes": LANE_CEILING,
++                     "pilot_entries": entries, "prior_attempt_census": prior}
+     except BaseException as exc:
+         return why + ["allocation census incomplete: %r" % (exc,)], None
+-    return why, {"allocation_id": a.get("allocation_id"), "reservation_bytes": res,
+-                 "runner_reservation_bytes": full_reserve, "lane_usage_bytes": usage,
+-                 "ceiling_bytes": LANE_CEILING, "pilot_entries": entries, "prior_attempt_census": prior}
++    finally:
++        STATE["cleanup_deadline"] = previous_end
+ 
+ 
+ 
+ def ledger_refusals():
+-    """G6/G7: capacity never disappears because it was PREcharged. Bound = other-lane physical consumption +
+-    this run's FULL exact reservation, independent of partial captures/record-size precharges. Same snapshot
+-    classifies outside/inside bytes; previous attempts' complete metadata/identity inventories stay unchanged."""
++    """Enforce BOTH logical and allocated accounting through max, never relabel st_size physical consumption.
++    Full reservation is retained until NEW parent disposition; precharged capacity cannot disappear."""
+     why = []
++    previous_end = STATE.get("cleanup_deadline")
++    end = work_deadline()
++    STATE["cleanup_deadline"] = end
+     try:
+-        entries = sorted(os.listdir(PILOT_ROOT))
++        entries = bounded_names(PILOT_ROOT, deadline=end)
+         expect = sorted(STATE["pilot_entries"] + [os.path.basename(STATE["out"])])
+         if entries != expect:
+             why.append("pilot root entry set drift")
+         for d, old in (STATE.get("prior_census") or {}).items():
++            deadline_check(end, "prior attempt census")
+             if census_digest(d) != old:
+                 why.append("prior attempt immutable inventory drift: " + d)
+-        snap = walk_bounded(LANE)
+-        outside, own, seen = 0, 0, set()
+-        # Outside first: a hard link into the run cannot subtract pre-existing consumption.
+-        ordered = sorted(snap.items(), key=lambda p: p[0].startswith(STATE["out"] + os.sep))
+-        for p, v in ordered:
+-            if v[0] == "dir" or (v[1], v[2]) in seen:
+-                continue
+-            seen.add((v[1], v[2]))
+-            if p.startswith(STATE["out"] + os.sep):
+-                own += v[3]
+-            else:
+-                outside += v[3]
+-        bound = outside + STATE["reservation"]
+-        if own > STATE["reservation"] or bound > LANE_CEILING:
+-            why.append("actual consumption/full future capacity exceeds lane ceiling or run reservation")
+-        led = {"other_lane_consumption_bytes": outside, "this_run_physical_bytes": own,
+-               "lane_usage_bytes": outside + own, "full_reservation_bytes": STATE["reservation"],
+-               "outstanding_future_growth_bytes": max(0, STATE["reservation"] - own),
++        snap = walk_bounded(LANE, deadline=end)
++        own, outside, seen = {}, {}, set()
++        belongs = lambda p: p == STATE["out"] or p.startswith(STATE["out"] + os.sep)
++        # Outside first: shared hard links cannot subtract already-existing consumption.
++        for inside in (False, True):
++            for path, value in snap.items():
++                deadline_check(end, "dual-metric ledger classification")
++                if belongs(path) != inside or (value[1], value[2]) in seen:
++                    continue
++                seen.add((value[1], value[2]))
++                (own if inside else outside)[path] = value
++        own_usage = usage_from_census(own)
++        outside_usage = usage_from_census(outside, os.lstat(LANE))
++        total_logical = outside_usage["logical_distinct_inode_bytes"] + own_usage["logical_distinct_inode_bytes"]
++        total_allocated = outside_usage["allocated_st_blocks_bytes"] + own_usage["allocated_st_blocks_bytes"]
++        bound_logical = outside_usage["logical_distinct_inode_bytes"] + STATE["reservation"]
++        bound_allocated = outside_usage["allocated_st_blocks_bytes"] + STATE["reservation"]
++        bound = max(bound_logical, bound_allocated)
++        if own_usage["enforced_max_bytes"] > STATE["reservation"] or bound > LANE_CEILING:
++            why.append("logical/allocated consumption plus full future reservation exceeds cap")
++        led = {"outside_run_usage": outside_usage, "this_run_usage": own_usage,
++               "lane_logical_distinct_inode_bytes": total_logical, "lane_allocated_st_blocks_bytes": total_allocated,
++               "lane_usage_bytes": max(total_logical, total_allocated), "full_reservation_bytes": STATE["reservation"],
++               "logical_future_bound_bytes": bound_logical, "allocated_future_bound_bytes": bound_allocated,
+                "conservative_bound_bytes": bound, "ceiling_bytes": LANE_CEILING,
+-               "charged_capacity_bytes": STATE["written"], "pilot_entries_unchanged": entries == expect}
++               "charged_logical_capacity_bytes": STATE["written"], "pilot_entries_unchanged": entries == expect,
++               "APFS_shared_allocation_overcount": "conservative; allocated blocks incldirs/root are not deduplicated by extent"}
++        deadline_check(end, "ledger completion")
+         return why, led
+     except BaseException as exc:
+         return ["ledger/preservation census incomplete: %r" % (exc,)], None
++    finally:
++        STATE["cleanup_deadline"] = previous_end
+ 
+ 
+ 
+@@ -997,27 +1107,30 @@
+     """Fail-closed STOP registry: new-round STOP*/HALT*/SAT-CANDIDATE* markers in LANE/control or
+     RUN/control; any change, loss or addition in the inherited old cycle2-root STOP/HALT set."""
+     why = []
++    end = work_deadline()
+     for d in (LANE + "/control", RUN + "/control"):
+-        for name in sorted(os.listdir(d)):
++        for name in bounded_names(d, deadline=end):
+             if re.match(r"(?i)^(stop|halt|sat-candidate)", name) or "HALT" in name:
+                 why.append("new-round marker " + os.path.join(d, name))
+     c2 = OLD + "/cycle2"
+-    present = sorted(n for n in os.listdir(c2) if re.match(r"^(STOP|HALT)", n) or "HALT" in n)
++    present = sorted(n for n in bounded_names(c2, deadline=end) if re.match(r"^(STOP|HALT)", n) or "HALT" in n)
+     if present != sorted(OLD_LIVE_MARKERS):
+         why.append("inherited cycle2 marker set changed: " + json.dumps(present))
+     for name, h in OLD_LIVE_MARKERS.items():
++        deadline_check(end, "inherited marker audit")
+         try:
+-            if sha_file(os.path.join(c2, name))[0] != h:
++            if sha_file(os.path.join(c2, name), deadline=end)[0] != h:
+                 why.append("inherited marker changed: " + name)
+         except Exception as exc:
+             why.append(f"inherited marker unreadable: {name}: {exc!r}")
+     try:
+-        if sha_file(REGISTRY[0])[0] != REGISTRY[1]:
++        if sha_file(REGISTRY[0], deadline=end)[0] != REGISTRY[1]:
+             why.append("lane registry changed")
+-        if sha_file(LAUNCH_CONTRACT[0])[0] != LAUNCH_CONTRACT[1]:
++        if sha_file(LAUNCH_CONTRACT[0], deadline=end)[0] != LAUNCH_CONTRACT[1]:
+             why.append("launch contract changed")
+     except Exception as exc:
+         why.append("registry/contract unreadable: %r" % exc)
++    deadline_check(end, "registry audit completion")
+     return why
+ 
+ 
+@@ -1421,11 +1534,11 @@
+         if self.construction_error is not None:
+             why.append("proof sink construction failed: " + self.construction_error)
+         fifo = snapshot.get(self.fifo_path)
+-        if not isinstance(fifo, (tuple, list)) or len(fifo) != 8 or fifo[0] != "fifo" \
++        if not isinstance(fifo, (tuple, list)) or len(fifo) != 9 or fifo[0] != "fifo" \
+                 or self.fifo_identity is None or list(fifo[1:3]) != self.fifo_identity:
+             why.append("proof FIFO census identity/kind mismatch: " + self.fifo_path)
+         proof = snapshot.get(self.file_path)
+-        if not isinstance(proof, (tuple, list)) or len(proof) != 8 or proof[0] != "file" \
++        if not isinstance(proof, (tuple, list)) or len(proof) != 9 or proof[0] != "file" \
+                 or self.file_identity is None or list(proof[1:3]) != self.file_identity:
+             why.append("proof file census identity/kind mismatch: " + self.file_path)
+         else:
+@@ -1515,15 +1628,20 @@
+ 
+ 
+ def open_wb(path):
+-    """G9: raw descriptor has a rollback owner until fdopen transfers it."""
++    """Raw acquisition is inventoried before fdopen; after a successful return the caller holds the file owner."""
+     fd = create_excl(path)
+     try:
++        CREATED[path]["fd_owner"] = "fdopen_handoff"
+         return os.fdopen(fd, "wb")
+     except BaseException as exc:
+         try:
+             os.close(fd)
++            CREATED[path]["raw_close_confirmed"] = True
++        except BaseException as close_exc:
++            CREATED[path].update(raw_close_confirmed=None, raw_close_error=repr(close_exc))
++            raise
+         finally:
+-            CREATED[path].update(state="failed", error="fdopen: %r" % (exc,))
++            CREATED[path].update(state="failed", error="fdopen transfer: %r" % (exc,))
+         raise
+ 
+ 
+@@ -1583,11 +1701,17 @@
+ 
+ 
+ def census_digest(root):
+-    snap = run_tree_census(root)
+-    raw = json.dumps(sorted((os.path.relpath(p, root), v) for p, v in snap.items()),
++    end = work_deadline()
++    snapshot = run_tree_census(root)
++    root_stat = os.lstat(root)
++    root_entry = census_entry(root_stat)
++    raw = json.dumps({"root": root_entry,
++                      "entries": sorted((os.path.relpath(path, root), value) for path, value in snapshot.items())},
+                      separators=(",", ":"), allow_nan=False).encode()
+-    st = os.lstat(root)
+-    return {"sha256": hashlib.sha256(raw).hexdigest(), "entries": len(snap), "root_identity": [st.st_dev, st.st_ino]}
++    digest = hashlib.sha256(raw).hexdigest()
++    deadline_check(end, "census digest completion")
++    return {"sha256": digest, "entries": len(snapshot), "root_identity": [root_stat.st_dev, root_stat.st_ino],
++            "root_census_entry": list(root_entry), "disk_accounting": "logical-and-st_blocks-including-directories"}
+ 
+ 
+ def exe_identity(path, pin):
+@@ -1638,13 +1762,185 @@
+     return mod
+ 
+ 
+-def receipt_contradictions(rec):
+-    """A7: literal True is not sufficient: every resource/reap/publication claim must agree."""
++def receipt_contradictions(rec, allowed_trips=()):
++    """Strict ordinary receipt policy: no trips and self stop. The sole explicit exception is
++    C5's exact ('proof_cap',) tuple; structural closure alone is never ordinary qualification."""
++    bad = receipt_resource_contradictions(rec)
++    if not isinstance(rec, dict):
++        return bad
++    if type(allowed_trips) is not tuple or allowed_trips not in ((), ("proof_cap",)):
++        bad.append("unsupported permitted trip policy")
++        return bad
++    expected_trips = list(allowed_trips)
++    if isinstance(rec.get("trips"), list) and rec["trips"] != expected_trips:
++        bad.append("trips do not match permitted inventory %r" % (expected_trips,))
++    expected_stop = "proof_cap" if allowed_trips else "self"
++    if rec.get("stop") != expected_stop:
++        bad.append("stop does not match permitted inventory " + expected_stop)
++    return bad
++
++
++def unresolved_inventory():
++    """Every unproved launch/process/thread/endpoint/publication remains owned, including proc=None.
++    resource_id is exact in-process identity for test-only dispositions; labels never substitute for identity."""
++    out = []
++    for c in OWNED:
++        if c.proc is None:
++            if getattr(c, "launch_state", None) == "popen_exception_unproven":
++                out.append({"kind": "unknown process acquisition", "resource_id": id(c), "owner_kind": "child",
++                            "pid": None, "identity_unknown": True, "launch_state": c.launch_state,
++                            "launch_error": c.launch_error, "launch_intent": c.launch_intent,
++                            "argv": c.argv, "argv_sha256": c.argv_sha256,
++                            "late_obligations": c.late_obligations(), "unsettled": c.unsettled})
++            continue
++        rec = c.settled_rec
++        child_open = (c.reader is not None and c.reader.is_alive()) or c.capture is None or not c.capture.closed \
++                     or c.proc.stdout is None or not c.proc.stdout.closed
++        bad = receipt_resource_contradictions(rec)
++        if bad or child_open:
++            out.append({"kind": "child", "resource_id": id(c), "seq": c.seq, "label": c.label,
++                        "pid": c.pid, "pgid": c.pgid, "identity_at_start": c.identity_at_start,
++                        "started_by_epoch": c.started_epoch, "actual_owned_reap": c.reaped,
++                        "wait_lost": c.wait_lost, "launch_state": c.launch_state,
++                        "known_identities": list(c.known_identities.values()), "live_census": c.last_census,
++                        "census_uncertainty": list(c.census_uncertainty), "late_obligations": c.late_obligations(),
++                        "receipt": c.quarantine_path, "receipt_state": c.quarantine_receipt_state,
++                        "unknowns": bad + (["actual reader/endpoint still open"] if child_open else [])})
++    for h in HELPERS:
++        if h.proc is None:
++            if getattr(h, "launch_state", None) == "popen_exception_unproven":
++                out.append({"kind": "unknown process acquisition", "resource_id": id(h), "owner_kind": "helper",
++                            "pid": None, "identity_unknown": True, "launch_state": h.launch_state,
++                            "launch_error": h.launch_error, "launch_intent": h.launch_intent,
++                            "argv": h.argv, "argv_sha256": h.argv_sha256,
++                            "late_obligations": h.late_obligations(), "unsettled": h.unsettled})
++            continue
++        if h.settled is not True or not h.reaped or h.wait_lost is not None or not h.group_closed_before_reap \
++                or h.census_uncertainty or h.grace_completion_in_bounds is not True \
++                or h.proc.stdout is None or not h.proc.stdout.closed:
++            out.append({"kind": "helper", "resource_id": id(h), "pid": h.pid, "pgid": h.pgid,
++                        "identity_at_start": h.identity_at_start, "started_by_epoch": h.started_epoch,
++                        "record": h.record, "known_identities": list(h.known_identities.values()),
++                        "live_census": h.last_census, "census_uncertainty": list(h.census_uncertainty),
++                        "late_obligations": h.late_obligations()})
++    for b in LIVE_BUFFERS:
++        try:
++            state = b.accounting()
++            if state.get("collector_alive") is not False or state.get("released") is not True \
++                    or state.get("reader_fd_closed") is not True or state.get("unblock_fd_closed") is not True \
++                    or state.get("construction_error") is not None \
++                    or (state.get("finished") or {}).get("sink_settled") is not True or b.blocks:
++                out.append({"kind": "RAM collector", "resource_id": id(b), "runner_identity": STATE.get("runner_identity"),
++                            "state": state, "late_obligations": b.late_obligations()})
++        except BaseException as exc:
++            out.append({"kind": "unknown RAM collector", "resource_id": id(b), "error": repr(exc)})
++    for f in LIVE_FEEDERS:
++        try:
++            state = f.accounting()
++            if state.get("unresolved") is not False:
++                out.append({"kind": "stdin feeder", "resource_id": id(f), "runner_identity": STATE.get("runner_identity"),
++                            "label": f.label, "state": state, "late_obligations": f.late_obligations()})
++        except BaseException as exc:
++            out.append({"kind": "unknown stdin feeder", "resource_id": id(f), "error": repr(exc)})
++    for sink in LIVE_SINKS:
++        try:
++            state = sink.accounting()
++            if state.get("unresolved") is not False or (sink.finished or {}).get("sink_settled") is not True:
++                out.append({"kind": "file sink", "resource_id": id(sink), "runner_identity": STATE.get("runner_identity"),
++                            "state": state, "late_obligations": sink.late_obligations()})
++        except BaseException as exc:
++            out.append({"kind": "unknown file sink", "resource_id": id(sink), "error": repr(exc)})
++    for path, state in CREATED.items():
++        if state.get("state") not in ("complete", "fifo", "dir"):
++            out.append({"kind": "partial publication", "path": path, "state": dict(state),
++                        "runner_identity": STATE.get("runner_identity")})
++    return out
++
++
++def choose_exit_code(outcome, unresolved, cancel_before):
++    if LATCH or unresolved:
++        return EXIT_SAFETY_STOP
++    if outcome.get("exception"):
++        return EXIT_EXCEPTION
++    if cancel_before:
++        return EXIT_CANCELLED
++    if outcome.get("sat"):
++        return EXIT_SAT_CANDIDATE
++    if outcome.get("controls_failed"):
++        return EXIT_CONTROLS_FAILED
++    if outcome.get("refused"):
++        return EXIT_ADMISSION_REFUSED
++    return EXIT_PLAN_COMPLETE if outcome.get("complete") else EXIT_EXCEPTION
++
++
++def deadline_check(end, what):
++    """User-space progress fence only; individual OS calls may be uninterruptible. Late completion never qualifies."""
++    if time.monotonic() > end:
++        raise TimeoutError(what + ": remaining operation budget exhausted")
++
++
++def bounded_names(path_or_fd, deadline=None, cap=TREE_ENTRY_MAX):
++    """Incrementally cap enumeration BEFORE allocating/sorting the complete namespace. No os.listdir fallback."""
++    end = work_deadline(deadline=deadline)
++    names = []
++    with os.scandir(path_or_fd) as scan:
++        for entry in scan:
++            deadline_check(end, "namespace enumeration")
++            if len(names) >= cap:
++                raise RuntimeError("namespace entry cap exhausted; inventory incomplete")
++            names.append(entry.name)
++    deadline_check(end, "before bounded namespace sort")
++    names.sort()
++    deadline_check(end, "after bounded namespace sort")
++    return names
++
++
++def usage_from_census(snapshot, root_stat=None):
++    """Distinct-inode logical payload bytes and allocated blocks, including directories/root allocation.
++    APFS clones/shared extents can be counted repeatedly across different inodes: deliberately conservative."""
++    logical = allocated = 0
++    seen = set()
++    if root_stat is not None:
++        root = census_entry(root_stat)
++        seen.add((root[1], root[2]))
++        allocated += root[-1]
++        if root[0] != "dir":
++            logical += root[3]
++    for value in snapshot.values():
++        key = (value[1], value[2])
++        if key in seen:
++            continue
++        seen.add(key)
++        allocated += value[-1]
++        if value[0] != "dir":
++            logical += value[3]
++    return {"logical_distinct_inode_bytes": logical, "allocated_st_blocks_bytes": allocated,
++            "enforced_max_bytes": max(logical, allocated), "distinct_inodes": len(seen),
++            "directory_allocation_included": True, "APFS_shared_allocation_overcount": "conservative"}
++
++
++def disk_usage(root=LANE):
++    end = work_deadline()
++    before = os.lstat(root)
++    if not stat.S_ISDIR(before.st_mode):
++        raise RuntimeError("disk usage root is not a real directory")
++    snapshot = walk_bounded(root, deadline=end)
++    after = os.lstat(root)
++    if (before.st_dev, before.st_ino) != (after.st_dev, after.st_ino):
++        raise RuntimeError("disk usage root identity changed")
++    result = usage_from_census(snapshot, after)
++    deadline_check(end, "dual disk usage completion")
++    return result
++
++
++def receipt_resource_contradictions(rec):
++    """Independent resource/reap/publication closure checks, not an ordinary UNSAT qualifier.
++    A consistent stopped receipt may describe closed resources without authorizing scientific use."""
+     if not isinstance(rec, dict):
+         return ["receipt missing"]
+     bad = []
+     for key in ("settled", "actual_owned_reap", "group_empty_after_reap", "settlement_publication_in_bounds",
+-                "native_exec_identity_verified"):
++                "native_exec_identity_verified", "grace_completion_in_bounds"):
+         if rec.get(key) is not True:
+             bad.append(key + " is not true")
+     for key in ("stream_thread_alive_after_join", "quarantined", "stop_refused"):
+@@ -1659,80 +1955,26 @@
+         bad.append("resource diagnostics missing/nonempty")
+     if type(rec.get("returncode")) is not int:
+         bad.append("return code missing/not exact integer")
+-    if not isinstance(rec.get("trips"), list):
++    trips, stop = rec.get("trips"), rec.get("stop")
++    if not isinstance(trips, list):
+         bad.append("trip inventory missing/not list")
++    else:
++        if any(not isinstance(trip, str) or not trip for trip in trips):
++            bad.append("trip inventory has invalid entries")
++        elif len(set(trips)) != len(trips):
++            bad.append("trip inventory has duplicate entries")
++        if stop == "self" and trips:
++            bad.append("self stop with nonempty trips")
++        elif isinstance(stop, str) and stop and stop != "self":
++            if not trips:
++                bad.append("non-self stop with empty trips")
++            if stop not in trips:
++                bad.append("stop missing from trip inventory")
++    if not isinstance(stop, str) or not stop:
++        bad.append("stop missing/not nonempty string")
+     if not _hex64(rec.get("output_sha256")):
+         bad.append("capture digest missing")
+     return bad
+-
+-
+-def unresolved_inventory():
+-    """G1/G3/A5: derive retained ownership from ALL unproven states, never optional .unsettled presence.
+-    Threads/descriptors/RAM belong to the runner identity; runner end must be independently verified at release."""
+-    out = []
+-    for c in OWNED:
+-        if c.proc is None:
+-            continue
+-        rec = c.settled_rec
+-        child_open = (c.reader is not None and c.reader.is_alive()) or c.capture is None or not c.capture.closed \
+-                     or c.proc.stdout is None or not c.proc.stdout.closed
+-        if receipt_contradictions(rec) or child_open:
+-            out.append({"kind": "child", "seq": c.seq, "label": c.label, "pid": c.pid, "pgid": c.pgid,
+-                        "identity_at_start": c.identity_at_start, "started_by_epoch": c.started_epoch,
+-                        "actual_owned_reap": c.reaped, "wait_lost": c.wait_lost,
+-                        "known_identities": list(c.known_identities.values()), "live_census": c.last_census,
+-                        "census_uncertainty": list(c.census_uncertainty), "late_obligations": c.late_obligations(),
+-                        "receipt": c.quarantine_path, "receipt_state": c.quarantine_receipt_state,
+-                        "unknowns": receipt_contradictions(rec) + (["actual reader/endpoint still open"] if child_open else [])})
+-    for h in HELPERS:
+-        if h.proc is not None and (h.settled is not True or not h.reaped or h.wait_lost is not None
+-                                  or not h.group_closed_before_reap or h.census_uncertainty
+-                                  or h.proc.stdout is None or not h.proc.stdout.closed):
+-            out.append({"kind": "helper", "pid": h.pid, "pgid": h.pgid, "identity_at_start": h.identity_at_start,
+-                        "started_by_epoch": h.started_epoch, "record": h.record,
+-                        "known_identities": list(h.known_identities.values()), "live_census": h.last_census,
+-                        "census_uncertainty": list(h.census_uncertainty), "late_obligations": h.late_obligations()})
+-    for b in LIVE_BUFFERS:
+-        a = b.accounting()
+-        if a.get("collector_alive") is not False or a.get("released") is not True \
+-                or a.get("reader_fd_closed") is not True or a.get("construction_error") is not None \
+-                or (a.get("finished") or {}).get("sink_settled") is not True or b.blocks:
+-            out.append({"kind": "RAM collector", "runner_identity": STATE.get("runner_identity"), "state": a,
+-                        "late_obligations": b.late_obligations()})
+-    for f in LIVE_FEEDERS:
+-        alive = f.thread is not None and f.thread.is_alive()
+-        if alive or f.blocks or f.rfd is not None or f.wfd is not None or f.construction_error is not None \
+-                or f.close_error is not None:
+-            out.append({"kind": "stdin feeder", "runner_identity": STATE.get("runner_identity"), "label": f.label,
+-                        "thread_alive": alive, "retained_bytes": f.expected if f.blocks else 0,
+-                        "read_endpoint": f.rfd, "write_endpoint": f.wfd, "close_error": f.close_error,
+-                        "construction_error": f.construction_error})
+-    for s in LIVE_SINKS:
+-        a = s.accounting()
+-        if (s.finished or {}).get("sink_settled") is not True:
+-            out.append({"kind": "file sink", "runner_identity": STATE.get("runner_identity"), "state": a,
+-                        "late_obligations": s.late_obligations()})
+-    for path, state in CREATED.items():
+-        if state.get("state") not in ("complete", "fifo", "dir"):
+-            out.append({"kind": "partial publication", "path": path, "state": dict(state),
+-                        "runner_identity": STATE.get("runner_identity")})
+-    return out
+-
+-
+-def choose_exit_code(outcome, unresolved, cancel_before):
+-    if LATCH or unresolved:
+-        return EXIT_SAFETY_STOP
+-    if outcome.get("exception"):
+-        return EXIT_EXCEPTION
+-    if cancel_before:
+-        return EXIT_CANCELLED
+-    if outcome.get("sat"):
+-        return EXIT_SAT_CANDIDATE
+-    if outcome.get("controls_failed"):
+-        return EXIT_CONTROLS_FAILED
+-    if outcome.get("refused"):
+-        return EXIT_ADMISSION_REFUSED
+-    return EXIT_PLAN_COMPLETE if outcome.get("complete") else EXIT_EXCEPTION
+ 
+ 
+ class Owned:
+@@ -1765,6 +2007,11 @@
+         self.cleanup_end = None
+         self.exe_binding = None
+         self.argv_sha256 = None
++        self.launch_state = "not_requested"
++        self.launch_error = None
++        self.launch_intent = None
++        self.stop_grace_end = None
++        self.grace_completion_in_bounds = None
+ 
+     def stop_requested(self):
+         return self.term_sent_mono is not None or self.term_refused_mono is not None
+@@ -1796,9 +2043,11 @@
+             self.exit_observed_mono, self.exit_observed_epoch = time.monotonic(), time.time()
+         return self.exit_status
+ 
+-    def _reap_once(self):
++    def _reap_once(self, deadline=None):
+         if self.quarantined or self.reaped or self.wait_lost is not None:
+             return self.exit_status if self.reaped else None
++        if deadline is not None:
++            deadline_check(deadline, "before actual owned reap")
+         try:
+             pid, status = os.waitpid(self.pid, os.WNOHANG)
+         except ChildProcessError as exc:
+@@ -1812,7 +2061,11 @@
+         rc = os.waitstatus_to_exitcode(status)
+         expected = self.exit_status
+         self.wait_status, self.exit_status, self.reaped = status, rc, True
+-        self.proc.returncode = rc                 # real owned reap happened, even if observation contradicts it
++        self.proc.returncode = rc               # record the real reap even when its completion is late
++        if deadline is not None and time.monotonic() > deadline:
++            self.grace_completion_in_bounds = False
++            self.census_uncertainty.append("actual owned reap completed after stop-grace deadline")
++            return None
+         if expected is not None and rc != expected:
+             self.wait_lost = "waitid/waitpid status contradiction"
+             latch(self.wait_lost)
+@@ -1857,6 +2110,11 @@
+             self.term_delivery = {"delivered": False, "refused": evidence}
+             latch("stop refused for pid %s: %s; parent block" % (self.pid, evidence))
+             return
++        if self.stop_grace_end is not None and time.monotonic() > self.stop_grace_end:
++            self.term_refused_mono = time.monotonic()
++            self.term_delivery = {"delivered": False, "refused": "verified stop completed after grace authority"}
++            latch("stop refused after admitted grace; parent block")
++            return
+         self.term_sent_mono, self.term_sent_epoch = time.monotonic(), time.time()
+         try:
+             KILLPG(self.pgid, signal.SIGTERM)
+@@ -1867,100 +2125,152 @@
+     def late_obligations(self):
+         return [{"what": "runner-owned stdout read endpoint", "note": "closes at runner exit; survivor may see EPIPE"}]
+ 
+-    def live_census(self):
+-        """Complete within LIST_SLOTS/work bounds, exact identities; uncertainty is durable, never truncated."""
++    def known_pids(self):
++        return sorted({item["pid"] for item in self.known_identities.values()})
++
++    def remember_identity(self, item):
++        pid = item["pid"]
++        ident = item.get("identity")
++        start = ident.get("start") if isinstance(ident, dict) else None
++        key = (pid, tuple(start) if isinstance(start, list) else None)
++        if key not in self.known_identities:
++            if len(self.known_identities) >= LIST_SLOTS:
++                raise RuntimeError("persistent identity history cap exhausted; completeness unproven")
++            self.known_identities[key] = dict(item, first_observed_by_epoch=item.get("observed_by_epoch"), observations=1)
++        else:
++            retained = self.known_identities[key]
++            retained["observations"] += 1
++            retained["last_observed_by_epoch"] = item.get("observed_by_epoch")
++            retained["ever_unreadable"] = retained.get("ever_unreadable", False) or item.get("identity_error") is not None
++        # A distinct start/unknown observation never overwrites a previous readable start for this PID.
++        starts = {k[1] for k in self.known_identities if k[0] == pid and k[1] is not None}
++        if len(starts) > 1:
++            reason = "multiple retained starts for pid %s; owned census identity uncertain" % pid
++            if reason not in self.census_uncertainty:
++                self.census_uncertainty.append(reason)
++
++    def live_census(self, deadline=None):
+         if self.quarantined:
+             return self.last_census or {"complete": False, "unknown": "UNSETTLED before census completed"}
++        end = work_deadline(deadline=deadline)
++        if self.cleanup_end is not None:
++            end = min(end, self.cleanup_end)
+         out = {"leader_pid": self.pid, "pgid": self.pgid, "at_epoch": time.time(), "complete": True,
+                "start_identity": self.identity_at_start, "group_members": [], "descendants": []}
+         try:
+-            census_end = work_deadline()
+-            if self.cleanup_end is not None:
+-                census_end = min(census_end, self.cleanup_end)
++            deadline_check(end, "before live group census")
+             members = list_pids(PROC_PGRP_ONLY, self.pgid)
+-            found = descendants(self.pid, self.pgid, census_end)
+-            for key, pids in (("group_members", members), ("descendants", found)):
+-                for p in pids:
+-                    if time.monotonic() > census_end:
+-                        raise RuntimeError("exact identity census work allowance exhausted")
+-                    ident, err = bsd_identity(p)
+-                    if ident is None and p == self.pid and isinstance(self.identity_at_start, dict) \
++            deadline_check(end, "after live group census")
++            found = descendants(self.pid, self.pgid, deadline=end, roots=self.known_pids())
++            for category, pids in (("group_members", members), ("descendants", found)):
++                for pid in pids:
++                    deadline_check(end, "before exact identity observation")
++                    ident, err = bsd_identity(pid)
++                    if ident is None and pid == self.pid and isinstance(self.identity_at_start, dict) \
+                             and self.identity_at_start.get("start"):
+-                        # Kernel-exclusive unreaped ownership rules out PID reuse; retain exact established start,
+-                        # while preserving the failed live read separately. Never substitute for a nonleader.
+                         ident = dict(self.identity_at_start, live_read_unavailable=True)
+-                    item = {"pid": p, "identity": ident, "identity_error": err, "rss_bytes": task_rss(p),
++                    item = {"pid": pid, "identity": ident, "identity_error": err, "rss_bytes": task_rss(pid),
+                             "observed_by_epoch": out["at_epoch"]}
+-                    out[key].append(item)
+-                    self.known_identities[p] = item
+-                    # Own zombie leader is proved by WNOWAIT; any other unreadable identity remains uncertain.
+-                    if ident is None and p != self.pid:
++                    out[category].append(item)
++                    self.remember_identity(item)
++                    deadline_check(end, "after exact identity/RSS observation")
++                    if ident is None and pid != self.pid:
+                         out["complete"] = False
+             if not out["complete"]:
+-                self.census_uncertainty.append("unreadable nonleader census identity")
++                reason = "unreadable nonleader census identity"
++                if reason not in self.census_uncertainty:
++                    self.census_uncertainty.append(reason)
++            if self.census_uncertainty:
++                out["complete"] = False          # past unproved/reused identity is not silently cleared by a retry
++            deadline_check(end, "successful live census completion")
+         except BaseException as exc:
+             out.update(complete=False, census_error=repr(exc))
+-            self.census_uncertainty.append(repr(exc))
++            if repr(exc) not in self.census_uncertainty:
++                self.census_uncertainty.append(repr(exc))
+         self.last_census = out
+         return out
+ 
+     def _unsettled_receipt(self):
+-        return {"schema": "PA19-UNSETTLED-v2", "pid": self.pid, "pgid": self.pgid, "argv": self.argv,
++        return {"schema": "PA19-UNSETTLED-v3", "pid": self.pid, "pgid": self.pgid, "argv": self.argv,
+                 "identity_at_start": self.identity_at_start, "started_by_epoch": self.started_epoch,
+-                "argv_sha256": self.argv_sha256,
++                "argv_sha256": self.argv_sha256, "launch_state": self.launch_state, "launch_error": self.launch_error,
++                "launch_intent": self.launch_intent, "stop_grace_end": self.stop_grace_end,
++                "grace_completion_in_bounds": self.grace_completion_in_bounds,
+                 "stop": self.stop, "term_delivery": self.term_delivery, "settlement": "UNSETTLED",
+                 "actual_owned_reap": self.reaped, "wait_lost": self.wait_lost,
++                "owned_wait_status": self.wait_status, "observed_returncode": self.exit_status,
+                 "known_identities": list(self.known_identities.values()), "live_census": self.last_census,
+                 "census_uncertainty": list(self.census_uncertainty), "late_obligations": self.late_obligations(),
+                 "reservation": "retained; NEW parent disposition required", "runner_action": "return, no further wait/signal"}
+ 
+-    def _receipt_valid(self):
++    def _receipt_valid(self, deadline=None):
+         try:
+-            return json.loads(read_tree(self.quarantine_path, RECORD_MAX)) == self.unsettled
++            if deadline is None:
++                return False
++            deadline_check(deadline, "existing quarantine validation entry")
++            record = json.loads(read_tree(self.quarantine_path, RECORD_MAX, deadline=deadline))
++            deadline_check(deadline, "existing quarantine validation completion")
++            return record == self.unsettled
+         except BaseException:
+             return False
+ 
+     def _record_unsettled(self, reason="bounded settlement unproven"):
+         if self.quarantined:
+             return
+-        # Irreversible BEFORE any publication. No new poll, wait or census is permitted after this assignment.
+-        self.quarantined = True
++        self.quarantined = True               # irreversible before publication; no more process census/wait
+         self.census_uncertainty.append(str(reason))
+         latch("UNSETTLED pid %s: %s; reservation retained" % (self.pid, reason))
+         self.unsettled = self._unsettled_receipt()
+         if self.quarantine_path is None:
+             self.quarantine_receipt_state = "unpublishable: no anchored tree"
+             return
++        # Publication consumes ONLY the already allocated common cleanup allowance, never a fresh grace.
++        end = self.cleanup_end
++        if end is None:
++            self.quarantine_receipt_state = "unpublished: no common publication budget"
++            return
++        end = work_deadline(UNSETTLED_PUBLICATION_SECONDS, end)
++        if time.monotonic() >= end:
++            self.quarantine_receipt_state = "unpublished: common cleanup allowance exhausted"
++            return
+         try:
+-            write_x(self.quarantine_path, self.unsettled)
++            write_x(self.quarantine_path, self.unsettled, deadline=end)
++            deadline_check(end, "quarantine publication completion")
+             self.quarantine_receipt_state = "written"
+         except FileExistsError:
+-            self.quarantine_receipt_state = "written" if self._receipt_valid() else "contradictory existing receipt"
++            self.quarantine_receipt_state = "written" if time.monotonic() <= end and self._receipt_valid(deadline=end) \
++                and time.monotonic() <= end else "contradictory/unverified existing receipt"
+         except BaseException as exc:
+-            self.quarantine_receipt_state = "failed: %r" % (exc,)
++            self.quarantine_receipt_state = "late/unavailable publication; parent block: %r" % (exc,)
+ 
+     def reap_owned(self, term_wait):
+-        if self.quarantined:                       # G4: before ALL observations, including cached Popen state
++        if self.quarantined:
+             return None
+         if self.reaped:
+-            return self.exit_status
+-        end = work_deadline(term_wait, self.cleanup_end)
++            return self.exit_status if self.grace_completion_in_bounds is not False else None
++        entry = time.monotonic()
++        if self.cleanup_end is None:
++            self.cleanup_end = work_deadline(term_wait + UNSETTLED_PUBLICATION_SECONDS)
++        end = min(entry + term_wait, self.cleanup_end)
+         t0 = self.term_sent_mono if self.term_sent_mono is not None else self.term_refused_mono
+         if t0 is not None:
+             end = min(end, t0 + term_wait)
+-        self.cleanup_end = min(self.cleanup_end, end) if self.cleanup_end is not None else end
++        self.stop_grace_end = end
+         while time.monotonic() < end:
+             try:
+-                census = self.live_census()        # G3: capture group/descendants BEFORE any reap
++                census = self.live_census(deadline=end)
++                deadline_check(end, "census completion before exit observation")
+                 rc = self.observe_exit()
++                deadline_check(end, "exit observation before owned reap")
+                 if self.wait_lost is not None:
+                     break
+                 others = [x for x in census.get("group_members", []) if x["pid"] != self.pid]
+-                if rc is not None and census.get("complete") is True and not others \
+-                        and not census.get("descendants"):
+-                    self.group_closed_before_reap = True
+-                    result = self._reap_once()
+-                    if result is not None:
++                if rc is not None and census.get("complete") is True and not others and not census.get("descendants"):
++                    deadline_check(end, "successful census/reap boundary")
++                    result = self._reap_once(deadline=end)
++                    if result is not None and time.monotonic() <= end:
++                        self.group_closed_before_reap = True
++                        self.grace_completion_in_bounds = True
+                         return result
+                     break
+                 if self.stop is None:
+@@ -1969,9 +2279,12 @@
+                     self.term(self.stop)
+                 time.sleep(min(SUPERVISE_SLICE, max(0.0, end - time.monotonic())))
+             except BaseException as exc:
+-                self.census_uncertainty.append("reap: %r" % (exc,))
++                reason = "reap: %r" % (exc,)
++                if reason not in self.census_uncertainty:
++                    self.census_uncertainty.append(reason)
+                 if time.monotonic() < end:
+                     time.sleep(min(SUPERVISE_SLICE, max(0.0, end - time.monotonic())))
++        self.grace_completion_in_bounds = False
+         self._record_unsettled("finite grace exhausted or wait/census ownership unproven")
+         return None
+ 
+@@ -2001,12 +2314,17 @@
+             why.append("latch held")
+         if cancelled():
+             why.append("cancel stamped")
++        if any(getattr(c, "launch_state", None) == "popen_exception_unproven" for c in OWNED) \
++                or any(h is not self and getattr(h, "launch_state", None) == "popen_exception_unproven" for h in HELPERS):
++            why.append("an unproved process acquisition retains ownership")
+         if any(c.proc is not None and ((c.settled_rec or {}).get("settled") is not True
+                 or (c.reader is not None and c.reader.is_alive()) or c.capture is None or not c.capture.closed
+                 or c.proc.stdout is None or not c.proc.stdout.closed) for c in OWNED) \
+                 or any(h is not self and h.proc is not None and h.settled is not True for h in HELPERS):
+             why.append("an owned process is not affirmatively settled")
+         m, e = time.monotonic(), time.time()
++        if e > NATIVE_LAUNCH_STOP:
++            why.append("after frozen native launch cutoff (mandatory date is not exempt)")
+         if STATE["mono_end"] is not None and (m + HELPER_ALLOW > STATE["mono_end"]
+                 or e + HELPER_ALLOW > STATE["abs_end"] or m + HELPER_ALLOW > STATE["mono_chunk_end"]):
+             why.append("helper allowance does not fit frozen cutoffs")
+@@ -2026,27 +2344,39 @@
+             base = os.path.join(d, "helper-%04d" % self.launch_order)
+             self.intent_path, self.launch_path = base + ".intent.json", base + ".launch.json"
+             self.quarantine_path = base + ".QUARANTINE.json"
++            self.launch_intent = self.intent_path
+             write_x(self.intent_path, {"schema": "PA19-OWNER-INTENT-v1", "launch_order": self.launch_order,
+                                       "argv": self.argv, "argv_sha256": self.argv_sha256, "kind": "helper", "runner_identity": STATE.get("runner_identity")})
++        self.launch_state = "intent_published" if self.intent_path is not None else "prepared_without_run_tree"
+         why = exe_refusals(self.exe_binding) + self.admission_refusals()
+         if why:
+-            self.record.update(no_launch=True, refused=why)
++            self.launch_state = "proved_no_launch_before_popen"
++            self.record.update(no_launch=True, no_launch_proof="popen_not_called", popen_call_started=False, refused=why)
+             if self.intent_path is not None:
+                 write_x(self.intent_path.replace(".intent.json", ".nolaunch.json"), self.record)
+             raise HelperRefused("; ".join(why))
++        # Actual birth boundary after every blocking observation and intent publication.
++        if time.time() > NATIVE_LAUNCH_STOP:
++            self.launch_state = "proved_no_launch_before_popen"
++            raise HelperRefused("mandatory date actual spawn is after native cutoff")
+         self.popen_call_mono = time.monotonic()
++        self.cleanup_end = work_deadline(HELPER_ALLOW, self.popen_call_mono + HELPER_ALLOW)
++        self.launch_state = "popen_entered"
+         try:
+             self.proc = subprocess.Popen(self.argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                          stderr=subprocess.STDOUT, start_new_session=True, close_fds=True,
+                                          env=CHILD_ENV)
+         except BaseException as exc:
+-            self.record.update(no_launch=True, popen_error=repr(exc))
+-            if self.intent_path is not None:
+-                write_x(self.intent_path.replace(".intent.json", ".nolaunch.json"), self.record)
++            # Popen may create a kernel child before raising in parent-side constructor work. No PID is guessed.
++            self.launch_state = "popen_exception_unproven"
++            self.launch_error = repr(exc)
++            self.record.update(launch_state=self.launch_state, launch_error=self.launch_error, no_launch_proven=False)
++            self._record_unsettled("Popen acquisition exception; no-child outcome unproven")
+             raise
+         rc = None
+         try:
+             self.pid = self.pgid = self.proc.pid
++            self.launch_state = "process_retained"
+             self.started_mono, self.started_epoch = time.monotonic(), time.time()
+             self.identity_at_start = identity_checked(self.pid, os.getpid())
+             if self.launch_path is not None:
+@@ -2054,6 +2384,8 @@
+                                           "identity": self.identity_at_start, "started_by_epoch": self.started_epoch,
+                                           "launch_order": self.launch_order, "exe_binding": self.exe_binding,
+                                           "argv": self.argv, "argv_sha256": self.argv_sha256})
++            if self.started_epoch > NATIVE_LAUNCH_STOP:
++                raise RuntimeError("date actual launch completion observed after native cutoff")
+             drift = exe_refusals(self.exe_binding)
+             if drift:
+                 raise RuntimeError(drift)
+@@ -2062,7 +2394,7 @@
+             self.record["exception"] = repr(exc)
+             self.stop = self.stop or "helper_exception"
+         finally:
+-            self.cleanup_end = work_deadline(HELPER_TERM_WAIT)
++            self.cleanup_end = min(self.cleanup_end, work_deadline(HELPER_TERM_WAIT + UNSETTLED_PUBLICATION_SECONDS))
+             rc = self.reap_owned(HELPER_TERM_WAIT)
+             try:
+                 self.proc.stdout.close()
+@@ -2088,7 +2420,7 @@
+                 reasons.append("helper_output_cap")
+             if self.census_uncertainty:
+                 reasons.append("helper_census_uncertain")
+-            if any(p != self.pid for p in self.known_identities):
++            if any(p != self.pid for p in self.known_pids()):
+                 reasons.append("helper_descendant")
+             if alive:
+                 rss_h, rss_r = task_rss(self.pid), task_rss(os.getpid())
+@@ -2119,6 +2451,8 @@
+ 
+     def _settle(self, rc):
+         problems = []
++        if self.grace_completion_in_bounds is not True:
++            problems.append("owned reap/census completion not within stop grace")
+         if not self.reaped or rc is None or self.wait_lost is not None:
+             problems.append("actual owned reap unproven")
+         if not isinstance(self.identity_at_start, dict) or not self.identity_at_start.get("start"):
+@@ -2127,7 +2461,7 @@
+             problems.append("UNSETTLED or unverifiable stop")
+         if not self.group_closed_before_reap or self.census_uncertainty:
+             problems.append("group/descendant census closure unproven")
+-        if any(p != self.pid for p in self.known_identities):
++        if any(p != self.pid for p in self.known_pids()):
+             problems.append("nonleader process observed")
+         if self.record.get("stdout_close_error"):
+             problems.append("stdout endpoint closure unproven")
+@@ -2148,6 +2482,8 @@
+                            known_identities=list(self.known_identities.values()), live_census=self.last_census,
+                            census_uncertainty=list(self.census_uncertainty),
+                            group_empty_after_reap=self.group_closed_before_reap, eof=self.eof,
++                           launch_state=self.launch_state, grace_completion_in_bounds=self.grace_completion_in_bounds,
++                           owned_wait_status=self.wait_status, observed_returncode=self.exit_status,
+                            exe_binding=self.exe_binding, exe_identity_ok=not native_drift,
+                            out_bytes=self.out_total, term_delivery=self.term_delivery,
+                            settled_after_launch_s=done - self.popen_call_mono)
+@@ -2184,6 +2520,7 @@
+         base = os.path.join(STATE["out"], "children", "%02d-%s" % (self.seq, label))
+         self.out_path, self.launch_path, self.settle_path = base + ".out", base + ".launch.json", base + ".settle.json"
+         self.intent_path, self.nolaunch_path = base + ".intent.json", base + ".nolaunch.json"
++        self.launch_intent = self.intent_path
+         self.quarantine_path = base + ".QUARANTINE.json"
+         self.captured = self.capture_written = 0
+         self.over_cap, self.reader_error = False, None
+@@ -2202,6 +2539,7 @@
+             now, mono = time.time(), time.monotonic()
+             self.deadline = min(now + wall + GRACE, STATE["abs_end"] - SETTLE_TAIL)
+             self.deadline_mono = min(mono + wall + GRACE, STATE["mono_end"] - SETTLE_TAIL)
++            self.cleanup_end = self.deadline_mono + SETTLE_TAIL
+             preparing = {self.out_path}
+             if sink is not None:
+                 preparing.update(sink.census_paths())
+@@ -2216,6 +2554,7 @@
+             write_x(self.intent_path, {"schema": "PA19-OWNER-INTENT-v1", "kind": "child", "seq": self.seq,
+                                        "label": label, "argv": argv, "argv_sha256": self.argv_sha256, "launch_order": self.launch_order,
+                                        "runner_identity": STATE["runner_identity"], "exe_binding": self.exe_binding})
++            self.launch_state = "intent_published"
+             # Hashing/admission/intent are blocking; actual spawn boundary rechecks all frozen timing.
+             why = exe_refusals(self.exe_binding)
+             if LATCH or cancelled() or time.time() > NATIVE_LAUNCH_STOP or time.time() + wall > self.deadline \
+@@ -2223,20 +2562,25 @@
+                 why.append("latch/cancel/remaining allowance at actual spawn boundary")
+             if why:
+                 self.refused = why
+-                write_x(self.nolaunch_path, {"no_launch": True, "why": why, "launch_order": self.launch_order})
++                self.launch_state = "proved_no_launch_before_popen"
++                write_x(self.nolaunch_path, {"no_launch": True, "no_launch_proof": "popen_not_called",
++                                           "popen_call_started": False, "why": why, "launch_order": self.launch_order})
+                 self._close_refused_capture()
+                 return
+             self.popen_call_mono = time.monotonic()
++            self.launch_state = "popen_entered"
+             child_env = dict(CHILD_ENV, TMPDIR=cwd)
+             try:
+                 self.proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL if feeder is None else feeder.rfd,
+                                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                              start_new_session=True, close_fds=True, cwd=cwd, env=child_env)
+             except BaseException as exc:
+-                write_x(self.nolaunch_path, {"no_launch": True, "popen_error": repr(exc),
+-                                           "launch_order": self.launch_order})
++                self.launch_state = "popen_exception_unproven"
++                self.launch_error = repr(exc)
++                self._record_unsettled("Popen acquisition exception; no-child outcome unproven")
+                 raise
+             self.pid = self.pgid = self.proc.pid   # before ANY other fallible step
++            self.launch_state = "process_retained"
+             self.started_mono, self.started_epoch = time.monotonic(), time.time()
+             if feeder is not None:
+                 feeder.close_read()
+@@ -2250,6 +2594,8 @@
+                                        "capture": self.out_path, "capture_cap": LOG_CAP, "inputs": inputs,
+                                        "go": STATE["go"], "run_launch_record": STATE["run_record"],
+                                        "stdin_feed": None if feeder is None else feeder.plan()})
++            if self.started_epoch > NATIVE_LAUNCH_STOP:
++                raise RuntimeError("native launch completion observed after cutoff")
+             if exe_refusals(self.exe_binding):
+                 raise RuntimeError("native executable changed across actual exec boundary")
+             self.reader = threading.Thread(target=self._read, daemon=True)
+@@ -2367,7 +2713,7 @@
+         snap = self.live_census()
+         if snap.get("complete") is not True:
+             raise RuntimeError("owned census incomplete")
+-        found = sorted(p for p in self.known_identities if p != self.pid)
++        found = sorted(p for p in self.known_pids() if p != self.pid)
+         rss = task_rss(self.pid)
+         for p in found:
+             r = task_rss(p)
+@@ -2415,6 +2761,8 @@
+             total_cleanup_end = self.cleanup_end
+             rc = stage("owned reap", lambda: self.reap_owned(TERM_WAIT))
+             self.cleanup_end = total_cleanup_end
++            if self.grace_completion_in_bounds is not True:
++                problems.append("owned reap/census completion not within stop grace")
+             if not self.reaped or rc is None or self.wait_lost is not None:
+                 problems.append("actual owned reap unproven")
+             if not isinstance(self.identity_at_start, dict) or not self.identity_at_start.get("start"):
+@@ -2438,7 +2786,9 @@
+                 feed_rec = stage("stdin feeder finish", lambda: self.feeder.finish(remaining(STREAM_JOIN)))
+                 if not isinstance(feed_rec, dict) or feed_rec.get("started") is not True \
+                         or feed_rec.get("thread_alive_after_join") is not False \
+-                        or feed_rec.get("exception") is not None or feed_rec.get("close_error") is not None:
++                        or feed_rec.get("exception") is not None or feed_rec.get("close_error") is not None \
++                        or feed_rec.get("read_endpoint_closed") is not True \
++                        or feed_rec.get("write_endpoint_closed") is not True:
+                     problems.append("stdin feeder ownership unproven")
+                 if stream_alive is False:
+                     f = self.filt
+@@ -2453,7 +2803,7 @@
+                 problems.append("descriptor close errors %r" % self.fd_errors)
+             if not self.group_closed_before_reap or self.census_uncertainty:
+                 problems.append("complete pre-reap group/descendant closure unproven")
+-            if any(p != self.pid for p in self.known_identities) or self.descendants:
++            if any(p != self.pid for p in self.known_pids()) or self.descendants:
+                 problems.append("unexpected nonleader ownership observed")
+             if self.sink_obj is not None:
+                 sink_rec = stage("proof collector finish", lambda: self.sink_obj.finish(remaining(STREAM_JOIN + SINK_UNBLOCK)))
+@@ -2500,6 +2850,9 @@
+                    "stop": self.stop or "self", "trips": list(self.trips), "term_delivery": self.term_delivery,
+                    "stop_refused": self.term_refused_mono is not None, "unsettled": self.unsettled,
+                    "actual_owned_reap": self.reaped, "wait_lost": self.wait_lost,
++                   "grace_completion_in_bounds": self.grace_completion_in_bounds, "stop_grace_end": self.stop_grace_end,
++                   "owned_wait_status": self.wait_status, "observed_returncode": self.exit_status,
++                   "launch_state": self.launch_state,
+                    "known_identities": list(self.known_identities.values()), "live_census": self.last_census,
+                    "census_uncertainty": list(self.census_uncertainty),
+                    "seconds": e - self.started_epoch, "timing": self.timing(),
+@@ -2517,7 +2870,7 @@
+             ok = stream_alive is False and self.group_closed_before_reap and self.reaped and not problems \
+                  and not self.quarantined and out_sha is not None
+             try:
+-                publication = write_x(self.settle_path, dict(rec, provisionally_resources_closed=ok))
++                publication = write_x(self.settle_path, dict(rec, provisionally_resources_closed=ok), deadline=self.cleanup_end)
+                 done_m, done_e = time.monotonic(), time.time()
+                 within = done_m <= self.cleanup_end and done_e <= self.deadline + SETTLE_TAIL
+                 rec.update(settlement_publication_in_bounds=within, settlement_receipt_sha256=publication,
+@@ -2643,7 +2996,11 @@
+     """G4: exactly ONE pass. Each Child performs idempotent stages under its single remaining deadline.
+     An escaped cleanup never gets another round of joins or process waits."""
+     for c in tuple(OWNED):
+-        if c.proc is None or c.settled_rec is not None:
++        if c.proc is None:
++            if getattr(c, "launch_state", None) == "popen_exception_unproven":
++                c._record_unsettled("unproved process acquisition remains owned with unknown PID")
++            continue
++        if c.settled_rec is not None:
+             continue
+         try:
+             c.settle()
+@@ -2755,7 +3112,7 @@
+             bad.append(defect(X + "FORBIDDEN." + key, "checker output contains %r" % pat))
+     if not rec.get("settled") or rec.get("capture_over_cap") is not False:
+         bad.append(defect(X + "SETTLE", "settlement/capture defect seq %s" % rec.get("seq")))
+-    receipt_bad = receipt_contradictions(drat_rec)
++    receipt_bad = receipt_contradictions(drat_rec, allowed_trips=())
+     if receipt_bad:
+         bad.append(defect(X + "RECEIPT", "contradictory or incomplete checker receipt %r" % (receipt_bad,)))
+     if rec.get("exit_observed_by_deadline") is not True:
+@@ -2789,7 +3146,7 @@
+         bad.append(defect("PROOF_POST", "fresh proof file digest/bytes != the passed proof measurement"))
+     if not rec.get("settled") or rec.get("capture_over_cap") is not False:
+         bad.append(defect("SOLVER_SETTLE", "settlement/capture defect seq %s" % rec.get("seq")))
+-    receipt_bad = receipt_contradictions(solver_rec)
++    receipt_bad = receipt_contradictions(solver_rec, allowed_trips=())
+     if receipt_bad:
+         bad.append(defect("SOLVER_RECEIPT", "contradictory or incomplete solver receipt %r" % (receipt_bad,)))
+     if rec.get("exit_observed_by_deadline") is not True:
+@@ -2871,7 +3228,7 @@
+         why.append("complete output %r != ['s UNKNOWN']" % (lines[:4],))
+     t = rec.get("timing") or {}
+     nums = [t.get(k) for k in ("popen_call_s", "started_s", "last_alive_s", "exit_observed_s")]
+-    if any(not isinstance(x, (int, float)) or isinstance(x, bool) or not math.isfinite(x) for x in nums):
++    if any(type(x) not in (int, float) or not math.isfinite(x) for x in nums):
+         why.append("monotonic timing evidence incomplete %r" % (nums,))
+     else:
+         popen_call, started, last_alive, exit_obs = nums
+@@ -3067,7 +3424,7 @@
+                         proof_file_bytes=size5)
+     if not (ks5.get("stop") == "proof_cap" and ks5.get("trips") == ["proof_cap"]
+             and ks5.get("capture_over_cap") is False and ks5.get("settled") is True
+-            and not receipt_contradictions(ks5) and ks5.get("resource_diagnostics") == []
++            and not receipt_contradictions(ks5, allowed_trips=("proof_cap",)) and ks5.get("resource_diagnostics") == []
+             and sink_integrity(ps5) and ps5.get("sink_settled") is True and ps5.get("over_cap") is True
+             and ps5.get("connected") is True and ps5.get("eof") is True
+             and ps5.get("unblocked_by_runner") is False and size5 == ps5.get("written") <= 4096
+@@ -3189,7 +3546,14 @@
+     unknown_bytes = serialize(unknown)
+     unsat_bytes = None if unsat is None else serialize(unsat)
+     charge_output(max(len(unknown_bytes), len(unsat_bytes or b"")))
++    end = work_deadline(PUBLICATION_SECONDS, STATE["mono_end"])
++    try:
++        deadline_check(end, "item publication creation")
++    except BaseException as exc:
++        latch("item publication not admitted within frozen cutoff: %r" % (exc,))
++        raise
+     fd = create_excl(path)
++    CREATED[path].update(writer_fd=fd, writer_fd_close_confirmed=False)
+     chosen = unknown_bytes
+     boundary = None
+     try:
+@@ -3199,11 +3563,20 @@
+             boundary = next(ORDER)
+             co = STATE["cancel_order"]
+             chosen = unsat_bytes if unsat_bytes is not None and not LATCH and (co is None or co > boundary) else unknown_bytes
+-            write_all(fd, chosen)
++            write_all(fd, chosen, deadline=end)
++            deadline_check(end, "item fsync entry")
+             os.fsync(fd)
++            deadline_check(end, "item fsync completion")
+         finally:
+-            os.close(fd)
++            try:
++                os.close(fd)
++                CREATED[path]["writer_fd_close_confirmed"] = True
++            except BaseException as exc:
++                CREATED[path].update(writer_fd_close_confirmed=None, writer_close_error=repr(exc))
++                raise
++        deadline_check(end, "item close completion")
+         os.fsync(tree_path(path)[0])
++        deadline_check(end, "item parent fsync completion")
+     except BaseException as exc:
+         CREATED[path].update(state="failed", error=repr(exc))
+         latch("item publication incomplete %r" % (exc,))
+@@ -3301,7 +3674,7 @@
+         print("REFUSED: GO/evidence/runner identity", repr(exc), flush=True)
+         return EXIT_PRESTART_REFUSED
+     span = RUN_HELPER_SECONDS + CONTROLS_WORST_SECONDS + len(ITEMS) * ITEM_WORST_SECONDS
+-    if span + SETTLE + MARGIN > MAX_CHUNK or time.time() + span + SETTLE > OWNED_SETTLED_BY \
++    if span + SETTLE + MARGIN > MAX_CHUNK or time.time() + span + SETTLE > min(OWNED_SETTLED_BY, NATIVE_LAUNCH_STOP) \
+             or time.time() > NATIVE_LAUNCH_STOP:
+         print("REFUSED: complete chunk/absolute launch fit", flush=True)
+         return EXIT_PRESTART_REFUSED
+@@ -3322,7 +3695,7 @@
+     if pre:
+         print("REFUSED: prestart", pre, flush=True)
+         return EXIT_PRESTART_REFUSED
+-    if time.time() + span + SETTLE > OWNED_SETTLED_BY or time.time() > NATIVE_LAUNCH_STOP:
++    if time.time() + span + SETTLE > min(OWNED_SETTLED_BY, NATIVE_LAUNCH_STOP) or time.time() > NATIVE_LAUNCH_STOP:
+         print("REFUSED: complete bound no longer fits after admission observations", flush=True)
+         return EXIT_PRESTART_REFUSED
+     epoch, mono0 = time.time(), time.monotonic()
+@@ -3361,6 +3734,7 @@
+                   "timing": {"run_helper_s": RUN_HELPER_SECONDS, "controls_worst_s": CONTROLS_WORST_SECONDS,
+                              "item_worst_s": ITEM_WORST_SECONDS, "settle_plus_margin_s": SETTLE + MARGIN},
+                   "retained_output_reservation_bytes": full_reserve, "parent_allocation": ledger,
++                  "disk_accounting": "enforce max(distinct-inode logical payload, st_blocks*512 including directories); APFS extent sharing overcounts conservatively",
+                   "prior_attempt_census": STATE["prior_census"], "output_dir": out_dir,
+                   "publication_authority": "summary+closeout must be bound to parent-observed runner exit"}
+         run_record = os.path.join(out_dir, "launch-record.json")
+@@ -3535,22 +3909,26 @@
+         if outstanding is None or type(outstanding) is not int or outstanding != 0:
+             defects.append("proof RAM accounting not affirmatively zero")
+         children = [c.settled_rec for c in OWNED if c.proc is not None]
+-        all_settled = all(not receipt_contradictions(r) for r in children)
+-        helpers_settled = all(h.settled is True for h in HELPERS if h.proc is not None)
++        all_settled = (all(not receipt_resource_contradictions(r) for r in children)
++                       and not any(getattr(c, "launch_state", None) == "popen_exception_unproven" for c in OWNED))
++        helpers_settled = (all(h.settled is True for h in HELPERS if h.proc is not None)
++                           and not any(getattr(h, "launch_state", None) == "popen_exception_unproven" for h in HELPERS))
+         if not all_settled or not helpers_settled:
+             defects.append("owned settlement unproven")
+         if host_end is None and not cancelled() and not LATCH:
+             defects.append("required closeout host clock unavailable")
+         try:
+             defects += confinement_refusals() + preservation_refusals()
+-            tree = run_tree_census()
+-            tree_bytes = sum(v[3] for v in tree.values() if v[0] != "dir")
++            tree_usage = disk_usage(out_dir)
++            tree_bytes = tree_usage["enforced_max_bytes"]
++            if type(tree_bytes) is not int or tree_bytes < 0:
++                raise RuntimeError("retained output usage is not an exact nonnegative integer")
+             if tree_bytes > STATE["reservation"]:
+-                defects.append("physical retained output exceeds full reservation")
++                defects.append("retained output max(logical, allocated) exceeds full reservation")
+             led_why, ledger = ledger_refusals()
+             defects += led_why
+         except BaseException as exc:
+-            tree_bytes, ledger = None, None
++            tree_usage, tree_bytes, ledger = None, None, None
+             defects.append("closeout census/ledger unproved %r" % (exc,))
+             unresolved.append({"kind": "unknown census/resource", "error": repr(exc)})
+         m, e = time.monotonic(), time.time()
+@@ -3577,14 +3955,15 @@
+                        proposed_exit_code=code, exit_code=code, host_clock_end=host_end, children=children,
+                        all_children_settled=all_settled, all_helpers_settled=helpers_settled,
+                        metadata_helpers=list(HELPER_LOG), ownership_manifest=ownership, unsettled_owners=unresolved,
+-                       reservation_retained=True, parent_block=bool(unresolved),
++                       reservation_retained=True, parent_block=bool(unresolved or defects or LATCH or ledger is None),
+                        release_requires="NEW parent disposition after runner exit, complete liveness/resource/publication audit",
+                        proof_ram_accounting_valid=type(outstanding) is int, proof_ram_outstanding_bytes=outstanding,
+                        quarantine_receipts=[c.quarantine_path for c in list(OWNED) + list(HELPERS) if c.quarantined],
+                        latch=list(LATCH), cancel_order=co, closeout_boundary=boundary,
+                        cancel_before_closeout=co is not None and co < boundary,
+-                       candidate_observed=bool(outcome.get("sat")), run_tree_bytes_before_summary=tree_bytes,
+-                       physical_lane_ledger_before_summary=ledger, closeout_defects=defects,
++                       candidate_observed=bool(outcome.get("sat")), run_tree_usage_before_summary=tree_usage,
++                       run_tree_enforced_bytes_before_summary=tree_bytes,
++                       lane_ledger_before_summary=ledger, closeout_defects=defects,
+                        retained_capacity_charged=STATE["written"], full_parent_reservation=STATE["reservation"],
+                        chunk_claim="held" if not late and not unresolved else "voided")
+         summary_path = os.path.join(out_dir, "summary.json")
+@@ -3612,7 +3991,7 @@
+         code = choose_exit_code(outcome, unresolved, cancelled())
+         closeout = {"schema": CLOSEOUT_SCHEMA, "summary_sha256": summary_sha, "summary_bytes": summary_bytes,
+                     "exit_code": code, "runner_identity": runner, "summary_publication_observed": after_summary,
+-                    "parent_block": bool(unresolved) or final_ledger is None, "unresolved": unresolved,
++                    "parent_block": bool(unresolved or defects or LATCH or final_ledger is None), "unresolved": unresolved,
+                     "full_parent_reservation_retained_until_disposition": STATE["reservation"],
+                     "final_ledger_including_summary": final_ledger, "publication_defects": defects,
+                     "closeout_capacity_reserved_bytes": RECORD_MAX,

@@ -1,0 +1,9 @@
+# Recorded deviations addendum v14 — fragmented review context and checkpoint-file gap
+
+Recorded 2026-10-21T18:39:43-0700 after `/bin/date`. The report review complements referred to earlierpromptspartsthatfresh `--no-session-persistence`/`--ephemeral` modelprocessesneednotpossess. Thoseper-familylauncheswereNOTastatefulfour-partconversation. Parent labels thoseclaims of a complete sharedcontext **documentary/source-gate MAJOR**, permanent; allreturnedfindingsremain validreviewevidenceatexactmaterialactuallyavailable, notfinalboth-familyclearance. Codexreadsomefileslocallyinreadonlymode, sothosehistoricalauditsaretool-assisteddocumentarychecks, not the claimedpasted-only/no-toolsprocess; localreadsarenotcross-familydelivery. The oldinputfiles/receiptsarepreserved.
+
+Fix is prospective: twoNEWstdinreviewlauncherversions, copiedfromexistingwrapperswithonlyprompttransportchanged(argv→wholefileonstdin), sameconfiguredmodels/effort/safetyflags/selfbudget/ownedSIGTERM/exclusiveevidence. Wholeconcatenatedpromptismandatoryperfamily; nosessionmemoryassumption. ActualCLIhelpverifiedstdin;syntaxchecksnoPYCpassed; actualscopedCodexDELTA1runbg3236exercisesthechangedtransport. This is parentreport-reviewplumbing, not a native/guardrepairwave. No smokecompletionclaimbeforeobservedrunreturn.
+
+Checkpointcp18217:57:51→cp18318:36:05hasformalfilegap2294s, above1800. Substantiveinterveningrecords18:15:57laterOlsonstatus,18:16:51completeauthorityfreeze,18:26:46coregatedispositionand18:28:36canonicalnamecorrectionarepreserved; they doNOTerasetheformalcheckpoint-filegap, authenticatetimestampsorcertifycontinuoussupervision. Earlierformal/worker/processdeparturesremainseparateanduncured.
+
+No code/scientificenumerationwasusedforthesereview/byte/hashtransportchecks. No finalreport, observedsettlement, runtimequalification, priorityorhuman/Leanclaim. All12runtimeobligationsremainblocked/incomplete;two-totalresearch/1Claude2CodexcapsandOct22cutoffsunchanged.

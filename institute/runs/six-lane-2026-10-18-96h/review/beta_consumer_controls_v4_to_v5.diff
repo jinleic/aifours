@@ -1,0 +1,538 @@
+--- control/beta_consumer_controls_v4.py
++++ control/beta_consumer_controls_v5.py
+@@ -4,2 +4,2 @@
+-Oracle: beta-consumer-controls-plan-v4.json, frozen before this source. V1/V2 source
+-and plans v1-v3 remain immutable, unexecuted historical records. SC19 is retired,
++Oracle: beta-consumer-controls-plan-v5.json, frozen before this source. V1-V4 source
++and plans v1-v4 remain immutable, unexecuted historical records. SC19 is retired,
+@@ -25,2 +25,2 @@
+-PLAN_PATH = RUN + '/control/beta-consumer-controls-plan-v4.json'
+-PLAN_SHA = '73e32d6c9d1f86bcf46241195c5bba0c679fde5322aabb6df4d4f3d4780f15ac'
++PLAN_PATH = RUN + '/control/beta-consumer-controls-plan-v5.json'
++PLAN_SHA = '29c3fa2d9e824747bde914434692f8368c3a4634e434781d782b87980a7d8cc2'
+@@ -60,0 +61 @@
++DIAG_ROWS, DIAG_CHARS = 16, 200  # bounded best-effort diagnostics; latches, never list growth, decide exits
+@@ -242 +243 @@
+-    """Harness-owned fds: retain before observations; one close attempt, never retry.
++    """Harness-owned fds: retain before observations; one close attempt, never retry or double close.
+@@ -244,5 +245,7 @@
+-    Every cleanup outcome is latched before any propagation; ambiguity is never
+-    labelled closure and failed close numbers are never blindly retried. Cleanup
+-    under an in-flight primary never replaces it except as _escalates allows;
+-    cleanup without one propagates a newly arising non-Exception BaseException only
+-    after every remaining row has had its single attempt. Errors latch nonzero exit.
++    A failed attempt first latches its outcome without allocation (the uncertainty flag and the
++    actual exception on the row's preallocated key); only then is a bounded best-effort diagnostic
++    copied, and a failure of that copy is itself latched and kept as an event. Exit refusal reads
++    the flag, never the list. Frozen R5 (not the PRT newest-origin rule): an active non-Exception
++    primary is never replaced; with no primary or an ordinary primary the FIRST eligible
++    non-Exception event (close, then its diagnostic, then sweep bookkeeping, in arising order)
++    propagates only after every remaining row has had its single attempt.
+@@ -251,0 +255 @@
++        self.uncertain = self.diagnostics_incomplete = False
+@@ -254,2 +258,2 @@
+-        row = {'fd': fd, 'label': label, 'close_attempted': False,
+-               'closed': False, 'close_error': None}
++        row = {'fd': fd, 'label': label, 'close_attempted': False, 'closed': False,
++               'close_error': None, 'diagnostic_failure': None}
+@@ -259,3 +263,2 @@
+-    def close(self, row, primary=None):
+-        if row['close_attempted']:
+-            return None
++    def _close_once(self, row):
++        """The single native close; never raises. Outcome latched before the bounded diagnostic."""
+@@ -266,7 +269,13 @@
+-            row['close_error'] = repr(exc)
+-            self.errors.append({'label': row['label'], 'error': repr(exc)})
+-            if _escalates(exc, primary):
+-                raise
+-            return exc
+-        row['closed'] = True
+-        return None
++            self.uncertain = True     # allocation-free latch BEFORE any fallible diagnostic
++            row['close_error'] = exc  # the actual outcome, kept on a preallocated key
++        else:
++            row['closed'] = True
++            return
++        try:
++            if len(self.errors) < DIAG_ROWS:
++                self.errors.append({'label': row['label'], 'error': repr(row['close_error'])[:DIAG_CHARS]})
++            else:
++                self.diagnostics_incomplete = True
++        except BaseException as failure:  # latched and kept as an event; never raised from here
++            self.diagnostics_incomplete = True
++            row['diagnostic_failure'] = failure
+@@ -273,0 +283,16 @@
++    def close(self, row, primary=None):
++        """One attempt; returns None or the kept close error. Raises only the first eligible
++        non-Exception event (close, then diagnostic) as _escalates allows or, with no primary at
++        all, the ordinary close error itself because the guarded operation then failed."""
++        if row['close_attempted']:
++            return None
++        self._close_once(row)
++        error, failure = row['close_error'], row['diagnostic_failure']
++        if error is not None and not isinstance(error, Exception) and _escalates(error, primary):
++            raise error
++        if failure is not None and not isinstance(failure, Exception) and _escalates(failure, primary):
++            raise failure
++        if error is not None and primary is None:
++            raise error
++        return error
++
+@@ -274,0 +300,3 @@
++        """Single attempt for every remaining row; returns the first event and raises the first eligible
++        non-Exception event only after every remaining attempt. A faulting sweep is latched and resumed
++        once, skipping attempted rows; if both sweeps fault the remaining rows stay unattempted."""
+@@ -276,3 +304,4 @@
+-        for row in reversed(self.rows[index:]):
+-            if row is keep or row['close_attempted']:
+-                continue
++        complete = False
++        for _ in (1, 2):
++            if complete:
++                break
+@@ -280,7 +309,20 @@
+-                error = self.close(row, primary)
+-            except BaseException as exc:
+-                error = exc
+-            if error is not None:
+-                first = error if first is None else first
+-                if arising is None and not isinstance(error, Exception) and _escalates(error, primary):
+-                    arising = error
++                for row in reversed(self.rows[index:]):
++                    if row is keep or row['close_attempted']:
++                        continue
++                    self._close_once(row)
++                    for event in (row['close_error'], row['diagnostic_failure']):
++                        if event is None:
++                            continue
++                        if first is None:
++                            first = event
++                        if arising is None and not isinstance(event, Exception) and _escalates(event, primary):
++                            arising = event
++                complete = True
++            except BaseException as fault:  # sweep bookkeeping fault: allocation-free handler, inline _escalates
++                self.uncertain = True
++                if first is None:
++                    first = fault
++                if arising is None and not isinstance(fault, Exception) and (primary is None or isinstance(primary, Exception)):
++                    arising = fault
++        if not complete:
++            self.uncertain = True
+@@ -381,0 +424 @@
++    Violations latch one allocation-free flag; cleanup outcomes stay on records.
+@@ -384 +427 @@
+-        self.rules, self.rows, self.violations = rules, [], []
++        self.rules, self.rows, self.violated = rules, [], False
+@@ -409 +452 @@
+-        self.violations.append('untracked/already-closed descriptor')
++        self.violated = True
+@@ -418 +461 @@
+-               'orphan': False, 'identity': None}
++               'orphan': False, 'identity': None, 'cleanup_error': None}
+@@ -432 +475 @@
+-            self.violations.append('second owning close attempt')
++            self.violated = True
+@@ -465 +508 @@
+-               'native_closes': 0, 'harness_closes': 0, 'orphan': False}
++               'native_closes': 0, 'harness_closes': 0, 'orphan': False, 'cleanup_error': None}
+@@ -476 +519 @@
+-            self.violations.append('second explicit iterator close')
++            self.violated = True
+@@ -482,0 +526,4 @@
++        """Identity-checked single close of every withheld handle, never retried. Each outcome latches the
++        violation flag and stays on its record; no diagnostic is formatted. Frozen R5: the first eligible
++        non-Exception event (close or sweep bookkeeping, in arising order) is raised only after every
++        record; a faulting sweep is latched and resumed once, skipping attempted records."""
+@@ -484,3 +531,4 @@
+-        for rec in self.rows:
+-            if rec['closed'] or not rec['orphan'] or rec['owning_close_attempted']:
+-                continue
++        complete = False
++        for _ in (1, 2):
++            if complete:
++                break
+@@ -488,4 +536,2 @@
+-                if rec['kind'] == 'fd':
+-                    info = os.fstat(rec['fd'])
+-                    if rec['identity'] != (info.st_dev, info.st_ino):
+-                        self.violations.append('orphan identity mismatch; no close')
++                for rec in self.rows:
++                    if rec['closed'] or not rec['orphan'] or rec['owning_close_attempted']:
+@@ -493,15 +539,10 @@
+-                    rec['owning_close_attempted'] = True
+-                    os.close(rec['fd'])
+-                else:
+-                    if id(rec['handle']) != rec['object_id']:
+-                        self.violations.append('iterator identity mismatch; no close')
+-                        continue
+-                    rec['owning_close_attempted'] = True
+-                    rec['handle'].close()
+-            except BaseException as exc:
+-                self.violations.append('orphan cleanup uncertain: ' + type(exc).__name__)
+-                if arising is None and not isinstance(exc, Exception) and _escalates(exc, primary):
+-                    arising = exc
+-                continue  # retained; never retry an attempted destructive close
+-            rec['closed'] = True
+-            rec['harness_closes'] += 1
++                    event = self._clear_one(rec)
++                    if arising is None and event is not None and not isinstance(event, Exception) and _escalates(event, primary):
++                        arising = event
++                complete = True
++            except BaseException as fault:  # sweep bookkeeping fault: allocation-free handler, inline _escalates
++                self.violated = True
++                if arising is None and not isinstance(fault, Exception) and (primary is None or isinstance(primary, Exception)):
++                    arising = fault
++        if not complete:
++            self.violated = True
+@@ -510,0 +552,24 @@
++    def _clear_one(self, rec):
++        """One identity-checked owning close of a withheld handle; never raises: returns the latched failure."""
++        try:
++            if rec['kind'] == 'fd':
++                info = os.fstat(rec['fd'])
++                if rec['identity'] != (info.st_dev, info.st_ino):
++                    self.violated = True  # the number now names another file: never closed
++                    return None
++                rec['owning_close_attempted'] = True
++                os.close(rec['fd'])
++            else:
++                if id(rec['handle']) != rec['object_id']:
++                    self.violated = True
++                    return None
++                rec['owning_close_attempted'] = True
++                rec['handle'].close()
++        except BaseException as exc:
++            self.violated = True        # latched before anything else; an attempted close is never retried
++            rec['cleanup_error'] = exc  # the actual outcome, kept on a preallocated key
++            return exc
++        rec['closed'] = True
++        rec['harness_closes'] += 1
++        return None
++
+@@ -515 +580 @@
+-        return not self.violations and all(self.closed_once(row) for row in self.rows)
++        return not self.violated and all(self.closed_once(row) for row in self.rows)
+@@ -646 +711 @@
+-        self.ca, self.last_reader = None, None
++        self.ca, self.last_reader, self.emergency_reader = None, None, None
+@@ -1587,0 +1653 @@
++    output_state['bytes'] += len(data)  # reserved before the write: a failed or partial write still counts
+@@ -1590 +1656,2 @@
+-    output_state['bytes'] += len(data)
++    if summary:
++        output_state['summary'] = True
+@@ -1593,2 +1660,4 @@
+-def _secondary(function, latch):
+-    """Best-effort work while a primary BaseException propagates: failures latched by type, never raised."""
++def _secondary_failed(emergency, failure):
++    """Latch one secondary failure while a non-Exception primary propagates: allocation-free flag
++    first, bounded best-effort type name second; never raises (the primary must not be replaced)."""
++    emergency['failed'] = True
+@@ -1596,4 +1665,46 @@
+-        return function()
+-    except BaseException as exc:
+-        latch.append(type(exc).__name__)
+-        return None
++        if len(emergency['types']) < DIAG_ROWS:
++            emergency['types'].append(type(failure).__name__)
++    except BaseException:
++        pass  # the flag above is the authoritative latch; the bounded name list is best effort
++
++
++def _cleanup_under(owned, index, primary):
++    """Harness cleanup while primary propagates. Frozen R5 is applied inside close_since; a fault escaping
++    it (interpreter boundary) is latched and replaces primary only as a non-Exception over an ordinary one."""
++    try:
++        owned.close_since(index, primary=primary)
++    except BaseException as failure:
++        owned.uncertain = True
++        if isinstance(primary, Exception) and not isinstance(failure, Exception):
++            raise
++
++
++def _classify(outcome, failure):
++    """An ordinary failure of an emission or finalization step is classified, never escapes."""
++    if isinstance(failure, HarnessDeadlineExceeded):
++        outcome['deadline'] = True
++    elif isinstance(failure, HarnessBudgetExceeded):
++        outcome['budget'] = True
++    else:
++        outcome['error'] = True
++
++
++def _late(deadline):
++    """Original-deadline observation for refusal/finalization phases; an unreadable clock is late."""
++    try:
++        return time.monotonic() > deadline
++    except Exception:
++        return True
++
++
++def _code(outcome, counts):
++    """Fixed precedence: deadline 5 > byte budget 6 > mismatch/error/ownership/protected/undelivered 3 > inconclusive 4 > 0."""
++    if outcome['deadline']:
++        return 5
++    if outcome['budget']:
++        return 6
++    if outcome['error'] or counts.get('MISMATCH', 0) or counts.get('ERROR', 0):
++        return 3
++    if counts.get('INCONCLUSIVE_PRECONDITION', 0):
++        return 4
++    return 0
+@@ -1601,0 +1713,11 @@
++def _summary_status(summary, outcome, counts, owned, phase):
++    """Phase, exit code and status recomputed from the latched outcome (one precedence, no overrides)."""
++    code = _code(outcome, counts)
++    summary.update(phase=phase, exit_code=code,
++                   status='NEGATIVE_BOUNDARY_MATCHED_NOT_QUALIFIED' if code == 0 else 'NONZERO_NOT_QUALIFIED',
++                   deadline_observed=outcome['deadline'], byte_budget_exceeded=outcome['budget'],
++                   error_class_observed=outcome['error'], harness_close_uncertain=owned.uncertain,
++                   harness_close_errors=list(owned.errors),
++                   harness_close_diagnostics_incomplete=owned.diagnostics_incomplete)
++
++
+@@ -1603 +1725 @@
+-    value = {'format': 'beta-consumer-control-case-v3', 'id': case['id'], 'type': case['type'],
++    value = {'format': 'beta-consumer-control-case-v4', 'id': case['id'], 'type': case['type'],
+@@ -1616,3 +1738,6 @@
+-def _base_exception_line(case, exc, ctx, owned, mark, output_state):
+-    """Primary BaseException in flight: report/retention/emission best effort, cleanup unconditional."""
+-    secondary = []
++def _base_exception_line(case, exc, ctx, owned, mark, output_state, emergency):
++    """Non-Exception primary in flight: reader retention (one preallocated slot), report, report
++    retention and the compact line are each best effort and individually protected; every failure,
++    bookkeeping included, is latched by _secondary_failed and never replaces exc. Cleanup under exc
++    is unconditional."""
++    retained = None
+@@ -1620,10 +1745,19 @@
+-        retained = None
+-        if ctx.last_reader is not None:
+-            ctx.retained_exception_readers.append(ctx.last_reader)
+-            retained = _secondary(lambda: ctx.last_reader.report(), secondary)
+-            if retained is not None:
+-                _secondary(lambda: ctx.retain_report(case['id'] + '-base-exception', retained), secondary)
+-        _secondary(lambda: _emit({'format': 'beta-consumer-control-case-v3', 'id': case['id'], 'type': case['type'],
+-                                  'status': 'BASE_EXCEPTION', 'exception_type': type(exc).__name__,
+-                                  'reader_state': _state(retained), 'secondary_failure_types': list(secondary),
+-                                  'qualification': 'NOT_QUALIFIED'}, output_state), secondary)
++        try:
++            ctx.emergency_reader = ctx.last_reader
++            if ctx.last_reader is not None:
++                retained = ctx.last_reader.report()
++        except BaseException as failure:
++            _secondary_failed(emergency, failure)
++        if retained is not None:
++            try:
++                ctx.retain_report(case['id'] + '-base-exception', retained)
++            except BaseException as failure:
++                _secondary_failed(emergency, failure)
++        try:
++            _emit({'format': 'beta-consumer-control-case-v4', 'id': case['id'], 'type': case['type'],
++                   'status': 'BASE_EXCEPTION', 'exception_type': type(exc).__name__,
++                   'reader_state': _state(retained), 'secondary_failure': emergency['failed'],
++                   'secondary_failure_types': list(emergency['types']), 'qualification': 'NOT_QUALIFIED'},
++                  output_state)
++        except BaseException as failure:
++            _secondary_failed(emergency, failure)
+@@ -1631 +1765 @@
+-        owned.close_since(mark, primary=exc)
++        _cleanup_under(owned, mark, exc)
+@@ -1635 +1769 @@
+-    start, owned, output_state, ctx = time.monotonic(), _Owned(), {'bytes': 0}, None
++    start, owned, output_state, ctx = time.monotonic(), _Owned(), {'bytes': 0, 'summary': False}, None
+@@ -1636,0 +1771,2 @@
++    emergency = {'failed': False, 'types': []}  # preallocated before any primary can be in flight
++    outcome = {'deadline': False, 'budget': False, 'error': False}
+@@ -1653 +1789 @@
+-        if owned.errors:
++        if owned.uncertain:
+@@ -1677 +1813 @@
+-        if plan.get('format') != 'beta-consumer-controls-plan-v4' or type(cases) is not list:
++        if plan.get('format') != 'beta-consumer-controls-plan-v5' or type(cases) is not list:
+@@ -1694 +1830 @@
+-        if loader.report()['unresolved'] or owned.errors:
++        if loader.report()['unresolved'] or owned.uncertain:
+@@ -1699 +1835 @@
+-        if owned.errors:
++        if owned.uncertain:
+@@ -1703 +1839 @@
+-            'format': 'beta-negative-controls-run-start-v3', 'plan_sha256': PLAN_SHA,
++            'format': 'beta-negative-controls-run-start-v4', 'plan_sha256': PLAN_SHA,
+@@ -1708 +1843,0 @@
+-        owned.close_since(0)
+@@ -1710,3 +1845,16 @@
+-        _emit({'format': 'beta-consumer-controls-summary-v3', 'status': 'REFUSED_BEFORE_CASES',
+-               'exit_code': code, 'exception_type': type(exc).__name__, 'diagnostic': str(exc),
+-               'harness_close_errors': owned.errors, 'qualification': 'NOT_QUALIFIED'}, output_state, summary=True)
++        try:
++            owned.close_since(0)  # a newly arising non-Exception still propagates after every attempt (R5)
++        except Exception:
++            owned.uncertain = True  # sweep bookkeeping fault (interpreter boundary); the refusal stays nonzero
++        if _late(deadline):
++            code = 5
++        try:
++            _emit({'format': 'beta-consumer-controls-summary-v4', 'status': 'REFUSED_BEFORE_CASES',
++                   'exit_code': code, 'exception_type': type(exc).__name__, 'diagnostic': str(exc)[:DIAG_CHARS],
++                   'harness_close_uncertain': owned.uncertain, 'harness_close_errors': owned.errors,
++                   'harness_close_diagnostics_incomplete': owned.diagnostics_incomplete,
++                   'qualification': 'NOT_QUALIFIED'}, output_state, summary=True)
++        except Exception:
++            pass  # an unavailable sink loses the refusal record, never the nonzero refusal classification
++        if _late(deadline):
++            return 5  # late return after the refusal summary: the exit code is authoritative
+@@ -1715 +1863 @@
+-        secondary = []
++        retained = None
+@@ -1717,5 +1865,12 @@
+-            retained = _secondary(lambda: loader.report(), secondary) if loader is not None else None
+-            _secondary(lambda: _emit({'format': 'beta-consumer-controls-summary-v3', 'status': 'BOOTSTRAP_BASE_EXCEPTION',
+-                                      'exception_type': type(exc).__name__, 'reader_state': _state(retained),
+-                                      'secondary_failure_types': list(secondary), 'qualification': 'NOT_QUALIFIED'},
+-                                     output_state, summary=True), secondary)
++            try:
++                if loader is not None:
++                    retained = loader.report()
++            except BaseException as failure:
++                _secondary_failed(emergency, failure)
++            try:
++                _emit({'format': 'beta-consumer-controls-summary-v4', 'status': 'BOOTSTRAP_BASE_EXCEPTION',
++                       'exception_type': type(exc).__name__, 'reader_state': _state(retained),
++                       'secondary_failure': emergency['failed'], 'secondary_failure_types': list(emergency['types']),
++                       'qualification': 'NOT_QUALIFIED'}, output_state, summary=True)
++            except BaseException as failure:
++                _secondary_failed(emergency, failure)
+@@ -1723 +1878 @@
+-            owned.close_since(0, primary=exc)
++            _cleanup_under(owned, 0, exc)
+@@ -1763 +1918 @@
+-                    _base_exception_line(case, exc, ctx, owned, mark, output_state)
++                    _base_exception_line(case, exc, ctx, owned, mark, output_state, emergency)
+@@ -1766,0 +1922,3 @@
++                except Exception as exc:  # sweep bookkeeping fault (interpreter boundary): the case cannot match
++                    owned.uncertain = True
++                    cleanup_exc = exc
+@@ -1768 +1926 @@
+-                    _base_exception_line(case, exc, ctx, owned, mark, output_state)
++                    _base_exception_line(case, exc, ctx, owned, mark, output_state, emergency)
+@@ -1775,6 +1933,13 @@
+-            except HarnessBudgetExceeded:
+-                stop = status = 'NOT_RUN_BUDGET'
+-                _emit_case(case, status, {'case_output_unretained': True}, time.monotonic() - case_start, ctx, output_state)
+-            except HarnessDeadlineExceeded:
+-                stop = status = 'NOT_RUN_DEADLINE'
+-                _emit_case(case, status, {'case_output_unretained': True}, time.monotonic() - case_start, ctx, output_state)
++            except Exception as failure:  # classified: the record may be lost, never its classification
++                _classify(outcome, failure)
++                if isinstance(failure, HarnessDeadlineExceeded):
++                    stop = status = 'NOT_RUN_DEADLINE'
++                elif isinstance(failure, HarnessBudgetExceeded):
++                    stop = status = 'NOT_RUN_BUDGET'
++                else:
++                    status = 'ERROR'  # undelivered record: this run can never exit 0
++                try:
++                    _emit_case(case, status, {'case_output_unretained': True, 'emission_failure_type': type(failure).__name__},
++                               time.monotonic() - case_start, ctx, output_state)
++                except Exception as fallback_failure:
++                    _classify(outcome, fallback_failure)
+@@ -1784,19 +1949,18 @@
+-        protected_after = _protected_state()
+-        unchanged = _exact(protected_before, protected_after)
+-        if stop == 'NOT_RUN_DEADLINE' or time.monotonic() > deadline:
+-            code = 5
+-        elif stop == 'NOT_RUN_BUDGET':
+-            code = 6
+-        elif counts.get('MISMATCH', 0) or counts.get('ERROR', 0) or not unchanged or owned.errors:
+-            code = 3
+-        elif counts.get('INCONCLUSIVE_PRECONDITION', 0):
+-            code = 4
+-        else:
+-            code = 0
+-        summary = {'format': 'beta-consumer-controls-summary-v3', 'exit_code': code,
+-                   'status': 'NEGATIVE_BOUNDARY_MATCHED_NOT_QUALIFIED' if code == 0 else 'NONZERO_NOT_QUALIFIED',
+-                   'counts': counts, 'plan_sha256': PLAN_SHA, 'qualification': 'NOT_QUALIFIED',
+-                   'mandatory_deferred_obligations_waived': False, 'protected_unchanged': unchanged,
+-                   'protected_after': protected_after, 'elapsed_s': round(time.monotonic() - start, 6),
+-                   'retained_bytes_before_summary': ctx.retained, 'stdout_bytes_before_summary': output_state['bytes'],
+-                   'evidence_root': ROOT, 'canonical_audit_written': False, 'release_authority': False,
++        protected_after, unchanged = None, False
++        try:
++            protected_after = _protected_state()
++            unchanged = _exact(protected_before, protected_after)
++        except Exception as failure:  # unreadable protected state can never yield exit 0
++            _classify(outcome, failure)
++        if stop == 'NOT_RUN_DEADLINE' or _late(deadline):
++            outcome['deadline'] = True
++        if stop == 'NOT_RUN_BUDGET':
++            outcome['budget'] = True
++        if not unchanged or owned.uncertain:
++            outcome['error'] = True
++        summary = {'format': 'beta-consumer-controls-summary-v4', 'counts': counts, 'plan_sha256': PLAN_SHA,
++                   'qualification': 'NOT_QUALIFIED', 'mandatory_deferred_obligations_waived': False,
++                   'protected_unchanged': unchanged, 'protected_after': protected_after,
++                   'elapsed_s': round(time.monotonic() - start, 6), 'retained_bytes_before_summary': ctx.retained,
++                   'stdout_bytes_before_summary': output_state['bytes'], 'evidence_root': ROOT,
++                   'canonical_audit_written': False, 'release_authority': False,
+@@ -1803,0 +1968 @@
++        _summary_status(summary, outcome, counts, owned, 'PRE_FINAL_HARNESS_CLOSE_PROVISIONAL')
+@@ -1805,18 +1970,39 @@
+-            ctx.root.write('run-summary.json', _json_bytes({**summary, 'phase': 'PRE_FINAL_HARNESS_CLOSE_PROVISIONAL'}))
+-        except HarnessBudgetExceeded:
+-            code = 6
+-            summary.update(exit_code=6, status='RETAINED_BUDGET_NOT_QUALIFIED', summary_file_written=False)
+-        except HarnessDeadlineExceeded:
+-            summary['provisional_summary_write_crossed_deadline'] = True
+-        owned.close_since(0)
+-        if owned.errors:
+-            code = 3
+-            summary.update(exit_code=3, status='HARNESS_CLOSE_UNCERTAINTY_NOT_QUALIFIED', harness_close_errors=owned.errors)
+-        if time.monotonic() > deadline:
+-            code = 5
+-            summary.update(exit_code=5, status='FINALIZATION_DEADLINE_NOT_QUALIFIED', finalization_crossed_deadline=True)
+-        summary['phase'] = 'FINAL_AFTER_HARNESS_CLOSE'
+-        _emit(summary, output_state, summary=True)
+-        if time.monotonic() > deadline:
+-            return 5  # Late return after the summary line: the exit code is authoritative.
+-        return code
++            ctx.root.write('run-summary.json', _json_bytes(summary))
++        except Exception as failure:
++            _classify(outcome, failure)
++            summary['summary_file_failure_type'] = type(failure).__name__
++        try:
++            if owned.close_since(0) is not None:
++                outcome['error'] = True
++        except Exception as failure:  # sweep bookkeeping fault only: R5 raises only non-Exception events here
++            _classify(outcome, failure)
++        if owned.uncertain:
++            outcome['error'] = True
++        if _late(deadline):
++            outcome['deadline'] = True
++        _summary_status(summary, outcome, counts, owned, 'FINAL_AFTER_HARNESS_CLOSE')
++        try:
++            _emit(summary, output_state, summary=True)
++        except Exception as failure:  # an unavailable sink loses the record, never the classification
++            _classify(outcome, failure)
++        if _late(deadline):
++            outcome['deadline'] = True  # late return after the summary line: the exit code is authoritative
++        return _code(outcome, counts)
++    except Exception as failure:  # an ordinary failure escaped every phase handler: classified after cleanup
++        _classify(outcome, failure)
++        _cleanup_under(owned, 0, failure)
++        if owned.uncertain:
++            outcome['error'] = True
++        if _late(deadline):
++            outcome['deadline'] = True
++        if not output_state['summary']:
++            try:
++                _emit({'format': 'beta-consumer-controls-summary-v4', 'phase': 'RUN_LEVEL_ORDINARY_FAILURE',
++                       'status': 'NONZERO_NOT_QUALIFIED', 'exit_code': _code(outcome, counts),
++                       'exception_type': type(failure).__name__, 'harness_close_uncertain': owned.uncertain,
++                       'qualification': 'NOT_QUALIFIED'}, output_state, summary=True)
++            except Exception as emit_failure:
++                _classify(outcome, emit_failure)
++        if _late(deadline):
++            outcome['deadline'] = True
++        return _code(outcome, counts)
+@@ -1824 +2010 @@
+-        owned.close_since(0, primary=primary)
++        _cleanup_under(owned, 0, primary)

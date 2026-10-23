@@ -1,0 +1,847 @@
+--- code/owned_supervisor_v10.py
++++ code/owned_supervisor_v11.py
+@@ -1,67 +1,58 @@
+ #!/usr/bin/env python3
+-"""owned_supervisor_v10 -- ONE separately reviewed SINGLE-PROCESS child, standard library only.
+-
+-Binding scope: RUN/review/rqls10-supervisor-v10-scope-parent-decision-v1.json
+-sha256 e441d8585228c2976700cba2c3397acfa1e544bc3dfe7af919205581572af22b.
+-This replaces v9's generic ancestry/helper contract. No helper, forked worker or automatic next launch is supported.
+-The child must not fork, exec, spawn subprocesses or use multiprocessing; native threads are permitted. The Python
+-framework launcher must not be used as argv[0]; use its actual Python.app executable, which does not re-exec.
+-
+-OWNERSHIP: retain the child and every identity ever observed in its process group or with an observed owned current
+-parent. Any identity other than the child is a latched SINGLE_PROCESS_CONTRACT_VIOLATION. It remains in the receipt's
+-owned registry, and parent release remains blocked until each such identity is independently verified ended. Current
+-parent links are bracketed by full identity reads. Unlinked same-uid processes are NOT blocking. Residual: a violating
+-child can fork+setsid+lose its intermediate parent before sampling, evading ownership detection. Child source review is
+-the mitigation, not speculative genealogy. This is not an OS sandbox or a universal malicious-program guard.
+-
+-CLOCKS: NO human-readable timestamp is written, no /bin/date helper is spawned. mono_* and epoch_* are explicitly
+-labelled raw time.monotonic/time.time telemetry. The parent alone writes /bin/date timestamps in GO/audit/release.
+-The per-invocation GO carries a raw not_after_epoch and stability_receipt_sha256. Its exact bytes and the stability
+-receipt are re-read/bound at launch, GO and acknowledgment preparation; expiry/fit are checked with fresh clocks AFTER
+-I/O at protected commits. Stability age is the parent's responsibility when computing not_after_epoch.
+-
+-CANCEL COMMITS: SIGTERM/INT/HUP set a latch on the main thread. Sink threads inherit these signals blocked. A commit
+-blocks them on the main thread, checks both the latch and sigpending, checks fresh expiry/fit, and records its decision.
+-Launch commits authorization immediately before Popen, then restores the mask BEFORE spawning (the child does not
+-inherit blocked SIGTERM); a later cancel is an immediate post-spawn stop and prevents GO. GO writes+flushes while masked;
+-a later cancel is a post-GO stop. Acknowledgment writes+flushes while masked; a later cancel is post-acknowledgment. A
+-completion overrun after an irreversible write returns an unsuccessful exit code; the parent must match exit+summary.
+-
+-STOP/CLEAR: one full-identity-checked child-group SIGTERM, no escalation, no SIGKILL/timeouts/ulimit/deletion. Grace
+-starts at first stop request and at observed child reap. Clearance time is recorded only AFTER reap, both closed clean
+-streams, ended sink threads, and a fresh complete empty-owned census have ALL been verified, then checked against every
+-cutoff. Later cleanup cannot undo expiry. A lost wait status or any observation/capture/evidence error latches failure.
+-
+-IDENTITY/ACCOUNTING: bracket every ownership/accounting measurement by (pid, uniqueid, idversion, euid, ruid, ppid,
+-pgid, trace flag). XNU changes idversion on exec (lane tmp/xnu_kern_exec.c:7096-7104). Same uid means real OR effective
+-uid matches. A same-real/different-effective-uid process is NOT silently exempt: unreadable cwd/argv/task makes census
+-incomplete and admission/clearance fail closed. Cwd is read before and after argv; any positive establishes membership,
+-all negatives must be readable and bracket-stable. Completeness is sampled, never an atomic global snapshot. Missing
+-metadata before identification/measurement is incomplete coverage, not proven absence. Lane RSS and busy limits apply
+-at every observation; single-process admission reserves cpu_slots (1..2), irrespective of the test trip threshold.
+-
+-DISK: retain the lane-disk root fd/device/inode; reach output roots and TMPDIR through no-follow directory descriptors
+-under that anchor, verify path identities before accounting. No mount boundary, vanished or retyped charged subtree is
+-accepted. Walk bytes = sum of logical regular-file st_size over DISTINCT (device,inode), so settlement/.staged is charged
+-once. Run charge = ALL output-root bytes (including launch/samples/sinks/strays) + ALL TMPDIR bytes. No child writes
+-elsewhere are permitted by its reviewed contract. Capped streams/samples and sampled OUTPUT/lane/free trips are not an
+-OS write sandbox; the separately reviewed child caps remain necessary. Reservation retained until parent release.
+-
+-I/O: absolute shared deadlines checked before/after native calls, final writes, fsyncs, closes, sorting and every
+-completion path. Observation deadlines are clamped to known grace/chunk cutoffs. Uninterruptible native calls can
+-return late; lateness is a failure, not an invented universal latency guarantee.
+-
+-PUBLICATION: final census/aggregate/RSS/busy/overflow/root/pin/digest checks first. Build the FINAL receipt and settlement
+-payloads ONCE, then budget exactly those bytes against fresh free floor, distinct-inode lane ceiling and total run
+-charge + payload <= reservation. If budget is unavailable or insufficient, REFUSE publication (no receipt/settlement
+-write). Publish those SAME buffers exclusively, fsync/close/readback, link NAME.staged to NAME and verify same inode,
+-fsync EVERY output directory; read post_publish_mono. Fresh resource/freshness/fit checks precede the protected final
+-acknowledgment. The parent must verify exit code + captured one-line summary + both file digests, all ended-owned
+-identities and late artifacts before its exclusive release commit. Standalone JSON/exit/checker PASS releases nothing.
+-
+-Exit: 0 acknowledged SETTLED, 10 acknowledged NOT_LAUNCHED, 11 acknowledged UNSETTLED, 12 publication refused/receipt
+-failed, 13 settlement/sync/finalization failed, 14 acknowledgment refused or overran, 2 unusable config/anchors.
+-All versions before v10 stay immutable and unrun. Usage: owned_supervisor_v10.py CONFIG.json
++"""owned_supervisor_v11: owned bounded guard, stdlib + read-only macOS libproc.
++
++BINDING correction: RUN/review/rqls10-supervisor-v10-scope-parent-correction-v1.json
++fabe57ab4aeacc416f22bdf334c2cc3bbd5fda1d0e777d7279187ae0564155a2. V10's scope weakening is withdrawn,
++not launch authority. Every earlier file stays immutable/unexecuted.
++
++CLOCK: /bin/date is the sole metadata helper. *_date is its real output or null, never Python-formatted/invented.
++mono_*/epoch_* are labelled raw telemetry. Helper budget starts BEFORE spawn, checks completion lateness even on
++successful reap, and on exceptions/overrun performs at most one full-identity-checked group SIGTERM plus bounded grace.
++Leader reaping is not settlement: initial full identity, known wait status, complete group/descendant closure and
++stdout EOF/close must ALL be proved. Otherwise helper ownership stays unresolved and outcome UNSETTLED, including
++before a scientific child exists. Final polling repeats the whole proof; it never discharges ownership on reap alone.
++No new helper after a failure/cancel. Reviewed injection controls are explicitly labelled; none invents a date string.
++
++OWNERSHIP: before ANY helper/child, obtain a complete identity-only baseline. Retain every known child/helper/group/
++observed current-parent identity. Every later identity not in that baseline and not already owned is UNPROVED,
++regardless of UID, cwd or argv, and blocks clearance while alive. No exemption for ordinary launchd activity,
++unlinked processes or foreign/mixed UIDs is assumed. This deliberately sacrifices availability instead of guessing
++ancestry. Incomplete metadata is failed coverage, not proven absence. Source-reviewed nonforking science children
++remain the intended interface; separately authorized ownership-negative controls may fork. Known ownership and
++unproved identities are retained in receipts and must be independently verified ended by the parent before release.
++This is sampled evidence, not an OS sandbox or universal native-call latency guarantee.
++
++IDENTITY: every ownership/resource measurement is bracketed by pid, uniqueid, idversion, euid, ruid, ppid, pgid and
++trace metadata. Same uid means real OR effective uid matches. Unreadable same-real/different-effective-uid metadata
++fails closed; no login exception. XNU changes idversion on exec. Current-parent edges are bracketed, no puniqueid
++birth inference. BUSY/RSS enforcement occurs on EVERY census retry, including incomplete retries; admission/GO use
++reserved-slot/headroom predicates, running/final phases use trip predicates. Observed excess never disappears on retry.
++
++SPAWN/COMMIT: os.posix_spawn supplies an EMPTY child signal mask and a fresh session, while cancellation is masked in
++the main thread around actual spawn and immediate registration. Sink threads inherit blocked cancellation signals.
++At helper launch, child launch, GO and ACK commits check the latch AND sigpending, then fresh clocks/expiry/fit after
++I/O. Post-commit cancellation becomes an owned stop. Only /bin/date helpers and the ONE admitted child are spawned by
++the supervisor. Inherited cwd must equal the admitted lane; argv paths are absolute. No global cwd change/preexec hook.
++
++STOP/CLEAR: one identity-checked main-child-group SIGTERM, no SIGKILL/escalation/tool timeout/ulimit/deletion. A separate
++once-only stop is owned by each helper. Grace begins at first stop and at observed main-child reap. Clearance time is
++read only AFTER main reap, closed clean streams, ended sink threads, all helpers settled and a fresh complete census
++with no owned OR unproved live identities have all been verified. Compare that fresh time with every cutoff; never
++backdate using a census timestamp or restore an expired result during finalization.
++
++DISK/PUBLICATION: retain root fd/device/inode, no-follow anchored output/TMPDIR walks, reject changed/mounted/retyped/
++vanished charged subtrees. Charge distinct-inode logical bytes of ALL output-root files (launch/samples/sinks/
++declared/stray) and TMPDIR. Own unused and all parent outstanding reservations remain held through ACK. Final receipt
++and settlement buffers are serialized ONCE and exactly those bytes budgeted/written. Insufficient/unavailable budget
++REFUSES publication. Exclusive create, complete writes, fsync/close/readback, same-inode staged link and every output
++directory fsync precede post_publish_mono. I/O deadlines check every completion path; late native return fails closed.
++Fresh resource/freshness/fit checks precede protected ACK. Parent must join actual exit, captured summary and both
++digests, complete ended-owned/unproved evidence and late-artifact audit in its NEW exclusive release disposition.
++No standalone receipt, shell return code, summary or checker PASS releases a reservation or claims science success.
++
++Exit:0 acknowledged SETTLED;10 acknowledged NOT_LAUNCHED;11 acknowledged UNSETTLED;12 publication refused/receipt
++failed;13 settlement/sync/finalization failed;14 ACK refused/overran;2 unusable config/anchors. NOEXEC until separately
++accepted source/package and an exact item GO. Usage: owned_supervisor_v11.py CONFIG.json
+ """
+ import contextlib
+ import ctypes
+@@ -73,12 +64,11 @@
+ import signal
+ import stat
+ import struct
+-import subprocess
+ import sys
+ import threading
+ import time
+ 
+-VERSION = "owned_supervisor_v10"
++VERSION = "owned_supervisor_v11"
+ CANCEL_SIGNALS = {signal.SIGTERM, signal.SIGINT, signal.SIGHUP}
+ CANCEL = {"signal": None, "mono": None}
+ POLICY = {"disk": 10737418240, "free": 12000000000, "launch_free": 12200000000,
+@@ -100,7 +90,9 @@
+           "free_trip_bytes": int, "launch_free_min_bytes": int, "output_trip_bytes": int,
+           "lane_roots": list, "lane_disk_root": str, "lane_disk_ceiling_bytes": int,
+           "lane_walk_s": float, "busy_limit": int, "busy_cpu_fraction": float, "cpu_slots": int,
+-          "admission": dict, "fault_injection": dict}
++          "admission": dict, "helper_budget": dict, "fault_injection": dict}
++HELPER = {"max_calls": int, "call_budget_s": float, "term_grace_s": float}
++HELPER_FAULTS = {"date_helper_fails", "helper_observation_overrun", "helper_group_unproved", "helper_eof_unproved"}
+ ADMISSION = {"go_path": str, "stability_receipt_path": str, "reservation_bytes": int,
+              "outstanding_reservations_bytes": int, "lane_outstanding_reservations_bytes": int}
+ BOUND_KEYS = ("output_roots", "argv", "max_wall_s", "cpu_slots", "reservation_bytes",
+@@ -511,6 +503,10 @@
+                 raise ValueError("invalid config type: " + k)
+     schema(cfg, CONFIG)
+     schema(cfg["admission"], ADMISSION)
++    schema(cfg["helper_budget"], HELPER)
++    hb = cfg["helper_budget"]
++    if not (1 <= hb["max_calls"] <= 32 and 0.001 <= hb["call_budget_s"] <= 10 and 0.01 <= hb["term_grace_s"] <= 10):
++        raise ValueError("helper budget policy")
+     limits = {"max_chunk_seconds": (1, POLICY["chunk"]), "max_wall_s": (0.01, cfg["max_chunk_seconds"]),
+               "settle_s": (0.01, 600), "sample_s": (0.2, 10), "lane_walk_s": (1, 600),
+               "owned_compute_settled_by_epoch": (1, 4e9), "rss_trip_bytes": (1, POLICY["rss"]),
+@@ -532,7 +528,7 @@
+     cap = cfg["output_trip_bytes"] + cfg["stdout_cap_bytes"] + cfg["stderr_cap_bytes"] + cfg["samples_cap_bytes"] + PUBLICATION_CAP
+     if a["reservation_bytes"] < cap:
+         raise ValueError("reservation below caps + publication allowance")
+-    if set(cfg["fault_injection"]) - {"identity_check_fails"} or any(not isinstance(x, bool) for x in cfg["fault_injection"].values()):
++    if set(cfg["fault_injection"]) - ({"identity_check_fails"} | HELPER_FAULTS) or any(not isinstance(x, bool) for x in cfg["fault_injection"].values()):
+         raise ValueError("invalid fault injection")
+     if any(cfg["fault_injection"].values()) and cfg["purpose"] != "guard-qualification":
+         raise ValueError("fault outside qualification")
+@@ -566,6 +562,75 @@
+             raise ValueError("invalid authorization path")
+ 
+ 
++def spawn_registered(s, argv, env, role, dl, required_s):
++    """Spawn with an explicitly empty signal mask while cancellation is protected in the parent.
++    Registration is the FIRST operation after posix_spawn returns a PID; no Popen finalizer or second reaper exists.
++    Returned pipe descriptors remain owned even when post-spawn close/deadline work fails."""
++    allocated = []
++    record = {"pid": None, "role": role, "identity": None, "leader_reaped": False, "rc": None,
++              "wait_lost": False, "term_attempted": False, "settled": False, "stdout_fd": None,
++              "stderr_fd": None, "stdin_fd": None, "spawn_error": None, "parent_close_fds": []}
++    s.keep.append(record)  # Retain the allocation/pipe ledger even before a PID exists.
++    if role == "helper":
++        s.helpers.append(record)
++    try:
++        out_read, out_write = os.pipe()
++        allocated.extend((out_read, out_write))
++        if role == "helper":
++            null = os.open("/dev/null", os.O_RDWR)
++            allocated.append(null)
++            in_read, err_write = null, null
++            close_parent = {null, out_write}
++        else:
++            in_read, in_write = os.pipe()
++            err_read, err_write = os.pipe()
++            allocated.extend((in_read, in_write, err_read, err_write))
++            record["stdin_fd"], record["stderr_fd"] = in_write, err_read
++            close_parent = {in_read, out_write, err_write}
++        record["parent_close_fds"] = list(close_parent)
++        record["stdout_fd"] = out_read
++        if any(fd < 3 for fd in allocated):
++            raise GuardError("STANDARD_DESCRIPTORS_MUST_BE_OPEN")
++        actions = [(os.POSIX_SPAWN_DUP2, in_read, 0), (os.POSIX_SPAWN_DUP2, out_write, 1),
++                   (os.POSIX_SPAWN_DUP2, err_write, 2)]
++        actions += [(os.POSIX_SPAWN_CLOSE, fd) for fd in allocated]
++        with protected():
++            dl.check("before protected spawn")
++            if role == "helper" and (s.failures or s.in_helper is False):
++                raise GuardError("HELPER_LAUNCH_REFUSED")
++            record["launch_commit"] = s.time_commit("HELPER" if role == "helper" else "LAUNCH", required_s)
++            record["mono_spawn"], record["epoch_spawn"] = time.monotonic(), time.time()
++            if role != "helper":
++                s.mono_spawn, s.epoch_spawn = record["mono_spawn"], record["epoch_spawn"]
++                s.rec.update(mono_spawn=s.mono_spawn, epoch_spawn=s.epoch_spawn,
++                             mono_child_deadline=s.mono_spawn + s.cfg["max_wall_s"])
++            pid = os.posix_spawn(argv[0], argv, env, file_actions=actions, setsid=True, setsigmask=(),
++                                 setsigdef=tuple(CANCEL_SIGNALS | {signal.SIGPIPE, signal.SIGCHLD}))
++            record["pid"] = pid
++            if role == "helper":
++                s.helper_calls += 1
++            if role != "helper":
++                s.child, s.pid = record, pid
++        try:
++            for fd in close_parent:
++                os.close(fd)
++                allocated.remove(fd)
++                record["parent_close_fds"].remove(fd)
++            dl.check("after spawn/parent pipe closes")
++        except BaseException as e:
++            record["spawn_error"] = repr(e)
++        return record
++    except BaseException:
++        if record["pid"] is None:
++            record["settled"] = True  # No process was created; no leader/descendant can be abandoned.
++            for fd in allocated:
++                try:
++                    os.close(fd)
++                except OSError:
++                    pass
++        raise
++
++
+ class Supervisor:
+     def __init__(self, cfg, path, digest):
+         self.cfg, self.config_path, self.config_sha = cfg, path, digest
+@@ -576,9 +641,9 @@
+         self.fit_mono = self.start_mono + self.fit_epoch - self.start_epoch
+         self.rec = {"supervisor": VERSION, "supervisor_sha256": self.self_sha, "config_sha256": digest,
+                     "config_path": path, "supervisor_pid": MY_PID, "uid": MY_UID,
+-                    "clock_note": "mono_*: raw time.monotonic seconds; epoch_*: raw time.time seconds; NO human-readable timestamps",
+-                    "parent_scope_sha256": "e441d8585228c2976700cba2c3397acfa1e544bc3dfe7af919205581572af22b",
+-                    "ownership_residual": "fast contract-violating fork+setsid+intermediate exit can evade sampling; not an OS sandbox"}
++                    "clock_note": "*_date: owned /bin/date output or null, never invented; mono_* and epoch_*: raw telemetry",
++                    "parent_correction_sha256": "fabe57ab4aeacc416f22bdf334c2cc3bbd5fda1d0e777d7279187ae0564155a2",
++                    "ownership_residual": "all post-baseline unproved identities block; sampled coverage is not an OS sandbox"}
+         self.failures, self.failure_keys, self.trips = [], set(), {}
+         self.child, self.keep = None, []
+         self.pid, self.ident, self.rc = None, None, None
+@@ -595,6 +660,11 @@
+         self.lane_bytes, self.charged, self.min_free = None, None, None
+         self.maxima = {"lane_rss": 0, "lane_busy": 0, "owned_live": 0, "charged_bytes": 0}
+         self.loop_status, self.authorization = "NOT_STARTED", None
++        self.baseline = None
++        self.helpers, self.helper_log = [], []
++        self.helper_calls = 0
++        self.phase = "ADMISSION"
++        self.in_helper = False
+ 
+     def deadline(self, seconds, phase=None):
+         cut = min([self.fit_mono] + [x[1] for x in self.cutoffs()])
+@@ -631,6 +701,10 @@
+         if self.stop is not None:
+             return
+         self.stop = {"reason": reason, "mono": time.monotonic(), "epoch": time.time()}
++        self.signal_main_group()
++        self.stop["date"] = self.date_now("stop")
++
++    def signal_main_group(self):
+         s = {"sent": False, "mono_check": time.monotonic()}
+         self.signal = s
+         if self.ident is None:
+@@ -647,13 +721,16 @@
+             self.fail("IDENTITY_UNVERIFIED", "fault injected")
+             return
+         try:
++            dl = self.deadline(IO_S)
+             now = identify(self.pid)
++            dl.check("after main stop identity")
+             ok = fingerprint(now) == fingerprint(self.ident)
+             s["identity_ok"] = ok
+             if not ok:
+                 raise GuardError("identity mismatch")
+             os.killpg(self.group, signal.SIGTERM)
+             s.update(sent=True, mono_sent=time.monotonic())
++            dl.check("after main group SIGTERM")
+         except ProcessLookupError as e:
+             s["error"] = repr(e)
+         except BaseException as e:
+@@ -668,15 +745,15 @@
+             cuts.append(("GRACE_EXPIRED_AFTER_CHILD_EXIT", self.exit_mono + self.cfg["settle_s"]))
+         return cuts
+ 
+-    def register_owned(self, p, via):
++    def register_owned(self, p, via, root=None):
+         u = p["uniqueid"]
+         if u not in self.owned:
+-            self.owned[u] = {"identity": dict(p), "via": via, "first_seen_mono": time.monotonic()}
+-            if self.ident is not None and u != self.ident["uniqueid"]:
+-                self.violations.append(dict(p))
+-                self.fail("SINGLE_PROCESS_CONTRACT_VIOLATION", p)
+-
+-    def census(self, dl):
++            self.owned[u] = {"identity": dict(p), "via": via, "root": u if root is None else root,
++                             "first_seen_mono": time.monotonic()}
++            if via not in ("child", "helper"):
++                self.violations.append(dict(p))  # Retain, never erase or exempt an observed extra identity.
++
++    def scan_identities(self, dl):
+         procs, missing = {}, []
+         for pid in all_pids(dl):
+             dl.check("census identification")
+@@ -684,14 +761,18 @@
+                 procs[pid] = identify(pid)
+             except OSError as e:
+                 missing.append([pid, "identify", repr(e)])
+-        live_owned = {u for u in self.owned if any(p["uniqueid"] == u for p in procs.values())}
++        live_owned = {p["uniqueid"] for p in procs.values() if p["uniqueid"] in self.owned}
++        groups = {self.group: self.ident["uniqueid"]} if self.group is not None and self.ident is not None else {}
++        for h in self.helpers:
++            if h.get("identity") is not None:
++                groups[h["identity"]["pgid"]] = h["identity"]["uniqueid"]
+         if self.ident is not None:
+             for p in procs.values():
+                 if p["uniqueid"] == self.ident["uniqueid"] and fingerprint(p) != fingerprint(self.ident):
+                     self.fail("CHILD_IDENTITY_CHANGED", p)
+         for p in procs.values():
+-            if self.group is not None and p["pgid"] == self.group:
+-                self.register_owned(p, "child_group")
++            if p["pgid"] in groups:
++                self.register_owned(p, "owned_group", groups[p["pgid"]])
+                 live_owned.add(p["uniqueid"])
+         changed = True
+         while changed:
+@@ -703,22 +784,41 @@
+                 if parent is None or parent["uniqueid"] not in live_owned:
+                     continue
+                 try:
+-                    a = identify(parent["pid"])
+-                    b = identify(p["pid"])
+-                    c = identify(parent["pid"])
++                    a, b, c = identify(parent["pid"]), identify(p["pid"]), identify(parent["pid"])
+                     if fingerprint(a) != fingerprint(parent) or fingerprint(c) != fingerprint(parent) or fingerprint(b) != fingerprint(p):
+                         raise GuardError("CURRENT_PARENT_EDGE_CHANGED")
+-                    self.register_owned(p, "current_parent:%d" % parent["uniqueid"])
++                    root = self.owned[parent["uniqueid"]]["root"]
++                    self.register_owned(p, "current_parent:%d" % parent["uniqueid"], root)
+                     live_owned.add(p["uniqueid"])
+                     changed = True
+                 except OSError as e:
+                     missing.append([p["pid"], "parent_edge", repr(e)])
++        unproved = {p["uniqueid"] for p in procs.values()
++                    if self.baseline is not None and p["uniqueid"] not in self.baseline and p["uniqueid"] not in live_owned}
++        dl.check("after identity/ownership scan")
++        return procs, missing, live_owned, unproved
++
++    def establish_baseline(self):
++        dl = Deadline(20, self.fit_mono)
++        for _ in range(3):
++            procs, missing, _, _ = self.scan_identities(dl)
++            if not missing:
++                self.baseline = {p["uniqueid"] for p in procs.values()}
++                self.rec["baseline"] = {"mono_complete": time.monotonic(),
++                                        "identities": sorted(procs.values(), key=lambda p: p["pid"])}
++                dl.check("after baseline")
++                return
++            time.sleep(0.05)
++        raise GuardError("NO_COMPLETE_PRESPAWN_BASELINE")
++
++    def census(self, dl):
++        procs, missing, live_owned, unproved = self.scan_identities(dl)
+         lane, cpu = {}, {}
+         for pid, p in procs.items():
+             dl.check("census accounting")
+             if p["status"] == SZOMB or not (p["euid"] == MY_UID or p["ruid"] == MY_UID):
+                 continue
+-            owned = p["uniqueid"] in live_owned
++            owned = p["uniqueid"] in live_owned or p["uniqueid"] in unproved
+             try:
+                 if not stable(pid, p):
+                     raise GuardError("BEFORE_MEASUREMENT_CHANGED")
+@@ -755,6 +855,7 @@
+         owned = [p for p in procs.values() if p["uniqueid"] in live_owned]
+         return {"complete": not missing, "incomplete_n": len(missing), "incomplete": missing[:30], "pids": len(procs),
+                 "owned_live": [dict(p) for p in sorted(owned, key=lambda x: x["pid"])],
++                "unproved_live": [dict(p) for p in sorted(procs.values(), key=lambda x: x["pid"]) if p["uniqueid"] in unproved],
+                 "group_live": sorted(p["pid"] for p in procs.values() if self.group is not None and p["pgid"] == self.group),
+                 "owned_zombies": sorted(p["pid"] for p in owned if p["status"] == SZOMB),
+                 "lane_pids": sorted(lane), "lane_rss": sum(v["rss"] for v in lane.values()),
+@@ -765,12 +866,231 @@
+         c = None
+         for _ in range(3):
+             c = self.census(dl)
++            # Enforce EVERY observation, not only the final successful retry.
++            if self.phase in ("ADMISSION", "PRE_GO"):
++                if not self.limits(c, True):
++                    self.fail("ADMISSION_RESOURCE_VIOLATION", {"busy": c["lane_busy"], "rss": c["lane_rss"],
++                                                               "incomplete": not c["complete"]})
++            else:
++                self.limits(c)
+             if c["complete"]:
+                 break
+             dl.check("before census retry")
+             time.sleep(min(0.05, max(0, dl.end - time.monotonic())))
+         dl.check("after census retries")
+         return c
++
++    def helper_probe(self, h, dl):
++        """Refresh ALL ownership predicates; REAPED alone never marks a helper settled."""
++        if h["pid"] is None:
++            return
++        for fd in list(h["parent_close_fds"]):
++            os.close(fd)
++            h["parent_close_fds"].remove(fd)
++            dl.check("helper parent endpoint close")
++        if h.get("identity") is None and not h["leader_reaped"]:
++            h["identity"] = identify(h["pid"])
++            p = h["identity"]
++            h["initial_identity_valid"] = p["pgid"] == h["pid"] and p["euid"] == MY_UID and p["ruid"] == MY_UID
++            if not h["initial_identity_valid"]:
++                raise GuardError("HELPER_IDENTITY_INVALID")
++            self.register_owned(p, "helper")
++        if not h["leader_reaped"] and not stable(h["pid"], h["identity"]):
++            raise GuardError("HELPER_EXEC_OR_CREDENTIAL_CHANGE")
++        if not h["leader_reaped"] and not h["wait_lost"]:
++            try:
++                pid, status = os.waitpid(h["pid"], os.WNOHANG)
++                if pid:
++                    h["leader_reaped"], h["rc"] = True, os.waitstatus_to_exitcode(status)
++                    h["mono_reaped"] = time.monotonic()
++            except ChildProcessError:
++                h["wait_lost"] = True
++                raise GuardError("HELPER_WAIT_STATUS_LOST")
++            dl.check("after helper reap, including a successful reap")
++        fd = h.get("stdout_fd")
++        if fd is not None:
++            os.set_blocking(fd, False)
++            for _ in range(2):
++                try:
++                    room = 257 - len(h["capture"])
++                    if room <= 0:
++                        h["capture_overflow"] = True
++                        break
++                    b = os.read(fd, room)
++                except BlockingIOError:
++                    break
++                dl.check("after helper stdout read")
++                if b == b"":
++                    h["raw_eof"] = True
++                    break
++                h["capture"] += b
++                if len(h["capture"]) > 256:
++                    h["capture_overflow"] = True
++                    break
++            if h["raw_eof"] or h["capture_overflow"]:
++                os.close(fd)
++                h["stdout_fd"], h["stdout_closed"] = None, True
++                dl.check("after helper stdout close")
++        c = self.full_census(dl)
++        h["proof"] = {k: c[k] for k in ("complete", "incomplete_n", "owned_live", "unproved_live", "mono_complete")}
++        root = None if h.get("identity") is None else h["identity"]["uniqueid"]
++        h["group_clear"] = h.get("identity") is not None and not any(p["pgid"] == h["identity"]["pgid"] for p in c["owned_live"])
++        h["descendants_clear"] = root is not None and not any(self.owned[p["uniqueid"]]["root"] == root for p in c["owned_live"])
++        h["coverage_complete"] = c["complete"] and not c["unproved_live"]
++        h["eof_proved"] = h["raw_eof"] and not h["capture_overflow"]
++        if h["fault_group"]:
++            h["group_clear"] = False
++        if h["fault_eof"]:
++            h["eof_proved"] = False
++        dl.check("after full helper ownership proof")
++        h["mono_proof_complete"] = time.monotonic()
++        h["settled"] = bool(h.get("initial_identity_valid") and h["leader_reaped"] and not h["wait_lost"] and
++                            h["group_clear"] and h["descendants_clear"] and h["coverage_complete"] and
++                            h["eof_proved"] and h["stdout_closed"])
++
++    def helper_term(self, h, dl):
++        if h["term_attempted"] or h["leader_reaped"] or h["wait_lost"]:
++            return
++        h["term_attempted"] = True
++        ident = h.get("identity")
++        if ident is None or not h.get("initial_identity_valid"):
++            h["signal"] = {"sent": False, "reason": "NO_VERIFIED_IDENTITY"}
++            return
++        h["signal"] = {"sent": False}
++        try:
++            p = identify(h["pid"])
++            dl.check("after helper stop identity")
++            if fingerprint(p) != fingerprint(ident):
++                raise GuardError("HELPER_SIGNAL_IDENTITY_CHANGED")
++            os.killpg(ident["pgid"], signal.SIGTERM)
++            h["signal"] = {"sent": True, "identity_ok": True, "mono_sent": time.monotonic()}
++            dl.check("after helper group SIGTERM")
++        except BaseException as e:
++            h["signal"]["reason"] = repr(e)
++
++    def helper_cleanup(self, h):
++        """Exception/overrun path: one verified TERM at most; proof/reap/EOF/group stay owned through bounded grace."""
++        h["mono_cleanup_start"] = time.monotonic()
++        dl = self.deadline(self.cfg["helper_budget"]["term_grace_s"])
++        h["mono_cleanup_deadline"] = dl.end
++        if h.get("identity") is None and not h["leader_reaped"]:
++            try:
++                p = identify(h["pid"])
++                h["identity"] = p
++                h["initial_identity_valid"] = p["pgid"] == h["pid"] and p["euid"] == MY_UID and p["ruid"] == MY_UID
++                if h["initial_identity_valid"]:
++                    self.register_owned(p, "helper")
++            except BaseException as e:
++                h["identity_error"] = repr(e)
++        if time.monotonic() <= dl.end:
++            self.helper_term(h, dl)
++        while time.monotonic() <= dl.end:
++            try:
++                self.helper_probe(h, dl)
++                if h["settled"]:
++                    return
++            except BaseException as e:
++                h["cleanup_error"] = repr(e)
++                if time.monotonic() > dl.end:
++                    break
++            time.sleep(min(0.005, max(0, dl.end - time.monotonic())))
++        self.fail("HELPER_OWNERSHIP_UNSETTLED", {"pid": h["pid"], "reaped": h["leader_reaped"],
++                                                "group_clear": h.get("group_clear"), "eof": h.get("eof_proved")})
++
++    def date_now(self, purpose):
++        """Actual /bin/date output only. Logical refusals return null; no synthetic timestamp."""
++        entry = {"purpose": purpose, "mono_start": time.monotonic()}
++        h = None
++        hb = self.cfg["helper_budget"]
++        try:
++            if self.failures or pending_cancel() or self.in_helper:
++                entry["outcome"] = "REFUSED_FAILURE_CANCEL_OR_REENTRANCY"
++                return None
++            if self.helper_calls >= hb["max_calls"]:
++                self.fail("HELPER_CALL_BUDGET")
++                entry["outcome"] = "CALL_BUDGET_REFUSED"
++                return None
++            if self.cfg["fault_injection"].get("date_helper_fails"):
++                self.fail("HELPER_FAULT_INJECTED")
++                entry["outcome"] = "FAULT_BEFORE_SPAWN"
++                return None
++            if self.baseline is None:
++                self.fail("NO_PREHELPER_BASELINE")
++                entry["outcome"] = "NO_BASELINE"
++                return None
++            self.in_helper = True
++            call = self.deadline(hb["call_budget_s"])  # BEFORE pipe creation and spawn.
++            try:
++                h = spawn_registered(self, ["/bin/date", "+%Y-%m-%dT%H:%M:%S%z"], {"PATH": "/usr/bin:/bin"},
++                                     "helper", call, hb["call_budget_s"] + hb["term_grace_s"])
++            except BaseException:
++                # The allocation ledger is pre-registered; recover any returned PID even if later setup failed.
++                h = next((r for r in reversed(self.helpers) if r.get("pid") is not None and "capture" not in r), None)
++                raise
++            h.update(capture=b"", raw_eof=False, stdout_closed=False, capture_overflow=False,
++                     initial_identity_valid=False, clock_failed=False,
++                     fault_group=bool(self.cfg["fault_injection"].get("helper_group_unproved")),
++                     fault_eof=bool(self.cfg["fault_injection"].get("helper_eof_unproved")),
++                     mono_call_start=entry["mono_start"], mono_call_deadline=call.end, date=None)
++            entry["pid"] = h["pid"]
++            if self.cfg["fault_injection"].get("helper_observation_overrun"):
++                time.sleep(min(0.05, hb["call_budget_s"] + 0.01))
++            if h["spawn_error"] is not None:
++                raise GuardError(h["spawn_error"])
++            while True:
++                if pending_cancel():
++                    raise GuardError("HELPER_CANCELLED_AFTER_COMMIT")
++                self.helper_probe(h, call)
++                call.check("after helper completion, never accept a late successful reap")
++                if h["settled"]:
++                    break
++                time.sleep(min(0.005, max(0, call.end - time.monotonic())))
++            text = h["capture"].decode("ascii", "strict").strip()
++            shape = len(text) == 24 and text[4:5] == "-" and text[7:8] == "-" and text[10:11] == "T" and text[19:20] in ("+", "-")
++            digits = text[:4] + text[5:7] + text[8:10] + text[11:13] + text[14:16] + text[17:19] + text[20:24]
++            if h["rc"] != 0 or not shape or not digits.isdigit() or text[13:14] != ":" or text[16:17] != ":":
++                raise GuardError("HELPER_BAD_DATE_OUTPUT")
++            h["date"] = text
++            entry["outcome"] = "OK"
++            return text
++        except BaseException as e:
++            entry["outcome"], entry["error"] = "FAILED", repr(e)
++            self.fail("HELPER_CALL_FAILED", repr(e))
++            if h is not None and h.get("pid") is not None:
++                # Populate absent fields before exceptional cleanup; registered ownership is never discarded.
++                for key, value in {"capture": b"", "raw_eof": False, "stdout_closed": False, "capture_overflow": False,
++                                   "initial_identity_valid": False,
++                                   "fault_group": bool(self.cfg["fault_injection"].get("helper_group_unproved")),
++                                   "fault_eof": bool(self.cfg["fault_injection"].get("helper_eof_unproved")),
++                                   "mono_call_start": entry["mono_start"], "mono_call_deadline": call.end,
++                                   "date": None}.items():
++                    h.setdefault(key, value)
++                h["clock_failed"] = True
++                self.helper_cleanup(h)
++            return None
++        finally:
++            self.in_helper = False
++            entry["mono_end"] = time.monotonic()
++            self.helper_log.append(entry)
++
++    def refresh_helpers(self, dl):
++        for h in self.helpers:
++            if h.get("pid") is not None and not h["settled"]:
++                try:
++                    self.helper_probe(h, dl)
++                except BaseException as e:
++                    h["final_proof_error"] = repr(e)
++                if not h["settled"]:
++                    self.fail("HELPER_OWNERSHIP_UNSETTLED", h["pid"])
++
++    def helper_reports(self):
++        keys = ("pid", "identity", "leader_reaped", "rc", "wait_lost", "term_attempted", "settled",
++                "initial_identity_valid", "stdout_closed", "eof_proved", "group_clear", "descendants_clear",
++                "coverage_complete", "clock_failed", "date", "signal", "proof", "spawn_error", "launch_commit",
++                "mono_call_start", "mono_call_deadline", "mono_cleanup_start", "mono_cleanup_deadline",
++                "mono_proof_complete", "mono_reaped")
++        return [{**{k: h.get(k) for k in keys}, "capture_hex": h.get("capture", b"").hex()}
++                for h in self.helpers if h.get("pid") is not None]
+ 
+     def open_anchors(self):
+         dl = Deadline(IO_S)
+@@ -932,7 +1252,7 @@
+             self.fail("SAMPLES_WRITE_FAILED", e)
+ 
+     def cheap_clear(self):
+-        return self.rc is not None and len(self.streams) == 2 and all(v["closed"] and v["error"] is None for v in self.streams.values()) and len(self.threads) == 2 and all(not t.is_alive() for t in self.threads)
++        return self.rc is not None and len(self.streams) == 2 and all(v["closed"] and v["error"] is None for v in self.streams.values()) and len(self.threads) == 2 and all(not t.is_alive() for t in self.threads) and all(h["settled"] for h in self.helpers)
+ 
+     def clearance(self):
+         self.reap()
+@@ -940,7 +1260,7 @@
+             return False
+         c = self.full_census(self.deadline(CENSUS_S))
+         self.limits(c)
+-        if not c["complete"] or c["owned_live"] or c["group_live"] or not self.cheap_clear():
++        if not c["complete"] or c["owned_live"] or c["unproved_live"] or c["group_live"] or not self.cheap_clear():
+             return False
+         # ALL predicates have now been verified. Do not use the earlier census timestamp as clearance time.
+         now = time.monotonic()
+@@ -1013,6 +1333,9 @@
+             if read_file(pin["path"], PIN_CAP, dl)[0]["sha256"] != pin["sha256"]:
+                 raise GuardError("PIN_MISMATCH " + pin["path"])
+         rec["authorization"] = s.authorization_io(dl)
++        rec["date"] = s.date_now("admission")
++        if rec["date"] is None:
++            raise GuardError("DATE_HELPER_UNAVAILABLE")
+         a = s.accounting(dl)
+         rec["resources"] = a
+         res = s.cfg["admission"]["reservation_bytes"]
+@@ -1024,8 +1347,8 @@
+         for n in range(2):
+             c = s.full_census(dl)
+             rec["censuses"].append(c)
+-            if not c["complete"] or not s.limits(c, True):
+-                raise GuardError("ADMISSION_CENSUS_INCOMPLETE_OR_LIMITS")
++            if not c["complete"] or c["owned_live"] or c["unproved_live"] or not s.limits(c, True) or s.failures:
++                raise GuardError("ADMISSION_CENSUS_INCOMPLETE_OWNERSHIP_OR_LIMITS")
+             if n == 0:
+                 time.sleep(2)
+         dl.check("after admission")
+@@ -1040,6 +1363,10 @@
+ 
+ 
+ def launch_and_go(s):
++    s.phase = "PRE_GO"
++    s.rec["start_date"] = s.date_now("start")
++    if s.rec["start_date"] is None or s.failures:
++        raise GuardError("START_DATE_UNAVAILABLE")
+     dl = s.deadline(IO_S)
+     fd, base = s.location(s.cfg["samples"])
+     s.samples_fd, ident = create_file(fd, base)
+@@ -1047,48 +1374,48 @@
+     s.authorization_io(dl)
+     c = s.full_census(dl)
+     s.rec["launch_census"] = c
+-    if not c["complete"] or not s.limits(c, True):
+-        raise GuardError("LAUNCH_CENSUS_INCOMPLETE_OR_LIMITS")
++    if not c["complete"] or c["owned_live"] or c["unproved_live"] or not s.limits(c, True) or s.failures:
++        raise GuardError("LAUNCH_CENSUS_INCOMPLETE_OWNERSHIP_OR_LIMITS")
+     a = s.accounting(dl)
+     if a["free"] < s.cfg["launch_free_min_bytes"] + s.cfg["admission"]["reservation_bytes"] or not s.reservation_fits(a):
+         raise GuardError("LAUNCH_RESOURCES_FAILED")
++    s.resource_age(c)
+     dl.check("after launch preparation")
+-    with protected():
+-        s.resource_age(c)
+-        s.rec["launch_commit"] = s.time_commit("LAUNCH", s.cfg["max_wall_s"] + s.cfg["settle_s"] + FINALIZE_S)
+-    # Launch authorization is committed; mask restored before Popen. Any subsequent cancel is a post-launch stop.
+-    s.mono_spawn, s.epoch_spawn = time.monotonic(), time.time()
+-    s.rec.update(mono_spawn=s.mono_spawn, epoch_spawn=s.epoch_spawn,
+-                 mono_child_deadline=s.mono_spawn + s.cfg["max_wall_s"])
+-    child = subprocess.Popen(s.cfg["argv"], cwd=s.cfg["lane"], env=dict(s.cfg["env"]), stdin=subprocess.PIPE,
+-                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True, close_fds=True)
++    child = spawn_registered(s, s.cfg["argv"], dict(s.cfg["env"]), "child", dl,
++                             s.cfg["max_wall_s"] + s.cfg["settle_s"] + FINALIZE_S)
++    s.rec["launch_commit"] = child["launch_commit"]
+     try:
+-        s.child, s.pid = child, child.pid
+-        s.keep.append(child)
+-        s.ident = identify(s.pid)
++        s.ident = identify(s.pid)  # Before any fallible capture setup, fast exits are unreaped zombies.
+         if s.ident["pgid"] != s.pid or s.ident["euid"] != MY_UID or s.ident["ruid"] != MY_UID:
+             raise GuardError("CHILD_IDENTITY_OR_GROUP_INVALID")
+         s.group = s.ident["pgid"]
+         s.register_owned(s.ident, "child")
+-        s.threads = [sink(s, "stdout", child.stdout), sink(s, "stderr", child.stderr)]
++        if child["spawn_error"] is not None:
++            raise GuardError(child["spawn_error"])
++        for name in ("stdout", "stderr"):
++            pipe = os.fdopen(child[name + "_fd"], "rb", buffering=65536)
++            child[name + "_fd"] = None
++            child[name] = pipe
++            s.threads.append(sink(s, name, pipe))
+         if CANCEL["signal"] is not None:
+             s.cancel_handled = True
+             s.trip("SUPERVISOR_CANCEL", CANCEL["signal"])
+         launch = {"supervisor": VERSION, "supervisor_sha256": s.self_sha, "config_sha256": s.config_sha,
+                   "supervisor_pid": MY_PID, "identity": s.ident, "argv": s.cfg["argv"], "cwd": s.cfg["lane"],
+                   "env": s.cfg["env"], "mono_spawn": s.mono_spawn, "epoch_spawn": s.epoch_spawn,
++                  "start_date": s.rec["start_date"], "baseline_count": len(s.baseline),
+                   "authorization": s.authorization, "launch_commit": s.rec["launch_commit"],
+                   "cpu_slots": s.cfg["cpu_slots"], "reservation_bytes": s.cfg["admission"]["reservation_bytes"]}
+         fd, name = s.location(s.cfg["launch_record"])
+-        data = bytes_json(launch)
+-        s.rec["launch_record_sha256"] = publish(fd, name, data, s.deadline(IO_S))
++        s.rec["launch_record_sha256"] = publish(fd, name, bytes_json(launch), s.deadline(IO_S))
+         st = os.stat(name, dir_fd=fd, follow_symlinks=False)
+         s.created[s.cfg["launch_record"]] = (st.st_dev, st.st_ino)
+         gd = s.deadline(IO_S)
+         c = s.full_census(gd)
+         s.rec["pre_go_census"] = c
+-        if not c["complete"] or len(c["owned_live"]) != 1 or c["owned_live"][0]["uniqueid"] != s.ident["uniqueid"] or not s.limits(c, True):
+-            raise GuardError("GO_CENSUS_INCOMPLETE_OR_LIMITS")
++        live = [p["uniqueid"] for p in c["owned_live"]]
++        if not c["complete"] or c["unproved_live"] or live != [s.ident["uniqueid"]] or not s.limits(c, True):
++            raise GuardError("GO_CENSUS_INCOMPLETE_OWNERSHIP_OR_LIMITS")
+         s.authorization_io(gd)
+         a = s.accounting(gd)
+         if a["free"] < s.cfg["launch_free_min_bytes"] + s.cfg["admission"]["reservation_bytes"] or not s.reservation_fits(a):
+@@ -1100,25 +1427,25 @@
+             if remaining <= 0 or s.stop is not None or s.failures:
+                 raise GuardError("GO_STOP_OR_DEADLINE")
+             s.rec["go_commit"] = s.time_commit("GO", remaining + s.cfg["settle_s"] + FINALIZE_S)
+-            child.stdin.write(b"GO\n")
+-            child.stdin.flush()
++            s.rec["go_write_attempted"] = True
++            write_all(child["stdin_fd"], b"GO\n", gd)
+             s.rec["go_written_mono"] = time.monotonic()
+-            child.stdin.close()
+-            gd.check("after GO write/flush/close")
++            os.close(child["stdin_fd"])
++            child["stdin_fd"] = None
++            gd.check("after GO write/close")
+             s.rec["go_delivered"] = True
+     except BaseException as e:
+-        if s.pid is None:
+-            s.child, s.pid = child, child.pid
+-            s.keep.append(child)
+         s.fail("POST_SPAWN_FAILURE", repr(e))
+     finally:
+-        if child.stdin is not None and not child.stdin.closed:
++        if child.get("stdin_fd") is not None:
+             try:
+-                child.stdin.close()
++                os.close(child["stdin_fd"])
++                child["stdin_fd"] = None
+             except OSError as e:
+                 s.fail("STDIN_CLOSE_FAILED", repr(e))
+     if not s.rec.get("go_delivered"):
+         s.fail("GO_NOT_DELIVERED")
++    s.phase = "RUNNING"
+     observe(s)
+ 
+ 
+@@ -1183,17 +1510,22 @@
+ 
+ 
+ def final_body(s, phase):
++    s.phase = "FINAL"
++    s.rec["end_date"] = s.date_now("end")
++    s.refresh_helpers(Deadline(CENSUS_S, phase.end))
+     s.reap()
++    c = s.full_census(Deadline(CENSUS_S, phase.end))
++    s.rec["final_census"] = c
++    if not c["complete"]:
++        s.fail("FINAL_CENSUS_INCOMPLETE", c["incomplete"])
++    if c["owned_live"]:
++        s.fail("OWNED_LIVE", c["owned_live"])
++    if c["unproved_live"]:
++        s.fail("UNPROVED_LIVE", c["unproved_live"])
+     if s.pid is not None:
+         if s.rc is None:
+             s.fail("CHILD_NOT_REAPED")
+-        c = s.full_census(Deadline(CENSUS_S, phase.end))
+-        s.rec["final_census"] = c
+         s.limits(c)
+-        if not c["complete"]:
+-            s.fail("FINAL_CENSUS_INCOMPLETE", c["incomplete"])
+-        if c["owned_live"]:
+-            s.fail("OWNED_LIVE", c["owned_live"])
+         if not s.cheap_clear():
+             s.fail("STREAMS_OR_THREADS_NOT_CLOSED")
+         if s.clear is None and not c["owned_live"] and s.cheap_clear():
+@@ -1262,12 +1594,14 @@
+     a = s.accounting(dl)
+     s.disk_trips(a)
+     phase.check("before final payload decision")
+-    state = "NOT_LAUNCHED" if s.pid is None else "UNSETTLED" if s.failures else "SETTLED"
++    unresolved = any(not h["settled"] for h in s.helpers) or not c["complete"] or bool(c["owned_live"] or c["unproved_live"])
++    state = "UNSETTLED" if unresolved else "NOT_LAUNCHED" if s.pid is None else "UNSETTLED" if s.failures else "SETTLED"
+     code = {"SETTLED": 0, "NOT_LAUNCHED": 10, "UNSETTLED": 11}[state]
+     s.rec.update(settlement=state, child_pid=s.pid, child_identity=s.ident, child_returncode=s.rc,
+                  child_exit_mono=s.exit_mono, child_exit_epoch=s.exit_epoch, wait_status_lost=s.lost_wait,
+                  failures=s.failures, trips=list(s.trips.values()), stop_request=s.stop, signal=s.signal,
+                  owned_identities=list(s.owned.values()), contract_violations=s.violations, clear=s.clear,
++                 helper_calls=s.helper_calls, helper_log=s.helper_log, helpers=s.helper_reports(),
+                  streams=s.streams, loop_status=s.loop_status, samples_written=s.sample_count,
+                  samples_bytes=s.sample_bytes, maxima=s.maxima, min_free=s.min_free, artifacts=arts,
+                  evidence_expected_sha256=expected, pins_at_end=pin_end, output_root_inventory=inventory,
+@@ -1347,7 +1681,7 @@
+     signal.signal(signal.SIGCHLD, signal.SIG_DFL)
+     signal.pthread_sigmask(signal.SIG_UNBLOCK, CANCEL_SIGNALS)
+     if len(sys.argv) != 2:
+-        sys.stderr.write("usage: owned_supervisor_v10.py CONFIG.json\n")
++        sys.stderr.write("usage: owned_supervisor_v11.py CONFIG.json\n")
+         return 2
+     try:
+         path = os.path.abspath(sys.argv[1])
+@@ -1356,6 +1690,9 @@
+         validate(cfg)
+         s = Supervisor(cfg, path, a["sha256"])
+         s.open_anchors()
++        if os.path.realpath(os.getcwd()) != cfg["lane"]:
++            raise GuardError("SUPERVISOR_CWD_MUST_EQUAL_LANE")
++        s.establish_baseline()
+     except BaseException as e:
+         sys.stderr.write("CONFIG_OR_ANCHORS_UNUSABLE %r\n" % e)
+         return 2

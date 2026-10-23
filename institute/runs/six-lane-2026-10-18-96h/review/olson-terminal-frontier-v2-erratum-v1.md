@@ -1,0 +1,5 @@
+# Olson terminal frontier v2 — erratum v1 (p23 closes with FC1023)
+
+Recorded 2026-10-21T03:16:40-0700 (`/bin/date`). Governs olson-terminal-frontier-v2.md (1d72231e26b1382977b06db453d05100147e04fdc2a36b75639c039679ce6d0c). FC1023 has now passed its Claude second family: /Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/review/olson-FC1023-claude-v2.prompt.note.md (fa1e985f5c557ca193c45a3ae788a4e3a1d97b7b1648c022b1727c1adf81d74d): **0F/0M/0m**. With the earlier Codex 0F/0M/0m and the parent written check, the provisional FC1023 parent verdict is confirmed; both families plus parent verdict are satisfied.
+
+Therefore the p=23 table's only provisional row (kappa_hat=10) is now accepted, and **every terminal k=24 cell at p=23 is excluded** (union of separately accepted scopes, full existential NF antecedent). No other row changes. The OPEN cells at p=29 (kappa_hat=13,14) and the general complementary strip j≤2v−2 remain exactly as recorded. This erratum adds no new mathematics; each component keeps its own imports/errata.

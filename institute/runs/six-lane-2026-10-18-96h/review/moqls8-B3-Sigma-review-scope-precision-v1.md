@@ -1,0 +1,9 @@
+# Sigma review scope and historical-status precision
+
+Recorded 2026-10-21T05:44:50-0700 (`/bin/date`). No mathematical candidate edited; original candidateSHA256adad9baeb814f85a370a5b1c62cb9fb883b6166d366556a121d4f7ed0771ddd3.
+
+TheoremM/CorollarySigma are to be reviewed ONLY under literalH1,H2 andH4(part): q1/q7 lie inA, haveallthreecoordinatesnonzero, andareorthonormal. This fullsupport is an explicitpremise, NOT assertedfromthemetadatajsonkey. The originalfullB3exacttemplate requiresaseparatebinding; AZparenterratum2 now includesanelementaryderivationofq1fullsupportfromthatfulltemplate, tobeindependentlycheckedifused. Neverpromoteabounds-onlysupportlisttoexactnonzeroentries.
+
+At candidateLF119/136,the historicalunreviewedAZstatusis stale: AZ'snecessary/conditionaltheoremsare nowacceptedthroughworkererr1andparenterr2, withL as POSSIBLYVACUOUS Sigma=>conclusions. ThisdoesnotacceptSigma'sexclusion. The literalAZsource/errataarepastedbelowtobindthereportedamplitudecorrectionandSigmadefinition; theyarenot mathematicalpremisesforthe newmixed-cornerproof. IfSigma'sindependentgatepasses, itmaymakeL'spremiseimpossibleinthesameexactscope, nevermaketheconditionaltheoremfalse.
+
+Foravoidanceofambiguity, Sigma-prime'snoexternalAcontentappliestoBOTHrows1/7jointly. ThedesirednegativeconclusiondoesNOTassertthateachrowseparatelymusthaveexternalAcontent. Lemma2'sfifthsingletonisONLYsquare1'snonAprojection; squares2–5arewholepurevectors. Allorderedoffdiagonalpairownershipcounts mustrespectbothorientations. Remainingnonmixedpatternsarenotclaimedfeasibleorexcluded. NoGB/threeUNKNOWN/globaln8/Human/Lean/noveltychange.

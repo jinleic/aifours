@@ -1,0 +1,963 @@
+--- v4/src/check_m2_ms09_k1_v4.py
++++ v5/src/check_m2_ms09_k1_v5.py
+@@ -21,13 +21,13 @@
+ from pathlib import Path
+ 
+ import lane_new_data_accounting as A
+-import m2_item_owner_v4 as O
+-import m2_ms09_contract_v4 as C
+-import m2_ms09_evidence_v4 as E
+-import m2_native_staged_v4 as N
+-import m2_supervised_runtime_v4 as R
+-import run_m2_ms06_direct_v4 as M6
+-import run_m2_ms09_k1_v4 as TX
++import m2_item_owner_v5 as O
++import m2_ms09_contract_v5 as C
++import m2_ms09_evidence_v5 as E
++import m2_native_staged_v5 as N
++import m2_supervised_runtime_v5 as R
++import run_m2_ms06_direct_v5 as M6
++import run_m2_ms09_k1_v5 as TX
+ 
+ L = C.LANE
+ SELF = Path(__file__).resolve()
+@@ -192,25 +192,30 @@
+         if options.get('receipt_error'): assert rec.get('record_write_error') and rec.get('cleanup_exception')
+     assert all(lock_free(priv/'cycle2/tokens'/('t%d' % i)) for i in range(2))
+     dump(folder/'control-receipt.json',{'result':result,'supervisor':rec,'observations':observations,'production_coverage':False})
+-    return {'name':name,'status':result['status'],'integrity_status':result['integrity_status'],
++    return {'name':name,'status':result['status'],'integrity_status':result['integrity_status'],'unknown_reason':result.get('unknown_reason'),
+             'receipt':str((folder/'control-receipt.json').relative_to(L)),'sha256':E.digest(folder/'control-receipt.json')}
+ 
+ 
+ def gate_controls(root):
+     priv = root/'gate-scope'; scope(priv); base = lease(priv,5000); rows = []
+     assert R.full_gate(copy.deepcopy(base),'solver',priv,providers())['admitted']
+-    tests = [('free-minus1',{'free':R.BASE_GATE+R.ITEM_GROWTH-1}),('count3',{'count':3}),('count0',{'count':0}),
+-             ('rss-unknown',{'rss':{'known':False}}),('deadline',{'clock':3000}),
+-             ('census-stale',{'census':{'reference':{},'age_seconds':R.CENSUS_TTL+1,'finished_monotonic':0,'current_data_upper_bytes':1}}),
+-             ('census-unknown',{'census':lambda:(_ for _ in ()).throw(RuntimeError('CONTROL census unknown'))}),
++    tests = [('free-minus1',{'free':R.BASE_GATE+R.ITEM_GROWTH-1},'fresh statvfs growth/floor gate'),('count3',{'count':3},'COUNT ceiling/format'),
++             ('count0',{'count':0},'new admissions paused'),('rss-unknown',{'rss':{'known':False}},'unknown RSS/headroom'),
++             ('deadline',{'clock':3000},'deadline allowance'),
++             ('census-stale',{'census':{'reference':{},'age_seconds':R.CENSUS_TTL+1,'finished_monotonic':0,'current_data_upper_bytes':1}},'stale/unknown census age'),
++             ('census-unknown',{'census':lambda:(_ for _ in ()).throw(RuntimeError('CONTROL census unknown'))},'gate measurement/authority error'),
+              ('data-plus-margin',{'census':{'reference':{},'age_seconds':0,'finished_monotonic':time.monotonic(),
+-                'current_data_upper_bytes':R.DATA_CAP-R.ALL_PLANNED_RETAINED_BOUND-R.OTHER_WRITER_MARGIN+1}}),
+-             ('binary-drift',{'binaries':{'python':{'matches':True},'solver':{'matches':False},'checker':{'matches':True}}})]
+-    for name,change in tests:
+-        g = R.full_gate(copy.deepcopy(base),'solver',priv,providers(**change)); assert not g['admitted']; rows.append({'name':name,'errors':g['errors']})
++                'current_data_upper_bytes':R.DATA_CAP-R.ALL_PLANNED_RETAINED_BOUND-R.OTHER_WRITER_MARGIN+1}},'allocated-data cap with whole-plan reservation/margin'),
++             ('binary-drift',{'binaries':{'python':{'matches':True},'solver':{'matches':False},'checker':{'matches':True}}},'contract binary drift')]
++    for name,change,cause in tests:
++        g = R.full_gate(copy.deepcopy(base),'solver',priv,providers(**change))
++        assert not g['admitted'] and any(e.startswith(cause) for e in g['errors']), (name,cause,g['errors'])
++        rows.append({'name':name,'required_cause':cause,'errors':g['errors']})
+     for name in R.ADMISSION_MARKERS:  # shared registry: old m2k1 and new m2k3 persistent markers plus resource STOPs
+         p = root/('stop-'+name.replace('.','_')); scope(p); (p/'cycle2'/name).write_text('CONTROL')
+-        g = R.full_gate(copy.deepcopy(base),'solver',p,providers()); assert not g['admitted']; rows.append({'name':name,'errors':g['errors']})
++        g = R.full_gate(copy.deepcopy(base),'solver',p,providers())
++        assert not g['admitted'] and g['errors'] == ['STOP/veto '+name], (name,g['errors'])
++        rows.append({'name':name,'class':'resource-stop' if name in R.RESOURCE_STOPS else 'persistent-veto','errors':g['errors']})
+     # Real cache semantics: fresh <=600s accepted, older refreshes by an actual exact census of a tiny private scope.
+     fresh = R.census_for_gate(census_ref(priv,7,10),False,priv); assert fresh['current_data_upper_bytes'] == 7
+     renewed = R.census_for_gate(census_ref(priv,7,R.CENSUS_TTL+5),False,priv)
+@@ -221,6 +226,8 @@
+ 
+ def postwait_controls(root):
+     rows = []
++    causes = {'STOP':'STOP/veto STOP-m2r12','floor':'fresh statvfs growth/floor gate','binary':'contract binary drift',
++              'data':'allocated-data cap with whole-plan reservation/margin','old-marker':'STOP/veto m2k1-HALT.flag'}
+     for change in ('STOP','floor','binary','data','old-marker'):
+         folder = root/('postwait-'+change); folder.mkdir(); priv = folder/'scope'; scope(priv)
+         token = os.open(priv/'cycle2/tokens/t0',os.O_RDWR); fcntl.flock(token,fcntl.LOCK_EX)
+@@ -251,6 +258,7 @@
+             else: (priv/'cycle2/m2k1-HALT.flag').write_text('{"CONTROL":"old v1 persistent veto appears during capacity wait"}')
+             fcntl.flock(token,fcntl.LOCK_UN); os.close(token); token = None
+             assert finished.wait(5) and result.get('rec') is None and not result['gate']['admitted'], result
++            assert result['gate']['errors'] == [causes[change]], (change,result['gate']['errors'])
+             assert not (folder/'FORBIDDEN.json').exists() and not (folder/'supervisor.json').exists()
+             rows.append({'change':change,'errors':result['gate']['errors'],'new_children':0})
+         finally:
+@@ -287,7 +295,7 @@
+ 
+ 
+ def safety_dominance_control():
+-    native = {'schema':'PA19-NATIVE-RESULT-v4','status':'UNKNOWN','integrity_status':'NOT_EVALUATED','bounded_unknown':'native wall',
++    native = {'schema':'PA19-NATIVE-RESULT-v5','status':'UNKNOWN','integrity_status':'NOT_EVALUATED','bounded_unknown':'native wall',
+               'halt_production':False,'sat_candidate':False}
+     rec = {'completed_cleanly':False,'trip_reason':'free bytes 1 below floor 12000000000 at completion','uncertain':False,'stop':{}}
+     settle = {'group_quiescent':True,'leader_reaped':True,'explicit_owned_popen_wait':True}
+@@ -333,6 +341,21 @@
+     assert o['status'] == 'UNKNOWN' and o['integrity_status'] == 'INVALID'; rows.append('TIMEOUT-plus-incomplete-checker-feed: INVALID veto')
+     bad = copy.deepcopy(base); bad['bounded_unknown'] = 'CONTROL'; bad['cnf_feeds']['solver']['sha256'] = '0'*64; o = N.outcome(bad)
+     assert o['integrity_status'] == 'INVALID'; rows.append('bounded-stop-plus-completed-bad-solver-feed: INVALID veto')
++    real_write = {'complete':False,'close_ok':True,'error':"OSError('CONTROL write failure')",'cancelled':None,'close_error':None,'bytes':1,'sha256':'0'*64}
++    real_close = {'complete':False,'close_ok':False,'error':"OSError('CONTROL close failure')",'cancelled':None,'close_error':"OSError('CONTROL close failure')",'bytes':len(UNSAT),'sha256':h}
++    stop_cancel = {'complete':False,'close_ok':True,'error':"TimeoutError('CNF write cancelled: stop-event')",'cancelled':'stop-event','close_error':None,'bytes':1,'sha256':'0'*64}
++    deadline_cancel = dict(stop_cancel,cancelled='item-deadline',error="TimeoutError('CNF write cancelled: item-deadline')")
++    for bound in ('proof_cap_hit','bounded_unknown'):
++        for side in ('solver','checker'):
++            for label,feed,wanted in (('real-write',real_write,('INVALID','CNF transport failure (not bound-induced cancellation): '+side)),
++                                      ('real-close',real_close,('INVALID','CNF FIFO close failed: '+side)),
++                                      ('stop-cancel',stop_cancel,('NOT_EVALUATED','declared proof cap; not certified' if bound == 'proof_cap_hit' else 'bounded native stop')),
++                                      ('deadline-cancel',deadline_cancel,('NOT_EVALUATED','declared proof cap; not certified' if bound == 'proof_cap_hit' else 'bounded native stop'))):
++                case = copy.deepcopy(base); case[bound] = 'raw' if bound == 'proof_cap_hit' else 'CONTROL'; case['cnf_feeds'][side] = dict(feed)
++                o = N.outcome(case)
++                assert o['status'] == 'UNKNOWN' and (o['integrity_status'],o['unknown_reason']) == wanted, (bound,side,label,o)
++                assert o['halt_production'] is (wanted[0] == 'INVALID')
++                rows.append('%s+%s-%s -> %s' % (bound,side,label,wanted[0]))
+     r = copy.deepcopy(base); r['solver_rc'] = 10; r['solver_collector']['status_lines'] = ['s SATISFIABLE']; o = N.outcome(r)
+     assert o['status'] == 'UNKNOWN' and o['sat_candidate'] and o['halt_production']
+     for raw,expected in ((b's VERIFIED\r\n',['s VERIFIED']),(b' s VERIFIED\n',[]),(b's NOT VERIFIED\n',['s NOT VERIFIED'])):
+@@ -411,12 +434,12 @@
+             'skeleton_path':contract['skeleton_path'],'skeleton_sha256':contract['skeleton_sha256'],
+             'encoder_sha256':contract['source_sha256']['src/encode_skel_b.py'],'list_path':ca['list']['path'],
+             'list_sha256':ca['list']['sha256'],'complete_denominator':ca['list']['n']}
+-        pin = {'schema':'PA19-K1-CNF-PIN-v4','production_contract_sha256':h,'multiset':9,'b_index':70,'indices':[0,24],
++        pin = {'schema':'PA19-K1-CNF-PIN-v5','production_contract_sha256':h,'multiset':9,'b_index':70,'indices':[0,24],
+                'recipe':recipe,'binary_authority':contract['binary_authority'],'cnf_sha256':expected['cnf_sha256'],'cnf_bytes':expected['cnf_bytes'],
+                'source_sha256':contract['source_sha256'],'supervisor_sha256':R.SUP_SHA}
+         ph = C.publish_json(shadow/it['pin'],pin,shadow/'stage')
+         dump(shadow/'cycle2'/'m2k3-INTEGRITY.flag',{'status':'UNKNOWN','veto':'INTEGRITY','CONTROL':True})
+-        result = {'pipeline_schema':'PA19-SUPERVISED-DRAT-v4','status':'UNKNOWN','integrity_status':'INVALID','integrity_errors':['CONTROL invalid proof'],'sat_candidate':False,'checked':False,'halt_production':True,
++        result = {'pipeline_schema':'PA19-SUPERVISED-DRAT-v5','status':'UNKNOWN','integrity_status':'INVALID','integrity_errors':['CONTROL invalid proof'],'sat_candidate':False,'checked':False,'halt_production':True,
+                   'cnf_sha256':pin['cnf_sha256'],'cnf_bytes':pin['cnf_bytes'],'pre_child_pin_sha256':ph,
+                   'native_result':{'status':'UNKNOWN','integrity_status':'INVALID','checker_collector':{'status_lines':['s NOT VERIFIED']}}}
+         TX.publish_item(result,contract,h,ca,it,shadow/'stage')
+@@ -435,7 +458,7 @@
+             R.Capacity = lambda *args,**kwargs:AlreadyHeld()  # REAL outer control token remains held
+             C.load = scoped_contract(contract,contract['_control_contract_path'],h)
+             O.execute = forbidden_native
+-            sys.argv = [str(L/'src/run_m2_ms09_k1_v4.py'),str(L/contract['_control_contract_path']),h,'--max-attempts','1']
++            sys.argv = [str(L/'src/run_m2_ms09_k1_v5.py'),str(L/contract['_control_contract_path']),h,'--max-attempts','1']
+             TX.main()
+         finally:
+             R.Capacity,O.execute,sys.argv,C.load = original_cap,original_owner,argv,original_load
+@@ -456,7 +479,7 @@
+             rr = dict(result,status='UNKNOWN',integrity_status='NOT_EVALUATED',integrity_errors=[],sat_candidate=False,checked=False,halt_production=False,native_result={},pre_child_pin_sha256=ph2)
+             if variant == 'unknown-pipeline': rr['pipeline_schema'] = 'UNKNOWN'
+             rb = (json.dumps(rr,indent=1)+'\n').encode()
+-            cc = {'schema':'PA19-K1-RECEIPT-v4','production_contract_sha256':h,'b_index':70,'indices':[0,24],
++            cc = {'schema':'PA19-K1-RECEIPT-v5','production_contract_sha256':h,'b_index':70,'indices':[0,24],
+                   'pin_sha256':ph2,'record_sha256':'0'*64 if variant == 'bad-record-sha' else hashlib.sha256(rb).hexdigest()}
+             if variant != 'omit-commit': C.publish_json(shadow/fixture['commit'],cc,shadow/'stage')
+             if variant != 'interrupted-before-primary': C.publish_bytes(shadow/fixture['new_record'],rb,shadow/'stage')
+@@ -498,15 +521,17 @@
+         recipe = {'mode':'partbatch','multiset':9,'b_index':ca['b_index'],'indices':it['indices'],'skeleton_path':contract['skeleton_path'],
+             'skeleton_sha256':contract['skeleton_sha256'],'encoder_sha256':contract['source_sha256']['src/encode_skel_b.py'],
+             'list_path':ca['list']['path'],'list_sha256':ca['list']['sha256'],'complete_denominator':ca['list']['n']}
+-        pin = {'schema':'PA19-K1-CNF-PIN-v4','production_contract_sha256':h,'multiset':9,'b_index':ca['b_index'],'indices':it['indices'],
++        pin = {'schema':'PA19-K1-CNF-PIN-v5','production_contract_sha256':h,'multiset':9,'b_index':ca['b_index'],'indices':it['indices'],
+             'recipe':recipe,'cnf_sha256':hashlib.sha256(UNSAT).hexdigest(),'cnf_bytes':len(UNSAT),'source_sha256':contract['source_sha256'],
+             'supervisor_sha256':R.SUP_SHA,'binary_authority':contract['binary_authority']}
+         ph = C.publish_json(shadow/it['pin'],pin,shadow/'stage')
+-        r = {'pipeline_schema':'PA19-SUPERVISED-DRAT-v4','status':'UNKNOWN','checked':False,'integrity_status':'NOT_EVALUATED',
++        r = {'pipeline_schema':'PA19-SUPERVISED-DRAT-v5','status':'UNKNOWN','checked':False,'integrity_status':'NOT_EVALUATED',
+              'integrity_errors':[],'sat_candidate':False,'halt_production':False,'cnf_sha256':pin['cnf_sha256'],'cnf_bytes':len(UNSAT),
+              'pre_child_pin_sha256':ph,'native_result':{'status':'UNKNOWN','integrity_status':'NOT_EVALUATED','bounded_unknown':'CONTROL'}}
+         TX.publish_item(r,contract,h,ca,it,shadow/'stage')
+         assert C.inspect_new(contract,h,ca,it)['state'] == 'UNQUALIFIED'
++        first_record_sha = E.digest(shadow/it['new_record'])
++        second_claim = byid[second][1]['claim']
+         R.create_census = lambda lane=shadow: old[2](lane)
+         R.census_for_gate = lambda ref,force=False,lane=shadow: old[3](ref,force,lane)
+         class AlreadyHeld:
+@@ -516,13 +541,17 @@
+         def record(constructor,recipe,contract_sha,source_sha,paths,deadline,admission,*a,**k):
+             calls.append(paths['id']); return {'status':'UNKNOWN'}
+         O.execute = record
+-        sys.argv = [str(L/'src/run_m2_ms09_k1_v4.py'),contract['_control_contract_path'],h,'--max-attempts','1']
++        sys.argv = [str(L/'src/run_m2_ms09_k1_v5.py'),contract['_control_contract_path'],h,'--max-attempts','1']
+         TX.main()
+     finally:
+         C.LANE,TX.L,R.create_census,R.census_for_gate,R.Capacity,O.execute,sys.argv = old; C.load = original_load
+     assert calls == [second], ('existing UNKNOWN was retried or queue changed',calls,first,second)
+-    assert list((shadow/'archive/k1-v4-unattempted').glob('*.claim'))
+-    return {'skipped_existing_unknown':first,'next_attempted':second,'calls':calls}
++    import re as regex
++    archived = [p for p in (shadow/'archive/k1-v5-unattempted').iterdir() if regex.fullmatch(regex.escape(Path(second_claim).name)+r'\.[0-9]+',p.name)]
++    assert len(archived) == 1 and not (shadow/second_claim).exists(), ('second claim not archived with timestamp suffix',archived)
++    assert E.digest(shadow/it['new_record']) == first_record_sha, 'first UNKNOWN receipt changed'
++    return {'skipped_existing_unknown':first,'next_attempted':second,'calls':calls,'archived_claim':str(archived[0].relative_to(shadow)),
++            'first_record_unchanged_sha256':first_record_sha}
+ 
+ 
+ def refusal_controls(root,contract,h):
+@@ -544,10 +573,10 @@
+             if mode == 'started-group-safety-trip':
+                 O.WORKER = SELF  # fake worker sleeps; owner/runner/Capacity/supervisor remain the real code paths
+                 def external_stop():
+-                    while not list(shadow.glob('cycle2/m2part_drat/*/*_k1_v4.json.job.json')): time.sleep(0.02)
++                    while not list(shadow.glob('cycle2/m2part_drat/*/*_k1_v5.json.job.json')): time.sleep(0.02)
+                     time.sleep(0.5); os.kill(os.getpid(),signal.SIGTERM)
+                 threading.Thread(target=external_stop,daemon=True).start()
+-            sys.argv = [str(L/'src/run_m2_ms09_k1_v4.py'),contract['_control_contract_path'],h,'--max-attempts','1']
++            sys.argv = [str(L/'src/run_m2_ms09_k1_v5.py'),contract['_control_contract_path'],h,'--max-attempts','1']
+             TX.main()
+         finally:
+             C.LANE,TX.L,O.L,O.WORKER,R.create_census,R.census_for_gate,R.Capacity,R.full_gate,sys.argv = saved; C.load = original_load
+@@ -569,7 +598,10 @@
+             assert record.exists() and flags == ['m2k3-HALT.flag'], (flags,record)
+             saved_record = json.loads(record.read_bytes())
+             assert saved_record['status'] == 'UNKNOWN' and saved_record['halt_production'] is True and saved_record['safety_veto']
+-            assert saved_record['supervisor']['trip_reason'] and saved_record['owner_settlement']['leader_reaped'] is True
++            sup,settle = saved_record['supervisor'],saved_record['owner_settlement']
++            assert saved_record['group_started'] is True and sup['leader_pid'] and str(sup['trip_reason']).startswith('external SIGTERM'), sup
++            assert settle['group_quiescent'] is True and settle['leader_reaped'] is True and settle['explicit_owned_popen_wait'] is True
++            assert settle['owned_leader_pid'] == sup['leader_pid'] and type(settle['leader_returncode']) is int
+             old_lane = C.LANE
+             try:
+                 C.LANE = shadow
+@@ -580,71 +612,117 @@
+ 
+ 
+ def mutation_controls(root):
+-    def mutant(fn,transform,name):
+-        tree = transform().visit(ast.parse(source_inspect.getsource(fn))); ast.fix_missing_locations(tree)
++    """Each mutant must make EXACTLY its expected AST change; original rejects while mutant accepts the same fixture."""
++    def mutant(fn,transformer,name,expected_changes):
++        tree = transformer.visit(ast.parse(source_inspect.getsource(fn))); ast.fix_missing_locations(tree)
++        assert transformer.changes == expected_changes, (name,'mutation did not hit the intended enforcement',transformer.changes)
+         (root/(name+'.py')).write_text(ast.unparse(tree)+'\n')
+         namespace = dict(fn.__globals__); exec(compile(tree,str(root/(name+'.py')),'exec'),namespace)
+         return namespace[fn.__name__]
+-    class DropCheckerFeeds(ast.NodeTransformer):
+-        def visit_For(self,node):
+-            return None if ast.unparse(node.iter) == "result['cnf_feeds'].values()" else self.generic_visit(node)
+-    class AcceptUnknownRss(ast.NodeTransformer):
++    class Counting(ast.NodeTransformer):
++        def __init__(self): self.changes = 0
++    class CheckerFeedAlwaysExact(Counting):
++        def visit_Assign(self,node):
++            if [ast.unparse(t) for t in node.targets] == ['checker_feed_exact']:
++                self.changes += 1; node.value = ast.Constant(value=True)
++            return node
++    class AcceptUnknownRss(Counting):
+         def visit_Expr(self,node):
+-            return ast.Pass() if ast.unparse(node) == "errors.append('unknown RSS/headroom')" else self.generic_visit(node)
+-    class AcceptBinaryDrift(ast.NodeTransformer):
++            if ast.unparse(node) == "errors.append('unknown RSS/headroom')": self.changes += 1; return ast.Pass()
++            return node
++    class AcceptBinaryDrift(Counting):
+         def visit_Expr(self,node):
+-            return ast.Pass() if ast.unparse(node) == "errors.append('contract binary drift')" else self.generic_visit(node)
+-    class IgnoreSafety(ast.NodeTransformer):
++            if ast.unparse(node) == "errors.append('contract binary drift')": self.changes += 1; return ast.Pass()
++            return node
++    class IgnoreSafety(Counting):
+         def visit_If(self,node):
+-            if ast.unparse(node.test) == 'safety': node.test = ast.Constant(value=False)
++            if ast.unparse(node.test) == 'safety': self.changes += 1; node.test = ast.Constant(value=False)
+             return self.generic_visit(node)
+-    class AnyEmptyCase(ast.NodeTransformer):
++    class AnyEmptyCase(Counting):
+         def visit_Compare(self,node):
+-            return ast.Constant(value=True) if ast.unparse(node) == "ca['b_index'] == 3" else self.generic_visit(node)
+-    class SkipEstablishedCorruption(ast.NodeTransformer):
++            if ast.unparse(node) == "ca['b_index'] == 3": self.changes += 1; return ast.Constant(value=True)
++            return self.generic_visit(node)
++    class SkipCompletedReplayMismatch(Counting):
+         def visit_If(self,node):
+-            if ast.unparse(node.test).startswith("r.get('complete') and (r.get('bytes')"): node.test = ast.Constant(value=False)
++            if ast.unparse(node.test).startswith("r.get('complete') and (r.get('bytes')"): self.changes += 1; node.test = ast.Constant(value=False)
+             return self.generic_visit(node)
+-    class NewMarkersOnly(ast.NodeTransformer):
++    class SkipRealFeedFailure(Counting):
++        def visit_If(self,node):
++            if ast.unparse(node.test).startswith("feed.get('error') is not None and feed.get('cancelled')"): self.changes += 1; node.test = ast.Constant(value=False)
++            return self.generic_visit(node)
++    class NewMarkersOnly(Counting):
+         def visit_For(self,node):
+             if ast.unparse(node.iter) == 'ADMISSION_MARKERS':
++                self.changes += 1
+                 node.iter = ast.parse("('STOP-hard12','STOP-m2r12','STOP-K1','m2k3-SAT.flag','m2k3-INTEGRITY.flag','m2k3-HALT.flag','m2k3-QUARANTINE.flag')",mode='eval').body
+             return self.generic_visit(node)
+     h,ph = hashlib.sha256(UNSAT).hexdigest(),hashlib.sha256(b'').hexdigest()
+     f = {'bytes':len(UNSAT),'sha256':h,'complete':True,'close_ok':True,'error':None}
+-    r = {'cnf_bytes':len(UNSAT),'cnf_sha256':h,'solver_rc':20,'checker_rc':0,
++    good = {'cnf_bytes':len(UNSAT),'cnf_sha256':h,'solver_rc':20,'checker_rc':0,
+          'solver_collector':{'complete':True,'error':None,'status_lines':['s UNSATISFIABLE']},
+          'checker_collector':{'complete':True,'error':None,'status_lines':['s VERIFIED']},
+-         'cnf_feeds':{'solver':f,'checker':dict(f,bytes=len(UNSAT)-1)},
++         'cnf_feeds':{'solver':dict(f),'checker':dict(f)},
+          'proof_stream':{'reader_complete':True,'reader_error':None,'raw_bytes':0,'raw_sha256':ph},
+          'proof_delivery':{'bytes':0,'sha256':ph,'complete':True,'close_ok':True,'error':None}}
+-    m = mutant(N.outcome,DropCheckerFeeds,'mutant-omitted-checker-feed')
+-    assert N.outcome(r)['integrity_status'] == 'INVALID' and m(r)['status'] == 'UNSAT'
++    assert N.outcome(good)['status'] == 'UNSAT'
++    # Only the final checker-feed predicate catches a stop-cancelled incomplete checker feed with a VERIFIED checker.
++    cancelled = copy.deepcopy(good); cancelled['cnf_feeds']['checker'] = {'bytes':0,'sha256':ph,'complete':False,'close_ok':True,
++        'error':"TimeoutError('CNF write cancelled: stop-event')",'cancelled':'stop-event','close_error':None}
++    m = mutant(N.outcome,CheckerFeedAlwaysExact(),'mutant-checker-feed-enforcement-removed',1)
++    assert N.outcome(cancelled)['integrity_status'] == 'INVALID' and m(cancelled)['status'] == 'UNSAT'
++    capped = copy.deepcopy(good); capped['proof_cap_hit'] = 'raw'
++    capped['cnf_feeds']['solver'] = {'bytes':1,'sha256':'0'*64,'complete':False,'close_ok':True,'error':"OSError('CONTROL write')",'cancelled':None,'close_error':None}
++    m = mutant(N.outcome,SkipRealFeedFailure(),'mutant-cap-hides-real-feed-failure',1)
++    assert N.outcome(capped)['integrity_status'] == 'INVALID' and m(capped)['integrity_status'] == 'NOT_EVALUATED'
+     p = root/'mutant-scope'; scope(p); item = lease(p,5000)
+-    m = mutant(R.full_gate,AcceptUnknownRss,'mutant-unknown-rss')
++    m = mutant(R.full_gate,AcceptUnknownRss(),'mutant-unknown-rss',1)
+     assert not R.full_gate(copy.deepcopy(item),'solver',p,providers(rss={'known':False}))['admitted']
+     assert m(copy.deepcopy(item),'solver',p,providers(rss={'known':False}))['admitted']
+     drift = {'python':{'matches':True},'solver':{'matches':False},'checker':{'matches':True}}
+-    m = mutant(R.full_gate,AcceptBinaryDrift,'mutant-binary-drift')
++    m = mutant(R.full_gate,AcceptBinaryDrift(),'mutant-binary-drift',1)
+     assert not R.full_gate(copy.deepcopy(item),'solver',p,providers(binaries=drift))['admitted']
+     assert m(copy.deepcopy(item),'solver',p,providers(binaries=drift))['admitted']
+     native = {'status':'UNKNOWN','integrity_status':'NOT_EVALUATED','halt_production':False}
+     rec = {'completed_cleanly':False,'trip_reason':'free bytes 1 below floor 12000000000','uncertain':False,'stop':{}}
+     settle = {'group_quiescent':True,'leader_reaped':True,'explicit_owned_popen_wait':True}
+-    m = mutant(O.apply_worker_outcome,IgnoreSafety,'mutant-safety-not-dominant')
++    m = mutant(O.apply_worker_outcome,IgnoreSafety(),'mutant-safety-not-dominant',1)
+     assert O.apply_worker_outcome({},native,rec,settle)['halt_production'] is True and m({},native,rec,settle)['halt_production'] is False
+-    m = mutant(C.structural_acceptance,AnyEmptyCase,'mutant-generic-empty')
++    m = mutant(C.structural_acceptance,AnyEmptyCase(),'mutant-generic-empty',1)
+     case,c = {'b_index':0,'list':{'n':0,'sha256':C.B3.EXPECTED['empty_list_receipt']['sha256']}},{'skeleton_sha256':C.SKELETON_SHA}
+     assert not C.structural_acceptance(c,case)['accepted'] and m(c,case)['accepted']
+-    t = copy.deepcopy(r); t['cnf_feeds']['checker'] = dict(f); t['checker_collector']['status_lines'] = ['s TIMEOUT']
++    t = copy.deepcopy(good); t['checker_collector']['status_lines'] = ['s TIMEOUT']
+     t['proof_delivery'] = {'bytes':0,'sha256':'1'*64,'complete':True,'close_ok':True,'error':None}  # equal length, wrong SHA
+-    m = mutant(N.outcome,SkipEstablishedCorruption,'mutant-timeout-hides-bad-replay')
++    m = mutant(N.outcome,SkipCompletedReplayMismatch(),'mutant-timeout-hides-bad-replay',1)
+     assert N.outcome(t)['integrity_status'] == 'INVALID' and m(t)['integrity_status'] == 'NOT_EVALUATED'
+     old = root/'mutant-old-marker'; scope(old); (old/'cycle2/m2k1-INVALID.flag').write_text('{}')
+-    m = mutant(R.full_gate,NewMarkersOnly,'mutant-drops-old-markers')
++    m = mutant(R.full_gate,NewMarkersOnly(),'mutant-drops-old-markers',1)
+     assert not R.full_gate(copy.deepcopy(item),'solver',old,providers())['admitted'] and m(copy.deepcopy(item),'solver',old,providers())['admitted']
+-    return ['checker-feed omission','unknown-RSS admission','binary-drift admission','safety dominance removal','generic empty acceptance',
+-            'TIMEOUT hides completed bad replay','old persistent markers dropped from gate']
++    return ['checker-feed enforcement removal','cap hides real feed failure','unknown-RSS admission','binary-drift admission',
++            'safety dominance removal','generic empty acceptance','TIMEOUT hides completed bad replay','old persistent markers dropped from gate']
++
++
++def resource_stop_init_control(root,contract,h):
++    """ACTUAL M9 runner: a lone resource STOP is reported in the full union and deferred with its own class."""
++    shadow = shadow_lane(root,'resource-stop-shadow',contract); scope(shadow)
++    (shadow/'cycle2/STOP-m2r12').write_text('CONTROL resource stop only')
++    saved,calls = (C.LANE,TX.L,R.Capacity,O.execute,sys.argv,C.load),[]
++    class AlreadyHeld:
++        def __enter__(self): return self
++        def __exit__(self,*a): pass
++    def forbidden(*a,**k):
++        calls.append('owner must not run'); raise AssertionError('resource stop bypassed')
++    try:
++        C.LANE = TX.L = shadow; C.load = scoped_contract(contract,contract['_control_contract_path'],h)
++        R.Capacity = lambda *a,**k: AlreadyHeld(); O.execute = forbidden
++        sys.argv = [str(L/'src/run_m2_ms09_k1_v5.py'),contract['_control_contract_path'],h,'--max-attempts','1']
++        TX.main()
++    finally:
++        C.LANE,TX.L,R.Capacity,O.execute,sys.argv,C.load = saved
++    deferred = [json.loads(p.read_bytes()) for p in (shadow/'cycle2/m2k3-chunks').glob('*/initialization-deferred.json')]
++    assert not calls and len(deferred) == 1 and deferred[0]['init_stage'] == 'resource-stop', deferred
++    union = deferred[0]['veto_detail']['admission_union']
++    assert union == {'resource_stops':['STOP-m2r12'],'persistent_vetoes':[]}, union
++    return {'deferred':deferred[0],'owner_calls':0}
+ 
+ 
+ def m6_old_marker_control(root,path6,sha6):
+@@ -676,7 +754,7 @@
+         R.create_census = lambda lane=shadow: saved[4](lane)
+         R.census_for_gate = lambda ref,force=False,lane=shadow: saved[5](ref,force,lane)
+         M6.OWNER.execute = forbidden
+-        sys.argv = [str(L/'src/run_m2_ms06_direct_v4.py'),str(Path(path6).resolve()),sha6,'--max-attempts','1']
++        sys.argv = [str(L/'src/run_m2_ms06_direct_v5.py'),str(Path(path6).resolve()),sha6,'--max-attempts','1']
+         M6.main()
+     finally:
+         M6.L,M6.COMMON.LANE,M6.verify,R.Capacity,R.create_census,R.census_for_gate,M6.OWNER.execute,sys.argv = saved
+@@ -695,8 +773,8 @@
+     ap = argparse.ArgumentParser(); ap.add_argument('contract'); ap.add_argument('sha256')
+     ap.add_argument('ms06_contract'); ap.add_argument('ms06_sha256'); args = ap.parse_args()
+     R.install_handlers()
+-    root = L/'cycle2'/('v4-required-controls-'+str(time.time_ns())); root.mkdir()
+-    out = {'host_clock':time.strftime('%Y-%m-%dT%H:%M:%S%z'),'schema':'PA19-V4-REQUIRED-CONTROLS-v1','production_coverage':False,
++    root = L/'cycle2'/('v5-required-controls-'+str(time.time_ns())); root.mkdir()
++    out = {'host_clock':time.strftime('%Y-%m-%dT%H:%M:%S%z'),'schema':'PA19-V5-REQUIRED-CONTROLS-v1','production_coverage':False,
+            'control_source_sha256':E.digest(SELF),'contract_sha256':args.sha256,'families':{}}
+     try:
+         with R.Capacity(time.monotonic()+10800):  # one real lane token; private shadow tokens for lifecycle fixtures
+@@ -714,8 +792,16 @@
+                 ('post-Popen-exception',{'start_failure':True}),('collector-Thread.start-exception',{'thread_failure':True}),
+                 ('post-Popen-plus-receipt-OSError',{'start_failure':True,'receipt_error':True})]:
+                 entry = native_case(root,name,**opts); natives.append(entry)
++                reasons = {'valid-full-feed':None,'solver-prefix':'completed CNF delivery differs from pinned formula: solver',
++                    'checker-prefix':'completed CNF delivery differs from pinned formula: checker',
++                    'solver-write-error':'CNF transport failure (not bound-induced cancellation): solver',
++                    'checker-write-error':'CNF transport failure (not bound-induced cancellation): checker',
++                    'solver-close-error':'CNF FIFO close failed: solver','checker-close-error':'CNF FIFO close failed: checker',
++                    'real-SAT-invalid-proof':'checker NOT VERIFIED'}
+                 wanted = ('UNSAT','VALIDATED') if name == 'valid-full-feed' else ('UNKNOWN','INVALID')
+                 assert (entry['status'],entry['integrity_status']) == wanted, (name,entry,wanted)
++                if name in reasons: assert entry['unknown_reason'] == reasons[name], (name,entry['unknown_reason'])
++                else: assert str(entry['unknown_reason']).startswith('incomplete native lifecycle'), (name,entry['unknown_reason'])
+             out['families']['1_exceptional_ownership'] = [x for x in natives if 'exception' in x['name'] or 'OSError' in x['name']]
+             out['families']['1_late_leader_reap'] = late_reap_control(root)
+             out['families']['3_measured_native_transport'] = [x for x in natives if x not in out['families']['1_exceptional_ownership']]
+@@ -724,6 +810,7 @@
+             out['families']['5_no_automatic_retry'] = no_retry_control(root,c,args.sha256)
+             out['families']['refusal_rules_and_real_safety_trip'] = refusal_controls(root,c,args.sha256)
+             out['families']['1_M6_old_marker_initialization_veto'] = m6_old_marker_control(root,args.ms06_contract,args.ms06_sha256)
++            out['families']['5_resource_stop_initialization_class'] = resource_stop_init_control(root,c,args.sha256)
+             out['families']['7_actual_filetype_byte_accounting'] = accounting_controls(root)
+             out['source_omission_mutants_killed'] = mutation_controls(root)
+             out.update(status='PASS',finished_host_clock=time.strftime('%Y-%m-%dT%H:%M:%S%z'),
+--- v4/src/final_m2_ms09_inventory_v4.py
++++ v5/src/final_m2_ms09_inventory_v5.py
+@@ -8,8 +8,8 @@
+ import json
+ import time
+ 
+-import m2_ms09_contract_v4 as C
+-import m2_supervised_runtime_v4 as R
++import m2_ms09_contract_v5 as C
++import m2_supervised_runtime_v5 as R
+ 
+ 
+ def main():
+--- v4/src/freeze_m2_ms09_k1_v4.py
++++ v5/src/freeze_m2_ms09_k1_v5.py
+@@ -11,9 +11,9 @@
+ from pathlib import Path
+ 
+ import lane_new_data_accounting as ACCOUNT
+-import m2_ms09_contract_v4 as C
+-import m2_ms09_evidence_v4 as E
+-import m2_supervised_runtime_v4 as R
++import m2_ms09_contract_v5 as C
++import m2_ms09_evidence_v5 as E
++import m2_supervised_runtime_v5 as R
+ 
+ L = C.LANE
+ PHASE = L/'cycle2'/'ms09-batch-denominators-v2-20261018T015110.json'
+@@ -45,7 +45,7 @@
+         'cases':[],'calibration_reservations':[],'reserved_ids':[],'pending_order':[],'frozen_original_records':[],
+         'validation_tasks':[],'validation_order':C.CALIBRATION_VALIDATION_IDS+C.HISTORICAL_VALIDATION_IDS,
+         'reuse_policy':'WITHDRAWN: only new measured-v3 exact-input validation may qualify historical inputs',
+-        'no_retry':'one new _k1_v4 attempt/input; pre-worker admission refusals stay unattempted; every supervisor stop and UNKNOWN preserved; individual re-admission needs explicit parent decision',
++        'no_retry':'one new _k1_v5 attempt/input; pre-worker admission refusals stay unattempted; every supervisor stop and UNKNOWN preserved; individual re-admission needs explicit parent decision',
+         'priority':'primary open-M2 work before14 measured validations; LEGACY5 repair E0 then ms01 only afterward',
+         'final_gate':'all exact intervals measured-v3; scientific UNKNOWN on failed certification with separate persistent integrity/SAT/safety veto',
+         'resource_policy':C.resource_policy()}
+@@ -166,7 +166,7 @@
+     assert a['known'] and a['new_data_usage_upper_bytes']+R.ALL_PLANNED_RETAINED_BOUND+R.OTHER_WRITER_MARGIN+16*1024**2 <= ACCOUNT.ENFORCED_CAP_BYTES
+     sats,invalid = C.sat_scan()
+     assert not sats and not invalid, ('SAT/invalid JSON veto',sats,invalid)
+-    dest = L/'cycle2'/('m2-ms09-k1-v4-contract-'+time.strftime('%Y%m%dT%H%M%S')+'.json')
++    dest = L/'cycle2'/('m2-ms09-k1-v5-contract-'+time.strftime('%Y%m%dT%H%M%S')+'.json')
+     stage = L/'scratch'/'m2k1-publish'/('contract-'+str(time.time_ns()))
+     C.verify_sources(out)
+     assert len((json.dumps(out,indent=1)+'\n').encode()) <= 8*1024**2, 'two contract hardlinks exceed16MiB frozen bound'
+--- v4/src/m2_item_owner_v4.py
++++ v5/src/m2_item_owner_v5.py
+@@ -9,12 +9,12 @@
+ import time
+ from pathlib import Path
+ 
+-import m2_ms09_contract_v4 as C
+-import m2_supervised_runtime_v4 as R
+-import m2_supervised_evidence_v4 as EVIDENCE
++import m2_ms09_contract_v5 as C
++import m2_supervised_runtime_v5 as R
++import m2_supervised_evidence_v5 as EVIDENCE
+ 
+ L = C.LANE
+-WORKER = L/'src/m2_native_staged_v4.py'
++WORKER = L/'src/m2_native_staged_v5.py'
+ 
+ 
+ def bounded_publish(path,value,stage,limit):
+@@ -78,7 +78,7 @@
+     """All expectations derive from the frozen contract admission object; observed hashes NEVER become authority."""
+     authority = admission['binary_authority']
+     assert authority['solver']['path'] == '/opt/homebrew/bin/'+solver
+-    result = {'pipeline_schema':'PA19-SUPERVISED-DRAT-v4','status':'UNKNOWN','checked':False,
++    result = {'pipeline_schema':'PA19-SUPERVISED-DRAT-v5','status':'UNKNOWN','checked':False,
+         'integrity_status':'NOT_EVALUATED','integrity_errors':[],'sat_candidate':False,'halt_production':False,
+         'group_started':False,'production_contract_sha256':contract_sha,'multiset':recipe['multiset'],'b_index':recipe['b_index'],
+         'indices':recipe.get('indices'),'encoder':'encode_skel_b.build_v2' if recipe['mode'] == 'direct' else 'encode_skel_b.build_partbatch',
+@@ -102,14 +102,14 @@
+             raw = constructor()
+             h,nbytes = hashlib.sha256(raw).hexdigest(),len(raw)
+             result.update(cnf_sha256=h,cnf_bytes=nbytes)
+-            pin = {'schema':'PA19-K1-CNF-PIN-v4','host_clock':time.strftime('%Y-%m-%dT%H:%M:%S%z'),
++            pin = {'schema':'PA19-K1-CNF-PIN-v5','host_clock':time.strftime('%Y-%m-%dT%H:%M:%S%z'),
+                 'production_contract_sha256':contract_sha,'multiset':recipe['multiset'],'b_index':recipe['b_index'],
+                 'indices':recipe.get('indices'),'cnf_sha256':h,'cnf_bytes':nbytes,'recipe':recipe,'source_sha256':source_sha,
+                 'supervisor_sha256':R.SUP_SHA,'binary_authority':authority,'no_cnf_or_proof_retained':True}
+             pin_sha = bounded_publish(paths['pin'],pin,stage,16384)
+             result.update(pre_child_pin_sha256=pin_sha,pre_child_pin_path=str(Path(paths['pin']).relative_to(L)))
+             lease['item_deadline_monotonic'] = time.monotonic()+2400
+-            job = {'schema':'PA19-NATIVE-JOB-v4','recipe':recipe,'cnf_sha256':h,'cnf_bytes':nbytes,'solver':solver,
++            job = {'schema':'PA19-NATIVE-JOB-v5','recipe':recipe,'cnf_sha256':h,'cnf_bytes':nbytes,'solver':solver,
+                 'solver_seconds':seconds,'checker_seconds':1200,'lease':lease,'source_sha256':source_sha,'binary_authority':authority,
+                 'workdir':str(paths['workdir']),'result_path':str(paths['worker_result'])}
+             job_sha = bounded_publish(paths['job'],job,stage,16384)
+@@ -128,7 +128,7 @@
+             native = None
+             try:
+                 native = json.loads(Path(paths['worker_result']).read_bytes())
+-                assert native['schema'] == 'PA19-NATIVE-RESULT-v4' and native['status'] in ('UNSAT','UNKNOWN')
++                assert native['schema'] == 'PA19-NATIVE-RESULT-v5' and native['status'] in ('UNSAT','UNKNOWN')
+                 assert native['integrity_status'] in ('VALIDATED','INVALID','NOT_EVALUATED')
+                 result.update(native_result=native,worker_result_path=str(Path(paths['worker_result']).relative_to(L)),
+                               worker_result_sha256=R.digest(paths['worker_result']))
+--- v4/src/m2_ms09_contract_v4.py
++++ v5/src/m2_ms09_contract_v5.py
+@@ -11,23 +11,23 @@
+ from pathlib import Path
+ 
+ import encode_skel_b as ENC
+-import m2_ms09_evidence_v4 as E
++import m2_ms09_evidence_v5 as E
+ import structural_b3_acceptance as B3
+-import m2_supervised_runtime_v4 as supervised_runtime
++import m2_supervised_runtime_v5 as supervised_runtime
+ 
+ LANE = Path(__file__).resolve().parent.parent
+ P0 = [4,3,3,3,3,3]
+-SCHEMA = 'PA19-MS09-K1-v4'
++SCHEMA = 'PA19-MS09-K1-v5'
+ SKELETON_SHA = '7c46ebbad3389476407e99807593287a8b3bb6c6a80f34574f0e9c00134293d0'
+ MAP_SHA = 'd06bb6fce38a2fbf96cf7d84d18331ec8233b54ccdccfc4b4ec759f281aa5282'
+ ENCODER_SHA = 'd0002e60d11ef5cba568309fde5b15e29280ca127bc0e6bb1f4d22929a5628e5'
+ PHASE_PATH = 'cycle2/ms09-batch-denominators-v2-20261018T015110.json'
+ PHASE_SHA = 'd0d0d7fa9dae6ab263b05af800c0967916adf840c7583613d98c15d41d810d33'
+ SOURCE_FILES = ('src/encode_skel_b.py','src/gen_skel_b.py','src/extend_b.py','src/extend_b_x.py',
+-                'src/stream_check15.py','src/calibration_chunk_budget.py','src/m2_ms09_evidence_v4.py',
+-                'src/m2_ms09_contract_v4.py','src/freeze_m2_ms09_k1_v4.py','src/run_m2_ms09_k1_v4.py','src/final_m2_ms09_inventory_v4.py',
+-                'src/m2_supervised_runtime_v4.py','src/m2_native_staged_v4.py','src/m2_item_owner_v4.py','src/m2_supervised_evidence_v4.py',
+-                'src/lane_new_data_accounting.py','src/structural_b3_acceptance.py','src/run_m2_ms06_direct_v4.py','src/check_m2_ms09_k1_v4.py',
++                'src/stream_check15.py','src/calibration_chunk_budget.py','src/m2_ms09_evidence_v5.py',
++                'src/m2_ms09_contract_v5.py','src/freeze_m2_ms09_k1_v5.py','src/run_m2_ms09_k1_v5.py','src/final_m2_ms09_inventory_v5.py',
++                'src/m2_supervised_runtime_v5.py','src/m2_native_staged_v5.py','src/m2_item_owner_v5.py','src/m2_supervised_evidence_v5.py',
++                'src/lane_new_data_accounting.py','src/structural_b3_acceptance.py','src/run_m2_ms06_direct_v5.py','src/check_m2_ms09_k1_v5.py',
+                 'src/supervise_pa19_v3.py')
+ 
+ 
+@@ -46,10 +46,10 @@
+         lo,hi = indices
+         base,ident,suffix = ('cycle2/m2part_drat/ms09_b%05d/batch_%05d_%05d' % (bi,lo,hi),
+                              key(bi,lo,hi),'%05d_%05d' % (lo,hi))
+-    tail = '_k1_v4'
++    tail = '_k1_v5'
+     return {'id':ident,'indices':indices,'original':base+'.json','new_record':base+tail+'.json',
+             'pin':base+tail+'.cnf-pin.json','commit':base+tail+'.receipt.json',
+-            'claim':'cycle2/claims/m2k1_v4_ms09_b%05d_%s.claim' % (bi,suffix),'baseline':None}
++            'claim':'cycle2/claims/m2k1_v5_ms09_b%05d_%s.claim' % (bi,suffix),'baseline':None}
+ 
+ 
+ def read(p):
+@@ -120,9 +120,9 @@
+                 lo,hi = it['indices']
+                 assert all(type(v) is int for v in it['indices']) and it['id'] == key(bi,lo,hi)
+                 base = 'cycle2/m2part_drat/ms09_b%05d/batch_%05d_%05d' % (bi,lo,hi)
+-                assert it['original'] == base+'.json' and it['new_record'] == base+'_k1_v4.json'
+-                assert it['pin'] == base+'_k1_v4.cnf-pin.json' and it['commit'] == base+'_k1_v4.receipt.json'
+-                assert it['claim'] == 'cycle2/claims/m2k1_v4_ms09_b%05d_%05d_%05d.claim' % (bi,lo,hi)
++                assert it['original'] == base+'.json' and it['new_record'] == base+'_k1_v5.json'
++                assert it['pin'] == base+'_k1_v5.cnf-pin.json' and it['commit'] == base+'_k1_v5.receipt.json'
++                assert it['claim'] == 'cycle2/claims/m2k1_v5_ms09_b%05d_%05d_%05d.claim' % (bi,lo,hi)
+                 if it.get('baseline'):
+                     ex = it['baseline']['expected']
+                     assert it['baseline']['path'] == it['original'] and ex['multiset'] == 9 and ex['b_index'] == bi and ex['indices'] == [lo,hi]
+@@ -275,7 +275,7 @@
+         return {'state':'MISSING','errors':[],'sat':False}
+     try:
+         pin,commit = read(LANE/it['pin']),read(LANE/it['commit'])
+-        assert pin['schema'] == 'PA19-K1-CNF-PIN-v4' and commit['schema'] == 'PA19-K1-RECEIPT-v4'
++        assert pin['schema'] == 'PA19-K1-CNF-PIN-v5' and commit['schema'] == 'PA19-K1-RECEIPT-v5'
+         assert pin['production_contract_sha256'] == commit['production_contract_sha256'] == contract_sha
+         assert type(pin['multiset']) is int and pin['multiset'] == 9
+         assert type(pin['b_index']) is int and type(commit['b_index']) is int
+@@ -306,8 +306,8 @@
+         obj = r.get('record') or {}
+         assert isinstance(obj,dict)
+         assert obj.get('production_contract_sha256') == contract_sha and obj.get('pre_child_pin_sha256') == commit['pin_sha256']
+-        assert obj.get('count_for_scientific_coverage') is True and obj.get('runner') == 'run_m2_ms09_k1_v4.py'
+-        assert obj.get('pipeline_schema') == 'PA19-SUPERVISED-DRAT-v4'
++        assert obj.get('count_for_scientific_coverage') is True and obj.get('runner') == 'run_m2_ms09_k1_v5.py'
++        assert obj.get('pipeline_schema') == 'PA19-SUPERVISED-DRAT-v5'
+         if idx is not None:
+             assert obj.get('list_sha256') == ca['list']['sha256'] and obj.get('enumerator') == 'extend_b.py'
+             assert type(obj.get('complete_denominator')) is int and obj['complete_denominator'] == ca['list']['n']
+@@ -378,4 +378,5 @@
+             'covered_placement_indices':covered_indices,'open_placement_indices':open_indices,'sat_veto':sats,'integrity_issues':issues,
+             'formula_verification_mode':verify_formulas,'final_ms09_acceptance_ready':bool(verify_formulas and resolved == 71 and not sats and not issues),
+             'historical_inputs_pending_measured_validation':sorted(set(original_only)),
+-            'historical_outcomes_never_final_counted':True,'parent_calibration_reuse_permission':'WITHDRAWN'}
++            'historical_outcomes_never_final_counted':True,'parent_calibration_reuse_permission':'WITHDRAWN',
++            'admission_union':supervised_runtime.admission_union(LANE)}
+--- v4/src/m2_ms09_evidence_v4.py
++++ v5/src/m2_ms09_evidence_v5.py
+@@ -94,8 +94,8 @@
+         return {'state':'INTEGRITY_VETO','errors':['record is not an object'],'sha256':h,'sat':False,'record':r}
+     inner = r.get('native_result') if isinstance(r.get('native_result'),dict) else {}
+     sat = r.get('sat_candidate') is True or inner.get('sat_candidate') is True or r.get('status') == 'SAT' or inner.get('status') == 'SAT'
+-    if r.get('pipeline_schema') == 'PA19-SUPERVISED-DRAT-v4':
+-        import m2_supervised_evidence_v4 as supervised
++    if r.get('pipeline_schema') == 'PA19-SUPERVISED-DRAT-v5':
++        import m2_supervised_evidence_v5 as supervised
+         errors = supervised.identity_errors(r,expected)
+         checker = inner.get('checker_collector') if isinstance(inner.get('checker_collector'),dict) else {}
+         invalid = r.get('integrity_status') == 'INVALID' or inner.get('integrity_status') == 'INVALID' or any('NOT VERIFIED' in str(v) for v in checker.get('status_lines',[]))
+--- v4/src/m2_native_staged_v4.py
++++ v5/src/m2_native_staged_v5.py
+@@ -17,7 +17,7 @@
+ from pathlib import Path
+ 
+ import encode_skel_b as ENC
+-import m2_supervised_runtime_v4 as R
++import m2_supervised_runtime_v5 as R
+ 
+ L = Path(__file__).resolve().parent.parent
+ CHUNK = 1 << 20
+@@ -74,18 +74,25 @@
+ 
+ 
+ def feed_cnf(path,data,record,stop,deadline):
+-    """Derived from reviewed M7 feed pattern; count/hash ONLY writes that succeeded, and require close success."""
+-    fd,h,n,error,closed = None,hashlib.sha256(),0,None,False
++    """Count/hash ONLY successful writes; require close success. Provenance separates bound-induced cancellation
++    (pipeline stop event or item deadline) from real open/write/close transport failures."""
++    fd,h,n,error,closed,cancelled,close_error = None,hashlib.sha256(),0,None,False,None,None
++    def cancel_reason():
++        if stop.is_set(): return 'stop-event'
++        if time.monotonic() > deadline: return 'item-deadline'
++        return None
+     try:
+         while fd is None:
+-            if stop.is_set() or time.monotonic() > deadline: raise TimeoutError('CNF FIFO open cancelled/deadline')
++            cancelled = cancel_reason()
++            if cancelled: raise TimeoutError('CNF FIFO open cancelled: '+cancelled)
+             try: fd = os.open(path,os.O_WRONLY|os.O_NONBLOCK)
+             except OSError as exc:
+                 if exc.errno != errno.ENXIO: raise
+                 time.sleep(0.01)
+         view = memoryview(data)
+         while n < len(view):
+-            if stop.is_set() or time.monotonic() > deadline: raise TimeoutError('CNF write cancelled/deadline')
++            cancelled = cancel_reason()
++            if cancelled: raise TimeoutError('CNF write cancelled: '+cancelled)
+             try: wrote = os.write(fd,view[n:n+CHUNK])
+             except BlockingIOError:
+                 time.sleep(0.01)
+@@ -100,8 +107,11 @@
+             try:
+                 os.close(fd)
+                 closed = True
+-            except BaseException as exc: error = error or repr(exc)
+-        record.update(bytes=n,sha256=h.hexdigest(),error=error,close_ok=closed,
++            except BaseException as exc:
++                close_error = repr(exc)
++                error = error or close_error
++        record.update(bytes=n,sha256=h.hexdigest(),error=error,close_ok=closed,opened=fd is not None,
++                      cancelled=cancelled if error is not None else None,close_error=close_error,
+                       complete=bool(n == len(data) and closed and error is None))
+ 
+ 
+@@ -212,6 +222,10 @@
+             return unknown('CNF feed exceeded exact formula bytes: '+name,invalid=True)
+         if feed.get('complete') and (n != expected_bytes or feed.get('sha256') != expected_sha):
+             return unknown('completed CNF delivery differs from pinned formula: '+name,invalid=True)
++        if feed.get('close_error'):
++            return unknown('CNF FIFO close failed: '+name,invalid=True)
++        if feed.get('error') is not None and feed.get('cancelled') not in ('stop-event','item-deadline'):
++            return unknown('CNF transport failure (not bound-induced cancellation): '+name,invalid=True)
+     if p.get('reader_error'):
+         return unknown('proof reader error',invalid=True)
+     if r.get('complete') and (r.get('bytes') != p.get('raw_bytes') or r.get('sha256') != p.get('raw_sha256')):
+@@ -259,7 +273,7 @@
+ 
+ def pipeline(raw,job,commands=None,start_hook=None):
+     """commands/start_hook are library-only controlled fixtures; the production CLI supplies neither."""
+-    result = {'schema':'PA19-NATIVE-RESULT-v4','cnf_sha256':hashlib.sha256(raw).hexdigest(),'cnf_bytes':len(raw),
++    result = {'schema':'PA19-NATIVE-RESULT-v5','cnf_sha256':hashlib.sha256(raw).hexdigest(),'cnf_bytes':len(raw),
+               'cnf_feeds':{'solver':{},'checker':{}},'solver_collector':{},'checker_collector':{},
+               'proof_stream':{},'proof_delivery':{},'gates':[],'no_regular_cnf_or_proof':True}
+     folder = Path(job['workdir'])
+@@ -364,7 +378,7 @@
+     path,h = Path(sys.argv[1]),sys.argv[2]
+     assert R.digest(path) == h
+     job = json.loads(path.read_bytes())
+-    assert job['schema'] == 'PA19-NATIVE-JOB-v4' and job['solver'] in ('kissat','cadical')
++    assert job['schema'] == 'PA19-NATIVE-JOB-v5' and job['solver'] in ('kissat','cadical')
+     assert job['checker_seconds'] == 1200 and job['solver_seconds'] in (300,600)
+     assert os.getppid() == job['lease']['owner_pid'] == int(os.environ['K3_SUPERVISOR_PID'])
+     assert os.environ['K3_SUPERVISOR_SCRIPT'] == str(R.SUP_PATH) and R.digest(R.SUP_PATH) == R.SUP_SHA
+@@ -379,14 +393,14 @@
+     try:
+         pre = R.full_gate(job['lease'],'construct')
+         if not pre['admitted']:
+-            result = {'schema':'PA19-NATIVE-RESULT-v4','resource_refusal':pre['errors'],'worker_preconstruction_gate':pre}
++            result = {'schema':'PA19-NATIVE-RESULT-v5','resource_refusal':pre['errors'],'worker_preconstruction_gate':pre}
+             result.update(outcome(result))
+         else:
+             raw = recipe_cnf(job)
+             result = pipeline(raw,job)
+             result['worker_preconstruction_gate'] = pre
+     except BaseException as exc:
+-        result = {'schema':'PA19-NATIVE-RESULT-v4','status':'UNKNOWN','integrity_status':'INVALID','integrity_errors':[repr(exc)],
++        result = {'schema':'PA19-NATIVE-RESULT-v5','status':'UNKNOWN','integrity_status':'INVALID','integrity_errors':[repr(exc)],
+                   'sat_candidate':False,'halt_production':True,'construction_error':repr(exc)}
+     payload = (json.dumps(result,indent=1)+'\n').encode()
+     assert len(payload) <= 16*1024**2, 'halting worker diagnostic bound'
+--- v4/src/m2_supervised_evidence_v4.py
++++ v5/src/m2_supervised_evidence_v5.py
+@@ -6,11 +6,11 @@
+ import stat
+ from pathlib import Path
+ 
+-import m2_supervised_runtime_v4 as R
++import m2_supervised_runtime_v5 as R
+ 
+ 
+ def identity_errors(r,ex):
+-    if not isinstance(r,dict) or r.get('pipeline_schema') != 'PA19-SUPERVISED-DRAT-v4': return ['unsupported supervised schema']
++    if not isinstance(r,dict) or r.get('pipeline_schema') != 'PA19-SUPERVISED-DRAT-v5': return ['unsupported supervised schema']
+     errors = []
+     for key in ('multiset','b_index'):
+         if type(r.get(key)) is not int or r[key] != ex[key]: errors.append('wrong '+key)
+@@ -80,18 +80,18 @@
+         need(type(sr.get('leader_returncode')) is int and sr['leader_returncode'] == 0,'worker did not self-exit0')
+         jp = Path(lane)/r['job_path']; need(R.digest(jp) == r['job_sha256'],'job SHA differs')
+         job = json.loads(jp.read_bytes())
+-        need(job.get('schema') == 'PA19-NATIVE-JOB-v4' and job.get('source_sha256') == ex['source_sha256'] and job.get('recipe') == ex['recipe'],'job source/recipe differs')
++        need(job.get('schema') == 'PA19-NATIVE-JOB-v5' and job.get('source_sha256') == ex['source_sha256'] and job.get('recipe') == ex['recipe'],'job source/recipe differs')
+         need(job.get('binary_authority') == job.get('lease',{}).get('binary_authority') == authority,'job authority differs from contract')
+         need(job['cnf_sha256'] == ex['cnf_sha256'] and type(job['cnf_bytes']) is int and job['cnf_bytes'] == ex['cnf_bytes'],'job input differs')
+         need(job['solver_seconds'] == ex['native_limit'] and job['checker_seconds'] == 1200,'native/check limit differs')
+-        expected_command = [authority['python']['path'],'-B',str(Path(lane)/'src/m2_native_staged_v4.py'),str(jp),r['job_sha256']]
++        expected_command = [authority['python']['path'],'-B',str(Path(lane)/'src/m2_native_staged_v5.py'),str(jp),r['job_sha256']]
+         need(sr.get('command') == expected_command,'supervised worker argv differs')
+         files = sr.get('command_files_sha256') or {}
+         need(files.get(expected_command[0]) == authority['python']['sha256'] and files.get(str(jp)) == r['job_sha256']
+-             and files.get(expected_command[2]) == ex['source_sha256']['src/m2_native_staged_v4.py'],'supervised executable/source/job hashes differ')
++             and files.get(expected_command[2]) == ex['source_sha256']['src/m2_native_staged_v5.py'],'supervised executable/source/job hashes differ')
+         np = Path(lane)/r['worker_result_path']; need(R.digest(np) == r['worker_result_sha256'],'worker report SHA differs')
+         native = json.loads(np.read_bytes())
+-        need(native == r['native_result'] and native.get('schema') == 'PA19-NATIVE-RESULT-v4','worker report differs')
++        need(native == r['native_result'] and native.get('schema') == 'PA19-NATIVE-RESULT-v5','worker report differs')
+         need(native.get('status') == 'UNSAT' and native.get('integrity_status') == 'VALIDATED' and native.get('integrity_errors') == []
+              and native.get('sat_candidate') is False and native.get('halt_production') is False,'worker outcome unqualified')
+         need(native.get('cnf_sha256') == ex['cnf_sha256'] and native.get('cnf_bytes') == ex['cnf_bytes'],'worker regenerated CNF differs')
+--- v4/src/m2_supervised_runtime_v4.py
++++ v5/src/m2_supervised_runtime_v5.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""PA19 v4 admission/ownership. Single normal3.5GiB sampled group threshold, COUNT<=2; NO automatic retries.
++"""PA19 v5 admission/ownership. Single normal3.5GiB sampled group threshold, COUNT<=2; NO automatic retries.
+ Every admission gate and inventory share one persistent-veto registry (old m2k1 plus new m2k3 markers).
+ Local supervise_pa19_v3 copies the reviewed r3 with one ownership callback only; the exact Popen remains retained
+ until explicit wait/reaping AND group quiescence. Native groups contain no /bin/ps/setuid helper.
+@@ -74,6 +74,15 @@
+ 
+ def present_vetoes(lane=LANE):
+     return [name for name in PERSISTENT_VETO_FLAGS if (Path(lane)/'cycle2'/name).exists()]
++
++
++def present_resource_stops(lane=LANE):
++    return [name for name in RESOURCE_STOPS if (Path(lane)/'cycle2'/name).exists()]
++
++
++def admission_union(lane=LANE):
++    """Full admission union with distinct classifications; every gate refuses on either class."""
++    return {'resource_stops':present_resource_stops(lane),'persistent_vetoes':present_vetoes(lane)}
+ 
+ 
+ def token_count(lane=LANE):
+--- v4/src/run_m2_ms06_direct_v4.py
++++ v5/src/run_m2_ms06_direct_v5.py
+@@ -14,22 +14,22 @@
+ from pathlib import Path
+ 
+ import encode_skel_b as ENC
+-import m2_item_owner_v4 as OWNER
+-import m2_ms09_contract_v4 as COMMON
+-import m2_ms09_evidence_v4 as E
+-import m2_supervised_runtime_v4 as R
+-import run_m2_ms09_k1_v4 as TX
++import m2_item_owner_v5 as OWNER
++import m2_ms09_contract_v5 as COMMON
++import m2_ms09_evidence_v5 as E
++import m2_supervised_runtime_v5 as R
++import run_m2_ms09_k1_v5 as TX
+ 
+ L = COMMON.LANE
+ QUEUE = 'cycle2/m2-jobs-hard-direct.txt'
+ SK = 'cycle2/skel-b/skeletons-b-ms06.json'
+-SCHEMA = 'PA19-MS06-INITIAL-DIRECT-v4'
++SCHEMA = 'PA19-MS06-INITIAL-DIRECT-v5'
+ 
+ 
+ def task(bi):
+-    base = 'cycle2/m2skel_drat/ms06_b%05d_v4' % bi
++    base = 'cycle2/m2skel_drat/ms06_b%05d_v5' % bi
+     return {'id':'ms06_b%05d' % bi,'indices':None,'new_record':base+'.json','pin':base+'.cnf-pin.json',
+-            'commit':base+'.receipt.json','claim':'cycle2/claims/ms06_direct_v4_b%05d.claim' % bi}
++            'commit':base+'.receipt.json','claim':'cycle2/claims/ms06_direct_v5_b%05d.claim' % bi}
+ 
+ 
+ def queue_ids():
+@@ -59,8 +59,8 @@
+         'rows':rows,'pending_order':[x['b_index'] for x in rows if x['original_record'] is None],
+         'native_seconds':300,'check_seconds':1200,'count_ceiling':2,'automatic_retry_allowed':False,
+         'no_helper_from_this_adapter':True,'original_outcomes_are_not_backfilled_or_final_qualified':True}
+-    dest = L/'cycle2'/('m2-ms06-initial-v4-contract-'+time.strftime('%Y%m%dT%H%M%S')+'.json')
+-    h = COMMON.publish_json(dest,out,L/'scratch/m2k1-v4-publish'/('ms06-freeze-'+str(time.time_ns())))
++    dest = L/'cycle2'/('m2-ms06-initial-v5-contract-'+time.strftime('%Y%m%dT%H%M%S')+'.json')
++    h = COMMON.publish_json(dest,out,L/'scratch/m2k1-v5-publish'/('ms06-freeze-'+str(time.time_ns())))
+     print(dest,h,'pending',len(out['pending_order']),flush=True)
+ 
+ 
+@@ -85,7 +85,7 @@
+     if not (L/it['new_record']).exists(): return {'state':'MISSING','record':None,'errors':[]}
+     try:
+         pin,k = COMMON.read(L/it['pin']),COMMON.read(L/it['commit'])
+-        assert pin['schema'] == 'PA19-K1-CNF-PIN-v4' and k['schema'] == 'PA19-K1-RECEIPT-v4'
++        assert pin['schema'] == 'PA19-K1-CNF-PIN-v5' and k['schema'] == 'PA19-K1-RECEIPT-v5'
+         assert pin['production_contract_sha256'] == k['production_contract_sha256'] == h
+         assert type(pin['multiset']) is int and pin['multiset'] == 6 and type(pin['b_index']) is int and pin['b_index'] == k['b_index'] == bi
+         assert pin['indices'] is None and pin['source_sha256'] == c['source_sha256'] and pin['binary_authority'] == c['binary_authority']
+@@ -102,7 +102,7 @@
+ 
+ 
+ def freeze_misses(c,h):
+-    dest = L/'cycle2/ms06-initial-v4-UNKNOWN-misses-ONCE.json'; assert not dest.exists()
++    dest = L/'cycle2/ms06-initial-v5-UNKNOWN-misses-ONCE.json'; assert not dest.exists()
+     rows = []
+     for x in c['rows']:
+         bi = x['b_index']
+@@ -114,11 +114,11 @@
+         if r.get('status') != 'UNSAT' or r.get('checked') is not True:
+             rows.append({'job':'6:%d' % bi,'b_index':bi,'record':rel,'record_sha256':E.digest(L/rel),
+                 'cnf_sha256':r['cnf_sha256'],'cnf_bytes':r['cnf_bytes'],'status':'UNKNOWN','already_enumerated':bi in (68,73)})
+-    out = {'schema':'PA19-MS06-UNKNOWN-SET-v4','host_clock':time.strftime('%Y-%m-%dT%H:%M:%S%z'),'initial_contract_sha256':h,
++    out = {'schema':'PA19-MS06-UNKNOWN-SET-v5','host_clock':time.strftime('%Y-%m-%dT%H:%M:%S%z'),'initial_contract_sha256':h,
+         'source_sha256':c['source_sha256'],'skeleton_sha256':c['skeleton_sha256'],'jobs':rows,
+         'scope':'exact accumulated initial-pass UNKNOWN set; NO helper admission/denominator supplied here',
+         'requires_new_source_denominator_growth_review_before_any_helper':True}
+-    rh = COMMON.publish_json(dest,out,L/'scratch/m2k1-v4-publish'/('ms06-misses-'+str(time.time_ns())))
++    rh = COMMON.publish_json(dest,out,L/'scratch/m2k1-v5-publish'/('ms06-misses-'+str(time.time_ns())))
+     print(dest,rh,'UNKNOWN',len(rows),flush=True)
+ 
+ 
+@@ -135,19 +135,22 @@
+         c = COMMON.read(args.contract); verify(c)
+         if args.freeze_misses: freeze_misses(c,args.sha256); return
+         # Same shared persistent-veto registry as every gate/inventory, plus this adapter's own existing records.
+-        vetoes = R.present_vetoes(L)
++        union = R.admission_union(L)
++        vetoes,stops = union['persistent_vetoes'],union['resource_stops']
+         record_vetoes = {}
+         for x in c['rows']:
+             if (L/task(x['b_index'])['new_record']).exists():
+                 state = inspect(c,args.sha256,x['b_index'])['state']
+                 if state in ('INTEGRITY_VETO','SAT_VETO','HALT_UNKNOWN'): record_vetoes[x['b_index']] = state
+-        if vetoes or record_vetoes:
++        if vetoes or record_vetoes or stops:
+             logs = L/'cycle2/m2k3-chunks'/('ms06-%s-%d' % (time.strftime('%Y%m%dT%H%M%S'),time.time_ns()))
+             logs.mkdir(parents=True,exist_ok=False)
+-            COMMON.publish_json(logs/'initialization-deferred.json',{'status':'UNKNOWN','init_stage':'veto-scan',
+-                'reason':'persistent veto present; no claim or native admission','veto_markers':vetoes,'record_vetoes':record_vetoes,
++            COMMON.publish_json(logs/'initialization-deferred.json',{'status':'UNKNOWN',
++                'init_stage':'veto-scan' if (vetoes or record_vetoes) else 'resource-stop',
++                'reason':'persistent veto or resource STOP present; no claim or native admission','veto_markers':vetoes,
++                'resource_stops':stops,'admission_union':union,'record_vetoes':record_vetoes,
+                 'native_has_started':False,'contract_sha256':args.sha256,'host_clock':time.strftime('%Y-%m-%dT%H:%M:%S%z')},
+-                L/'scratch/m2k1-v4-publish'/('ms06-veto-'+str(time.time_ns())))
++                L/'scratch/m2k1-v5-publish'/('ms06-veto-'+str(time.time_ns())))
+             print('M6 initialization veto',vetoes,record_vetoes,flush=True)
+             return
+         assert args.max_attempts > 0 and all(v['matches'] for v in R.binary_observations(c['binary_authority']).values())
+@@ -156,7 +159,7 @@
+         admission = {'binary_authority':c['binary_authority'],'census_reference':reference,
+                      'whole_plan_remaining_bound_bytes':c['resource_policy']['whole_plan_remaining_bound_bytes']}
+         D = COMMON.read(L/SK); special = [p for p in D['profiles'] if list(p) != COMMON.P0]
+-    stage = L/'scratch/m2k1-v4-publish'/('ms06-'+str(time.time_ns())); attempts = 0
++    stage = L/'scratch/m2k1-v5-publish'/('ms06-'+str(time.time_ns())); attempts = 0
+     for bi in c['pending_order']:
+         if attempts >= args.max_attempts or R._CANCEL[0] or time.monotonic()+2550 > deadline: return
+         it = task(bi)
+@@ -180,9 +183,9 @@
+             TX.retire_unattempted_after_pin(it,paths,'refusal rule2: direct refused before worker; no record or HALT'); return
+         if not r.get('pre_child_pin_sha256'):
+             TX.release_unattempted(it['claim'],'v4 direct construction incomplete before immutable pin/native'); return
+-        r.update(runner='run_m2_ms06_direct_v4.py',count_for_scientific_coverage=True)
++        r.update(runner='run_m2_ms06_direct_v5.py',count_for_scientific_coverage=True)
+         raw = (json.dumps(r,indent=1)+'\n').encode(); rh = hashlib.sha256(raw).hexdigest()
+-        COMMON.publish_json(L/it['commit'],{'schema':'PA19-K1-RECEIPT-v4','production_contract_sha256':args.sha256,
++        COMMON.publish_json(L/it['commit'],{'schema':'PA19-K1-RECEIPT-v5','production_contract_sha256':args.sha256,
+             'b_index':bi,'record_sha256':rh,'pin_sha256':r['pre_child_pin_sha256']},stage)
+         COMMON.publish_bytes(L/it['new_record'],raw,stage)
+         attempts += 1
+--- v4/src/run_m2_ms09_k1_v4.py
++++ v5/src/run_m2_ms09_k1_v5.py
+@@ -11,10 +11,10 @@
+ import time
+ from pathlib import Path
+ 
+-import m2_item_owner_v4 as OWNER
+-import m2_ms09_contract_v4 as C
+-import m2_ms09_evidence_v4 as E
+-import m2_supervised_runtime_v4 as R
++import m2_item_owner_v5 as OWNER
++import m2_ms09_contract_v5 as C
++import m2_ms09_evidence_v5 as E
++import m2_supervised_runtime_v5 as R
+ 
+ L = C.LANE
+ 
+@@ -29,7 +29,7 @@
+ 
+ 
+ def release_unattempted(path,reason):
+-    src = L/path; dst = L/'archive/k1-v4-unattempted'/('%s.%d' % (src.name,time.time_ns()))
++    src = L/path; dst = L/'archive/k1-v5-unattempted'/('%s.%d' % (src.name,time.time_ns()))
+     dst.parent.mkdir(parents=True,exist_ok=True); assert not dst.exists()
+     h = E.digest(src); os.rename(src,dst)
+     with (L/'archive/MANIFEST.tsv').open('a') as f:
+@@ -50,20 +50,20 @@
+     return {'id':it['id'],'pin':L/it['pin'],'staging':stage,'job':Path(str(base)+'.job.json'),
+         'supervisor':Path(str(base)+'.supervisor.json'),'quarantine':Path(str(base)+'.quarantine.json'),
+         'worker_result':Path(str(base)+'.worker.json'),
+-        'workdir':L/'scratch/fifo'/('m2k1_v4_'+it['id'].replace(':','_').replace('-','_'))}
++        'workdir':L/'scratch/fifo'/('m2k1_v5_'+it['id'].replace(':','_').replace('-','_'))}
+ 
+ 
+ def publish_item(r,c,contract_sha,ca,it,stage):
+     idx = it['indices']
+     r.update(multiset=9,b_index=ca['b_index'],indices=idx,encoder='encode_skel_b.build_v2' if idx is None else 'encode_skel_b.build_partbatch',
+-             runner='run_m2_ms09_k1_v4.py',production_contract_sha256=contract_sha,count_for_scientific_coverage=True)
++             runner='run_m2_ms09_k1_v5.py',production_contract_sha256=contract_sha,count_for_scientific_coverage=True)
+     if idx is not None: r.update(list_sha256=ca['list']['sha256'],complete_denominator=ca['list']['n'],enumerator='extend_b.py')
+     if r.get('sat_candidate'): assert (L/'cycle2/m2k3-SAT.flag').exists()
+     elif r.get('integrity_status') == 'INVALID': assert (L/'cycle2/m2k3-INTEGRITY.flag').exists()
+     elif r.get('halt_production'): assert (L/'cycle2/m2k3-HALT.flag').exists() or (L/'cycle2/m2k3-QUARANTINE.flag').exists()
+     raw = (json.dumps(r,indent=1)+'\n').encode(); assert len(raw) <= 16*1024**2
+     rh = hashlib.sha256(raw).hexdigest()
+-    C.publish_json(L/it['commit'],{'schema':'PA19-K1-RECEIPT-v4','production_contract_sha256':contract_sha,
++    C.publish_json(L/it['commit'],{'schema':'PA19-K1-RECEIPT-v5','production_contract_sha256':contract_sha,
+         'b_index':ca['b_index'],'indices':idx,'record_sha256':rh,'pin_sha256':r.get('pre_child_pin_sha256'),
+         'host_clock':time.strftime('%Y-%m-%dT%H:%M:%S%z')},stage)
+     C.publish_bytes(L/it['new_record'],raw,stage)  # primary LAST, immutable pin and commit already exist
+@@ -85,7 +85,7 @@
+     cutoff = datetime.datetime.fromisoformat('2026-10-18T18:31:43-07:00').timestamp()
+     deadline = min(time.monotonic()+10800,time.monotonic()+max(0,cutoff-time.time()))
+     runid = '%s-%d-%d' % (time.strftime('%Y%m%dT%H%M%S'),os.getpid(),time.time_ns())
+-    stage,logs = L/'scratch/m2k1-v4-publish'/runid,L/'cycle2/m2k3-chunks'/runid
++    stage,logs = L/'scratch/m2k1-v5-publish'/runid,L/'cycle2/m2k3-chunks'/runid
+     logs.mkdir(parents=True,exist_ok=False)
+     init = {'stage':'capacity','veto_detail':None}
+     try:
+@@ -97,8 +97,10 @@
+             init['stage'] = 'inventory'
+             initial = C.inventory(c,args.sha256)
+             init['veto_detail'] = {'sat_veto':initial['sat_veto'],'integrity_issues':initial['integrity_issues'][:50],
+-                                   'veto_markers':R.present_vetoes(L)}
++                                   'veto_markers':R.present_vetoes(L),'admission_union':R.admission_union(L)}
+             assert not initial['sat_veto'] and not initial['integrity_issues'], 'persistent SAT/integrity/safety veto'
++            init['stage'] = 'resource-stop'
++            assert not R.present_resource_stops(L), 'resource STOP present (distinct from persistent veto)'
+             init['stage'] = 'queue'
+             byid = {it['id']:(ca,it) for ca in c['cases'] for it in ca['intervals']}
+             byid['b00001:direct'] = c['cases'][1],c['cases'][1]['direct_task']

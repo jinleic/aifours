@@ -1,0 +1,415 @@
+--- control/beta_parent_adapter_v1.py
++++ control/beta_parent_adapter_v2.py
+@@ -1,11 +1,11 @@
+-"""SOURCE ONLY, UNTESTED. Compose frozen parent beta consumers over pinned evidence.
++"""SOURCE ONLY, UNTESTED. V2 coherent snapshot repair. Compose frozen parent beta consumers over pinned evidence.
+ 
+ The parent supplies input SHA256s as authority and retains the EvidenceReader on every exception.
+ This module reads/compiles only pinned consumer bytes inside evaluate_pinned, never imports them
+ by pathname, writes nothing and starts no processes. A decision is NOT a canonical audit or release.
+ A matching receipt hash authenticates bytes, not runtime truth. Parent-observed execution, actual
+ nested exit, complete captures, date provenance, full endedness and late resources remain required.
+-No raw shared-supervisor adapter is guessed here; it must be built against a reviewed final schema.
++REQUIRED EXTERNAL PRECONDITION: the parent enforces an exclusive immutable publication freeze across every supplied file, namespace and alias for the whole decision. This is not established by NOFOLLOW or hashes alone. No raw shared-supervisor adapter is guessed here; it must be built against a reviewed final schema.
+ """
+ import copy
+ import hashlib
+@@ -14,10 +14,10 @@
+ 
+ PLAN_PATH = '/Users/jinleic/repos/aifours/information-science/evidence/six-lane-20261018-96h/mols39/evidence/ext-search-plan-v5.json'
+ PLAN_SHA = '254b44c372fd170640198dbdc773cca2a1893607127d373320b8518a54e59731'
+-CAPTURE_PATH = '/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/control/beta_capture_audit_v1.py'
+-CAPTURE_SHA = '54ee4dcc221a0dfdad19a7475fcde1bb9ae47f269a62ff2edab74a3371dc51c3'
+-SCHEMA_PATH = '/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/control/beta_schema_audit_v1.py'
+-SCHEMA_SHA = '33900dc09c9eb62c8ecf87b66b9a1559b5ca40c0d7f3316441c0003f9f5f75ce'
++CAPTURE_PATH = '/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/control/beta_capture_audit_v4.py'
++CAPTURE_SHA = '9b50052136d82bd21914ca0ec83f561881fbee280ef472f09a20354e89b6c645'
++SCHEMA_PATH = '/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/control/beta_schema_audit_v2.py'
++SCHEMA_SHA = '9e910e2d90ad1b80266fd38abc69d73e597fc589763b4464cb9251dd209be103'
+ CAP = 16 << 20
+ CAUSES = ('X1 EXIT_MISMATCH', 'X2 STDOUT_CAPTURE_MISSING', 'X2 STDOUT_CAPTURE_INCOMPLETE',
+           'X2 STDOUT_NOT_EXACT_RESULT_LINE', 'X3 STDERR_CAPTURE_MISSING',
+@@ -93,67 +93,134 @@
+     return function
+ 
+ 
+-def _schema_inputs(context, expectation, reader, check):
+-    if type(context) is not dict or set(context) != {'format', 'plan', 'original_dm21', 'prefix', 'derivation'}:
+-        raise SnapshotRefusal('schema context keys')
+-    if context['format'] != 'beta-parent-schema-context-v1':
+-        raise SnapshotRefusal('schema context format')
++class _Bundle:
++    """One private acquisition per path. Both consumers see these exact bytes and selected actual metadata.
++
++    Base-reader ownership remains available to the caller on every exception. Final fresh reads test
++    persistence but are not an atomic filesystem snapshot; the publication-freeze precondition is mandatory.
++    """
++    def __init__(self, reader, check):
++        self.reader, self.check = reader, check
++        self.entries = {}
++
++    def read_bytes(self, path, cap):
++        _tick(self.check)
++        if type(path) is not str or type(cap) is not int or cap < 0:
++            raise SnapshotRefusal('bundle path/cap')
++        if path not in self.entries:
++            data = self.reader.read_bytes(path, cap)
++            meta = self.reader.last_file(path)
++            if (type(data) is not bytes or len(data) > cap or type(meta) is not dict
++                    or meta.get('path') != path or meta.get('completed') is not True
++                    or meta.get('bytes_seen') != len(data)
++                    or meta.get('sha256') != hashlib.sha256(data).hexdigest()):
++                raise SnapshotRefusal('missing current successful actual acquisition')
++            self.entries[path] = {'bytes': data, 'metadata': copy.deepcopy(meta), 'cap': cap}
++        entry = self.entries[path]
++        if len(entry['bytes']) > cap:
++            raise SnapshotRefusal('cached immutable acquisition exceeds requested cap')
++        _tick(self.check)
++        return entry['bytes']
++
++    def revalidate(self):
++        """Fresh same-path readbacks must match the originally SELECTED bytes and actual identity."""
++        results = []
++        for path, selected in self.entries.items():
++            current = self.reader.read_bytes(path, selected['cap'])
++            actual = self.reader.last_file(path)
++            if (type(actual) is not dict or actual.get('completed') is not True
++                    or current != selected['bytes']
++                    or not _exact(actual.get('after'), selected['metadata'].get('after'))):
++                raise SnapshotRefusal('publication changed after selected acquisition: ' + path)
++            results.append({'path': path, 'sha256': selected['metadata']['sha256'],
++                            'actual_metadata': copy.deepcopy(actual['after'])})
++            _tick(self.check)
++        return results
++
++
++def _directory_snapshot(reader, path, check):
++    names = reader.directory_names(path)
++    report = reader.report()
++    if type(report) is not dict or not report.get('observations'):
++        raise SnapshotRefusal('directory census report unavailable')
++    row = report['observations'][-1]
++    if (row.get('kind') != 'directory' or row.get('path') != path or row.get('completed') is not True
++            or sorted(row.get('names', [])) != names):
++        raise SnapshotRefusal('current directory census not established')
++    result = {'names': list(names), 'before': copy.deepcopy(row['before']), 'after': copy.deepcopy(row['after'])}
++    _tick(check)
++    return result
++
++
++def _context(context, expected, bundle, check):
++    keys = {'format', 'plan', 'original_dm21', 'prefix', 'derivation', 'publication_freeze'}
++    if type(context) is not dict or set(context) != keys or context['format'] != 'beta-parent-schema-context-v2':
++        raise SnapshotRefusal('schema context v2 keys/format')
+     if not _exact(context['plan'], {'path': PLAN_PATH, 'sha256': PLAN_SHA}):
+         raise SnapshotRefusal('context plan authority')
+-    plan_bytes = _pinned(context['plan'], reader, check)
++    plan_bytes = _pinned(context['plan'], bundle, check)
+     plan = _json(plan_bytes)
+     if not _exact(context['original_dm21'], {'path': plan['dm21_path'], 'sha256': plan['dm21_sha256']}):
+         raise SnapshotRefusal('original DM21 binding')
+-    original = _pinned(context['original_dm21'], reader, check, 1 << 20)
++    original = _pinned(context['original_dm21'], bundle, check, 1 << 20)
+     if type(context['prefix']) is not list or len(context['prefix']) > 19:
+         raise SnapshotRefusal('prefix count/type')
+-    prefix = []
++    prefix, authority = [], []
+     for row in context['prefix']:
+         _tick(check)
+         if type(row) is not dict or set(row) != {'item', 'files', 'audit'} or type(row['files']) is not dict:
+             raise SnapshotRefusal('prefix reference keys')
+-        if len(row['files']) > 256:
+-            raise SnapshotRefusal('prefix file cap')
+-        files = {name: _pinned(ref, reader, check) for name, ref in row['files'].items()}
++        files = {name: _pinned(ref, bundle, check) for name, ref in row['files'].items()}
+         prefix.append({'item': row['item'], 'files': files,
+-                       'audit_bytes': _pinned(row['audit'], reader, check, 1 << 20)})
+-    outputs, directory = expectation['outputs'], expectation['job_dir']
+-    if type(outputs) is not list or not 1 <= len(outputs) <= 256 or type(directory) is not str:
+-        raise SnapshotRefusal('current outputs binding')
+-    current = {}
++                       'audit_bytes': _pinned(row['audit'], bundle, check, 1 << 20)})
++        authority.append({'item': row['item'], 'audit_sha256': row['audit']['sha256']})
++    freeze = _json(_pinned(context['publication_freeze'], bundle, check, 1 << 20))
++    freeze_keys = {'format', 'mode', 'job_dir', 'immutable_paths', 'prefix_authority'}
++    if (type(freeze) is not dict or set(freeze) != freeze_keys
++            or freeze['format'] != 'beta-parent-publication-freeze-v1'
++            or not _exact(freeze['mode'], expected['mode']) or not _exact(freeze['job_dir'], expected['job_dir'])
++            or not _exact(freeze['prefix_authority'], authority)
++            or type(freeze['immutable_paths']) is not list
++            or any(type(path) is not str for path in freeze['immutable_paths'])
++            or len(freeze['immutable_paths']) != len(set(freeze['immutable_paths']))):
++        raise SnapshotRefusal('parent publication-freeze authority/binding')
++    # This checks the parent-authenticated declaration, not that a child cannot mutate the OS.
++    return plan_bytes, original, prefix, freeze
++
++
++def _current_files(expected, bundle):
++    outputs, directory = expected['outputs'], expected['job_dir']
++    if type(outputs) is not list or not outputs or type(directory) is not str:
++        raise SnapshotRefusal('current output binding')
++    result = {}
+     for name in outputs:
+         if type(name) is not str or name in ('', '.', '..') or '/' in name or '\x00' in name:
+             raise SnapshotRefusal('current output name')
+-        current[name] = reader.read_bytes(directory + '/' + name, CAP)
+-    return plan_bytes, original, prefix, current
+-
+-
+-def _verify_derivation(manifest_ref, refs, expected, observed, capture, schema_args, schema, reader, check):
+-    """Verify an approved, labelled transformation; never rewrite the genuine upstream receipt or exit.
+-
+-    The input manifest hash is parent authority. This proves an exact derivation from supplied pinned
+-    upstream evidence, NOT that upstream runtime claims were true; that is the separate parent transaction.
+-    """
++        result[name] = bundle.read_bytes(directory + '/' + name, CAP)
++    return result
++
++
++def _derivation(manifest_ref, refs, expected, observed, capture, schema, schema_args, bundle, check):
++    """Verify exactly the approved transformation; never change upstream receipt or measured-exit evidence."""
+     if expected['mode'] != 'FIXTURE' or observed['mode'] != 'FIXTURE':
+         raise SnapshotRefusal('synthetic derivatives are fixture-only')
+-    manifest = _json(_pinned(manifest_ref, reader, check, 1 << 20))
++    manifest = _json(_pinned(manifest_ref, bundle, check, 1 << 20))
+     keys = {'format', 'expectation_sha256', 'observation_sha256', 'upstream_observation', 'mutations'}
+     if type(manifest) is not dict or set(manifest) != keys or manifest['format'] != 'beta-parent-synthetic-derivation-v1':
+         raise SnapshotRefusal('derivation schema')
+     if (manifest['expectation_sha256'] != refs['expectation']['sha256']
+             or manifest['observation_sha256'] != refs['observation']['sha256']):
+         raise SnapshotRefusal('derivation input pins')
+-    upstream = _json(_pinned(manifest['upstream_observation'], reader, check))
+-    if capture(expected, upstream, reader.read_bytes) != []:
++    upstream = _json(_pinned(manifest['upstream_observation'], bundle, check))
++    if capture(expected, upstream, bundle.read_bytes) != []:
+         raise SnapshotRefusal('synthetic upstream capture baseline invalid')
+     plan_bytes, original, prefix, current = schema_args
+-    if schema(plan_bytes, expected['item'], current, prefix, original, check) != []:
++    if schema(plan_bytes, expected['item'], current, prefix, original, check, bundle.read_bytes) != []:
+         raise SnapshotRefusal('synthetic upstream schema baseline invalid')
+     mutations = manifest['mutations']
+     if type(mutations) is not list or not 1 <= len(mutations) <= 8:
+         raise SnapshotRefusal('synthetic mutation count')
+-    derived = copy.deepcopy(upstream)
+-    seen = set()
++    paths = []
+     for mutation in mutations:
+         if type(mutation) is not dict or set(mutation) != {'path', 'value'} or type(mutation['path']) is not list:
+             raise SnapshotRefusal('mutation schema')
+@@ -164,91 +231,157 @@
+         if not allowed:
+             raise SnapshotRefusal('unlicensed synthetic field mutation')
+         key = tuple(path)
+-        if key in seen:
+-            raise SnapshotRefusal('duplicate mutation')
+-        seen.add(key)
++        if any(key[:len(prior)] == prior or prior[:len(key)] == key for prior in paths):
++            raise SnapshotRefusal('duplicate or ancestor/descendant mutation conflict')
++        paths.append(key)
++    derived = copy.deepcopy(upstream)
++    for mutation in mutations:
+         target = derived
+-        for component in path[:-1]:
++        for component in mutation['path'][:-1]:
+             if type(target) is not dict or component not in target:
+                 raise SnapshotRefusal('mutation parent unavailable')
+             target = target[component]
+-        if type(target) is not dict or path[-1] not in target:
+-            raise SnapshotRefusal('mutation field unavailable')
+-        target[path[-1]] = mutation['value']
+-    if not _exact(derived, observed):
+-        raise SnapshotRefusal('transformed observation differs from approved derivation')
+-    return {'manifest': manifest_ref, 'upstream_observation': manifest['upstream_observation'],
+-            'mutations': mutations, 'actual_exit_is_measured': False}
++        field = mutation['path'][-1]
++        if type(target) is not dict or field not in target or _exact(target[field], mutation['value']):
++            raise SnapshotRefusal('mutation absent or no-op')
++        target[field] = copy.deepcopy(mutation['value'])
++    if _exact(derived, upstream) or not _exact(derived, observed):
++        raise SnapshotRefusal('transformed input is unchanged or differs from approved derivation')
++    return {'manifest': copy.deepcopy(manifest_ref), 'verified': True,
++            'upstream_observation': copy.deepcopy(manifest['upstream_observation']),
++            'upstream_parent_reported_exit': upstream.get('actual_exit'),
++            'mutations': copy.deepcopy(mutations), 'actual_exit_is_measured': False}
+ 
+ 
+ def evaluate_pinned(inputs, reader, deadline_check):
+-    """Return an evidence decision, never write canonical audit/release files.
+-
+-    Caller must retain reader on BaseException. Unexpected ordinary exceptions produce failed decisions,
+-    including their retained reader ledger. Provenance of expectation/input SHA pins is external parent
+-    authority; never pass child-authored pins as approval. Raw process-receipt adaptation is still separate.
++    """Caller owns reader and parent SHA authority. No writes, launch, canonical audit or release.
++
++    Both consumers receive ONE acquired byte/identity bundle; an external publication freeze is mandatory.
++    The parent retains this reader on every BaseException. Failed tail construction never returns PASS.
+     """
+     fired, errors = set(), []
+-    synthetic = None
+-    observed = None
+-    expected = None
++    refs, expected, observed, context = None, None, None, None
++    synthetic, selected, persistence = None, {}, []
++    before_dir, after_dir, context_values, current = None, None, None, None
++    bundle = _Bundle(reader, deadline_check)
+     try:
+         _tick(deadline_check)
+         if type(inputs) is not dict or set(inputs) != {'expectation', 'observation', 'context'}:
+             raise SnapshotRefusal('input reference keys')
+-        expected = _json(_pinned(inputs['expectation'], reader, deadline_check))
+-        observed = _json(_pinned(inputs['observation'], reader, deadline_check))
+-        context = _json(_pinned(inputs['context'], reader, deadline_check))
+-        capture = _load(CAPTURE_PATH, CAPTURE_SHA, 'audit_capture', reader, deadline_check)
+-        schema = _load(SCHEMA_PATH, SCHEMA_SHA, 'audit_schema', reader, deadline_check)
+-        capture_causes = capture(expected, observed, reader.read_bytes)
++        refs = copy.deepcopy(inputs)
++        _tick(deadline_check)
++        expected = _json(_pinned(refs['expectation'], bundle, deadline_check))
++        observed = _json(_pinned(refs['observation'], bundle, deadline_check))
++        context = _json(_pinned(refs['context'], bundle, deadline_check))
++        if type(context) is dict and context.get('derivation') is not None:
++            synthetic = {'requested': True, 'verified': False,
++                         'manifest': copy.deepcopy(context['derivation']), 'actual_exit_is_measured': False}
++        capture = _load(CAPTURE_PATH, CAPTURE_SHA, 'audit_capture', bundle, deadline_check)
++        schema = _load(SCHEMA_PATH, SCHEMA_SHA, 'audit_schema', bundle, deadline_check)
++        try:
++            before_dir = _directory_snapshot(reader, expected['job_dir'], deadline_check)
++        except Exception as exc:
++            fired.add('X4 ARTIFACT_SET_OR_DIGEST')
++            errors.append({'stage': 'initial_artifact_census', 'error': repr(exc)})
++        capture_causes = capture(expected, observed, bundle.read_bytes)
+         if type(capture_causes) is not list or any(type(c) is not str or c not in CAUSES for c in capture_causes):
+-            raise SnapshotRefusal('consumer returned invalid causes')
++            raise SnapshotRefusal('capture returned invalid causes')
+         fired.update(capture_causes)
+         try:
+-            args = _schema_inputs(context, expected, reader, deadline_check)
+-            plan_bytes, original, prefix, current = args
+-            schema_causes = schema(plan_bytes, expected['item'], current, prefix, original, deadline_check)
++            context_values = _context(context, expected, bundle, deadline_check)
++        except Exception as exc:
++            fired.add('X7 PROVENANCE')
++            errors.append({'stage': 'context_authority', 'error': repr(exc)})
++        try:
++            current = _current_files(expected, bundle)
++        except Exception as exc:
++            fired.update(('X4 ARTIFACT_SET_OR_DIGEST', 'X5 RESULT_SCHEMA'))
++            errors.append({'stage': 'current_artifact_bytes', 'error': repr(exc)})
++        if context_values is not None and current is not None:
++            plan_bytes, original, prefix, freeze = context_values
++            schema_causes = schema(plan_bytes, expected['item'], current, prefix, original,
++                                   deadline_check, bundle.read_bytes)
+             if schema_causes not in ([], ['X5 RESULT_SCHEMA']):
+                 raise SnapshotRefusal('schema returned invalid causes')
+             fired.update(schema_causes)
+-            if context['derivation'] is not None:
+-                synthetic = _verify_derivation(context['derivation'], inputs, expected, observed,
+-                                               capture, args, schema, reader, deadline_check)
+-        except Exception as exc:
+-            fired.add('X5 RESULT_SCHEMA')
+-            if type(context) is dict and context.get('derivation') is not None:
+-                fired.add('X7 PROVENANCE')
+-            errors.append({'stage': 'schema_context_or_derivation', 'error': repr(exc)})
+-        try:
+-            names = reader.directory_names(expected['job_dir'])
+-            if not _exact(sorted(names), sorted(observed['actual_artifact_names'])) or set(names) != set(expected['outputs']):
++            if synthetic is not None:
++                try:
++                    synthetic = _derivation(context['derivation'], refs, expected, observed, capture, schema,
++                                            (plan_bytes, original, prefix, current), bundle, deadline_check)
++                except Exception as exc:
++                    fired.add('X7 PROVENANCE')
++                    errors.append({'stage': 'synthetic_derivation', 'error': repr(exc)})
++        try:
++            after_dir = _directory_snapshot(reader, expected['job_dir'], deadline_check)
++            if (before_dir is None or not _exact(before_dir, after_dir)
++                    or not _exact(after_dir['names'], sorted(observed['actual_artifact_names']))
++                    or set(after_dir['names']) != set(expected['outputs'])):
+                 fired.add('X4 ARTIFACT_SET_OR_DIGEST')
+             for name in expected['outputs']:
+                 path = expected['job_dir'] + '/' + name
+-                actual = reader.last_file(path)
+-                record = observed['artifacts'][name]
+-                if (actual is None or not actual['completed'] or not _exact(record['ino'], actual['after']['ino'])
+-                        or not _exact(record['nlink'], actual['after']['nlink'])
+-                        or not _exact(record['bytes'], actual['bytes_seen'])
+-                        or not _exact(record['sha256'], actual['sha256'])):
++                entry = bundle.entries[path]
++                meta, record = entry['metadata'], observed['artifacts'][name]
++                if (not _exact(record['ino'], meta['after']['ino'])
++                        or not _exact(record['nlink'], meta['after']['nlink'])
++                        or not _exact(record['bytes'], len(entry['bytes']))
++                        or not _exact(record['sha256'], meta['sha256'])):
+                     fired.add('X4 ARTIFACT_SET_OR_DIGEST')
++                selected[name] = {'path': path, 'sha256': meta['sha256'],
++                                  'bytes': len(entry['bytes']), 'actual_metadata': copy.deepcopy(meta['after'])}
+         except Exception as exc:
+             fired.add('X4 ARTIFACT_SET_OR_DIGEST')
+-            errors.append({'stage': 'actual_artifact_identity_census', 'error': repr(exc)})
++            errors.append({'stage': 'selected_artifact_identity_census', 'error': repr(exc)})
++        if context_values is not None:
++            freeze = context_values[3]
++            if not set(bundle.entries).issubset(set(freeze['immutable_paths'])):
++                fired.add('X7 PROVENANCE')
++                errors.append({'stage': 'publication_freeze', 'error': 'freeze does not cover every acquisition path'})
++        try:
++            persistence = bundle.revalidate()
++        except Exception as exc:
++            fired.update(('X4 ARTIFACT_SET_OR_DIGEST', 'X7 PROVENANCE'))
++            errors.append({'stage': 'snapshot_persistence', 'error': repr(exc)})
+         _tick(deadline_check)
+     except Exception as exc:
+         fired.add('X7 PROVENANCE')
+         errors.append({'stage': 'input_or_consumer', 'error': repr(exc)})
+-    report = reader.report()
+-    if type(report) is not dict or report.get('unresolved') != []:
+-        fired.add('X6 UNSETTLED')
+-    causes = [cause for cause in CAUSES if cause in fired]
+-    return {'format': 'beta-parent-consumer-decision-v1',
+-            'verdict': 'AUDITED_FAIL' if causes else 'AUDITED_PASS', 'causes': causes,
+-            'input_pins': inputs, 'consumer_pins': {'capture': CAPTURE_SHA, 'schema': SCHEMA_SHA},
+-            'synthetic_derivation': synthetic, 'mode': expected.get('mode') if type(expected) is dict else None,
+-            'actual_exit': observed.get('actual_exit') if type(observed) is dict else None,
+-            'errors': errors, 'reader': report, 'canonical_audit_written': False,
+-            'release_authority': False, 'runtime_authority': False,
+-            'boundary': 'Pinned snapshot predicates only; parent actual execution, date, process endedness and full five-part transaction remain external required evidence.'}
++    try:
++        report = reader.report()
++        if type(report) is not dict or report.get('unresolved') != []:
++            fired.add('X6 UNSETTLED')
++        decision = {'format': 'beta-parent-consumer-decision-v2',
++                    'verdict': 'AUDITED_FAIL' if fired else 'AUDITED_PASS',
++                    'causes': [cause for cause in CAUSES if cause in fired],
++                    'input_pins': copy.deepcopy(refs),
++                    'consumer_pins': {'capture': CAPTURE_SHA, 'schema': SCHEMA_SHA},
++                    'synthetic_derivation': copy.deepcopy(synthetic),
++                    'mode': expected.get('mode') if type(expected) is dict else None,
++                    'nested_exit': {'value': observed.get('actual_exit') if type(observed) is dict else None,
++                                    'kind': 'SYNTHETIC_PREDICATE_INPUT' if synthetic is not None
++                                            else 'UNVERIFIED_PARENT_REPORTED_NESTED_EXIT'},
++                    'selected_artifacts': copy.deepcopy(selected),
++                    'snapshot_persistence': copy.deepcopy(persistence),
++                    'directory_before': copy.deepcopy(before_dir), 'directory_after': copy.deepcopy(after_dir),
++                    'errors': copy.deepcopy(errors), 'reader': report,
++                    'canonical_audit_written': False, 'release_authority': False, 'runtime_authority': False,
++                    'boundary': 'Pinned immutable acquisition bundle under parent-enforced publication freeze; actual execution/date/endedness and independent five-part transaction remain external required evidence.'}
++        _tick(deadline_check)  # AFTER the complete detached report and result have been assembled
++        return decision
++    except Exception as exc:
++        # This path may not certify timeliness; it can only fail. Parent keeps the original reader regardless.
++        fired.add('X7 PROVENANCE')
++        try:
++            retained = reader.report()
++        except Exception as report_exc:
++            retained = {'report_unavailable': repr(report_exc)}
++            fired.add('X6 UNSETTLED')
++        if retained.get('unresolved') != []:
++            fired.add('X6 UNSETTLED')
++        return {'format': 'beta-parent-consumer-decision-v2', 'verdict': 'AUDITED_FAIL',
++                'causes': [cause for cause in CAUSES if cause in fired],
++                'input_pins': refs, 'synthetic_derivation': synthetic,
++                'nested_exit': {'value': observed.get('actual_exit') if type(observed) is dict else None,
++                                'kind': 'SYNTHETIC_PREDICATE_INPUT' if synthetic is not None else 'UNVERIFIED'},
++                'errors': errors + [{'stage': 'final_report_or_deadline', 'error': repr(exc)}],
++                'reader': retained, 'canonical_audit_written': False,
++                'release_authority': False, 'runtime_authority': False}

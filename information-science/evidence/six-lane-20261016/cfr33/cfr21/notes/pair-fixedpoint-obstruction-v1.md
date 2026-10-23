@@ -1,0 +1,5 @@
+# Fixed and swapped row-pair obstruction
+
+Recorded 2026-10-17 19:35:22 PDT. Let s=(mu,pi) act on a DM column set C modulo constants. For each ordered pair i,j, delta_ij:C->Z_n is bijective. If pi fixes i and j separately, delta_ij(sC)=mu*delta_ij(C); if pi swaps i and j, delta_ij(sC)=-mu*delta_ij(C). Thus the permutation of columns induced by s is conjugate via these two difference maps to multiplication by mu and multiplication by -mu. Their fixed-point counts must agree: gcd(mu-1,n)=gcd(mu+1,n). For odd n those two gcds are coprime, so equality would require both1. In particular when3 divides n one of mu-1,mu+1 is divisible by3 and the other is not; equality is impossible. Hence any untwisted row permutation with both at least two fixed rows and a two-cycle is excluded when3|n.
+
+For g15 at n21: mu13, pi=(3 4)(5 6), fixing0,1,2. The column permutation would have both Fix13=3 and Fix(-13)=Fix8=7 fixed columns. Contradiction. This independently explains the normal-form CNF UNSAT result. It does NOT exclude g10 or g16 (only one fixed row); it does not infer unrestricted CFR nonexistence.

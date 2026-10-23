@@ -1,0 +1,142 @@
+{
+ "schema": "PA19-96H-D2-BOUNDARY-QUALIFICATION-PLAN-v1",
+ "written_after_host_clock": "2026-10-19T04:26:41-0700",
+ "author": "ContinuePA19b",
+ "parent_disposition": {
+  "path": "RUN/review/pa19-D2-parent-disposition-v1.json",
+  "sha256": "e95e8a01a939fea86990dcc1b08e39bba236ab20ff43d0ed51cb293616bb17d0",
+  "requirements": "NEW never-accepted item deltas on v26/v27 only (old template ITEMS never execute); separate parent item GO; first new run must pass C1-C7 and the parent raw + provenanced audit; pin small bounded-fixture checks of proof cap / timeout / chunk refusal before expanding D2 production; 10 GiB unchanged"
+ },
+ "d2_constants": {
+  "SOLVER_SECONDS": 300,
+  "PROOF_CAP": 629145600,
+  "derived": {
+   "ITEM_WORST_SECONDS": 2150,
+   "CONTROLS_WORST_SECONDS": 2960,
+   "absolute_end_offset_by_items": {
+    "1": 5110,
+    "2": 7260,
+    "3": 9410,
+    "4": 11560
+   },
+   "prestart_admits_items": "n <= 3 (n = 4: 11,560 + 120 + 60 > 10,800)"
+  }
+ },
+ "fixtures": [
+  {
+   "id": "FX1-chunk-ms06",
+   "runner": {
+    "path": "code/pilot_file_drat_v28.py",
+    "sha256": "4dcf28e6ecf955c5ebf2821cdf6cfa7101709092c58998359f0af75f69036fc9",
+    "base": "v26 d31f1a8e...",
+    "diff": [
+     "review/pilot-runner-v26-to-v28.diff",
+     "81929a7239e205a2c029985e05af0b1f12beb5b1545fdb185719eb8cda0e2fc5"
+    ],
+    "opcodes": [
+     [
+      "replace",
+      55,
+      58,
+      55,
+      58
+     ],
+     [
+      "replace",
+      110,
+      116,
+      110,
+      118
+     ]
+    ]
+   },
+   "items": [
+    "ms06:b00088:direct",
+    "ms06:b00089:direct",
+    "ms06:b00186:direct",
+    "ms06:b00154:direct"
+   ],
+   "item_pins_from": [
+    "evidence/probes/production-wave1-pins-v1.json",
+    "b8822c2c454c6db8c9a6a11485be7f763d5383db7a212cf86d7d08438639e930"
+   ],
+   "expected": "exit 70, stdout 'REFUSED: chunk-fit'; out dir never created; no launch record, no child, no FIFO, no file; wall < 2 s",
+   "why_items_never_run": "main() refuses at the chunk-fit check, which comes after the GO/evidence pin reads and BEFORE os.mkdir(out_dir) (v17 lines 1174-1185 / v16 1181-1186)",
+   "cost": {
+    "disk_bytes": 0,
+    "native_children": 0
+   },
+   "needs": "a parent fixture GO JSON naming this runner SHA and the four ids; the parent launches; out dir path e.g. LANE/evidence/pilot-v1/fx1-chunk (must stay absent)"
+  },
+  {
+   "id": "FX2-chunk-ms09",
+   "runner": {
+    "path": "code/pilot_file_drat_v29.py",
+    "sha256": "a50746bd78a67ee2d0162f812c064965c833ca66953eadcaef3832edcfb87049",
+    "base": "v27 d9a1d5b3...",
+    "diff": [
+     "review/pilot-runner-v27-to-v29.diff",
+     "689116c234faa9eae42a6249a95153d76d467334d0822b5acea7d1c2e33391d2"
+    ],
+    "opcodes": [
+     [
+      "replace",
+      55,
+      58,
+      55,
+      58
+     ],
+     [
+      "replace",
+      110,
+      119,
+      110,
+      122
+     ]
+    ]
+   },
+   "items": [
+    "b00010:00000-00099",
+    "b00067:00000-00099",
+    "b00011:00000-00099",
+    "b00008:00000-00099"
+   ],
+   "item_pins_from": [
+    "evidence/probes/production-wave1-pins-v1.json",
+    "b8822c2c454c6db8c9a6a11485be7f763d5383db7a212cf86d7d08438639e930"
+   ],
+   "expected": "as FX1 (same chunk-fit code; ms09 family)",
+   "cost": {
+    "disk_bytes": 0,
+    "native_children": 0
+   }
+  },
+  {
+   "id": "FX3-proof-cap",
+   "status": "OPTION (parent decides)",
+   "same_binary_basis": "every D2 run executes control C5 (ProofSink hard cap, CONTROL_PROOF_CAP 8 MiB unchanged) and C3 (trailing byte / consumed != file bytes) through the same ProofSink and qualify_unsat code; the item path passes PROOF_CAP to run_kissat (sink cap), to the solver admission projection and to qualify_unsat (parent AST check)",
+   "native_option": "a 1-item D2 runner on an old ms06 direct-timeout case (e.g. b73: old CaDiCaL 685,325,804 B partial proof at 300 s; kissat writes 2.0-2.8 MB/s) -> expected fail-closed UNKNOWN with stop 'proof_cap' (sink written == 629,145,600, over_cap true) or kissat self-exit at --time=300; either outcome qualifies one item boundary and records which fired",
+   "cost": {
+    "disk_bytes_max": 671497563,
+    "wall_seconds_max": 610
+   },
+   "note": "cannot be 'small' in bytes: an item-level cap check must write up to the cap; a smaller cap would be a different binary"
+  },
+  {
+   "id": "FX4-timeout",
+   "status": "OPTION (parent decides)",
+   "same_binary_basis": "control C6 runs kissat --time=1 on PHP(13,12) and requires a clean self-exit without verdict (same run_kissat argv construction with the seconds argument); items pass SOLVER_SECONDS=300",
+   "native_option": "covered by FX3 if kissat self-exits at 300 s before the cap; a dedicated low-proof-rate UNSAT fixture is not identified from measurements",
+   "cost": "as FX3"
+  }
+ ],
+ "production_after_qualification": {
+  "spec": [
+   "review/batch-spec-wave2a-v2.json",
+   "cf36d82acaaff8df73fd864808639e365e00a29fd8cabfbe1d0dc01763afb53c"
+  ],
+  "next_runner_versions": "v30 (ms09 on v27: b25 [100..373], b69 [100..703], b59 [0..99]); v31-v33 (ms06 on v26: 318/252/237, 192/220/302, 143/287/261) - created only after the pins probe runs in a parent window",
+  "first_d2_run": "must pass C1-C7 and the parent raw + provenanced audit before further D2 runs"
+ },
+ "worker_cpu": "none until a parent window: pins probe (probe_batch_pins_v1.py on batch-spec-wave2a-v2) and preflights (probe_batch_preflight_v1.py) are frozen, not run"
+}

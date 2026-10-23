@@ -1,0 +1,200 @@
+{
+ "schema": "PA19-96H-PSTREAM-V4-V32-DISPOSITION-v1",
+ "written_after_host_clock": "2026-10-19T07:21:45-0700",
+ "author": "ContinuePA19b",
+ "status": "FROZEN SOURCES ONLY; nothing imported or executed; compile()/AST checks only; for ONE follow-up source review",
+ "parent_precheck": "IRC 2026-10-19 ~07:2x: v3/v31 blocked: Owned.reap_owned and settle_all waited without bound for an unreaped owner; contract resources.stop = SIGTERM + BOUNDED wait only",
+ "supersedes": {
+  "pstream_v3": [
+   "code/pilot_stream_drat_ms06_v3.py ab95e40f...",
+   "code/pilot_stream_drat_ms09_v3.py 86ca3b90..."
+  ],
+  "d2_v31": "code/pilot_file_drat_v31.py 63218f5c...",
+  "test_v4": "code/test_pilot_stream_v4.py 609016c4...",
+  "disposition_v3_v31": "review/p-stream-v3-v31-disposition-v1.json 65f3433a... (N1-N12 dispositions carried unchanged)"
+ },
+ "files": {
+  "p06": [
+   "code/pilot_stream_drat_ms06_v4.py",
+   "fe9ccadb8f4f0d41dedcffd8364787cc548c7b046152982e506bc57214682e0d",
+   180372
+  ],
+  "p09": [
+   "code/pilot_stream_drat_ms09_v4.py",
+   "9a688ccedf2817716da8ac7294cb58c14495faa8a09e74e7be0f9c72e72d0813",
+   180717
+  ],
+  "d32": [
+   "code/pilot_file_drat_v32.py",
+   "f5b7b37e8dcd11e234035c6cd7cefe3c66f4e8f5177b05d9ca8f2ba3bce9a6e4",
+   150604
+  ],
+  "t5": [
+   "code/test_pilot_stream_v5.py",
+   "f5249f815dda2068e4c7211bd8ddce7e3a007923bf1b14407cf378dc4b48bc83",
+   78715
+  ],
+  "d06_34": [
+   "review/pilot-runner-pstream-ms06-v3-to-v4.diff",
+   "d639e42e04ebaafeb9839672cc5fd4d07886b89035357b8b999ec839dce2d28a",
+   44810
+  ],
+  "d09_34": [
+   "review/pilot-runner-pstream-ms09-v3-to-v4.diff",
+   "5c5a7739a43fe79e23832ba6148c0cab22ee7382e757489bc685b619f5fca431",
+   44810
+  ],
+  "d06_14": [
+   "review/pilot-runner-pstream-ms06-v1-to-v4.diff",
+   "709d65c9c24162ab37890943658fb0bfc46aa9e97607a5fb7ed4cd824b44a28e",
+   190288
+  ],
+  "d09_14": [
+   "review/pilot-runner-pstream-ms09-v1-to-v4.diff",
+   "59f5cc1def8e7063ac6ea77c149374631108a3966d7fff4d59f332cbed0b8bec",
+   190296
+  ],
+  "dvar": [
+   "review/pilot-pstream-ms06-v4-to-ms09-v4.diff",
+   "8adb58dea23c162934fc6482da103980c861ffa6e65d839f2102c996a9a8d5f4",
+   6955
+  ],
+  "d3132": [
+   "review/pilot-runner-v31-to-v32.diff",
+   "736ab753b436fa8964fdd43928e6e89d3b5f766c73b716fee566b48f136c75a2",
+   43514
+  ],
+  "d3032": [
+   "review/pilot-runner-v30-to-v32.diff",
+   "5d369b3cbf0a61added8a45acc61575f47f75d73daa953499fbee1aea72c4969",
+   154895
+  ],
+  "dt45": [
+   "review/test-pilot-stream-v4-to-v5.diff",
+   "450ad2c17f2c8974412e086ee638887b0d8071b81ba7ed1a9703d0488114e441",
+   17735
+  ],
+  "dt15": [
+   "review/test-pilot-stream-v1-to-v5.diff",
+   "03e0f6ce1bbe9e726534d29ab41082beb563c3d4838f314f5b84adb9f09df5fe",
+   86995
+  ],
+  "dshared": [
+   "review/pilot-runner-pstream-ms09-v4-to-v32.diff",
+   "dad660ed6450afd9f06a600df0485f56c083eecd7cb510baf74effd632dd4bfa",
+   106732
+  ]
+ },
+ "B1": {
+  "requirement": "finite grace; irreversible UNSETTLED; exact identities, live census, late-artifact obligations published; return to the parent without any further wait loop; reservation retained until a NEW parent disposition confirms all processes ended; no signalling of uncertain identity; no escalation; no synthetic settlement",
+  "implementation": {
+   "Owned.reap_owned": "bounded: requests the verified stop; waits at most term_wait after the stop request/refusal (hard bound from entry if no request could be made); then _record_unsettled() and return None; a later call returns None at once (never waits or signals again)",
+   "Owned._record_unsettled": "latch + exclusive receipt (UNSETTLED_PUBLISH_ATTEMPTS immediate attempts) with pid/pgid/start identity, live_census (leader now, group members with identities and RSS, PPID-closure descendants), late_obligations, stop/term_delivery, 'reservation retained until a NEW parent disposition'",
+   "Child.late_obligations": "cwd (may gain entries), capture (written only by the runner's reader thread until it returns), stdout/stderr (and checker stdin) pipe closure at runner return, proof FIFO, D2 partial proof file",
+   "Child.settle": "rc None -> UNSETTLED problems; record carries 'unsettled'; latch",
+   "Helper": "reap bounded by HELPER_TERM_WAIT; survivor -> UNSETTLED record; _settle latches and raises; clock() returns null",
+   "settle_all": "one bounded pass; SETTLE_ALL_ATTEMPTS per child; failure recorded UNSETTLED with the latch held; guard bound on iterations",
+   "final_code": "publishes unsettled_owners (identities, live census, obligations, receipt paths), reservation_retained, release_requires; chunk claim voided; exit 50",
+   "release_refusals/disposition_refusals": "an UNSETTLED v4/v32 summary or a summary-less attempt is released only by a NEW parent disposition (schema PA19-96H-PARENT-UNSETTLED-DISPOSITION-v1: attempt_dir, summary_sha256 (null if none), all_processes_ended true, identities [{pid, start}] covering every listed owner), pinned in the allocation entry by path + SHA-256 and re-checked with libproc (live same-start pid -> refuse; ESRCH or zombie -> ended)"
+  },
+  "loop_audit": "every while-loop in v4/v32 is bounded by a byte/count limit, a monotonic deadline or the per-child stop grace (write_all, read_regular_bounded, sha_file, descendants, supervise, settle_all, ProofBuffer/ProofSink threads joined with bounds, ProofBuffer.finish, Feeder._deliver thread joined with bound, reap_owned, Helper._supervise_and_capture, Child._read thread joined with bound)",
+  "test_v5": [
+   "t_reap_bounded_survivor",
+   "t_settle_all_bounded",
+   "t_allocation_release (disposition: admitted/alive/uncovered/digest/not-ended/summary-less; UNSETTLED without disposition refused)"
+  ]
+ },
+ "go_allocation_release_entry_extension": {
+  "disposition": "{path, sha256} of a parent record with schema PA19-96H-PARENT-UNSETTLED-DISPOSITION-v1; required only for an UNSETTLED or summary-less attempt; summary_sha256 may be null only for a summary-less attempt"
+ },
+ "shared_code_identity": {
+  "identical_functions_pstream_ms09_v4_vs_v32": 69,
+  "names": [
+   "clock",
+   "bounded",
+   "serialize",
+   "charge_output",
+   "write_all",
+   "register_written",
+   "write_x",
+   "write_bytes_x",
+   "open_regular",
+   "read_regular_bounded",
+   "sha_file",
+   "sha_tree",
+   "read_tree",
+   "read_pinned",
+   "free_bytes",
+   "_pidinfo",
+   "parse_pid_buffer",
+   "list_pids",
+   "bsd_identity",
+   "task_rss",
+   "identity_checked",
+   "descendants",
+   "_entry_kind",
+   "_walk_fail",
+   "census_entry",
+   "run_tree_census",
+   "lane_usage",
+   "ancestry_refusal",
+   "out_dir_refusal",
+   "anchor_dir",
+   "anchor_existing_dir",
+   "tree_path",
+   "create_excl",
+   "mkdir_anchored",
+   "create_run_tree",
+   "confinement_refusals",
+   "preservation_refusals",
+   "_hex64",
+   "owner_identities_of_attempt",
+   "disposition_refusals",
+   "release_refusals",
+   "allocation_refusals",
+   "ledger_refusals",
+   "registry_refusals",
+   "_aware",
+   "_int",
+   "stability_refusals",
+   "full_admission",
+   "Owned",
+   "HelperRefused",
+   "Helper",
+   "segments",
+   "settle_all",
+   "status_lines",
+   "defect",
+   "defect_ids",
+   "verify_sat",
+   "php_cnf",
+   "healthy",
+   "c6_timer_refusals",
+   "completed_checker",
+   "cutoff_refusals",
+   "terminal_gate",
+   "commit_record",
+   "_nat",
+   "item_shape_refusals",
+   "on_term",
+   "cancelled",
+   "latch"
+  ]
+ },
+ "residual_limits_disclosed": [
+  "a survivor keeps running after the runner returns until the parent disposes it; its pipes' runner ends close at return (EPIPE/SIGPIPE possible) and its cwd may gain entries (published as late obligations)",
+  "native children receive path strings: confinement is re-validated around them, not enforced inside them",
+  "OS process creation is not atomic with signal delivery; V7 orders the logical launch/cancel boundary",
+  "absolute filesystem-call latency is not bounded; overrun or unreadability fails closed",
+  "the allocation must enumerate every pilot-v1 entry; any stray entry blocks admission until the parent releases or disposes it",
+  "C3 + offline matrix establish only the transport-identity rejection predicate"
+ ],
+ "inherited_notes": "older module-docstring notes that described waiting without bound (v14 r3#1/r4#1/r5#4/r6#1-#2, v2 V1/V3, v3 residuals) are explicitly marked superseded by B1",
+ "qualification_prerequisites": [
+  "ONE follow-up source review of these pins",
+  "separately gated test v5 run",
+  "native prestart chunk-fit refusal scenario",
+  "controls-only qualification GO with the N3 allocation",
+  "parent audit of complete receipts"
+ ]
+}

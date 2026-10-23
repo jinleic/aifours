@@ -1,0 +1,216 @@
+--- v6/src/check_m2_ms09_k1_v6.py
++++ v7/src/check_m2_ms09_k1_v7.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Corrected v3 PRIVATE controls; excluded from scientific coverage and executed only after parent GO.
++"""v7 control harness (production v6 sources/contracts unchanged). PRIVATE controls; excluded from scientific coverage and executed only after parent GO.
+ Uses one real lane token, <=2 compute processes, frozen binary authorities, local reviewed r3 adapter and absolute
+ argv. No SIGKILL, deletion, shared-supervisor edit, RC3 rerun or automatic retry. Synthetic records test readers only.
+ Definite nonclean stops are distinguished from measurement uncertainty; the actual supervisor key is killpg_error.
+@@ -107,7 +107,13 @@
+         with open(extra[1],'rb') as f: f.read()
+         if kind == 'solver' and cfg.get('delayed_publication'):
+             with open(extra[2],'wb') as f: f.write(b'\0'*65536)  # exceeds the control-only small raw cap
+-            time.sleep(1.0); raise SystemExit(0)  # alive at the cap-induced bounded exit, gone before worker exit
++            dump(cfg['solver_alive_marker'],{'pid':os.getpid(),'proof_written_and_closed':True})
++            deadline = time.monotonic()+120  # only detects a broken handshake; normal exit is explicitly permitted
++            while not Path(cfg['solver_exit_permission']).exists():
++                if time.monotonic() > deadline:
++                    dump(cfg['handshake_failure'],{'broken':'solver exit permission never granted'}); raise SystemExit(3)
++                time.sleep(0.01)
++            raise SystemExit(0)
+         if kind == 'solver':
+             with open(extra[2],'wb') as f: f.write(b'')
+             out,rc = cfg.get('solver_lines','s UNSATISFIABLE\n'),20
+@@ -138,40 +144,66 @@
+             fail = operation == 'close' and matches(fd); oc(fd)
+             if fail: raise OSError('CONTROL CNF close failure after close')
+         os.write,os.close = write,close
+-    if cfg.get('thread_failure'):
+-        start = threading.Thread.start
+-        def failing(thread):
+-            if thread._target is N.collector:
+-                time.sleep(0.2); dump(cfg['injection_marker'],{'injected':'CONTROL collector start failure'})
+-                raise RuntimeError('CONTROL collector start failure')
+-            return start(thread)
+-        threading.Thread.start = failing
+-    natives = []
++    # Scoped instrumentation ONLY: the pipeline module sees a proxy; process-global threading primitives stay intact.
++    real_threading,natives = threading,[]
++    main_ident = real_threading.get_ident()
++    main_stop_seen,join_entered = real_threading.Event(),real_threading.Event()
++    class StopEvent(real_threading.Event):
++        def set(self):
++            if real_threading.get_ident() == main_ident: main_stop_seen.set()  # identifier only; no Thread lookup
++            return super().set()
++    class AckJoinThread(real_threading.Thread):
++        def join(self,timeout=None):
++            join_entered.set()  # the settlement join has begun
++            return super().join(timeout)
++    class FailingStartThread(real_threading.Thread):
++        def start(self):
++            time.sleep(0.2); dump(cfg['injection_marker'],{'injected':'CONTROL collector start failure'})
++            raise RuntimeError('CONTROL collector start failure')
++    class PipelineThreading:
++        def __init__(self): self.stop_event = None
++        def __getattr__(self,name): return getattr(real_threading,name)
++        def Event(self):
++            if self.stop_event is None and cfg.get('delayed_publication'):
++                self.stop_event = StopEvent(); return self.stop_event
++            return real_threading.Event()
++        def Thread(self,*args,**kwargs):
++            target = kwargs.get('target')
++            if cfg.get('thread_failure') and target is N.collector: return FailingStartThread(*args,**kwargs)
++            if cfg.get('delayed_publication') and target is delayed_feed and 'solver-cnf' in str(kwargs.get('args',('',))[0]):
++                return AckJoinThread(*args,**kwargs)
++            return real_threading.Thread(*args,**kwargs)
++    N.threading = PipelineThreading()
++    real_feed = N.feed_cnf
++    def delayed_feed(fifo,data,record,stop,deadline):
++        private = {}
++        real_feed(fifo,data,private,stop,deadline)
++        if 'solver-cnf' in str(fifo):
++            if not join_entered.wait(120):  # only detects a broken handshake
++                dump(cfg['handshake_failure'],{'broken':'settlement join never began'}); return
++            dump(cfg['injection_marker'],{'published_after_settlement_join_entered':True,'main_stop_seen':main_stop_seen.is_set(),'feed':private})
++        record.update(private)
+     if cfg.get('delayed_publication'):
+-        # Deterministic race model: the solver feeder suffers a REAL write failure, but publishes only after the
+-        # worker's main thread has begun its bounded-exit stop. v6 must still settle and classify it.
++        # Deterministic race model: the solver feeder suffers a REAL write failure; publication waits for the
++        # worker's settlement join, which can only begin after the main-thread bounded-exit stop.
+         N.MAX_RAW = 1000
+-        released = threading.Event()
+-        OriginalEvent = threading.Event
+-        class BoundedExitEvent(OriginalEvent):
+-            def set(self):
+-                if threading.current_thread() is threading.main_thread(): released.set()
+-                return super().set()
+-        threading.Event = BoundedExitEvent
+-        real_feed = N.feed_cnf
+-        def delayed(fifo,data,record,stop,deadline):
+-            private = {}
+-            real_feed(fifo,data,private,stop,deadline)
+-            if 'solver-cnf' in str(fifo):
+-                assert released.wait(30), 'bounded exit never began'
+-                time.sleep(0.2)
+-                dump(cfg['injection_marker'],{'published_after_bounded_exit_stop':True,'feed':private})
+-            record.update(private)
+-        N.feed_cnf = delayed
++        N.feed_cnf = delayed_feed
+         real_start = N.start_native
+         def capture(*args,**kwargs):
+             p,t = real_start(*args,**kwargs); natives.append(p); return p,t
+         N.start_native = capture
++    pipeline = N.pipeline
++    if cfg.get('mutant_no_settle'):
++        class RemoveSettleJoin(ast.NodeTransformer):
++            changes = 0
++            def visit_For(self,node):
++                if ast.unparse(node.target) == '(name, thread)' and ast.unparse(node.iter) == 'feeders':
++                    RemoveSettleJoin.changes += 1; return ast.Pass()
++                return self.generic_visit(node)
++        tree = RemoveSettleJoin().visit(ast.parse(source_inspect.getsource(N.pipeline))); ast.fix_missing_locations(tree)
++        assert RemoveSettleJoin.changes == 1, 'removed-join mutant did not hit the settlement loop'
++        namespace = dict(N.__dict__); exec(compile(tree,str(Path(cfg['result']).parent/'mutant-no-settle.py'),'exec'),namespace)
++        pipeline = namespace['pipeline']
+     def commands(paths):
+         if cfg.get('real_positive'):
+             return ([N.KISSAT,'-q','-f','--seed=1','--time=600',paths['solver-cnf.fifo'],paths['proof.fifo']],[N.DT,paths['checker-cnf.fifo'],'-i','-t','1200'])
+@@ -181,8 +213,16 @@
+     def hook(p):
+         time.sleep(0.2); dump(cfg['injection_marker'],{'injected':'CONTROL post-Popen exception'})
+         raise RuntimeError('CONTROL post-Popen exception')
+-    result = N.pipeline(raw,cfg['job'],commands,hook if cfg.get('start_failure') else None)
+-    for p in natives: p.wait(10)  # control-only: clean supervision proves the veto does not rely on a supervisor trip
++    result = pipeline(raw,cfg['job'],commands,hook if cfg.get('start_failure') else None)
++    if cfg.get('delayed_publication'):
++        Path(cfg['solver_exit_permission']).write_text('granted after pipeline return')
++        deadline = time.monotonic()+60  # only detects a broken handshake; no subprocess timeout
++        for p in natives:
++            while p.poll() is None:
++                if time.monotonic() > deadline: raise RuntimeError('CONTROL handshake broken: solver still alive')
++                time.sleep(0.01)
++            p.wait()
++        result['control_acknowledgments'] = {'main_stop_seen':main_stop_seen.is_set(),'join_entered':join_entered.is_set()}
+     dump(cfg['result'],result)
+ 
+ 
+@@ -190,6 +230,8 @@
+     folder = root/name; folder.mkdir(); priv = folder/'scope'; scope(priv)
+     item = lease(priv,time.monotonic()+8000)
+     cfg = dict(options,scope=str(priv),result=str(folder/'worker.json'),marker=str(folder/'marker.json'),injection_marker=str(folder/'injection.json'),
++               solver_alive_marker=str(folder/'solver-alive.json'),solver_exit_permission=str(folder/'solver-exit-permission'),
++               handshake_failure=str(folder/'handshake-failure.json'),
+                job={'solver':'kissat','solver_seconds':600,'checker_seconds':1200,'lease':item,'workdir':str(folder/'fifo')})
+     cp = folder/'config.json'; dump(cp,cfg)
+     rec_path = folder/('absent/supervisor.json' if options.get('receipt_error') else 'supervisor.json')
+@@ -223,17 +265,26 @@
+         assert alive and all(x['held_t0_free'] is False for x in alive), 'owned token released while native alive'
+         injected = 'CONTROL collector start failure' if options.get('thread_failure') else 'CONTROL post-Popen exception'
+         assert json.loads((folder/'injection.json').read_bytes()) == {'injected':injected}, 'injection did not run'
+-        assert injected in str(result.get('unknown_reason')), (injected,result.get('unknown_reason'))
++        assert result.get('lifecycle_error') == repr(RuntimeError(injected)), result.get('lifecycle_error')
++        assert result.get('unknown_reason') == 'incomplete native lifecycle: '+repr(RuntimeError(injected)), result.get('unknown_reason')
+         assert str(rec.get('trip_reason')).startswith('group member alive after leader exit'), rec.get('trip_reason')
+         if options.get('receipt_error'):
+             assert rec.get('record_write_error') and rec.get('cleanup_exception') and rec.get('uncertain') is True
+         else:
+             assert rec.get('uncertain') is False and (rec.get('stop') or {}).get('listing_ok') is True and (rec.get('stop') or {}).get('survivors') == []
+     if options.get('delayed_publication'):
++        assert not (folder/'handshake-failure.json').exists(), json.loads((folder/'handshake-failure.json').read_bytes())
++        assert json.loads((folder/'solver-alive.json').read_bytes())['proof_written_and_closed'] is True
++        assert result.get('bounded_unknown') and result.get('proof_cap_hit') == 'raw' and result['feeders_settled'] == ['solver']
++        assert result['control_acknowledgments']['main_stop_seen'] is True
++        assert rec.get('completed_cleanly') is True and not rec.get('trip_reason'), ('supervision must be clean',rec)
++    if options.get('delayed_publication') and options.get('mutant_no_settle'):
++        assert not (folder/'injection.json').exists() and result['control_acknowledgments']['join_entered'] is False
++        assert (result['status'],result['integrity_status'],result['unknown_reason']) == ('UNKNOWN','NOT_EVALUATED','declared proof cap; not certified'), result
++    elif options.get('delayed_publication'):
+         late = json.loads((folder/'injection.json').read_bytes())
+-        assert late['published_after_bounded_exit_stop'] is True and late['feed']['error'] and late['feed']['cancelled'] is None
+-        assert result.get('bounded_unknown') and result.get('proof_cap_hit') == 'raw' and result['feeders_settled'] == ['solver']
+-        assert rec.get('completed_cleanly') is True and not rec.get('trip_reason'), ('supervision must be clean',rec)
++        assert late['published_after_settlement_join_entered'] is True and late['main_stop_seen'] is True
++        assert late['feed']['error'] == repr(OSError('CONTROL CNF write failure')) and late['feed']['cancelled'] is None
+         composed = O.apply_worker_outcome({'status':'UNKNOWN','checked':False,'halt_production':False,'sat_candidate':False,
+             'integrity_status':result['integrity_status']},result,rec,cap.settlement)
+         saved_lane = O.L
+@@ -825,8 +876,8 @@
+     ap = argparse.ArgumentParser(); ap.add_argument('contract'); ap.add_argument('sha256')
+     ap.add_argument('ms06_contract'); ap.add_argument('ms06_sha256'); args = ap.parse_args()
+     R.install_handlers()
+-    root = L/'cycle2'/('v6-required-controls-'+str(time.time_ns())); root.mkdir()
+-    out = {'host_clock':time.strftime('%Y-%m-%dT%H:%M:%S%z'),'schema':'PA19-V6-REQUIRED-CONTROLS-v1','production_coverage':False,
++    root = L/'cycle2'/('v7-required-controls-'+str(time.time_ns())); root.mkdir()
++    out = {'host_clock':time.strftime('%Y-%m-%dT%H:%M:%S%z'),'schema':'PA19-V7-REQUIRED-CONTROLS-v1','production_coverage':False,
+            'control_source_sha256':E.digest(SELF),'contract_sha256':args.sha256,'families':{}}
+     try:
+         with R.Capacity(time.monotonic()+10800):  # one real lane token; private shadow tokens for lifecycle fixtures
+@@ -842,6 +893,7 @@
+                 ('checker-write-error',{'fd_error':'checker-write'}),('solver-close-error',{'fd_error':'solver-close'}),
+                 ('checker-close-error',{'fd_error':'checker-close'}),('real-SAT-invalid-proof',{'real_negative':True}),
+                 ('delayed-real-feed-failure-across-bounded-exit',{'delayed_publication':True,'fd_error':'solver-write'}),
++                ('delayed-feed-removed-join-MUTANT-must-lose-veto',{'delayed_publication':True,'fd_error':'solver-write','mutant_no_settle':True}),
+                 ('post-Popen-exception',{'start_failure':True}),('collector-Thread.start-exception',{'thread_failure':True}),
+                 ('post-Popen-plus-receipt-OSError',{'start_failure':True,'receipt_error':True})]:
+                 entry = native_case(root,name,**opts); natives.append(entry)
+@@ -851,11 +903,14 @@
+                     'checker-write-error':'CNF transport failure (not bound-induced cancellation): checker',
+                     'solver-close-error':'CNF FIFO close failed: solver','checker-close-error':'CNF FIFO close failed: checker',
+                     'real-SAT-invalid-proof':'checker NOT VERIFIED',
+-                    'delayed-real-feed-failure-across-bounded-exit':'CNF transport failure (not bound-induced cancellation): solver'}
+-                wanted = ('UNSAT','VALIDATED') if name == 'valid-full-feed' else ('UNKNOWN','INVALID')
++                    'delayed-real-feed-failure-across-bounded-exit':'CNF transport failure (not bound-induced cancellation): solver',
++                    'delayed-feed-removed-join-MUTANT-must-lose-veto':'declared proof cap; not certified',
++                    'post-Popen-exception':'incomplete native lifecycle: '+repr(RuntimeError('CONTROL post-Popen exception')),
++                    'collector-Thread.start-exception':'incomplete native lifecycle: '+repr(RuntimeError('CONTROL collector start failure')),
++                    'post-Popen-plus-receipt-OSError':'incomplete native lifecycle: '+repr(RuntimeError('CONTROL post-Popen exception'))}
++                wanted = {'valid-full-feed':('UNSAT','VALIDATED'),'delayed-feed-removed-join-MUTANT-must-lose-veto':('UNKNOWN','NOT_EVALUATED')}.get(name,('UNKNOWN','INVALID'))
+                 assert (entry['status'],entry['integrity_status']) == wanted, (name,entry,wanted)
+-                if name in reasons: assert entry['unknown_reason'] == reasons[name], (name,entry['unknown_reason'])
+-                else: assert str(entry['unknown_reason']).startswith('incomplete native lifecycle'), (name,entry['unknown_reason'])
++                assert entry['unknown_reason'] == reasons[name], (name,entry['unknown_reason'],reasons[name])
+             out['families']['1_exceptional_ownership'] = [x for x in natives if 'exception' in x['name'] or 'OSError' in x['name']]
+             out['families']['1_late_leader_reap'] = late_reap_control(root)
+             out['families']['3_measured_native_transport'] = [x for x in natives if x not in out['families']['1_exceptional_ownership']]

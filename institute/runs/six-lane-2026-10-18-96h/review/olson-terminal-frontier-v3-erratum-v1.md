@@ -1,0 +1,8 @@
+# Olson terminal frontier v3 — odd-prime and inherited-import precision
+
+Recorded 2026-10-21T04:18:45-0700 (`/bin/date`). Governs olson-terminal-frontier-v3.md (67b81755385598b90097ba96e09bf93312163e7d28df3514db32bb0e9bb42eb3). The focused Codex binding audit (/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/review/olson-terminal-frontier-v3-audit-codex-v1.prompt.stdout.txt, b880bcd6785b332da26d0bc5c2fd1d7c0839dbec82b058bbf736da64c2159eac) returned0F/0M/1m; every listed partition, formula substitution, floor bound and endpoint passed.
+
+1. MINOR-1: V3 LF9's "odd p" means **odd PRIME p**, exactly K0T's literal statement. No odd-composite result is claimed. All listed p are primes, so no audited row changes.
+2. Every composition retains its components' premises, not merely their names. K0T and LOWER-K1 import Theorem P (proof58a85ebeba8208e2f89b39a691235d2d1374656d8888ea905fe96aa75e1dafc2), previously accepted at K0*/RED LF7 with one historical Codex review. K0T's two reviewers did not re-prove P. Fresh complete proof reviews in both configured families are now running under olson-TheoremP-import-closure-scope-v1; until their disposition, keep this inherited single-family boundary explicit. Upper-half results retain UH-A where used; UMR/UFC retain their literal inputs. No READY_FROZEN candidate is silently admitted.
+
+The exact audited union is closed terminal rows p∈{7,11,13,17,19,23} at the existential NF antecedent, relative to those imported statements. At p29 the unexcluded cells are12,13;14 is inside the BOTTOM interval. No claim that every avoider reaches terminal k=p+1, no full ordered Olson, no novelty or runtime approval.

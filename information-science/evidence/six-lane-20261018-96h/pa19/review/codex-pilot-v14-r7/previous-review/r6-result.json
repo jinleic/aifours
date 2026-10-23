@@ -1,0 +1,23 @@
+{
+  "verdict": "needs-rework",
+  "linesChecked": 1353,
+  "summary": "R5#1 UNRESOLVED: cleanup still allocates outside its protection (src/pilot_file_drat_v13.py:836-838).\nR5#2 RESOLVED: both signal paths compute timestamps before delivery and immediately store the marker afterward (src/pilot_file_drat_v13.py:606-608,619-621).\nR5#3 RESOLVED: truncated JSON is rejected, preserved, and reported as publication failure (src/pilot_file_drat_v13.py:637-638,652-658,674-675).\nR5#4 RESOLVED: publication attempts are capped and successful publication no longer gates return after reap (src/pilot_file_drat_v13.py:630-644,674-675).\nThe supplied SHA-256 matches. One additional major regression was reproduced using in-memory stubs; no native solver/checker was launched.",
+  "findings": [
+    {
+      "severity": "blocker",
+      "category": "safety",
+      "location": "src/pilot_file_drat_v13.py:836-838",
+      "problem": "R5#1 UNRESOLVED: The settle-all finally can still escape before requesting termination or reaping an owned child.",
+      "evidence": "The new list(OWNED) allocation executes before the retry guard. If it raises MemoryError during emergency cleanup, no child reaches that guard. An in-memory probe injecting supervision, latch and snapshot-allocation failures observed stop=None, zero settlement calls and returncode=None. main has no subsequent reaping pass.",
+      "suggestedFix": "Include snapshot/iterator acquisition inside the protected cleanup retry, so its failure cannot unwind past an unreaped owned child."
+    },
+    {
+      "severity": "major",
+      "category": "resource",
+      "location": "src/pilot_file_drat_v13.py:837-843; src/pilot_file_drat_v13.py:677-679",
+      "problem": "NEW: The unconditional settlement retry permanently spins when the capture reader fails to start, preventing closeout after reap.",
+      "evidence": "If reader.start() fails at line 565, registration cleanup reaps the child but leaves self.reader referencing an unstarted Thread. settle() then calls join(), which permanently raises RuntimeError('cannot join thread before it is started'). The new loop swallows this and retries without changing state. A bounded in-memory probe observed five identical join failures after returncode=-15, one SIGTERM, settled_rec=None and zero sink.finish() calls. Neither sink cleanup nor final closeout is reached.",
+      "suggestedFix": "Handle an unstarted reader as an explicit settlement failure, close its streams and finish the sink, then retain an UNSETTLED record and latch. Avoid indefinitely retrying permanent post-reap settlement errors."
+    }
+  ]
+}

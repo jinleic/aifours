@@ -1,0 +1,486 @@
+--- original/guard_matrix_io_v1.py
++++ draft2/guard_matrix_io_v2_draft2.py
+@@ -1,7 +1,7 @@
+ #!/usr/bin/env python3
+ """REVIEW CANDIDATE / WRITTEN ONLY / NO GO. Fixed source19 I/O matrix, not a scheduler.
+ 
+-CLI: guard_matrix_io_v1.py CASE_ID PARENT_APPROVAL_SHA256
++CLI: guard_matrix_io_v2.py CASE_ID PARENT_APPROVAL_SHA256 (successor of guard_matrix_io_v1.py)
+ Request/authority: <MATRIX_ROOT>/<CASE>/request.json, parent-authorization.json.
+ The independent parent captures actual exit and complete stdout/stderr. Neither
+ selected_status nor an ACK is an actual-exit observation or release authority.
+@@ -35,10 +35,11 @@
+ TERMINAL_LINES = [2688, 2692]
+ HELD = LANE + "/code/rqls_fixedb_lm_v7.py"
+ HELD_SHA = "4a78a7a078b52dd55e4348b2ecac357c95ef8fcea461768f4f05d9809d1edf07"
+-PATHS = {"supervisor": SUP, "driver": LANE + "/code/guard_matrix_io_v1.py",
++# Successor install paths (parent-decided migration; child v1 is unchanged).
++PATHS = {"supervisor": SUP, "driver": LANE + "/code/guard_matrix_io_v2.py",
+          "child": LANE + "/code/guard_matrix_io_child_v1.py",
+-         "oracle": LANE + "/code/guard_matrix_io_check_v1.py",
+-         "case_specs": LANE + "/review/rqls10-matrix-io-v1-cases.json",
++         "oracle": LANE + "/code/guard_matrix_io_check_v2.py",
++         "case_specs": LANE + "/review/rqls10-matrix-io-v2-cases.json",
+          "base_child": BASE_CHILD, "held_consumer": HELD}
+ AUTH = tuple("io_auth_" + action + "_" + phase for phase in ("helper", "main", "go", "ack")
+              for action in ("replace", "revoke"))
+@@ -179,22 +180,30 @@
+ 
+ 
+ def event(operation, scope="NATIVE_OBSERVATION", **fields):
+-    # Never raises into source paths (cap, size, serialization or envelope); truncation becomes
+-    # unresolved evidence. Cooperative envelope checks happen only BEFORE native side effects.
+-    with EVENT_LOCK:
+-        value = {"seq": len(EVENTS), "operation": operation, "scope": scope, "mono": raw_clock(),
+-                 "epoch_raw": raw_clock(True), **fields}
+-        try:
+-            raw = packed(value)
+-        except (TypeError, ValueError):
+-            raw = None
+-        if raw is None or TRUNCATED["events"] or len(EVENTS) >= 4096 or len(raw) > 256 << 10 or TRUNCATED["retained_bytes"] + len(raw) > 2 << 20:
+-            TRUNCATED["events"] += 1
+-            if TRUNCATED["first_operation"] is None:
+-                TRUNCATED["first_operation"] = operation
+-        else:
+-            EVENTS.append(decode(raw))  # Freeze facts before source state extends them.
+-            TRUNCATED["retained_bytes"] += len(raw)
++    # Never raises into source paths (cap, size, serialization, envelope or any wrapper failure):
++    # a native result already returned always reaches source19; a dropped record becomes
++    # event_trace_truncated unresolved evidence (HOLD). Cooperative envelope checks happen only
++    # BEFORE native side effects.
++    value = {"operation": operation, "scope": scope, **fields}
++    try:
++        with EVENT_LOCK:
++            value = {"seq": len(EVENTS), "operation": operation, "scope": scope, "mono": raw_clock(),
++                     "epoch_raw": raw_clock(True), **fields}
++            try:
++                raw = packed(value)
++            except Exception:
++                raw = None
++            if raw is None or TRUNCATED["events"] or len(EVENTS) >= 4096 or len(raw) > 256 << 10 or TRUNCATED["retained_bytes"] + len(raw) > 2 << 20:
++                TRUNCATED["events"] += 1
++                if TRUNCATED["first_operation"] is None:
++                    TRUNCATED["first_operation"] = operation
++            else:
++                EVENTS.append(decode(raw))  # Freeze facts before source state extends them.
++                TRUNCATED["retained_bytes"] += len(raw)
++    except BaseException:
++        TRUNCATED["events"] += 1
++        if TRUNCATED["first_operation"] is None:
++            TRUNCATED["first_operation"] = operation
+     return value
+ 
+ 
+@@ -207,6 +216,8 @@
+     if not isinstance(path, str) or not path.startswith("/") or os.path.normpath(path) != path:
+         raise ValueError("noncanonical directory")
+     fd = os.open("/", os.O_RDONLY | os.O_DIRECTORY)
++    if path == "/":
++        return fd  # "/".split("/")[1:] is [""]; the opened root itself is the canonical directory.
+     try:
+         for part in path.split("/")[1:]:
+             check("directory component")
+@@ -534,9 +545,9 @@
+                       ("launch_record", "launch.json"), ("receipt", "receipt.json"), ("settlement_record", "settlement.json")):
+         if cfg.get(key) != paths["out"] + "/" + name:
+             raise ValueError("fixed source output names")
+-    if cfg.get("outputs") != [{"path": paths["out"] + "/child-result.json", "required": True}] or \
+-            cfg.get("pins") != ([{"path": RUN + "/pinned-scratch.txt", "sha256": request["created_facts"]["pin"]["sha256"]}]
+-                              if case in MUTATION and "_pin_" in case else []):
++    if not typed_equal(cfg.get("outputs"), [{"path": paths["out"] + "/child-result.json", "required": True}]) or \
++            not typed_equal(cfg.get("pins"), [{"path": RUN + "/pinned-scratch.txt", "sha256": request["created_facts"]["pin"]["sha256"]}]
++                            if case in MUTATION and "_pin_" in case else []):  # Exact JSON types: required is literal true.
+         raise ValueError("fixed output/pin set")
+     if any(not integer(cfg.get(k)) or not 1 <= cfg[k] <= CAP for k in ("stdout_cap_bytes", "stderr_cap_bytes", "samples_cap_bytes")):
+         raise ValueError("bounded capture caps")
+@@ -764,10 +775,11 @@
+ 
+ 
+ def safe_hook(label, function, *args, **kwargs):
+-    """A fixture action failure is retained evidence, never injected into source control flow."""
++    """A fixture action failure is retained evidence (HOLD), never injected into source control flow,
++    including failures of fixture work after a native call has already returned its progress."""
+     try:
+         return function(*args, **kwargs)
+-    except Exception as exc:
++    except BaseException as exc:
+         UNRESOLVED.append({"kind": "fixture_hook_failed", "hook": label, "error": exception(exc)})
+         event("fixture_hook_failed", hook=label, error=exception(exc))
+         return None
+@@ -842,7 +854,18 @@
+         self.spawn_role = self.publication = self.dirsync_deadline = None
+         self.account_context = self.go_deadline = self.stimulus = None
+         self.extra_in_write = False
++        # Extra-line interventions apply only to the exact source stdin descriptor and the
++        # source caller thread that entered the fixed extra-line write_all (never sink writes).
++        self.extra_fd = self.extra_thread = None
+ 
++    def extra_target(self, fd):
++        return self.extra_in_write and self.extra_fd is not None and fd == self.extra_fd and \
++               threading.current_thread() is self.extra_thread
++
++    def stdin_target(self, fd):
++        return STATE is not None and STATE.child is not None and fd == STATE.child.get("stdin_fd") and \
++               self.extra_thread is not None and threading.current_thread() is self.extra_thread
++
+     def __getattr__(self, name):
+         return getattr(os, name)
+ 
+@@ -883,6 +906,14 @@
+             UNRESOLVED.append({"kind": "fixture_fd_bookkeeping_failed", "fd": fd, "error": exception(exc)})
+             return None
+         self.fds[fd] = {"path": path, "inode": [value.st_dev, value.st_ino], "mode": value.st_mode}
++        s = self.stimulus
++        if s is not None and fd == s["fd"]:
++            # Any proxied allocation of the closed stimulus number is retained evidence. Inside the
++            # ownership window it is reuse (HOLD); after it, a fresh incarnation the oracle can join.
++            if not s["closed"]:
++                UNRESOLVED.append({"kind": "closed_number_reused", "fd": fd, "inode": [value.st_dev, value.st_ino]})
++            event("stimulus_number_reallocated", fd=fd, path=path, inode=[value.st_dev, value.st_ino],
++                  window_closed=s["closed"])
+         return value
+ 
+     def open(self, path, flags, mode=0o777, *, dir_fd=None):
+@@ -931,8 +962,8 @@
+ 
+     def sabotage(self, fd, operation, path):
+         case = REQUEST["case"]
+-        extra = case == "io_extra_write_error" and operation == "write" and self.extra_in_write or \
+-                case == "io_extra_close_error" and operation == "close" and self.go_deadline is not None and STATE.child is not None and fd == STATE.child.get("stdin_fd")
++        extra = case == "io_extra_write_error" and operation == "write" and self.extra_target(fd) or \
++                case == "io_extra_close_error" and operation == "close" and self.go_deadline is not None and self.stdin_target(fd)
+         key = ("error", operation)
+         if key in self.fired or not (extra or self.selected("error", operation, path)):
+             return
+@@ -945,8 +976,18 @@
+         FD_LOCK.acquire()
+         facts = dict(self.fds.get(fd, {}))
+         try:
++            observed_before = raw_clock()
++            observed = os.fstat(fd)  # Recheck the retained original descriptor while both allocation locks are held.
++            observed_after = raw_clock()
++            if set(facts) != {"path", "inode", "mode"} or facts["inode"] != [observed.st_dev, observed.st_ino] or facts["mode"] != observed.st_mode:
++                raise FixtureOwnershipHold("source descriptor identity changed before approved native stimulus close")
++            event("descriptor_fault_window_begin", fd=fd, operation_target=operation, original=facts,
++                  observed_inode=[observed.st_dev, observed.st_ino], observed_mode=observed.st_mode,
++                  mono_before=observed_before, mono_after=observed_after, allocation_lock_held=True, output_lock_held=True,
++                  source_close_observations_required=2 if case == "io_extra_close_error" else 0 if operation == "dirsync" else 1)
+             self.call("owned_fd_close_stimulus", os.close, (fd,), {}, fd=fd, path=path, original=facts)
+-        except BaseException:
++        except BaseException as exc:
++            UNRESOLVED.append({"kind": "fixture_hook_failed", "hook": "owned_fd_close_stimulus", "fd": fd, "error": exception(exc)})
+             FD_LOCK.release()
+             OUTPUT_LOCK.release()
+             raise
+@@ -977,11 +1018,13 @@
+         if s is None or s["closed"]:
+             return
+         s["closed"] = True
+-        if reason != "all_expected_native_calls_completed":
+-            UNRESOLVED.append({"kind": "descriptor_window_incomplete", "reason": reason, "fd": s["fd"]})
+-        event("descriptor_fault_window_end", fd=s["fd"], reason=reason, closes_left=s["closes_left"])
+-        FD_LOCK.release()
+-        OUTPUT_LOCK.release()
++        try:
++            if reason != "all_expected_native_calls_completed":
++                UNRESOLVED.append({"kind": "descriptor_window_incomplete", "reason": reason, "fd": s["fd"]})
++            event("descriptor_fault_window_end", fd=s["fd"], reason=reason, closes_left=s["closes_left"])
++        finally:
++            FD_LOCK.release()  # The allocation locks never outlive the window, even if evidence fails.
++            OUTPUT_LOCK.release()
+ 
+     def after_native(self, fd, operation):
+         s = self.stimulus
+@@ -1022,12 +1065,13 @@
+         info = dict(self.fds.get(fd, {}))
+         path, length = info.get("path"), len(data)
+         case = REQUEST["case"]
++        extra = self.extra_target(fd)  # Exact stdin descriptor and source caller thread only.
+         short = (case == "io_pub_short_write" and STATE is not None and path == STATE.cfg["receipt"] or
+-                 case == "io_extra_write_short" and self.extra_in_write) and "short" not in self.fired
++                 case == "io_extra_write_short" and extra) and "short" not in self.fired
+         passed = data[:max(1, length // 2)] if short else data
+-        if self.extra_in_write and case == "io_extra_write_zero" and "zero" not in self.fired:
++        if extra and case == "io_extra_write_zero" and "zero" not in self.fired:
+             self.fired.add("zero")
+-            event("extra_zero_response", "API_RESPONSE_INJECTION", caller_bytes=length, result=0,
++            event("extra_zero_response", "API_RESPONSE_INJECTION", fd=fd, caller_bytes=length, result=0,
+                   native_call_made=False, reason="explicit API zero-response control, not a native OS return")
+             return 0
+         with OUTPUT_LOCK:
+@@ -1040,30 +1084,38 @@
+             if self.interesting(fd, path):
+                 result = self.call("write", os.write, (fd, passed), {}, guard=False, fd=fd, path=path,
+                                    caller_bytes=length, native_argument_bytes=len(passed), data_sha256=sha(passed),
+-                                   extra_line=self.extra_in_write)
++                                   extra_line=extra)
+             else:
+                 result = os.write(fd, passed)
+             after = raw_clock()
++        # The native write has returned: every later fixture action is guarded. Actual progress is
++        # always handed back to source19 write_all; wrapper failure makes evidence inconclusive (HOLD).
++        safe_hook("native_write_response_bookkeeping", self.write_response, fd, case, extra, short, length, len(passed), result, before, after, armed)
++        return result
++
++    def write_response(self, fd, case, extra, short, length, passed_length, result, before, after, armed):
+         if short:
+             self.fired.add("short")
+-            event("short_write_response", "API_RESPONSE_INJECTION", caller_bytes=length,
+-                  native_argument_bytes=len(passed), native_return=result, extra_line=self.extra_in_write)
+-        if self.extra_in_write and case in ("io_extra_write_late", "io_extra_deadline") and "extra_late" not in self.fired:
++            event("short_write_response", "API_RESPONSE_INJECTION", fd=fd, caller_bytes=length,
++                  native_argument_bytes=passed_length, native_return=result, extra_line=extra)
++        if extra and case in ("io_extra_write_late", "io_extra_deadline") and "extra_late" not in self.fired:
+             self.fired.add("extra_late")
+             if case == "io_extra_deadline":
+-                start, target = time.monotonic(), self.go_deadline.end
+-                reached = start < target < WORK_END - 0.1 and wait_past(target + 0.01, time.monotonic)
+-                if not reached:
+-                    PREREQUISITES.append("original unchanged IO_S30 extra-write deadline crossing not exercised")
+-                event("accounting_late_response" if reached else "accounting_late_boundary_missed", "API_RESPONSE_INJECTION",
+-                      stage="extra_write", native_before=before, native_after=after, injection_start=start,
+-                      deadline_mono=target, original_deadline_mono=target, injection_end=time.monotonic(),
+-                      deadline_clamped=False)
++                self.extra_deadline_delay(fd, before, after)
+             else:
+-                safe_hook("extra_write_return_delay", late_stage, self.go_deadline, "extra_write", native_before=before, native_after=after)
+-        safe_hook("publication_write_return_delay", self.delayed, "write", before, after, armed)
+-        return result
++                late_stage(self.go_deadline, "extra_write", fd=fd, native_before=before, native_after=after)
++        self.delayed("write", before, after, armed)
+ 
++    def extra_deadline_delay(self, fd, before, after):
++        start, target = time.monotonic(), self.go_deadline.end
++        reached = start < target < WORK_END - 0.1 and wait_past(target + 0.01, time.monotonic)
++        if not reached:
++            PREREQUISITES.append("original unchanged IO_S30 extra-write deadline crossing not exercised")
++        event("accounting_late_response" if reached else "accounting_late_boundary_missed", "API_RESPONSE_INJECTION",
++              stage="extra_write", fd=fd, native_before=before, native_after=after, injection_start=start,
++              deadline_mono=target, original_deadline_mono=target, injection_end=time.monotonic(),
++              deadline_clamped=False)
++
+     def fsync(self, fd):
+         check("before native fsync")
+         info = dict(self.fds.get(fd, {}))
+@@ -1083,10 +1135,10 @@
+     def close(self, fd):
+         info = dict(self.fds.get(fd, {}))
+         path = info.get("path")
+-        stdin = STATE is not None and STATE.child is not None and fd == STATE.child.get("stdin_fd")
++        stdin = self.stdin_target(fd)  # Exact source stdin descriptor closed by the extra-line caller thread.
+         if stdin and self.go_deadline is not None and REQUEST["case"].startswith("io_extra_signal_") and REQUEST["case"].endswith("_close") and "extra_signal" not in self.fired:
+             self.fired.add("extra_signal")
+-            extra_signal("close")
++            safe_hook("extra_signal_close", extra_signal, "close", fd)
+         self.sabotage(fd, "close", path)
+         armed = self.arm_late("close", path)
+         self.unallocated(fd, "close")
+@@ -1102,7 +1154,7 @@
+             safe_hook("readback_bytes_mutation", mutate_receipt_byte, path)
+         if stdin and self.go_deadline is not None and REQUEST["case"] == "io_extra_close_late" and "extra_close_late" not in self.fired:
+             self.fired.add("extra_close_late")
+-            safe_hook("extra_close_return_delay", late_stage, self.go_deadline, "extra_close", native_before=before, native_after=after)
++            safe_hook("extra_close_return_delay", late_stage, self.go_deadline, "extra_close", fd=fd, native_before=before, native_after=after)
+         safe_hook("publication_close_return_delay", self.delayed, "close", before, after, armed)
+         return result
+ 
+@@ -1214,24 +1266,79 @@
+     return {k: getattr(STATE, k) for k in fields}
+ 
+ 
+-def extra_signal(boundary):
++def extra_signal(boundary, fd):
++    """Ordered raw observations: self incarnation twice, protected mask, pending-before, native kill, pending-after.
++    Operation-boundary evidence only; explicitly no kernel write/close syscall-overlap claim."""
+     name = REQUEST["case"].split("_")[3]
+     sig = {"term": signal.SIGTERM, "int": signal.SIGINT, "hup": signal.SIGHUP}[name]
+     start = time.monotonic()
+     before = SOURCE["identify"](os.getpid())
+     again = SOURCE["identify"](os.getpid())
++    checked = time.monotonic()
+     mask = signal.pthread_sigmask(signal.SIG_BLOCK, set())
+-    if SOURCE["fingerprint"](before) != SOURCE["fingerprint"](again) or sig not in mask or before["pid"] != os.getpid():
++    masked = time.monotonic()
++    pending_before = sorted(int(x) for x in signal.sigpending())
++    pending_before_mono = time.monotonic()
++    if SOURCE["fingerprint"](before) != SOURCE["fingerprint"](again) or sig not in mask or before["pid"] != os.getpid() or \
++            set(SOURCE["CANCEL_SIGNALS"]) & set(pending_before):
+         PREREQUISITES.append("exact self incarnation/protected mask not established at extra " + boundary)
+         return
+     native_before = time.monotonic()
+     os.kill(os.getpid(), sig)
+     native_after = raw_clock()
+     pending = sorted(int(x) for x in signal.sigpending())
+-    event("extra_native_signal", "NATIVE_SIGNAL_AT_PROTECTED_SOURCE_API_BOUNDARY", boundary=boundary, signum=int(sig),
++    pending_mono = raw_clock()
++    event("extra_native_signal", "NATIVE_SIGNAL_AT_PROTECTED_SOURCE_API_BOUNDARY", boundary=boundary, fd=fd, signum=int(sig),
+           identity_before=before, identity_checked=again, self_pid=os.getpid(), self_pgid=os.getpgrp(),
+-          mono_check_begin=start, mono_before=native_before, mono_after=native_after,
+-          blocked_mask=sorted(int(x) for x in mask), pending=pending, native_syscall_overlap_claim=False)
++          mono_check_begin=start, mono_identity_checked=checked, mono_mask_observed=masked,
++          pending_before=pending_before, mono_pending_before_observed=pending_before_mono,
++          mono_before=native_before, mono_after=native_after, native_kill_returned=True,
++          blocked_mask=sorted(int(x) for x in mask), pending=pending, mono_pending_observed=pending_mono,
++          native_syscall_overlap_claim=False)
++
++
++def extra_line_begin(fd, data, dl):
++    event("extra_line_write_begin", raw_hex=bytes(data).hex(), bytes=len(data), sha256=sha(data), fd=fd,
++          deadline_mono=dl.end, pre_go_census_mono=STATE.rec["pre_go_census"]["mono_complete"],
++          mono_spawn=STATE.mono_spawn, age_bound=min(60.0, STATE.cfg["max_wall_s"] / 2))
++
++
++def extra_crossing(fd, dl):
++    """Real age/expiry wait after the actual extra-line native write returned (API response delay)."""
++    age = REQUEST["case"] == "io_extra_go_age"
++    target = STATE.mono_spawn + min(60.0, STATE.cfg["max_wall_s"] / 2) if age else STATE.authorization["not_after_epoch"]
++    clock = time.monotonic if age else time.time
++    begin_value, start = clock(), time.monotonic()
++    maximum = 6.0 if age else REQUEST["parameters"]["max_flush_delay_s"]
++    reached = begin_value < target <= begin_value + maximum and wait_past(target + 0.01, clock)
++    if not reached:
++        PREREQUISITES.append("extra-line real age/expiry crossing not exercised")
++    event("extra_real_crossing" if reached else "extra_real_crossing_missed", "API_RESPONSE_INJECTION",
++          cutoff="GO_AGE" if age else "AUTHORIZATION_EXPIRY", fd=fd,
++          cutoff_value_raw=target, clock_begin_raw=begin_value, clock_end_raw=clock(),
++          injection_start=start, injection_end=time.monotonic(), original_go_deadline=dl.end)
++
++
++def spawn_refused(s, attempt, role, exc):
++    """Retain a pre-spawn source ledger record (source19 exports neither s.keep nor pid-less helper reports) and
++    natively observe, under FD_LOCK, that the original cleanup released every descriptor it allocated for the attempt."""
++    record = s.keep[attempt] if len(s.keep) > attempt else None
++    if record is None or record.get("pid") is not None:
++        return  # A registered PID is retained by source19 itself; only pid-less attempts need this record.
++    snapshot = {k: record.get(k) for k in ("pid", "role", "settled", "leader_reaped", "rc", "wait_lost", "term_attempted",
++                                         "identity", "spawn_error", "stdout_fd", "stdin_fd", "stderr_fd")}
++    snapshot["parent_close_fds"] = list(record.get("parent_close_fds") or [])
++    fds = sorted({snapshot[k] for k in ("stdout_fd", "stdin_fd", "stderr_fd") if snapshot[k] is not None} | set(snapshot["parent_close_fds"]))
++    descriptors = []
++    with FD_LOCK:
++        for fd in fds:
++            try:
++                value = os.fstat(fd)
++            except OSError as error:
++                descriptors.append({"fd": fd, "released": error.errno == errno.EBADF, "errno": error.errno, "inode": None})
++            else:
++                descriptors.append({"fd": fd, "released": False, "errno": None, "inode": [value.st_dev, value.st_ino]})
++    event("native_spawn_refused_before_pid", role=role, record=snapshot, descriptors=descriptors, error=exception(exc))
+ 
+ 
+ def install_hooks(env, proxy):
+@@ -1249,6 +1356,7 @@
+     def spawn(s, argv, e, role, dl, required_s):
+         proxy.spawn_role = role
+         before = time.monotonic()
++        attempt = len(s.keep)  # spawn_registered appends exactly one ledger record before any allocation.
+         try:
+             record = original_spawn(s, argv, e, role, dl, required_s)
+             pgid, error = None, None
+@@ -1261,6 +1369,9 @@
+                   argv=argv, child_external_sha_overlay=TRUSTED_SHA if role == "child" else None,
+                   mono_pid_registered=record.get("mono_pid_registered"))
+             return record
++        except BaseException as exc:
++            safe_hook("spawn_refused_before_pid", spawn_refused, s, attempt, role, exc)  # Retained evidence only.
++            raise
+         finally:
+             proxy.spawn_role = None
+     env["spawn_registered"] = spawn
+@@ -1334,7 +1445,7 @@
+             if REQUEST["case"] == "io_account_post_end":
+                 event("post_end_accounting_state", accounting=accounting_snapshot(),
+                       census_complete=value["complete"], census_mono_complete=value["mono_complete"])
+-                late_stage(FINAL_PHASE, "post_end")
++                safe_hook("post_end_phase_return_delay", late_stage, FINAL_PHASE, "post_end")
+         return value
+     cls.full_census = full_census
+     original_final = env["final_body"]
+@@ -1389,31 +1500,20 @@
+         if not extra:
+             return original_write(fd, data, dl, on_progress)
+         proxy.go_deadline, proxy.extra_in_write = dl, True
++        proxy.extra_fd, proxy.extra_thread = fd, threading.current_thread()
+         before = time.monotonic()
+-        event("extra_line_write_begin", raw_hex=bytes(data).hex(), bytes=len(data), sha256=sha(data), fd=fd,
+-              deadline_mono=dl.end, pre_go_census_mono=STATE.rec["pre_go_census"]["mono_complete"],
+-              mono_spawn=STATE.mono_spawn, age_bound=min(60.0, STATE.cfg["max_wall_s"] / 2))
++        safe_hook("extra_line_write_begin", extra_line_begin, fd, data, dl)
+         try:
+             if REQUEST["case"].startswith("io_extra_signal_") and REQUEST["case"].endswith("_write"):
+                 proxy.fired.add("extra_signal")
+-                extra_signal("write")
++                safe_hook("extra_signal_write", extra_signal, "write", fd)
+             value = original_write(fd, data, dl, on_progress)
+             if REQUEST["case"] in ("io_extra_go_age", "io_extra_expiry"):
+-                target = STATE.mono_spawn + min(60.0, STATE.cfg["max_wall_s"] / 2) if REQUEST["case"] == "io_extra_go_age" else STATE.authorization["not_after_epoch"]
+-                clock = time.monotonic if REQUEST["case"] == "io_extra_go_age" else time.time
+-                begin_value, start = clock(), time.monotonic()
+-                maximum = 6.0 if REQUEST["case"] == "io_extra_go_age" else REQUEST["parameters"]["max_flush_delay_s"]
+-                reached = begin_value < target <= begin_value + maximum and wait_past(target + 0.01, clock)
+-                if not reached:
+-                    PREREQUISITES.append("extra-line real age/expiry crossing not exercised")
+-                event("extra_real_crossing" if reached else "extra_real_crossing_missed", "API_RESPONSE_INJECTION",
+-                      cutoff="GO_AGE" if REQUEST["case"] == "io_extra_go_age" else "AUTHORIZATION_EXPIRY",
+-                      cutoff_value_raw=target, clock_begin_raw=begin_value, clock_end_raw=clock(),
+-                      injection_start=start, injection_end=time.monotonic(), original_go_deadline=dl.end)
+-            event("extra_line_write_return", mono_before=before, mono_after=raw_clock(), bytes=len(data), sha256=sha(data))
++                safe_hook("extra_real_crossing", extra_crossing, fd, dl)  # After native progress: retained-failure only.
++            event("extra_line_write_return", fd=fd, mono_before=before, mono_after=raw_clock(), bytes=len(data), sha256=sha(data))
+             return value
+         except BaseException as exc:
+-            event("extra_line_write_exception", mono_before=before, mono_after=raw_clock(), error=exception(exc))
++            event("extra_line_write_exception", fd=fd, mono_before=before, mono_after=raw_clock(), error=exception(exc))
+             raise
+         finally:
+             proxy.extra_in_write = False
+@@ -1458,21 +1558,25 @@
+         if self.name == "stdout" and REQUEST["case"] in POST and STATE is not None and STATE.ack_output_started and \
+                 not self.delayed:
+             self.delayed = True
+-            expiry = STATE.authorization["not_after_epoch"]
+-            start_epoch, start = time.time(), time.monotonic()
+-            maximum = REQUEST["parameters"]["max_flush_delay_s"]
+-            crossed = start_epoch < expiry <= start_epoch + maximum and wait_past(expiry + 0.01, time.time)
+-            if not crossed:
+-                PREREQUISITES.append("real approved GO expiry not crossed within max_flush_delay_s during ACK flush")
+-                event("ack_flush_boundary_missed", expiry_epoch_raw=expiry, start_epoch_raw=start_epoch,
+-                      end_epoch_raw=time.time(), max_delay_s=maximum)
+-            else:
+-                event("ack_flush_real_expiry_crossing", "NATIVE_CLOCK_DECLARED_RESPONSE_DELAY",
+-                      native_flush_before=before, native_flush_after=after, injection_start=start,
+-                      injection_start_epoch_raw=start_epoch, injection_end=time.monotonic(),
+-                      injection_end_epoch_raw=time.time(), approved_expiry_epoch_raw=expiry,
+-                      limit="real stdout bytes already written; fixture delayed this return, never a fake clock")
++            # The native flush already returned: delay-work failure is retained (HOLD), never raised into source19.
++            safe_hook("ack_flush_return_delay", self.ack_flush_delay, before, after)
+         return result
++    def ack_flush_delay(self, before, after):
++        expiry = STATE.authorization["not_after_epoch"]
++        start_epoch, start = time.time(), time.monotonic()
++        maximum = REQUEST["parameters"]["max_flush_delay_s"]
++        crossed = start_epoch < expiry <= start_epoch + maximum and wait_past(expiry + 0.01, time.time)
++        if not crossed:
++            PREREQUISITES.append("real approved GO expiry not crossed within max_flush_delay_s during ACK flush")
++            event("ack_flush_boundary_missed", expiry_epoch_raw=expiry, start_epoch_raw=start_epoch,
++                  end_epoch_raw=time.time(), max_delay_s=maximum, stream=self.name, native_flush_before=before,
++                  native_flush_after=after, injection_start=start, injection_end=time.monotonic())
++        else:
++            event("ack_flush_real_expiry_crossing", "NATIVE_CLOCK_DECLARED_RESPONSE_DELAY",
++                  native_flush_before=before, native_flush_after=after, injection_start=start,
++                  injection_start_epoch_raw=start_epoch, injection_end=time.monotonic(),
++                  injection_end_epoch_raw=time.time(), approved_expiry_epoch_raw=expiry,
++                  limit="real stdout bytes already written; fixture delayed this return, never a fake clock")
+ 
+ 
+ class NativeStderr:
+@@ -1517,7 +1621,8 @@
+                 self.faults += 1
+             event("stderr_native_error", label=label, attempt=self.attempts, fd=target, broken_fixture=broken,
+                   mono_before=before, mono_after=raw_clock(), error=exception(exc),
+-                  pending_bytes=len(self.pending), pending_sha256=sha(self.pending), native_argument_bytes=len(data))
++                  pending_bytes=len(self.pending), pending_sha256=sha(self.pending), native_argument_bytes=len(data),
++                  native_argument_sha256=sha(data))
+             if "persistent" not in self.case and self.faults == 1:
+                 event("stderr_one_shot_fault_consumed", next_sink="unchanged actual parent-captured fd2", broken_fd_retained=self.fd)
+             raise

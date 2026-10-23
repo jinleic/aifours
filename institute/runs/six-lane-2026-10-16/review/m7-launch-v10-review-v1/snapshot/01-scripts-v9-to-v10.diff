@@ -1,0 +1,1083 @@
+--- scripts/launch_B_v9.py
++++ scripts/launch_B_v10.py
+@@ -1,5 +1,49 @@
+ #!/usr/bin/env python3
+-"""Capacity-gated launcher of the parent B-side K3 cube replay desk (review/moqls7-k3-B-cube-parent-replay-v1), v9.
++"""Capacity-gated launcher of the parent B-side K3 cube replay desk (review/moqls7-k3-B-cube-parent-replay-v1), v10.
++
++v10 = launch_B_v9.py with the repairs required by Codex's HOLD on the v6 admission (review/m7-launch-v6-r9-codex-v1.
++note.md b9db41b6...4f93; parent addendum review/m7-launch-v6-r9-parent-addendum-v1.md 595999fb...7c1a, items 1-4) and
++Main's 07:32 PDT long-job stability amendment:
++  (1) fail-closed enumeration. Every scan helper (ps identity snapshot, ps args snapshot, lsof cwd listing, second ps
++      identity snapshot) must exit 0 with empty stderr within its bound. Every row must parse completely
++      (pid ppid pgid uid state rss lstart comm; pid lstart args; lsof p/f/n records only). A live own-uid process
++      without resolved identity (args with the same lstart, a cwd from lsof, the same ppid/pgid/uid/lstart/comm in
++      both identity snapshots) is unknown, never foreign. The census is then retried (at most 5 tries, 2 s apart)
++      and otherwise refused. A live native of another uid (cwd unreadable) is unknown and refused the same way;
++  (2) consistent census. The two identity snapshots bracket the args snapshot and the lsof listing. The join is by
++      (pid, lstart) and is re-validated by the second snapshot, which is the one classified. Cap and slot detection
++      search full argv; receipts truncate argv only after matching. The B/C411 r7 veto searches every process of every
++      uid, zombies included. It excludes only this launcher, its descendants, its ancestors and processes whose
++      resolved cwd is inside this desk. This desk's exclusivity in slot 2 is a separate condition: no other attempt
++      process with cwd inside this desk (a native, supervise_r*, replay_B_*, compose_B* or 'launch_B_* run'). Lane
++      zombies are recorded separately, as ownership/reaping evidence, and are never counted as busy or as RSS;
++  (3) launch boundary. The supervisor stdout log is opened when the launcher starts. Hashes and the gate-receipt
++      body are prepared, and the monitor stability rule is evaluated, BEFORE the final census. Immediately before
++      Popen, after the final census, the launcher rechecks free bytes (>= 12.2e9 + growth), deadline_ok(), its
++      signals and the quarantine glob. The gate receipt is written right after the spawn, inside run_owned()'s
++      ownership scope via its inject hook. A failure there takes run_owned()'s exception path (UNKNOWN);
++  (4) scan helpers run through run_helper(). Each runs in its own session (pgid = sid = helper pid), so it is never
++      in this launcher's group or any supervised group; /bin/ps is setuid root on this host. Each is bounded: after
++      60 s exactly one SIGTERM goes to the owned, unreaped child, then a bounded 30 s wait, then a blocking wait with
++      no further signal. There is never a SIGKILL or a subprocess timeout. bklib's _run_text is no longer called.
++      'selftest-v10 LABEL' demonstrates this, plus one census and one monitor evaluation, and launches nothing;
++  (5) deadline_ok() also requires launch + supervisor wall + grace (10,380 s) <= 17:57 PDT (Main: native work ends by
++      17:57), i.e. no launch after 15:04 PDT;
++  (6) stability, per Main's 07:32 PDT amendment, evaluated from the parent monitor
++      review/disk-monitor-v1-20261018T0722-to-1810.jsonl:
++        * complete JSON-object lines only; an unfinished last line is ignored, other malformed lines in the window
++          refuse;
++        * timezone-aware, strictly increasing sample timestamps; last-sample age 0..30 s;
++        * >= 25 samples in [t_last - 300 s, t_last], spanning >= 290 s;
++        * last free >= 13.5e9 B, and maximum peak-to-later drop in the window <= max(300,000,000,
++          (free_last - 13.5e9) / 12);
++        * an end event or a stale monitor refuses.
++      This replaces v8's own 300 s statvfs window. A >= 62 s pause between the first admitting census and the final
++      census remains, and both free readings must be >= 12.2e9 + growth (v6 rule (c)).
++Not implemented: serializing admissions with other desks' launchers. That needs their cooperation and a shared lock
++outside this desk's write scope. The final census and rechecks immediately before spawn narrow the window but cannot
++make it atomic. run_owned(), on_term, the outcome receipt, the fixed RSS cap, supervisor arguments, the driver
++(replay_B_v4.py) and bklib_v3 are unchanged.
+ 
+ v9 = launch_B_v8.py with an import-only bump for B/C311+cuts: bklib_v3 (B_C311cuts item) instead of bklib_v2, and the
+ driver replay_B_v4.py (bklib_v3 import; planned compose names the item's script). The usage string names v9;
+@@ -48,17 +92,18 @@
+ receipts/*.QUARANTINE.json exists, the wait-start watcher, pins, limits, supervisor arguments and the RSS-cap rule are
+ as in v2/v3.
+ 
+-Usage: launch_B_v6.py run ITEM --label ITEM-<suffix>
+-       launch_B_v6.py wait-start LABEL
+-       launch_B_v6.py test-exception-path LABEL          (LABEL: test-...; the v5 test mode, unchanged)
+-
+-run waits, with bounded sleeps of 90 s (never spinning), until two fresh readings admit a native launch (gate (a)-(d)
+-above plus the slot-2 condition, <= 2 busy lane natives and lane RSS headroom for the projected peak). If nothing is
+-admitted by 17:30 PDT, nothing is launched and the gate receipt records it. Then it requires receipts/regen-ITEM.json
+-= MATCH and receipts/selfcheck-summary.json all_ok, writes the gate receipt exclusively, runs the pinned
+-supervise_r3.py (own session) around 'replay_B_v2.py run ITEM --label LABEL --rss-stop CAP' through run_owned(), and
+-writes an outcome receipt. wait-start sleeps 60 s at a time until receipts/LABEL.launch.json or LABEL.driver.json
+-exists, or LABEL.gate.json records 'not_launched', then prints a summary; it never scans the lane.
++Usage: launch_B_v10.py run ITEM --label ITEM-<suffix> [--regen-tag TAG]
++       launch_B_v10.py wait-start LABEL
++       launch_B_v10.py test-exception-path LABEL         (LABEL: test-...; the v5 test mode, unchanged)
++       launch_B_v10.py selftest-v10 LABEL                (LABEL: test-...; helper bounds, census, monitor; no launch)
++
++run waits, with bounded sleeps of 90 s (never spinning), until admission (rules above plus v6's <= 2 busy lane
++natives, lane RSS headroom for the projected peak, fixed cap with ancestry headroom and the slot-2 condition). If
++nothing is admitted while deadline_ok() holds, nothing is launched and the gate receipt records it. It requires
++receipts/regen-ITEM[-TAG].json = MATCH and receipts/selfcheck-summary.json all_ok. It runs the pinned supervise_r3.py
++(own session) around 'replay_B_v4.py run ITEM --label LABEL --rss-stop CAP' through run_owned(), and writes an outcome
++receipt. wait-start sleeps 60 s at a time until receipts/LABEL.launch.json or LABEL.driver.json exists, or
++LABEL.gate.json records 'not_launched', then prints a summary; it never scans the lane.
+ No SIGKILL, no Popen.kill, no subprocess timeouts.
+ """
+ import datetime
+@@ -67,8 +112,10 @@
+ import os
+ import re
+ import signal
++import stat
+ import subprocess
+ import sys
++import threading
+ import time
+ 
+ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+@@ -76,17 +123,33 @@
+ 
+ DEADLINE = datetime.datetime.fromisoformat("2026-10-18T17:30:00-07:00")
+ NO_LAUNCH_AFTER = datetime.datetime.fromisoformat("2026-10-18T17:30:00-07:00")
++END_BY = datetime.datetime.fromisoformat("2026-10-18T17:57:00-07:00")   # Main: native work ends by 17:57 PDT
+ SLEEP = 90
+ SUP_WALL = 10200
+ SUP_GRACE = 180
+ CAP_FIXED = 2797076480                          # Main, about 07:05 PDT
+-STABILITY = {"window_seconds": 300, "every_seconds": 30, "min_free": 13500000000, "max_drop": 300000000}
+-ATTEMPT_RULE = ("Main messages 05:00-07:17 PDT 2026-10-18: attempts are UNKNOWN on any stop and never relabelled. "
+-                "B_C321-a3 (slot 2) and B/C411 (slot 1, after PhysEpQutrit's hand-over) are NEW attempts with their "
+-                "own receipts, each launched only on Main's explicit GO, with a fresh gate: free >= 12.2e9 + projected "
+-                "growth at both scans; long-job stability (>= 13.5e9 B and no drop > 300 MB within 5 min); lane caps "
++FIRST_TO_FINAL = 62                             # v6 rule (c): >= 60 s between the two free readings
++HELPER_LIMIT, HELPER_TERM_WAIT = 60, 30         # scan-helper bound, then one SIGTERM and a bounded wait
++CENSUS_TRIES, CENSUS_PAUSE = 5, 2
++PS_ID = ["/bin/ps", "-axww", "-o", "pid=,ppid=,pgid=,uid=,state=,rss=,lstart=,comm="]
++PS_ARGS = ["/bin/ps", "-axww", "-o", "pid=,lstart=,args="]
++LSOF_CWD = ["/usr/sbin/lsof", "-a", "-u", str(os.getuid()), "-d", "cwd", "-Fpn"]
++LSTART = re.compile(r"(Mon|Tue|Wed|Thu|Fri|Sat|Sun) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{1,2} "
++                    r"\d\d:\d\d:\d\d \d{4}")
++DESK_ATTEMPT = re.compile(r"launch_B_v\d+\.py run |replay_B_v\d+\.py (run|regen) |compose_B\w*_v\d+\.py |"
++                          r"supervise_r\d+\.py ")
++MONITOR = os.path.join(K.REVIEW, "disk-monitor-v1-20261018T0722-to-1810.jsonl")
++MON = {"source": "Main 07:32 PDT amendment (long jobs >= 60 min)", "min_free": 13500000000, "window_seconds": 300,
++       "min_samples": 25, "min_span_seconds": 290, "max_age_seconds": 30, "drop_floor": 300000000,
++       "runway_divisor": 12, "tail_bytes": 262144}
++ATTEMPT_RULE = ("Main messages 05:00-07:32 PDT 2026-10-18: attempts are UNKNOWN on any stop and never relabelled. "
++                "B_C321-a3, B/C411 and B/C311+cuts are NEW attempts in slot 2, one at a time, each launched only on "
++                "Main's explicit GO, with a fresh gate: free >= 12.2e9 + projected growth at both scans and again "
++                "immediately before spawn; long-job stability per Main's 07:32 amendment (parent monitor: last free "
++                ">= 13.5e9 B, max 5-min peak-to-later drop <= max(300 MB, (free_last - 13.5e9)/12)); lane caps "
+                 "(<= 2 busy lane natives by ancestry, lane RSS <= 8 GiB); RSS cap 2,797,076,480 B with ancestry "
+-                "headroom; no stacking; floor 12e9 in flight; no new launches after 17:30 PDT.")
++                "headroom; no stacking; floor 12e9 in flight; no new launches after 17:30 PDT; native work ends by "
++                "17:57 PDT.")
+ B411_R7 = re.compile(r"B_C411|k3_direct_B_r\d+\.py C411")
+ B411_R7_END_RECORD = os.path.join(K.K3DIR, "cert_B_r7", "B_C411.json")
+ STATE = {"signals": [], "seen_live": False}
+@@ -96,7 +159,8 @@
+ 
+ def deadline_ok():
+     t = datetime.datetime.now().astimezone()
+-    return t < DEADLINE and t < NO_LAUNCH_AFTER
++    return (t < DEADLINE and t < NO_LAUNCH_AFTER
++            and t + datetime.timedelta(seconds=SUP_WALL + SUP_GRACE) <= END_BY)
+ 
+ 
+ def on_term(signum, frame):
+@@ -200,59 +264,230 @@
+     return cwd == K.LANE or cwd.startswith(K.LANE + "/") or cwd.startswith(os.path.join(K.REVIEW, "moqls7-"))
+ 
+ 
+-def lane_scan_ancestry(own_root):
+-    """One fresh scan with lane identity by cwd and ancestry (gate (a)). Returns bklib_v1.lane_scan's keys used by
+-    bklib_v1.admission and the slot condition, plus the ancestry headroom and the foreign marker matches."""
+-    at = K.now()
+-    a = K._run_text(["/bin/ps", "-axww", "-o", "pid=,ppid=,pgid=,state=,rss=,comm="])
+-    b = K._run_text(["/bin/ps", "-axww", "-o", "pid=,args="])
+-    lo = K._run_text(["/usr/sbin/lsof", "-a", "-d", "cwd", "-Fpn"])
+-    if a.returncode != 0 or b.returncode != 0:
+-        return {"at": at, "error": "ps failed: rc %d/%d" % (a.returncode, b.returncode)}
+-    procs = {}
+-    for line in a.stdout.splitlines():
+-        parts = line.split(None, 5)
+-        if len(parts) == 6:
+-            procs[int(parts[0])] = {"pid": int(parts[0]), "ppid": int(parts[1]), "pgid": int(parts[2]),
+-                                    "state": parts[3], "rss_bytes": int(parts[4]) * 1024, "comm": parts[5].strip(),
+-                                    "args": "", "cwd": ""}
+-    for line in b.stdout.splitlines():
+-        parts = line.strip().split(None, 1)
+-        if len(parts) == 2 and parts[0].isdigit() and int(parts[0]) in procs:
+-            procs[int(parts[0])]["args"] = parts[1]
+-    cur = None
+-    for line in lo.stdout.splitlines():
+-        if line.startswith("p"):
+-            cur = int(line[1:])
+-        elif line.startswith("n") and cur in procs:
+-            procs[cur]["cwd"] = line[1:]
+-    children = {}
+-    for p in procs.values():
+-        children.setdefault(p["ppid"], []).append(p["pid"])
+-
+-    def descendants(root):
+-        out, stack = set(), [root]
++def in_desk(cwd):
++    return cwd is not None and (cwd == K.DESK or cwd.startswith(K.DESK + "/"))
++
++
++def _pump(stream, sink):
++    for chunk in iter(lambda: stream.read(1 << 16), b""):
++        sink.append(chunk)
++
++
++def helper_reap(p, box, ev, flags):
++    """One waitpid on the owned helper. Ownership ends with the first statement after a successful wait, or on ECHILD
++    (lost child: recorded, and the helper result is then not ok)."""
++    try:
++        pid, st = os.waitpid(box["owned"], flags)
++    except ChildProcessError as e:
++        box["owned"] = None
++        ev["lost_child"] = repr(e)
++        return
++    if pid:
++        box["owned"] = None
++        p.returncode = ev["rc"] = os.waitstatus_to_exitcode(st)
++
++
++def run_helper(argv, limit=HELPER_LIMIT, term_wait=HELPER_TERM_WAIT):
++    """Bounded, owned scan helper (ps, lsof), started in its own session: pgid = sid = helper pid, never in this
++    launcher's group or in any supervised group. stdout and stderr are drained by reader threads. Past `limit` s, or on
++    an exception after Popen, exactly one SIGTERM goes to the owned, unreaped child (its PID is reserved), then a
++    bounded wait of `term_wait` s; if the child is still unreaped, a blocking wait with no further signal. Never
++    SIGKILL, never a subprocess timeout. ok only for rc 0, empty stderr, no SIGTERM, no exception, no lost child, no
++    wait error and both readers finished."""
++    t0 = time.monotonic()
++    ev = {"argv": argv, "pid": None, "pgid": None, "sid": None, "rc": None, "term_sent_after": None,
++          "unreaped_after_term_wait": False, "blocking_wait": False, "exception": None, "lost_child": None,
++          "wait_errors": [], "readers_finished": None, "stdout": "", "stderr": "", "seconds": None, "ok": False}
++    p = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
++                         cwd=K.TMP, env=K.ENV, start_new_session=True)
++    box = {"owned": p.pid}                          # registration: the statement right after Popen
++    out, err, readers = [], [], []
++    try:
++        try:
++            ev["pid"] = box["owned"]
++            for stream, sink in ((p.stdout, out), (p.stderr, err)):
++                readers.append(threading.Thread(target=_pump, args=(stream, sink), daemon=True))
++                readers[-1].start()
++            try:
++                ev["pgid"], ev["sid"] = os.getpgid(ev["pid"]), os.getsid(ev["pid"])
++            except OSError as e:                    # the helper may already have exited (still unreaped)
++                ev["pgid"] = ev["sid"] = repr(e)
++            while box["owned"] is not None:
++                helper_reap(p, box, ev, os.WNOHANG)
++                if box["owned"] is None:
++                    break
++                elapsed = time.monotonic() - t0
++                if ev["term_sent_after"] is None and elapsed >= limit:
++                    os.kill(box["owned"], signal.SIGTERM)       # owned => unreaped => PID reserved
++                    ev["term_sent_after"] = round(elapsed, 3)
++                elif ev["term_sent_after"] is not None and elapsed >= limit + term_wait:
++                    ev["unreaped_after_term_wait"] = True
++                    break
++                time.sleep(0.02)
++        except BaseException as exc:
++            ev["exception"] = repr(exc)
++            if box["owned"] is not None and ev["term_sent_after"] is None:
++                try:
++                    os.kill(box["owned"], signal.SIGTERM)
++                    ev["term_sent_after"] = round(time.monotonic() - t0, 3)
++                except BaseException as e:
++                    ev["wait_errors"].append(repr(e))
++            end = time.monotonic() + term_wait
++            while box["owned"] is not None and time.monotonic() < end:
++                try:
++                    helper_reap(p, box, ev, os.WNOHANG)
++                except BaseException as e:
++                    ev["wait_errors"].append(repr(e))
++                if box["owned"] is not None:
++                    time.sleep(0.02)
++            ev["unreaped_after_term_wait"] = box["owned"] is not None
++    finally:
++        while box["owned"] is not None:             # no further signals: wait for the known child to exit
++            ev["blocking_wait"] = True
++            try:
++                helper_reap(p, box, ev, 0)
++            except BaseException as e:
++                ev["wait_errors"].append(repr(e))
++                time.sleep(0.25)
++    for t in readers:
++        t.join(10)
++    ev["readers_finished"] = len(readers) == 2 and not any(t.is_alive() for t in readers)
++    if ev["readers_finished"]:
++        p.stdout.close()
++        p.stderr.close()
++    ev["stdout"] = b"".join(out).decode("utf-8", "replace")
++    ev["stderr"] = b"".join(err).decode("utf-8", "replace")
++    ev["seconds"] = round(time.monotonic() - t0, 3)
++    ev["ok"] = (ev["rc"] == 0 and ev["term_sent_after"] is None and ev["exception"] is None
++                and ev["lost_child"] is None and not ev["wait_errors"] and ev["readers_finished"]
++                and ev["stderr"] == "")
++    return ev
++
++
++def parse_ps_id(text):
++    """Identity snapshot rows 'pid ppid pgid uid state rss lstart(5 fields) comm'. Any malformed row raises."""
++    rows = {}
++    for line in text.splitlines():
++        f = line.split(None, 11)
++        if (len(f) != 12 or not all(re.fullmatch(r"-?\d+", x) for x in f[:4] + f[5:6]) or not f[4]
++                or not LSTART.fullmatch(" ".join(f[6:11])) or not f[11].strip()):
++            raise ValueError("malformed ps identity row: %r" % line[:200])
++        pid = int(f[0])
++        if pid in rows:
++            raise ValueError("duplicate pid %d in one ps snapshot" % pid)
++        rows[pid] = {"pid": pid, "ppid": int(f[1]), "pgid": int(f[2]), "uid": int(f[3]), "state": f[4],
++                     "rss_bytes": int(f[5]) * 1024, "lstart": " ".join(f[6:11]), "comm": f[11].strip()}
++    if not rows:
++        raise ValueError("empty ps identity snapshot")
++    return rows
++
++
++def parse_ps_args(text):
++    """Args snapshot rows 'pid lstart(5 fields) args' (args may be empty). Any malformed row raises."""
++    rows = {}
++    for line in text.splitlines():
++        f = line.split(None, 6)
++        if len(f) < 6 or not f[0].isdigit() or not LSTART.fullmatch(" ".join(f[1:6])):
++            raise ValueError("malformed ps args row: %r" % line[:200])
++        pid = int(f[0])
++        if pid in rows:
++            raise ValueError("duplicate pid %d in the args snapshot" % pid)
++        rows[pid] = {"lstart": " ".join(f[1:6]), "args": f[6].strip() if len(f) == 7 else ""}
++    if not rows:
++        raise ValueError("empty ps args snapshot")
++    return rows
++
++
++def parse_lsof(text):
++    """lsof -Fpn cwd records: 'p<pid>', 'f<fd>' and one non-empty 'n<path>' per process. Anything else raises."""
++    cwd, cur = {}, None
++    for line in text.splitlines():
++        tag, val = line[:1], line[1:]
++        if tag == "p" and val.isdigit() and int(val) not in cwd:
++            cur = int(val)
++            cwd[cur] = None
++        elif tag == "f" and cur is not None:
++            continue
++        elif tag == "n" and cur is not None and cwd[cur] is None and val:
++            cwd[cur] = val
++        else:
++            raise ValueError("malformed lsof record: %r" % line[:200])
++    if not cwd:
++        raise ValueError("empty lsof cwd listing")
++    return cwd
++
++
++def census_once(own_root):
++    """One census: ps identity, ps args, lsof cwd, ps identity again (v10 (1)-(2)). The second identity snapshot is
++    classified; the join is by (pid, lstart) and re-validated against the first snapshot. Returns a scan, a scan with
++    'error' (fail-closed) or a scan with 'retry' (unresolved own-uid identities)."""
++    at, helpers, outs = K.now(), {}, {}
++    for name, argv in (("ps_id_1", PS_ID), ("ps_args", PS_ARGS), ("lsof_cwd", LSOF_CWD), ("ps_id_2", PS_ID)):
++        try:
++            ev = run_helper(argv)
++        except Exception as e:                      # Popen failed: nothing was spawned
++            return {"at": at, "error": "helper %s not started: %r" % (name, e), "helpers": helpers}
++        outs[name] = ev["stdout"]
++        helpers[name] = {k: ev[k] for k in ("pid", "pgid", "sid", "rc", "seconds", "term_sent_after", "exception",
++                                            "lost_child", "readers_finished", "ok")}
++        helpers[name].update(stderr=ev["stderr"][:500], stdout_bytes=len(ev["stdout"]))
++        if not ev["ok"]:
++            return {"at": at, "error": "helper %s failed (fail-closed)" % name, "helpers": helpers}
++    try:
++        A, B = parse_ps_id(outs["ps_id_1"]), parse_ps_args(outs["ps_args"])
++        L, C = parse_lsof(outs["lsof_cwd"]), parse_ps_id(outs["ps_id_2"])
++    except ValueError as e:
++        return {"at": at, "error": "malformed enumeration (fail-closed): %s" % e, "helpers": helpers}
++    me, children = os.getuid(), {}
++    for c in C.values():
++        children.setdefault(c["ppid"], []).append(c["pid"])
++
++    def descendants(roots):
++        out, stack = set(), list(roots)
+         while stack:
+-            for c in children.get(stack.pop(), []):
+-                if c not in out:
+-                    out.add(c)
+-                    stack.append(c)
++            for ch in children.get(stack.pop(), []):
++                if ch not in out:
++                    out.add(ch)
++                    stack.append(ch)
+         return out
+ 
+-    own = {own_root} | descendants(own_root)
+-    roots = {pid for pid, p in procs.items() if pid not in own and cwd_in_lane(p["cwd"])}
+-    ids = set(roots)
+-    for r in roots:
+-        ids |= descendants(r)
+-    ids -= own
+-    live = [procs[i] for i in sorted(ids) if not procs[i]["state"].startswith("Z")]
++    own = {own_root} | descendants([own_root])
++    ancestors, x = set(), C.get(own_root)
++    while x is not None and x["ppid"] in C and x["ppid"] not in ancestors and x["ppid"] != x["pid"]:
++        ancestors.add(x["ppid"])
++        x = C[x["ppid"]]
++    procs, unresolved, foreign_native = {}, [], []
++    for pid, c in C.items():
++        a, b = A.get(pid), B.get(pid)
++        same = a is None or all(a[k] == c[k] for k in ("ppid", "pgid", "uid", "lstart", "comm"))
++        p = dict(c, args=b["args"] if b is not None and b["lstart"] == c["lstart"] else None,
++                 cwd=L.get(pid) if c["uid"] == me else None, zombie=c["state"].startswith("Z"))
++        procs[pid] = p
++        if pid in own or p["zombie"]:
++            continue
++        if c["uid"] == me and (not same or not p["args"] or p["cwd"] is None):
++            unresolved.append({"pid": pid, "comm": c["comm"][-80:], "same_in_both_snapshots": same,
++                               "args_resolved": bool(p["args"]), "cwd_resolved": p["cwd"] is not None})
++        elif c["uid"] != me and os.path.basename(c["comm"]) in K.NATIVE:
++            foreign_native.append({"pid": pid, "uid": c["uid"], "comm": c["comm"]})
++    counts = {"first": len(A), "args": len(B), "lsof": len(L), "second": len(C)}
++    if foreign_native:
++        return {"at": at, "error": "live native(s) of another uid, identity unresolvable (fail-closed)",
++                "foreign_uid_natives": foreign_native, "helpers": helpers, "census_counts": counts}
++    if unresolved:
++        return {"at": at, "retry": True, "unresolved": unresolved[:50], "helpers": helpers, "census_counts": counts}
++    roots = {pid for pid, p in procs.items() if pid not in own and not p["zombie"] and p["cwd"] is not None
++             and cwd_in_lane(p["cwd"])}
++    ids = (roots | descendants(roots)) - own
++    live = [procs[i] for i in sorted(ids) if not procs[i]["zombie"]]
++    zombies = [procs[i] for i in sorted(ids) if procs[i]["zombie"]]
+     natives = [p for p in live if os.path.basename(p["comm"]) in K.NATIVE]
+     covered, supervised = set(), []
+     for p in live:
+-        m = K.CAP_ARG.search(p["args"])
+-        if "supervise_r" in p["args"] and m:
+-            desc = descendants(p["pid"])
+-            groups = {procs[d]["pgid"] for d in desc if d in procs}
++        m = K.CAP_ARG.search(p["args"] or "")
++        if "supervise_r" in (p["args"] or "") and m:
++            desc = descendants([p["pid"]])
++            groups = {procs[d]["pgid"] for d in desc}
+             cov = ({p["pid"]} | desc | {q["pid"] for q in procs.values() if q["pgid"] in groups}) - own
+             covered |= cov
+             supervised.append({"supervisor_pid": p["pid"], "rss_cap": int(m.group(1)), "covered_pids": sorted(cov)})
+@@ -271,26 +506,55 @@
+     reserved = (sum(s["rss_cap"] for s in supervised) + sum(u["reserve"] for u in unsup) + others_rss
+                 + K.OTHER_LANE_MARGIN)
+     headroom = min(K.CAP_MAX, K.LANE_RSS_LIMIT - reserved - K.SAFETY_MARGIN)
+-    foreign = [{"pid": p["pid"], "comm": os.path.basename(p["comm"]), "cwd": p["cwd"], "args": p["args"][:160]}
+-               for p in procs.values() if p["pid"] not in ids and p["pid"] not in own
+-               and any(m in p["args"] or m in p["cwd"] for m in K.LANE_MARKERS)]
+-    return {"at": at, "identity": "cwd/ancestry", "own_excluded": sorted(own),
+-            "lane_natives": [{k: p[k] for k in ("pid", "ppid", "pgid", "state", "rss_bytes", "comm", "cwd")}
+-                             | {"args": p["args"][:300]} for p in natives],
+-            "lane_native_busy": len(natives),
+-            "lane_processes": [{k: p[k] for k in ("pid", "ppid", "pgid", "state", "rss_bytes", "cwd")}
+-                               | {"args": p["args"][:200]} for p in live],
++    skip = own | ancestors
++    b411 = [p for p in procs.values() if p["pid"] not in skip and not in_desk(p["cwd"])
++            and B411_R7.search(p["args"] if p["args"] is not None else p["comm"])]
++    desk = [p for p in procs.values() if p["pid"] not in skip and not p["zombie"] and in_desk(p["cwd"])
++            and (os.path.basename(p["comm"]) in K.NATIVE or DESK_ATTEMPT.search(p["args"] or ""))]
++    foreign = [p for p in procs.values() if p["pid"] not in ids and p["pid"] not in own
++               and any(m in (p["args"] or "") or m in (p["cwd"] or "") for m in K.LANE_MARKERS)]
++
++    def brief(p, n):
++        return dict({k: p[k] for k in ("pid", "ppid", "pgid", "uid", "state", "rss_bytes", "lstart", "comm", "cwd")},
++                    args=(p["args"] or "")[:n])
++
++    return {"at": at, "identity": "cwd/ancestry over a validated census (v10)", "helpers": helpers,
++            "census_counts": counts, "own_excluded": sorted(own), "own_ancestors": sorted(ancestors),
++            "lane_natives": [brief(p, 300) for p in natives], "lane_native_busy": len(natives),
++            "lane_processes": [brief(p, 200) for p in live], "lane_zombies": [brief(p, 200) for p in zombies],
+             "lane_rss_bytes": sum(p["rss_bytes"] for p in live), "supervised": supervised,
+             "unsupervised_native_groups": unsup, "other_lane_rss_bytes": others_rss, "reserved_bytes": reserved,
+             "computable_cap_by_ancestry": headroom,
+             "computable_cap": CAP_FIXED if headroom >= CAP_FIXED else headroom,
+-            "foreign_marker_matches_excluded": foreign}
++            "b411_matches": [brief(p, 300) for p in b411], "desk_attempt_processes": [brief(p, 300) for p in desk],
++            "foreign_marker_matches_excluded": [brief(p, 160) for p in foreign]}
++
++
++def census(own_root):
++    """Validated census with retries: a helper failure, malformed output or an unresolved own-uid identity is retried
++    (at most CENSUS_TRIES, CENSUS_PAUSE s apart); after that the scan carries 'error' and is refused (fail-closed)."""
++    tries = []
++    for i in range(CENSUS_TRIES):
++        r = census_once(own_root)
++        kind = "error" if "error" in r else ("unresolved" if "retry" in r else "complete")
++        tries.append({"at": r["at"], "result": kind, "detail": r.get("error") or r.get("unresolved", [])[:10] or None})
++        if kind == "complete":
++            r["census_tries"] = tries
++            return r
++        if STATE["signals"] or i == CENSUS_TRIES - 1:
++            break
++        time.sleep(CENSUS_PAUSE)
++    last = {k: v for k, v in r.items() if k != "retry"}
++    last["error"] = "no complete census after %d tries (fail-closed): %s" % (
++        len(tries), r.get("error") or "unresolved live identities")
++    last["census_tries"] = tries
++    return last
+ 
+ 
+ def slot_condition(scan):
+-    """Main's corrected rule: slot 2 is free only when B/C411 r7 is fully reaped AND end-recorded."""
+-    procs = scan.get("lane_natives", []) + scan.get("lane_processes", [])
+-    live = any(B411_R7.search(p.get("args", "")) for p in procs) or "error" in scan
++    """Main's corrected rule: slot 2 is free only when B/C411 r7 is fully reaped AND end-recorded. v10: the matches come
++    from the census over the full argv of every process, zombies included (census_once)."""
++    live = "error" in scan or bool(scan.get("b411_matches"))
+     STATE["seen_live"] = STATE["seen_live"] or (live and "error" not in scan)
+     st = os.lstat(B411_R7_END_RECORD) if os.path.lexists(B411_R7_END_RECORD) else None
+     recorded = st is not None and (st.st_mode & 0o170000) == 0o100000
+@@ -298,13 +562,14 @@
+             "end_record_exists": recorded, "ok": (not live) and recorded}
+ 
+ 
+-def admission_v6(scan, fb):
++def admission_v10(scan, fb):
+     adm = K.admission(scan, fb, deadline_ok())
+     slot = slot_condition(scan)
+     if "conditions" not in adm:
+         return {"ok": False, "why": adm["why"], "slot": slot}
+     cond = dict(adm["conditions"], slot2_b411_r7_reaped_and_end_recorded=slot["ok"],
+-                ancestry_headroom_for_fixed_cap=scan["computable_cap_by_ancestry"] >= CAP_FIXED)
++                ancestry_headroom_for_fixed_cap=scan["computable_cap_by_ancestry"] >= CAP_FIXED,
++                desk_idle_no_other_attempt_process=not scan["desk_attempt_processes"])
+     return {"ok": all(cond.values()), "conditions": cond, "why": [k for k, v in cond.items() if not v], "slot": slot}
+ 
+ 
+@@ -315,61 +580,119 @@
+             "lane_rss": scan.get("lane_rss_bytes"), "reserved": scan.get("reserved_bytes"),
+             "headroom": scan.get("computable_cap_by_ancestry"), "cap": scan.get("computable_cap"),
+             "foreign_excluded": len(scan.get("foreign_marker_matches_excluded", [])),
+-            "b411_r7_live": adm["slot"]["b411_r7_live"], "b411_r7_end_record_exists": adm["slot"]["end_record_exists"]}
++            "b411_r7_live": adm["slot"]["b411_r7_live"], "b411_r7_end_record_exists": adm["slot"]["end_record_exists"],
++            "b411_matches": [[n["pid"], os.path.basename(n["comm"])] for n in scan.get("b411_matches", [])],
++            "desk_attempts": [[n["pid"], os.path.basename(n["comm"])] for n in scan.get("desk_attempt_processes", [])],
++            "lane_zombies": len(scan.get("lane_zombies", [])), "census_tries": len(scan.get("census_tries", [])),
++            "error": scan.get("error")}
+     os.write(logfd, (json.dumps(line) + "\n").encode())
+ 
+ 
+-def stability_window():
+-    """Main's long-job rule: 300 s of statvfs readings every 30 s, all >= 13.5e9 B, no earlier-to-later drop > 300 MB.
+-    Stops early (not ok) on a low reading, a signal or the deadline."""
+-    t0, readings, why = time.monotonic(), [], None
+-    while True:
+-        readings.append({"t": round(time.monotonic() - t0, 1), "at": K.now(), "free_bytes": K.free_bytes()})
+-        if readings[-1]["free_bytes"] < STABILITY["min_free"]:
+-            why = "reading below %d" % STABILITY["min_free"]
+-            break
++def monitor_stability():
++    """Main's 07:32 PDT amendment (long jobs), evaluated on the parent monitor; fail-closed on any doubt (v10 (6))."""
++    out = {"rule": MON, "monitor": MONITOR, "ok": False, "why": None}
++    if not deadline_ok():
++        out["why"] = "deadline"
++        return out
++    try:
++        st = os.lstat(MONITOR)
++        if not stat.S_ISREG(st.st_mode):
++            raise ValueError("not a regular file")
++        start = max(0, st.st_size - MON["tail_bytes"])
++        with open(MONITOR, "rb") as f:
++            f.seek(start)
++            data = f.read(MON["tail_bytes"])
++    except (OSError, ValueError) as e:
++        out["why"] = "monitor unreadable: %r" % e
++        return out
++    lines = data.split(b"\n")
++    out["unfinished_tail_bytes"] = len(lines.pop())  # an unfinished last line is ignored
++    if start > 0 and lines:
++        lines.pop(0)                                  # partial first line of the tail read
++    samples, malformed, ends = [], [], []
++    for i, raw in enumerate(lines):
++        try:
++            d = json.loads(raw)
++            if not isinstance(d, dict):
++                raise ValueError("not a JSON object")
++            if "event" in d:
++                if d["event"] in ("end", "ended", "stop", "stopped", "exit", "finished"):
++                    ends.append(i)
++                continue
++            t, fr = datetime.datetime.fromisoformat(d["t"]), d["free"]
++            if t.utcoffset() is None or isinstance(fr, bool) or not isinstance(fr, int) or fr < 0:
++                raise ValueError("bad sample")
++            samples.append((i, t, fr))
++        except (ValueError, KeyError, TypeError):
++            malformed.append(i)
++    if not samples:
++        out["why"] = "no samples"
++        return out
++    now = datetime.datetime.now().astimezone()
++    t_last, f_last = samples[-1][1], samples[-1][2]
++    window = [s for s in samples if t_last - datetime.timedelta(seconds=MON["window_seconds"]) <= s[1] <= t_last]
++    peak, max_drop = None, 0
++    for _, _, fr in window:
++        peak = fr if peak is None or fr > peak else peak
++        max_drop = max(max_drop, peak - fr)
++    limit = max(MON["drop_floor"], (f_last - MON["min_free"]) / MON["runway_divisor"])
++    age = (now - t_last).total_seconds()
++    span = (t_last - window[0][1]).total_seconds()
++    checks = {"strictly_increasing_timestamps": all(samples[k][1] < samples[k + 1][1] for k in range(len(samples) - 1)),
++              "age_0_to_30_s": 0 <= age <= MON["max_age_seconds"],
++              "window_samples_at_least_25": len(window) >= MON["min_samples"],
++              "window_span_at_least_290_s": span >= MON["min_span_seconds"],
++              "no_malformed_line_in_window": not [i for i in malformed if i > window[0][0]],
++              "no_end_event_in_window": not [i for i in ends if i > window[0][0]],
++              "last_free_at_least_13_5e9": f_last >= MON["min_free"],
++              "max_drop_within_limit": max_drop <= limit}
++    out.update(checks=checks, samples_read=len(samples), malformed_lines=len(malformed), t_last=t_last.isoformat(),
++               age_seconds=round(age, 1), window_samples=len(window), span_seconds=span, free_last=f_last,
++               max_drop=max_drop, limit=limit)
++    ok = all(checks.values())
++    out["why"] = None if ok else [k for k, v in checks.items() if not v]
++    out["ok"] = ok and deadline_ok()                 # the deadline is checked again before success
++    if ok and not out["ok"]:
++        out["why"] = "deadline"
++    return out
++
++
++def pause(seconds):
++    """Bounded sleeps (never spinning); False if a launcher signal or the deadline interrupts the pause."""
++    end = time.monotonic() + seconds
++    while time.monotonic() < end:
+         if STATE["signals"] or not deadline_ok():
+-            why = "signal or deadline"
+-            break
+-        if time.monotonic() - t0 >= STABILITY["window_seconds"]:
+-            break
+-        time.sleep(STABILITY["every_seconds"])
+-    vals = [r["free_bytes"] for r in readings]
+-    max_drop = max([0] + [vals[i] - vals[j] for i in range(len(vals)) for j in range(i + 1, len(vals))])
+-    if why is None and max_drop > STABILITY["max_drop"]:
+-        why = "drop %d above %d" % (max_drop, STABILITY["max_drop"])
+-    if why is None and readings[-1]["t"] < STABILITY["window_seconds"]:
+-        why = "window shorter than %d s" % STABILITY["window_seconds"]
+-    return {"ok": why is None, "why": why, "rule": STABILITY, "readings": readings, "max_drop": max_drop}
+-
+-
+-def wait_for_admission(logfd, purpose):
+-    while True:
+-        scan = lane_scan_ancestry(os.getpid())
+-        fb = K.free_bytes()
+-        adm = admission_v6(scan, fb)
+-        log_line(logfd, purpose, scan, fb, adm, 1)
+-        if adm["ok"] and not STATE["signals"]:
+-            t1 = time.monotonic()
+-            stab = stability_window()
+-            os.write(logfd, (json.dumps({"at": K.now(), "stability": {k: stab[k] for k in ("ok", "why", "max_drop")},
+-                                         "readings": len(stab["readings"])}) + "\n").encode())
+-            scan2 = lane_scan_ancestry(os.getpid())
+-            fb2 = K.free_bytes()
+-            adm2 = admission_v6(scan2, fb2)
+-            gap = round(time.monotonic() - t1, 1)
+-            log_line(logfd, purpose, scan2, fb2, adm2, 2)
+-            adm2["two_readings"] = {"first": {"at": scan["at"], "free_bytes": fb}, "second": {"at": scan2["at"],
+-                                    "free_bytes": fb2}, "gap_seconds": gap, "gate": K.GATE,
+-                                    "both_at_least_gate": fb >= K.GATE and fb2 >= K.GATE}
+-            adm2["stability"] = stab
+-            if adm2["ok"] and stab["ok"] and gap >= 60 and fb >= K.GATE and fb2 >= K.GATE:
+-                return scan2, fb2, adm2
+-            adm, scan, fb = adm2, scan2, fb2
+-            adm["ok"] = False
+-        if not deadline_ok() or STATE["signals"]:
+-            return scan, fb, adm
+-        time.sleep(SLEEP)
++            return False
++        time.sleep(min(2.0, max(0.01, end - time.monotonic())))
++    return not STATE["signals"] and deadline_ok()
++
++
++def prepare(item, label, argv, cap, previous, regen_path, regen_sha0, summary_path, record, quarantine):
++    """The gate receipt without its admission evidence, computed before the final census (v10 (3)). ok only if the
++    supervisor equals its pin and the regeneration precheck receipt is unchanged since the launcher started."""
++    sup_sha = K.sha_file(K.SUPERVISOR)
++    regen_sha = K.sha_file(regen_path)
++    me = os.path.abspath(__file__)
++    rec = {"purpose": "run " + label, "item": item, "label": label, "previous_attempt": previous,
++           "launcher_pid": os.getpid(), "launcher": {"path": me, "sha256": K.sha_file(me)}, "prepared_at": K.now(),
++           "attempt_rule": ATTEMPT_RULE,
++           "rss_cap": {"value": cap, "rule": "fixed by Main (about 07:05 PDT); ancestry headroom must be >= it",
++                       "CAP_FIXED": CAP_FIXED, "CAP_MAX": K.CAP_MAX, "LANE_RSS_LIMIT": K.LANE_RSS_LIMIT,
++                       "SAFETY_MARGIN": K.SAFETY_MARGIN, "MIN_CAP": K.MIN_CAP, "PROJECTED_PEAK": K.PROJECTED_PEAK,
++                       "UNSUPERVISED_GROUP_RESERVE": K.UNSUPERVISED_GROUP_RESERVE,
++                       "OTHER_LANE_MARGIN": K.OTHER_LANE_MARGIN},
++           "supervisor": {"path": K.SUPERVISOR, "sha256": sup_sha, "pin": K.SUPERVISOR_SHA256,
++                          "equals_pin": sup_sha == K.SUPERVISOR_SHA256, "wall": SUP_WALL, "grace": SUP_GRACE,
++                          "floor": K.FLOOR, "record": record, "quarantine": quarantine},
++           "argv": argv, "cwd": K.TMP, "env": K.ENV, "scripts_sha256": K.script_hashes(),
++           "regen_receipt": os.path.relpath(regen_path, K.DESK), "regen_receipt_sha256": regen_sha,
++           "regen_receipt_unchanged_since_start": regen_sha == regen_sha0,
++           "selfcheck_summary_sha256": K.sha_file(summary_path),
++           "rules": {"gate": K.GATE, "floor": K.FLOOR, "monitor_stability": MON,
++                     "no_launch_after": NO_LAUNCH_AFTER.isoformat(), "end_by": END_BY.isoformat(),
++                     "first_to_final_min_seconds": FIRST_TO_FINAL, "helper_limit_seconds": HELPER_LIMIT,
++                     "helper_term_wait_seconds": HELPER_TERM_WAIT, "census_tries": CENSUS_TRIES}}
++    return rec, sup_sha == K.SUPERVISOR_SHA256 and regen_sha == regen_sha0
+ 
+ 
+ def mode_run(item, label, regen_tag=None):
+@@ -399,44 +722,93 @@
+     previous = {"label": item, "item_receipt": "receipts/%s.json" % item,
+                 "sha256": K.sha_file(prev_path) if os.path.isfile(prev_path) else None,
+                 "status": prev.get("status"), "stop_reason": (prev.get("stop") or {}).get("reason")}
++    regen_sha0 = K.sha_file(regen_path)
+     logfd = K.open_append_x(os.path.join(K.LOGS, "launch-run-%s.log" % label))
+-    scan, fb, adm = wait_for_admission(logfd, "run " + label)
++    out_fd = K.open_append_x(stdout_log)            # v10 (3): output file prepared before any admission census
+     cap = CAP_FIXED
+     argv = [K.PY, "-I", "-B", K.SUPERVISOR, "--name", label + "-parent-replay", "--wall", str(SUP_WALL),
+             "--rss-cap", str(cap), "--floor", str(K.FLOOR), "--lane", K.DESK, "--record", record,
+             "--quarantine", quarantine, "--grace", str(SUP_GRACE), "--",
+             K.PY, "-I", "-B", os.path.join(K.SCRIPTS, "replay_B_v4.py"), "run", item, "--label", label,
+             "--rss-stop", str(cap)]
+-    sup_sha = K.sha_file(K.SUPERVISOR)
+-    rec = {"purpose": "run " + label, "item": item, "label": label, "previous_attempt": previous,
+-           "launcher_pid": os.getpid(), "at": K.now(), "attempt_rule": ATTEMPT_RULE,
+-           "scan": scan, "free_bytes": fb, "admission": adm,
+-           "rss_cap": {"value": cap, "rule": "fixed by Main (about 07:05 PDT); ancestry headroom must be >= it",
+-                       "CAP_FIXED": CAP_FIXED, "computable_cap_by_ancestry": scan.get("computable_cap_by_ancestry"),
+-                       "CAP_MAX": K.CAP_MAX, "LANE_RSS_LIMIT": K.LANE_RSS_LIMIT, "SAFETY_MARGIN": K.SAFETY_MARGIN,
+-                       "MIN_CAP": K.MIN_CAP, "PROJECTED_PEAK": K.PROJECTED_PEAK,
+-                       "UNSUPERVISED_GROUP_RESERVE": K.UNSUPERVISED_GROUP_RESERVE,
+-                       "OTHER_LANE_MARGIN": K.OTHER_LANE_MARGIN, "reserved": scan.get("reserved_bytes")},
+-           "supervisor": {"path": K.SUPERVISOR, "sha256": sup_sha, "pin": K.SUPERVISOR_SHA256,
+-                          "equals_pin": sup_sha == K.SUPERVISOR_SHA256, "wall": SUP_WALL, "grace": SUP_GRACE,
+-                          "floor": K.FLOOR, "record": record, "quarantine": quarantine},
+-           "argv": argv, "cwd": K.TMP, "env": K.ENV, "scripts_sha256": K.script_hashes(),
+-           "regen_receipt_sha256": K.sha_file(regen_path), "selfcheck_summary_sha256": K.sha_file(summary_path)}
+-    if not adm["ok"] or sup_sha != K.SUPERVISOR_SHA256 or STATE["signals"]:
+-        rec["not_launched"] = "admission failed: %s / supervisor pin %s / launcher signals %s" % (
+-            adm["why"], sup_sha == K.SUPERVISOR_SHA256, STATE["signals"])
+-        print(json.dumps({"gate_sha256": K.write_json_x(gate_path, rec), "launched": False,
+-                          "why": rec["not_launched"]}), flush=True)
+-        os.close(logfd)
+-        return 2
+-    gate_sha = K.write_json_x(gate_path, rec)
+-    print(json.dumps({"gate_sha256": gate_sha, "launched": True, "rss_cap": cap, "free_bytes": fb,
+-                      "busy": scan["lane_native_busy"]}), flush=True)
+-    out_fd = K.open_append_x(stdout_log)
++    while True:
++        scan = census(os.getpid())
++        fb = K.free_bytes()
++        adm = admission_v10(scan, fb)
++        log_line(logfd, "run " + label, scan, fb, adm, 1)
++        last = {"scan": scan, "free_bytes": fb, "admission": adm}
++        if adm["ok"] and not STATE["signals"]:
++            t1 = time.monotonic()
++            paused = pause(FIRST_TO_FINAL)
++            rec, prepared_ok = prepare(item, label, argv, cap, previous, regen_path, regen_sha0, summary_path,
++                                       record, quarantine)
++            stab = monitor_stability()
++            os.write(logfd, (json.dumps({"at": K.now(), "paused_ok": paused, "prepared_ok": prepared_ok,
++                                         "stability": {k: stab.get(k) for k in (
++                                             "ok", "why", "age_seconds", "window_samples", "free_last", "max_drop",
++                                             "limit")}}) + "\n").encode())
++            scan2 = census(os.getpid())                 # the final census
++            fb2 = K.free_bytes()
++            adm2 = admission_v10(scan2, fb2)
++            gap = round(time.monotonic() - t1, 1)
++            extra = [w for w, bad in (("pause interrupted", not paused),
++                                      ("supervisor pin or regen receipt changed", not prepared_ok),
++                                      ("monitor stability", not stab["ok"]), ("gap below 60 s", gap < 60),
++                                      ("a free reading below the gate", fb < K.GATE or fb2 < K.GATE)) if bad]
++            pre = None
++            if adm2["ok"] and not extra:                # immediate pre-spawn rechecks (microseconds)
++                pre = {"free_bytes": K.free_bytes(), "deadline_ok": deadline_ok(),
++                       "launcher_signals": len(STATE["signals"]),
++                       "quarantine_records": sorted(glob.glob(os.path.join(K.RECEIPTS, "*.QUARANTINE.json")))}
++                pre["ok"] = (pre["free_bytes"] >= K.GATE and pre["deadline_ok"] and not pre["launcher_signals"]
++                             and not pre["quarantine_records"])
++                if not pre["ok"]:
++                    extra.append("pre-spawn recheck")
++            adm2.update(first=adm, stability=stab, paused_ok=paused, prepared_ok=prepared_ok, prespawn_recheck=pre,
++                        two_readings={"first": {"at": scan["at"], "free_bytes": fb},
++                                      "second": {"at": scan2["at"], "free_bytes": fb2}, "gap_seconds": gap,
++                                      "gate": K.GATE, "both_at_least_gate": fb >= K.GATE and fb2 >= K.GATE})
++            adm2["ok"] = adm2["ok"] and not extra
++            adm2["why"] = adm2["why"] + extra
++            if adm2["ok"]:
++                break
++            log_line(logfd, "run " + label, scan2, fb2, adm2, 2)
++            last = {"scan": scan2, "free_bytes": fb2, "admission": adm2}
++        if not deadline_ok() or STATE["signals"]:
++            rec, _ = prepare(item, label, argv, cap, previous, regen_path, regen_sha0, summary_path, record,
++                             quarantine)
++            rec.update(last, at=K.now(), not_launched="not admitted while deadline_ok() held, or launcher signals: "
++                       "%s / signals %s" % (last["admission"]["why"], STATE["signals"]))
++            print(json.dumps({"gate_sha256": K.write_json_x(gate_path, rec), "launched": False,
++                              "why": rec["not_launched"]}), flush=True)
++            os.close(out_fd)
++            os.close(logfd)
++            return 2
++        time.sleep(SLEEP)
++    rec["rss_cap"].update(computable_cap_by_ancestry=scan2.get("computable_cap_by_ancestry"),
++                          reserved=scan2.get("reserved_bytes"))
++    rec.update(scan=scan2, free_bytes=fb2, admission=adm2)
++    box = {"gate_sha": None}
++
++    def after_spawn():
++        """run_owned()'s inject hook, right after Popen and registration, inside its ownership scope: the gate receipt
++        (prepared before the spawn), the reading-2 log line and the launch print. An exception here takes
++        run_owned()'s exception path (SIGTERM to the owned supervisor, bounded wait): UNKNOWN."""
++        rec["at"] = K.now()
++        rec["gate_receipt_written_after_spawn"] = True
++        box["gate_sha"] = K.write_json_x(gate_path, rec)
++        log_line(logfd, "run " + label, scan2, fb2, adm2, 2)
++        try:
++            print(json.dumps({"gate_sha256": box["gate_sha"], "launched": True, "rss_cap": cap, "free_bytes": fb2,
++                              "busy": scan2["lane_native_busy"]}), flush=True)
++        except OSError as e:
++            box["print_error"] = repr(e)
++
+     started = K.now()
+     t0 = time.monotonic()
+-    ev = run_owned(argv, out_fd, launcher_marker)
++    ev = run_owned(argv, out_fd, launcher_marker, inject=after_spawn)
+     os.close(out_fd)
++    gate_sha = box["gate_sha"]
+     os.write(logfd, (json.dumps({"at": started, "supervisor_pid": ev["pid"], "gate_sha256": gate_sha}) + "\n").encode())
+     clean = ev["reaped"] is not None and ev["lost_child"] is None and ev["marker"] is None and ev["owned_at_return"] is None
+     outcome = {"item": item, "label": label, "gate_receipt_sha256": gate_sha, "supervisor_started_at": started,
+@@ -569,13 +941,92 @@
+     return 0 if out["all_ok"] else 1
+ 
+ 
++def mode_selftest(label):
++    """v10 self-test; launches nothing. run_helper() bounds, signals and session isolation with short python children,
++    then one census, one informational admission evaluation and one monitor-stability evaluation (read-only)."""
++    receipt = os.path.join(K.RECEIPTS, label + ".selftest.json")
++    if os.path.lexists(receipt):
++        raise SystemExit("exists: " + receipt)
++    kills, real_kill, t0 = [], os.kill, time.monotonic()
++
++    def logged_kill(pid, sig):
++        kills.append({"pid": pid, "signal": signal.Signals(sig).name, "t": round(time.monotonic() - t0, 3)})
++        real_kill(pid, sig)
++
++    sleeper = [K.PY, "-I", "-B", "-c", "import time; time.sleep(30)"]
++    ignorer = [K.PY, "-I", "-B", "-c",
++               "import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(8)"]
++    os.kill = logged_kill
++    try:
++        cases = {"ps_ok": run_helper(["/bin/ps", "-o", "pid=", "-p", str(os.getpid())]),
++                 "term_honoring": run_helper(sleeper, limit=2, term_wait=5),
++                 "term_ignoring": run_helper(ignorer, limit=2, term_wait=2),
++                 "nonzero_rc": run_helper(["/bin/ps", "-o", "pid=", "-p", "99999999"]),
++                 "stderr_output": run_helper([K.PY, "-I", "-B", "-c", "import sys; sys.stderr.write('warning\\n')"])}
++    finally:
++        os.kill = real_kill
++    own_pgid = os.getpgrp()
++    th, ti, ps_ok = cases["term_honoring"], cases["term_ignoring"], cases["ps_ok"]
++
++    def isolated(ev):
++        return ev["pgid"] == ev["pid"] and ev["sid"] == ev["pid"] and ev["pgid"] != own_pgid
++
++    checks = {
++        "ps_ok_is_ok_rc0_own_pid": (ps_ok["ok"] is True and ps_ok["rc"] == 0
++                                    and ps_ok["stdout"].strip() == str(os.getpid())),
++        "term_honoring_one_sigterm_at_limit_reaped_in_bounded_wait": (
++            th["term_sent_after"] is not None and 2 <= th["term_sent_after"] < 3 and th["rc"] == -signal.SIGTERM
++            and not th["unreaped_after_term_wait"] and not th["blocking_wait"] and th["ok"] is False),
++        "term_ignoring_one_sigterm_then_blocking_wait_until_self_exit": (
++            ti["term_sent_after"] is not None and 2 <= ti["term_sent_after"] < 3 and ti["unreaped_after_term_wait"]
++            and ti["blocking_wait"] and ti["rc"] == 0 and ti["seconds"] >= 7.5 and ti["ok"] is False),
++        "exactly_two_signals_both_sigterm_to_owned_helpers": (
++            len(kills) == 2 and all(k["signal"] == "SIGTERM" for k in kills)
++            and [k["pid"] for k in kills] == [th["pid"], ti["pid"]]),
++        "timed_helpers_in_own_sessions": isolated(th) and isolated(ti),
++        "nonzero_rc_not_ok": cases["nonzero_rc"]["rc"] not in (0, None) and cases["nonzero_rc"]["ok"] is False,
++        "stderr_output_not_ok": (cases["stderr_output"]["rc"] == 0 and cases["stderr_output"]["stderr"] != ""
++                                 and cases["stderr_output"]["ok"] is False),
++        "every_helper_reaped_no_lost_child": all(ev["rc"] is not None and ev["lost_child"] is None
++                                                 for ev in cases.values()),
++    }
++    scan = census(os.getpid())
++    fb = K.free_bytes()
++    adm = admission_v10(scan, fb)
++    stab = monitor_stability()
++    checks["census_complete"] = "error" not in scan
++    keep = ("pid", "pgid", "sid", "rc", "term_sent_after", "unreaped_after_term_wait", "blocking_wait", "exception",
++            "lost_child", "wait_errors", "readers_finished", "seconds", "ok")
++    me = os.path.abspath(__file__)
++    out = {"label": label, "at": K.now(), "launcher": {"path": me, "sha256": K.sha_file(me)},
++           "bklib": {"path": os.path.abspath(K.__file__), "sha256": K.sha_file(os.path.abspath(K.__file__))},
++           "own_pid": os.getpid(), "own_pgid": own_pgid, "own_sid": os.getsid(0),
++           "cases": {k: dict({x: v[x] for x in keep}, argv=v["argv"], stdout=v["stdout"][:200],
++                             stderr=v["stderr"][:200]) for k, v in cases.items()},
++           "kills": kills, "census": scan, "free_bytes": fb, "admission_informational": adm,
++           "monitor_stability": stab, "checks": checks, "all_ok": all(checks.values()),
++           "note": "no launch; census, admission and stability are observations only",
++           "scripts_sha256": K.script_hashes()}
++    h = K.write_json_x(receipt, out)
++    print(json.dumps({"selftest_receipt_sha256": h, "all_ok": out["all_ok"], "checks": checks,
++                      "census_error": scan.get("error"), "census_tries": len(scan.get("census_tries", [])),
++                      "busy": scan.get("lane_native_busy"),
++                      "desk_attempts": [[p["pid"], os.path.basename(p["comm"])]
++                                        for p in scan.get("desk_attempt_processes", [])],
++                      "b411_matches": [[p["pid"], os.path.basename(p["comm"])] for p in scan.get("b411_matches", [])],
++                      "admission_why": adm.get("why"),
++                      "stability": {k: stab.get(k) for k in ("ok", "why", "age_seconds", "window_samples", "free_last",
++                                                             "max_drop", "limit")}}), flush=True)
++    return 0 if out["all_ok"] else 1
++
++
+ def main():
+     a = sys.argv[1:]
+     if a and a[0] == "run":
+         tagged = len(a) == 6 and a[4] == "--regen-tag" and re.fullmatch(r"[A-Za-z0-9]+", a[5])
+         if ((len(a) != 4 and not tagged) or a[1] not in K.ITEMS or a[2] != "--label"
+                 or not (re.fullmatch(r"[A-Za-z0-9_.-]+", a[3]) and a[3].startswith(a[1] + "-"))):
+-            raise SystemExit("usage: launch_B_v9.py run ITEM --label ITEM-<suffix> [--regen-tag TAG]")
++            raise SystemExit("usage: launch_B_v10.py run ITEM --label ITEM-<suffix> [--regen-tag TAG]")
+         signal.signal(signal.SIGTERM, on_term)
+         signal.signal(signal.SIGINT, on_term)
+         sys.exit(mode_run(a[1], a[3], a[5] if tagged else None))
+@@ -583,6 +1034,8 @@
+         sys.exit(mode_wait_start(a[1]))
+     if a and a[0] == "test-exception-path" and len(a) == 2 and re.fullmatch(r"test-[A-Za-z0-9_.-]+", a[1]):
+         sys.exit(mode_test_exception_path(a[1]))
++    if a and a[0] == "selftest-v10" and len(a) == 2 and re.fullmatch(r"test-[A-Za-z0-9_.-]+", a[1]):
++        sys.exit(mode_selftest(a[1]))
+     raise SystemExit(__doc__)
+ 
+ 
+--- scripts/assemble_B_v9.py
++++ scripts/assemble_B_v10.py
+@@ -1,6 +1,14 @@
+ #!/usr/bin/env python3
+ """Assemble the attempt receipt, deviations, RESULT and REPORT of a labelled replay attempt of the parent B-side K3
+-cube replay desk (review/moqls7-k3-B-cube-parent-replay-v1), v9.
++cube replay desk (review/moqls7-k3-B-cube-parent-replay-v1), v10.
++
++v10 = assemble_B_v9.py for attempts launched by launch_B_v10.py, with two changes:
++  (a) Codex HOLD item 6: before writing anything, the regeneration precheck receipt selected by ITEM and --regen-tag
++      must hash to the gate receipt's regen_receipt_sha256. Otherwise the assembler refuses;
++  (b) the deviation texts for the v10 launcher (D16, D18, D21, D29, D33, D34) and four result entries: the v9-to-v10
++      diff, the separately identified v5-to-v6 assembler hunk set (Codex HOLD item 5, assembler-v5-to-v6-
++      generalization.diff), the v10 selftest receipt and the review packet.
++Acceptance conditions, measured feeds, strict parsing and output names are unchanged from v9.
+ 
+ v9 = assemble_B_v8.py with the import bumped to bklib_v3 (B_C311cuts item), the scope naming the cuts kind, the
+ B_C311cuts item deviations, k3_lex.py and k3_cuts_r1.py in the read-only lane-file list for kind cuts, and the
+@@ -17,7 +25,7 @@
+ and title taken from the item pins, the item's attempt-1 summary only where it exists, and the deviation set for the
+ v6 gate. assemble_B_v7.py is the import-only bump (bklib_v2) for B/C411.
+ 
+-Usage: assemble_B_v6.py ITEM LABEL          (e.g. B_C321 B_C321-a3)
++Usage: assemble_B_v10.py ITEM LABEL [--regen-tag TAG]     (e.g. B_C411 B_C411-p1 --regen-tag r2)
+ 
+ Reads the desk's receipts and logs (never modifies them), re-hashes every referenced file, checks the hash bindings
+ recorded at run time, and re-hashes the read-only lane inputs and both binaries. No native or other subprocess launch.
+@@ -35,30 +43,37 @@
+ 
+ DEVIATIONS = [
+     {"id": "D16-versioned-scripts",
+-     "what": "B_C321 attempt a3 and B/C411 are launched by launch_B_v8.py (bklib_v2, driver replay_B_v3.py; bklib_v2 "
+-             "pins B_C321 exactly as bklib_v1 and adds B_C411); B/C311+cuts by launch_B_v9.py (the import-only bump to "
+-             "bklib_v3 and replay_B_v4.py, with compose_Bcuts_v1.py). History: v2 attempt labels "
++     "what": "B_C321 attempt a3 was launched by launch_B_v8.py (bklib_v2, driver replay_B_v3.py). B/C411 and B/C311+cuts "
++             "are launched by launch_B_v10.py (bklib_v3, driver replay_B_v4.py, compose_Bcuts_v1.py for B/C311+cuts). "
++             "bklib_v3 pins B_C321 and B_C411 exactly as bklib_v2 did. History: v2 attempt labels "
+              "(scripts-v1-to-v2.r2.diff); v3 slot-2-only rule (scripts-v2-to-v3.diff); v4 flag-only signal handling "
+              "and owned-child loop (scripts-v3-to-v4.diff); v5 cleanup obligation (scripts-v4-to-v5.diff); v6 "
+              "ancestry gate (scripts-v5-to-v6.diff); v7 import bumps and --regen-tag (scripts-v6-to-v7-B_C411.diff); "
+              "v8 long-job stability rule (scripts-v7-to-v8.diff); v9 B/C311+cuts item (scripts-v8-to-v9-Bcuts.r2.diff, "
+-             "superseding scripts-v8-to-v9-Bcuts.diff). "
+-             "compose_B_v1.py and supervise_r3.py are unchanged; native limits (kissat --time=5400, drat-trim "
+-             "-t 9000) and supervisor arguments (wall 10200 s, grace 180 s, floor 12e9) are unchanged."},
++             "superseding scripts-v8-to-v9-Bcuts.diff); v10 Codex HOLD repairs and Main's 07:32 stability amendment "
++             "(scripts-v9-to-v10.diff). compose_B_v1.py and supervise_r3.py are unchanged; native limits (kissat "
++             "--time=5400, drat-trim -t 9000) and supervisor arguments (wall 10200 s, grace 180 s, floor 12e9) are "
++             "unchanged."},
+     {"id": "D17-selfcheck-reused-and-regen-precheck",
+      "what": "Self-checks were not rerun: every attempt reuses receipts/selfcheck-summary.json (ec246769...739b, "
+              "all_ok; same binaries, same bklib transport code). The regeneration-only precheck is "
+              "receipts/regen-<ITEM>.json (MATCH required by the launcher), and each run regenerates and hash-checks "
+              "the CNF again before any native launch."},
+     {"id": "D18-v6-gate",
+-     "what": "launch_B_v8 admission (v6 gate plus the v8 stability rule): lane identity by cwd/ancestry (cwd inside "
+-             "moqls7-maximum or a review/moqls7-* desk, or a descendant); <= 2 busy lane natives; lane RSS + 2 GiB <= "
++     "what": "launch_B_v10 admission. Lane identity is by cwd/ancestry (cwd inside moqls7-maximum or a review/moqls7-* "
++             "desk, or a descendant) over a validated census: two ps identity snapshots bracket a ps args snapshot "
++             "and an lsof cwd listing; the join is by (pid, lstart); helpers are bounded and fail-closed; an unresolved "
++             "own-uid identity is retried and then refused. Conditions: <= 2 busy lane natives; lane RSS + 2 GiB <= "
+              "8 GiB; fixed RSS cap 2,797,076,480 B (Main) with ancestry headroom min(3.5 GiB, 8 GiB - ancestry "
+-             "reservations - 128 MiB) >= that cap; the slot-2 condition (B/C411 r7 reaped and end-recorded); free >= "
+-             "12,201,048,576 B at the first scan and at a fresh second scan immediately before launch; between them "
+-             "a 300 s stability window (statvfs every 30 s, every reading >= 13.5e9 B, no earlier-to-later drop > "
+-             "300 MB); no launch after 17:30 PDT. Processes that merely use M7 binary/script paths are listed as "
+-             "foreign_marker_matches_excluded in the gate receipt; the stability readings are in its admission."},
++             "reservations - 128 MiB) >= that cap; the slot-2 condition (B/C411 r7 reaped and end-recorded, matched "
++             "on full argv of every process); no other attempt process of this desk; free >= 12,201,048,576 B at "
++             "the first census and at the final census, at least 60 s apart. Main's 07:32 PDT long-job stability "
++             "amendment is evaluated on the parent monitor: last free >= 13.5e9 B; max 300 s peak-to-later drop <= "
++             "max(300 MB, (free_last - 13.5e9)/12); >= 25 tz-aware strictly increasing samples spanning >= 290 s; "
++             "age 0..30 s. Free bytes, deadline (no launch after 17:30 PDT, and launch + 10,380 s <= 17:57 PDT), "
++             "launcher signals and quarantine records are rechecked immediately before spawn. The gate receipt is "
++             "written right after the spawn inside run_owned()'s ownership scope; its admission holds both "
++             "censuses, the monitor evaluation and the pre-spawn recheck."},
+     {"id": "D19-v1-deviations-carried",
+      "what": "D1-D12 and D14 of deviations-v1.json (1ec0309c...4afb) apply unchanged."},
+     {"id": "D20-disk-cause-unestablished",
+@@ -66,8 +81,8 @@
+              "which process caused a decline or a reclaim; cause and recurrence period are UNESTABLISHED. Every "
+              "floor-stopped attempt is UNKNOWN and never relabelled."},
+     {"id": "D21-assembler-before-run",
+-     "what": "assemble_B_v8.py and assemble_B_v9.py were created before the attempts they assemble were launched; "
+-             "their SHA-256s are part of every recording made by those runs."},
++     "what": "assemble_B_v8.py, assemble_B_v9.py and assemble_B_v10.py were created before the attempts they assemble "
++             "were launched; their SHA-256s are part of every recording made by those runs."},
+     {"id": "D25-armed-after-go",
+      "what": "Each launcher was armed only after Main's explicit GO; the arming time is the first line of "
+              "logs/launch-run-<LABEL>.log."},
+@@ -79,20 +94,41 @@
+      "what": "The v5 path-marker scan at the B_C321-a2b gate counted drat-trim pid 11629 as M7; per Main it was PA19's "
+              "(shared parent drat-trim path). That overcount was conservative; v6 replaces path markers by "
+              "cwd/ancestry identity."},
++    {"id": "D33-assembler-v6-generalization-identified",
++     "what": "Codex HOLD item 5: the assembler hunks of scripts-v5-to-v6.diff (assemble_B_v5.py -> assemble_B_v6.py) "
++             "change executable behaviour beyond the admission. They are identified separately in "
++             "assembler-v5-to-v6-generalization.diff and are kept, with this rationale:"
++             " (i) output names by label (RESULT.<label>.json, REPORT.<label>.md, deviations-<label>.json), because "
++             "v5's fixed names RESULT.v2.json/REPORT.v2.md/deviations-v2.json already exist from attempt 2 and every "
++             "output is created exclusively;"
++             " (ii) attempt-1 history only where receipts/<ITEM>.json exists, because B/C411 and B/C311+cuts have no "
++             "attempt 1 (v5 would raise);"
++             " (iii) item-specific deviations and a generic stop entry D30 in place of v5's fixed 'attempt-2' D22;"
++             " (iv) item-neutral report wording and regen receipt path, plus result entries for the newer diffs."
++             " No acceptance condition, measured feed, strict parser or PASS/UNKNOWN rule changed in those hunks."},
++    {"id": "D34-v10-launcher-repairs",
++     "what": "Codex reviewed the v6 admission (review/m7-launch-v6-r9-codex-v1.note.md, b9db41b6...4f93) and held it; "
++             "the parent addendum is review/m7-launch-v6-r9-parent-addendum-v1.md (595999fb...7c1a). launch_B_v10.py "
++             "repairs four items: fail-closed enumeration; a consistent census with full-argv slot matching; "
++             "preparation before the final census, with free/deadline/signal/quarantine rechecks immediately before "
++             "spawn; and bounded scan helpers in their own sessions instead of bklib's _run_text. It also adopts "
++             "Main's 07:32 PDT stability amendment and the 17:57 end-by rule. Helper bounds, signals and session "
++             "isolation are demonstrated by receipts/test-v10-selftest.selftest.json. Cross-desk serialization of "
++             "admissions is not implemented: it needs the other launchers' cooperation outside this desk."},
+ ]
+ ITEM_DEVIATIONS = {
+     "B_C411": [{"id": "D29-B_C411-pins-and-slot",
+                 "what": "B/C411 pins (bklib_v2) come from PhysEpQutrit's r7 producer receipt cert_B_r7/B_C411.json "
+                         "(644b5b23...6f75; VERIFIED_UNSAT_CASE with the lane drat-trim build): CNF 01acf464...8bf8, "
+                         "metadata B_C411.meta.json c0f769bb...8a12, base 42a5f304...0aac, encoder c7583efe...2b45. "
+-                        "Main assigned this replay to slot 1 after PhysEpQutrit hands it over; launch only on "
+-                        "Main's explicit GO."},
++                        "Main first assigned this replay to slot 1; it then moved to slot 2 after B_C321-a3. It is "
++                        "launched only by launch_B_v10.py, after Codex's re-review and Main's explicit GO."},
+                {"id": "D31-B_C411-regen-precheck-deferral",
+                 "what": "The first B_C411 regeneration-only precheck (receipts/regen-B_C411.json, 982f5a0d...35db2) "
+                         "was deferred by the driver's free-space gate at 07:12:31 (12,012,662,784 < 12,201,048,576 B) "
+                         "with all producer pin checks consistent and no compose run. The precheck was repeated "
+-                        "under replay_B_v3.py 'regen B_C411 --tag TAG'; launch_B_v8.py and assemble_B_v8.py read that "
+-                        "tagged receipt (--regen-tag)."}],
++                        "under replay_B_v3.py 'regen B_C411 --tag TAG'; the launchers from v8 on and the assemblers from "
++                        "v8 on read that tagged receipt (--regen-tag)."}],
+     "B_C311cuts": [{"id": "D32-B_C311cuts-pins-and-composition",
+                     "what": "B/C311+cuts pins (bklib_v3) come from PhysEpQutrit's route-B r6 receipt "
+                             "C311cuts_B_r6/C311cuts_B.json (1f003634...c535; VERIFIED_UNSAT_CASE with the lane drat-trim "
+@@ -410,7 +446,7 @@
+     lines += ["", "## Integrity", "",
+               "Receipts, logs, RESULT.%s.json, REPORT.%s.md and deviations-%s.json were created exclusively (mode "
+               "'x' / O_EXCL). The versioned scripts were copied with cp -n and edited before their first recorded use; "
+-              "diffs scripts-v1-to-v2.r2.diff through scripts-v6-to-v7-B_C411.diff. No earlier attempt's files were "
++              "diffs scripts-v1-to-v2.r2.diff through scripts-v9-to-v10.diff. No earlier attempt's files were "
+               "modified, deleted or renamed. No lane file "
+               "was written. There were no /tmp writes and no Git, network or model CLI. __pycache__ present: %s. "
+               "Desk regular files before RESULT.%s.json: %d, %s bytes in total. FIFO nodes, never opened outside the "
+@@ -452,6 +488,11 @@
+     for p in paths.values():
+         if os.path.lexists(p):
+             raise SystemExit("exists: " + p)
++    gate0, _ = load("receipts/%s.gate.json" % label)
++    regen_bound = K.sha_file(os.path.join(K.DESK, REGEN["rel"]))
++    if gate0.get("regen_receipt_sha256") != regen_bound:     # Codex HOLD item 6: refuse before writing anything
++        raise SystemExit("refused: %s hashes to %s but the gate receipt bound regen_receipt_sha256 %s" % (
++            REGEN["rel"], regen_bound, gate0.get("regen_receipt_sha256")))
+     row = item_receipt(item, label)
+     item_sha = K.write_json_x(paths["item"], row)
+     dev = DEVIATIONS + ITEM_DEVIATIONS.get(item, []) + (
+@@ -499,6 +540,12 @@
+         "scripts_diff_v6_to_v7_B_C411": file_entry("scripts-v6-to-v7-B_C411.diff"),
+         "scripts_diff_v7_to_v8": file_entry("scripts-v7-to-v8.diff"),
+         "scripts_diff_v8_to_v9_Bcuts": file_entry("scripts-v8-to-v9-Bcuts.r2.diff"),
++        "scripts_diff_v9_to_v10": file_entry("scripts-v9-to-v10.diff"),
++        "assembler_v5_to_v6_generalization_hunks": file_entry("assembler-v5-to-v6-generalization.diff"),
++        "v10_selftest": dict(file_entry("receipts/test-v10-selftest.selftest.json"),
++                             all_ok=json.loads(K.read_regular(os.path.join(
++                                 K.RECEIPTS, "test-v10-selftest.selftest.json"))).get("all_ok")),
++        "review_packet_v10": file_entry("review-packet-v10.md"),
+         "signal_smoke": dict(file_entry("receipts/smoke-v4-signal.smoke.json"),
+                              all_ok=json.loads(K.read_regular(os.path.join(
+                                  K.RECEIPTS, "smoke-v4-signal.smoke.json"))).get("all_ok")),
+@@ -518,7 +565,8 @@
+         "regeneration_precheck": {"receipt": REGEN["rel"], "sha256": regen_sha,
+                                   "result": regen_r.get("result"),
+                                   "cnf_sha256": (regen_r.get("regen") or {}).get("cnf_sha256"),
+-                                  "producer_checks_all_true": (regen_r.get("producer") or {}).get("consistent")},
++                                  "producer_checks_all_true": (regen_r.get("producer") or {}).get("consistent"),
++                                  "bound_to_gate_regen_receipt_sha256": regen_sha == gate0.get("regen_receipt_sha256")},
+         "transport_selfcheck": {"summary": "receipts/selfcheck-summary.json", "summary_sha256": summ_sha,
+                                 "gate_receipt_sha256": sgate_sha,
+                                 "pre_receipt_sha256": file_entry("receipts/selfcheck.pre.json")["sha256"],

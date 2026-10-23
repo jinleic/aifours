@@ -1,0 +1,68 @@
+{
+ "document": "per-finding disposition of the Codex review of owned_supervisor_v7 (and the open items of the v5 review) in owned_supervisor_v8 (written only; nothing executed)",
+ "recorded_date": "2026-10-19T07:19:48-0700",
+ "author": "ContinueRQLS10b",
+ "reviews": {
+  "v7": {"path": "RUN/review/rqls10-owned-supervisor-v7-source-codex-v1.prompt.stdout.txt", "sha256": "bf6821517196b17bf786f7eec0e2ee0bc05c3b49d87104803e374d000bab3a62", "verdict": "HOLD"},
+  "v5": {"path": "RUN/review/rqls10-owned-supervisor-v5-source-codex-v1.prompt.stdout.txt", "sha256": "477afd11bdbc9dda076ec7cad9285fbf817a9a150a8e5115517efd48f8d5a531"},
+  "qualification_v4": {"path": "RUN/review/rqls10-guard-qualification-v4-codex-v1.prompt.stdout.txt", "sha256": "9ba728d10c907ffb5e2407bdcaf37c1f6fe8cd7318ae1c192f00d206668a6f26", "note": "supervisor-side items only here; the package successor is separate"}
+ },
+ "successor": {"path": "code/owned_supervisor_v8.py", "sha256": "472fddf94b1dbc351984a082fe934492a70605c2312cd1a7af7c3c1b4c3727a3"},
+ "diffs": {"v7_to_v8": {"path": "review/owned_supervisor_v7_to_v8.diff", "sha256": "bd1e366e0d0c7a1fdba0f1133a058a4f0b3649dcf85503e44c7d5492ebc44158"},
+           "v5_to_v8_cumulative": {"path": "review/owned_supervisor_v5_to_v8.diff", "sha256": "7fd7933193e29b1743fdbca8ebc10218059462518247056a441205d4795fb095"}},
+ "pending_note_folded": {"path": "review/owned_supervisor_v8-pending-items-v1.md", "sha256": "3b982c6f668bf7ec4a554bac8450664c3541b0179ea6a8d68bdf0f4bdb6c71b4", "items": ["P1 post_publish_mono summary after all publications and directory fsyncs", "P2 lane roots real directory chains", "P3 descriptor-anchored lane walk"]},
+ "simplifications": [
+  "no helper processes: the /bin/date helper and all helper code are removed; timestamps are Python wall-clock renderings of recorded epoch values (labelled), raw monotonic and epoch values kept",
+  "no birth-ancestry inference: p_puniqueid is no longer read; every unproved new same-uid identity blocks settlement",
+  "fault injection reduced to identity_check_fails (date_helper_fails no longer exists)"
+ ],
+ "v7_review_new_findings": [
+  {"n": 1, "severity": "FATAL", "title": "exec after reparenting defeats the lineage classifier", "status": "ADDRESSED",
+   "v8": "Sup.classify uses only CURRENT parents (ppid) of identified processes: a NEW (uniqueid > U0) same-uid process is UNRELATED only if its chain of identified, untraced NEW ancestors with ppid > 1 ends at an identified OLD process other than launchd; it is OWNED if the chain reaches the child; otherwise UNPROVED (blocking). A reparented escapee has ppid 1 and is UNPROVED whatever it execs. Relies on the kernel rule that orphans go to initproc and traced processes back to their original parent (xnu kern_exit.c lines 2425-2476 of the lane copy) and on PROC_FLAG_TRACED; same-uid means effective OR real uid equals the supervisor's.",
+   "residual": "launchd-started NEW same-uid processes block while alive (fail-closed); a descendant that drops both effective and real uid is outside the census (reviewed child caps)"},
+  {"n": 2, "severity": "FATAL", "title": "disappearance before identification loses coverage", "status": "ADDRESSED",
+   "v8": "a listed pid that disappears or changes before identification, or before/after any cwd/argv/task/start measurement (each bracketed by uniqueid re-reads), makes the census INCOMPLETE; a clear observation requires a complete census (bounded retries); the final census must be complete (FINAL_CENSUS_INCOMPLETE otherwise)"},
+  {"n": 3, "severity": "FATAL", "title": "late clear bypasses grace expiry", "status": "ADDRESSED",
+   "v8": "observe() accepts a clear observation only if the census that established it completed (mono_done) before every applicable cutoff; otherwise GRACE_EXPIRED_* is latched; sleeps are clamped to the remaining grace; the clear time is retained in the receipt"},
+  {"n": 4, "severity": "FATAL", "title": "helper identity and exceptional ownership", "status": "ADDRESSED_BY_REMOVAL",
+   "v8": "no helper process exists any more; the child is registered (Popen kept, pid recorded) as the first statements of the protected post-spawn block and again in the exception handler if needed"},
+  {"n": 5, "severity": "MAJOR", "title": "bounded I/O accepts elapsed-budget overruns", "status": "ADDRESSED_WITH_STATED_LIMITATION",
+   "v8": "Deadline objects shared per operation group, checked before and after every operation including the final write, fsync, close and re-read (no fresh re-read budget); census checks its deadline every 64 pids and at the end; root inventories iterate scandir with an enforced entry limit; lane walk through descriptors with entry, depth and time limits",
+   "residual": "native calls cannot be interrupted; overruns are detected on return and fail closed"},
+  {"n": 6, "severity": "MAJOR", "title": "GO can be expired, out of budget or over limits", "status": "ADDRESSED",
+   "v8": "both admission censuses are enforced; GO revalidation immediately before GO: complete census with only the child blocking and lane_busy + cpu_slots <= 2 and RSS headroom, stability age, GO expiry, free space, spawn age <= min(60 s, max_wall_s / 2), no stop, no latched failure, no cancel; cancel is read once more immediately before the single GO write (linearization point); cancel checks also between samples creation and spawn and after thread setup"},
+  {"n": 7, "severity": "MAJOR", "title": "final resource accounting incomplete", "status": "ADDRESSED",
+   "v8": "finalization applies RSS/BUSY to the final census, recomputes aggregate output bytes and late stream overflow (OUTPUT, STREAM_CAP), re-walks the lane (LANE_CEILING), then serializes receipt and settlement record and requires the exact projected bytes to fit the free floor, the lane ceiling and the remaining reservation (PUBLICATION_BUDGET)"},
+  {"n": 8, "severity": "MAJOR", "title": "wrong filesystem, partly anchored traversal", "status": "ADDRESSED",
+   "v8": "admission requires lane, lane_disk_root, TMPDIR and every output root on one st_dev; free space by fstatvfs on the output root descriptor; walk_bytes traverses through O_DIRECTORY|O_NOFOLLOW descriptors, verifies each opened directory's (dev, ino) and refuses mount boundaries"},
+  {"n": 9, "severity": "MAJOR", "title": "inventory not exact per root; creation identity unproved", "status": "ADDRESSED_WITH_CHILD_CONTRACT",
+   "v8": "per-root allowlists (Sup.allow); supervisor-created files (sinks, samples, launch record, receipt, settlement record) keep their (dev, ino) from creation and must still be those inodes (EVIDENCE_REPLACED); settlement NAME and NAME.staged must be the same inode with two links; child outputs must be regular, one link, birth time >= spawn epoch (no slack)",
+   "residual": "exclusive creation of child outputs is the reviewed child's contract"},
+  {"n": 10, "severity": "MAJOR", "title": "successful acknowledgment after incomplete publication", "status": "ADDRESSED",
+   "v8": "directory fsync of EVERY output root after both publications; any publication, re-read or directory-fsync failure gives exit 12/13 with acknowledged=false; post_publish_mono is read only after all of that and printed in the single summary with both verified digests; any supervisor cancel not handled during the run suppresses success (exit 14, acknowledged=false); parent commit remains the only authority and release"}
+ ],
+ "v5_findings_remaining_partial_in_v7": [
+  {"n": 1, "v8": "see new finding 1"},
+  {"n": 4, "v8": "helper paths removed; publication failures give unsuccessful acknowledgment"},
+  {"n": 5, "v8": "registration inside the protected block"},
+  {"n": 6, "v8": "see new finding 5"},
+  {"n": 7, "v8": "see new finding 3"},
+  {"n": 8, "v8": "helpers removed; single reaper for the child unchanged"},
+  {"n": 9, "v8": "see new finding 10"},
+  {"n": 11, "v8": "see new findings 7 and 8; parent serialization remains the reservation authority"},
+  {"n": 12, "v8": "see new finding 6"},
+  {"n": 13, "v8": "see new finding 9"},
+  {"n": 14, "v8": "limits applied to every census: admission (both), pre-GO, running, final"}
+ ],
+ "qualification_review_items_supported_here": [
+  "cpu_slots config key (1..2), bound in the GO entry; admission and GO checks use lane_busy + cpu_slots <= 2, independent of the busy_limit trip threshold (busy2 control reserves both slots)",
+  "census records lane_busy_pids and blocking_detail [pid, comm, class, ppid, zombie] in every sample for identity proofs; BUSY trip detail carries the busy pids; STREAM_CAP detail carries the stream counters"
+ ],
+ "interface_for_the_parent": {
+  "go_entry_keys": ["output_roots", "argv", "max_wall_s", "cpu_slots", "reservation_bytes", "outstanding_reservations_bytes", "lane_outstanding_reservations_bytes"],
+  "config_changes_vs_v7": {"added": ["cpu_slots"], "removed": ["helper_budget"], "fault_injection": ["identity_check_fails"]},
+  "stdout_summary": "exactly one JSON line: acknowledged, exit_code, settlement, receipt, receipt_sha256, settlement_record, settlement_record_sha256, post_publish_mono, child_returncode, trips, failures[:10], supervisor, config_sha256 (unsuccessful forms carry acknowledged=false and a reason)",
+  "exit_codes": {"0": "SETTLED and acknowledged", "10": "NOT_LAUNCHED", "11": "UNSETTLED", "12": "receipt publication failed", "13": "settlement publication or directory sync failed", "14": "cancel before acknowledgment", "2": "unusable config or output roots"}
+ },
+ "not_done": "no execution; qualification package successor (child, config writer, checker, plan) to be re-frozen jointly against this v8 contract; assay v7 / checker v5 review stays on hold until the parent pins the supervisor API"
+}

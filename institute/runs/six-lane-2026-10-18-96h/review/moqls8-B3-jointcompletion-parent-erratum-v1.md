@@ -1,0 +1,3 @@
+# B3 joint completion — parent wording erratum
+
+Recorded 2026-10-19T17:47:23-0700 (`/bin/date`). After author erratum1 `/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/moqls8/continuations/b3-joint-completion/B3-JOINT-COMPLETION-CANDIDATE-v1-erratum-1.md` SHA `bafdfd966fb2744c3a0a1fc0772538fef7a3aba8fa5d2cb87e05317362f35c06`, read its LF45 “they need not be completion cells” as “they need not be **joint B/C-completion** cells.” The extra row/column witnesses remain in at least one completion region, not necessarily their intersection. No theorem change; no classification or no-go.

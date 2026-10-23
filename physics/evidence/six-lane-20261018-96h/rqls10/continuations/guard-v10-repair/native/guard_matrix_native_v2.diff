@@ -1,0 +1,981 @@
+--- /Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10/code/guard_matrix_native_v1.py	2026-10-19 14:14:30
++++ /Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10/continuations/guard-v10-repair/native/guard_matrix_native_v2.py	2026-10-19 18:37:35
+@@ -9,6 +9,10 @@
+ Full-main cases run original source19 and its unchanged actual14 terminal AST.
+ Helper-shaped negatives run original helper methods ONLY, never replace date_now
+ clock output. Every hook is fixed by CASE and externally pinned, never a plugin.
++v2 (guard-v10 native repair): every native return/side effect is retained BEFORE any
++auxiliary clock/observation; observation failures are latched (HOLD), never raised into
++source19 and never allowed to replace a returned native value; probes keep one absolute
++cleanup interval with irreversible wait-lost/exhausted latches.
+ """
+ import time
+ BEGIN = time.monotonic()
+@@ -31,9 +35,11 @@
+ ROOT = LANE + "/qual-matrix-v1-v19"
+ SUP = LANE + "/code/owned_supervisor_v19.py"
+ SUP_SHA = "cb828a78367dc2023bfc6e330696745f186f186811752361472747e5fe547e93"
+-PATHS = {"supervisor": SUP, "driver": LANE + "/code/guard_matrix_native_v1.py",
+-         "child": LANE + "/code/guard_matrix_native_child_v1.py", "oracle": LANE + "/code/guard_matrix_native_check_v1.py",
+-         "case_specs": LANE + "/review/rqls10-matrix-native-v1-cases.json"}
++PATHS = {"supervisor": SUP, "driver": LANE + "/code/guard_matrix_native_v2.py",
++         "child": LANE + "/code/guard_matrix_native_child_v2.py", "oracle": LANE + "/code/guard_matrix_native_check_v2.py",
++         "case_specs": LANE + "/review/rqls10-matrix-native-v2-cases.json"}
++SPEC_KIND = "rqls10-matrix-native-v2-cases"
++OUTCOME_KIND = "rqls10-guard-matrix-native-outcome-v2"
+ RUNTIME = ("nat_runtime_999", "nat_runtime_1000", "nat_runtime_1026")
+ GO = tuple("nat_go_w%d_%s" % (wall, side) for wall in (10, 200) for side in ("lt", "eq", "gt"))
+ ACK = tuple("nat_ack_" + x for x in ("clean", "new_unproved", "incomplete", "disappearing_retry", "existing_blocker_subset", "additional_blocker"))
+@@ -77,6 +83,8 @@
+ MISSING = []
+ PROBES = []
+ EXTRA_FDS = []
++WAITS = []  # Every destructive native wait tuple obtained by this process, retained before any observation.
++OBS_FAILURES = []  # Contained auxiliary observation failures; any entry makes the evidence incomplete (HOLD).
+ DROPPED = 0
+ EMITTED = {"stdout": 0, "stderr": 0}
+ LOCK = threading.RLock()
+@@ -150,6 +158,45 @@
+             DROPPED += 1
+ 
+ 
++def latch_observation_failure(operation, exc):
++    # No clock and no fallible formatting: the failure itself is retained, never raised.
++    global DROPPED
++    try:
++        OBS_FAILURES.append([str(operation), type(exc).__name__])
++    except BaseException:
++        DROPPED += 1
++
++
++def note(operation, scope, build):
++    # Lazy contained observation. Argument evaluation (clocks, snapshots, conversions)
++    # happens INSIDE containment, so it can never erase a completed native return.
++    try:
++        facts = build()
++        event(operation, scope, **facts)
++    except BaseException as exc:
++        latch_observation_failure(operation, exc)
++
++
++def clock(epoch=False):
++    # Optional observation clock: unavailable timing is null plus a latched failure.
++    try:
++        return time.time() if epoch else time.monotonic()
++    except BaseException as exc:
++        latch_observation_failure("clock", exc)
++        return None
++
++
++def ledger(kind, pid, result):
++    # Destructive native wait tuples are retained before clocks, conversions or events.
++    global DROPPED
++    try:
++        if result[0]:
++            WAITS.append([kind, pid, result[0], result[1]])
++    except BaseException:
++        DROPPED += 1
++    return result
++
++
+ def inode(fd):
+     st = os.fstat(fd)
+     return [st.st_dev, st.st_ino]
+@@ -345,7 +392,7 @@
+         if key == "supervisor" and pin["sha256"] != SUP_SHA:
+             raise ValueError("immutable source19")
+     specs = decode(regular(PATHS["case_specs"])[1])
+-    if specs["kind"] != "rqls10-matrix-native-v1-cases" or set(specs["cases"]) != set(CASES) or \
++    if specs["kind"] != SPEC_KIND or set(specs["cases"]) != set(CASES) or \
+             specs["supervisor"] != {"path": SUP, "sha256": SUP_SHA}:
+         raise ValueError("fixed complete native case catalog")
+     spec = specs["cases"][case]
+@@ -430,11 +477,12 @@
+     before = ENV["identify"](os.getpid())
+     if before["pid"] != os.getpid() or before["pgid"] != os.getpgrp() or before["euid"] != os.geteuid() or before["ruid"] != os.getuid():
+         raise OSError("self signal identity unavailable")
+-    begin = time.monotonic()
++    begin = clock()
+     os.kill(os.getpid(), signum)
+-    event("native_self_signal", point=point, signum=signum, identity=before, pid=os.getpid(), pgid=os.getpgrp(),
+-          mono_before=begin, mono_after=time.monotonic(), pending=sorted(int(s) for s in signal.sigpending()),
+-          source_cancel=dict(ENV["CANCEL"]), only_approved_self=True)
++    note("native_self_signal", "NATIVE_OBSERVATION", lambda: dict(
++        point=point, signum=signum, identity=before, pid=os.getpid(), pgid=os.getpgrp(), mono_before=begin,
++        mono_after=time.monotonic(), pending=sorted(int(s) for s in signal.sigpending()),
++        source_cancel=dict(ENV["CANCEL"]), only_approved_self=True))
+ 
+ 
+ def spawn_probe(role):
+@@ -443,7 +491,8 @@
+     out, childout = os.pipe()
+     null = os.open("/dev/null", os.O_RDWR)
+     record = {"role": role, "pid": None, "identity": None, "stdin_fd": wr, "stdout_fd": out, "reaped": False,
+-              "native_wait_result": None, "term_attempted": False, "signal": None, "owner_raw_hex": None}
++              "native_wait_result": None, "term_attempted": False, "signal": None, "owner_raw_hex": None,
++              "cleanup_deadline": None, "wait_lost": False, "cleanup_exhausted": False, "unresolved_recorded": False}
+     PROBES.append(record)
+     try:
+         argv = [REQUEST["python"]["path"], "-I", "-B", PATHS["child"], "probe", REQUEST["case"], role]
+@@ -453,8 +502,10 @@
+         pid = os.posix_spawn(argv[0], argv, dict(cfg["env"], RQLS_MATRIX_APPROVAL_SHA256=TRUSTED), file_actions=actions,
+                              setsid=True, setsigmask=(), setsigdef=(signal.SIGTERM, signal.SIGINT, signal.SIGHUP, signal.SIGCHLD, signal.SIGPIPE))
+         record["pid"] = pid  # No fallible operation between native return and ownership registration.
++        record["mono_spawned"] = clock()
+         record["identity"] = ENV["identify"](pid)
+-        event("native_fixture_probe_registered", pid=pid, pgid=record["identity"]["pgid"], identity=record["identity"], role=role, argv=argv)
++        note("native_fixture_probe_registered", "NATIVE_OBSERVATION", lambda: dict(
++            pid=pid, pgid=record["identity"]["pgid"], identity=record["identity"], role=role, argv=argv))
+     finally:
+         for fd in (rd, childout, null):
+             os.close(fd)
+@@ -470,50 +521,80 @@
+             break
+         raw.extend(b)
+     record["owner_raw_hex"] = raw.hex()
+-    event("native_probe_owner_capture", pid=pid, role=role, raw_hex=raw.hex(), bytes=len(raw), sha256=sha(raw))
++    note("native_probe_owner_capture", "NATIVE_OBSERVATION", lambda: dict(
++        pid=pid, role=role, raw_hex=raw.hex(), bytes=len(raw), sha256=sha(raw)))
+     wait_until(time.monotonic() + 0.4)  # Idle, not a CPU workload; avoid startup BUSY measurement artifacts.
+     return record
+ 
+ 
+-def finish_probe(p):
+-    if p["pid"] is None or p["reaped"]:
++def probe_term(p):
++    # At most ONE identity-checked TERM per fixture probe; full check/send chronology retained.
++    p["term_attempted"] = True
++    sig = {"sent": False, "mono_check": clock()}
++    p["signal"] = sig
++    try:
++        sig["mono_identity_begin"] = clock()
++        identity = ENV["identify"](p["pid"])
++        sig["identity_observed"] = identity
++        sig["mono_identity_observed"] = clock()
++        sig["identity_ok"] = ENV["fingerprint"](identity) == ENV["fingerprint"](p["identity"])
++        if not sig["identity_ok"]:
++            raise OSError("probe signal identity changed")
++        os.killpg(identity["pgid"], signal.SIGTERM)
++        sig["sent"] = True  # Native side effect latched before its auxiliary timestamp.
++        sig["mono_sent"] = clock()
++    except BaseException as exc:
++        sig["error"] = error(exc)
++    note("native_probe_TERM", "NATIVE_OBSERVATION", lambda: dict(role=p["role"], pid=p["pid"], signum=15, signal=dict(sig)))
++
++
++def finish_probe(p):
++    # ONE absolute cleanup interval fixed at FIRST entry. Lost wait rights and cleanup
++    # exhaustion are irreversible latches: later calls never wait, signal or renew grace.
++    if p["pid"] is None or p["reaped"] or p["wait_lost"] or p["cleanup_exhausted"]:
+         return
++    if p["cleanup_deadline"] is None:
++        p["mono_cleanup_first_entry"] = time.monotonic()
++        p["cleanup_deadline"] = min(END - 2, p["mono_cleanup_first_entry"] + 5.0)
+     if p["stdin_fd"] is not None:
+         os.close(p["stdin_fd"])
+         p["stdin_fd"] = None
+-    until = min(END - 2, time.monotonic() + 5.0)
++    until = p["cleanup_deadline"]
+     while time.monotonic() < until and not p["reaped"]:
+-        before = time.monotonic()
++        before = clock()
+         try:
+             result = os.waitpid(p["pid"], os.WNOHANG)
+         except ChildProcessError as exc:
++            p["wait_lost"] = True  # Irreversible: no later destructive wait or signal for this probe.
+             p["wait_error"] = error(exc)
+             break
+-        p["last_wait_result"] = result
+         if result[0]:
++            ledger("fixture_probe", p["pid"], result)
+             p["native_wait_result"] = result
+             p["reaped"] = True  # Destructive native return precedes every auxiliary observation.
+-            p["rc"] = os.waitstatus_to_exitcode(result[1])
+-            p["mono_reaped"] = time.monotonic()
+-            event("native_probe_reaped", role=p["role"], pid=p["pid"], native_wait_result=list(result),
+-                  mono_before=before, mono_after=p["mono_reaped"])
+-            break
+-        if time.monotonic() > until - 1.0 and not p["term_attempted"]:
+-            p["term_attempted"] = True
++            p["last_wait_result"] = result
+             try:
+-                identity = ENV["identify"](p["pid"])
+-                if ENV["fingerprint"](identity) != ENV["fingerprint"](p["identity"]):
+-                    raise OSError("probe signal identity changed")
+-                os.killpg(identity["pgid"], signal.SIGTERM)
+-                p["signal"] = {"sent": True, "identity": identity, "mono_sent": time.monotonic()}
++                p["rc"] = os.waitstatus_to_exitcode(result[1])
+             except BaseException as exc:
+-                p["signal"] = {"sent": False, "error": error(exc)}
++                p["rc"] = None
++                latch_observation_failure("probe_status_decode", exc)
++            p["mono_reaped"] = clock()
++            note("native_probe_reaped", "NATIVE_OBSERVATION", lambda: dict(
++                role=p["role"], pid=p["pid"], native_wait_result=list(result), mono_before=before, mono_after=p["mono_reaped"]))
++            break
++        p["last_wait_result"] = result
++        if time.monotonic() > until - 1.0 and not p["term_attempted"]:
++            probe_term(p)
+         time.sleep(0.005)
++    if not p["reaped"] and not p["wait_lost"]:
++        p["cleanup_exhausted"] = True  # Interval spent; no renewed wait/grace on any later call.
+     if p["stdout_fd"] is not None:
+         os.close(p["stdout_fd"])
+         p["stdout_fd"] = None
+-    if not p["reaped"]:
+-        UNRESOLVED.append({"kind": "fixture_probe", "pid": p["pid"], "identity": p["identity"]})
++    if not p["reaped"] and not p["unresolved_recorded"]:
++        p["unresolved_recorded"] = True
++        UNRESOLVED.append({"kind": "fixture_probe", "pid": p["pid"], "identity": p["identity"],
++                           "wait_lost": p["wait_lost"], "cleanup_exhausted": p["cleanup_exhausted"]})
+ 
+ 
+ def target_go():
+@@ -535,7 +616,8 @@
+     def open(self, path, flags, mode=0o777, *, dir_fd=None):
+         case = REQUEST["case"]
+         if case == "nat_helper_pre_spawn_allocation_failure" and self.role == "helper" and self.purpose == "start" and path == "/dev/null":
+-            event("fixed_allocation_fault", "API_RESPONSE_INJECTION", errno=errno.EMFILE, source_site="spawn_registered /dev/null", native_call_made=False)
++            note("fixed_allocation_fault", "API_RESPONSE_INJECTION", lambda: dict(
++                errno=errno.EMFILE, source_site="spawn_registered /dev/null", native_call_made=False))
+             raise OSError(errno.EMFILE, "fixed API allocation failure, no native exhaustion")
+         check("source open")
+         fd = os.open(path, flags, mode, dir_fd=dir_fd)
+@@ -560,12 +642,18 @@
+                 self.fds[fd]["inode"] = inode(fd)
+             except BaseException as exc:
+                 UNRESOLVED.append({"kind": "native_pipe_identity_unavailable", "fd": fd, "error": error(exc)})
+-        event("native_source_pipe", fds=list(result), role=self.role, purpose=self.purpose)
++        note("native_source_pipe", "NATIVE_OBSERVATION", lambda: dict(fds=list(result), role=self.role, purpose=self.purpose))
+         if case == "nat_helper_missing_eof" and self.method_negative and self.role == "helper" and "hold_eof" not in self.fired:
+             self.fired.add("hold_eof")
+-            hold = os.dup(result[1])
+-            EXTRA_FDS.append(hold)
+-            event("native_extra_pipe_writer_held", fd=hold, inode=inode(hold), source_writer=result[1])
++            try:
++                hold = os.dup(result[1])
++                EXTRA_FDS.append(hold)
++            except BaseException as exc:
++                # The returned pipe stays owned by source19; the missing-EOF stimulus is simply absent.
++                MISSING.append("fixed duplicate helper stdout writer not established: " + type(exc).__name__)
++            else:
++                note("native_extra_pipe_writer_held", "NATIVE_OBSERVATION", lambda: dict(
++                    fd=hold, inode=inode(hold), source_writer=result[1]))
+         return result
+     def fdopen(self, fd, *args, **kwargs):
+         stream = os.fdopen(fd, *args, **kwargs)
+@@ -591,13 +679,13 @@
+         case, h = REQUEST["case"], self.active_helper
+         if self.method_negative and h is not None and fd == h.get("stdout_fd") and case == "nat_helper_close_error" and "close_fault" not in self.fired:
+             self.fired.add("close_fault")
+-            event("fixed_close_fault", "API_RESPONSE_INJECTION", fd=fd, inode=inode(fd), errno=errno.EIO,
+-                  native_close_made=False, descriptor_retained=True)
++            note("fixed_close_fault", "API_RESPONSE_INJECTION", lambda: dict(
++                fd=fd, inode=inode(fd), errno=errno.EIO, native_close_made=False, descriptor_retained=True))
+             raise OSError(errno.EIO, "fixed API close error; owned descriptor remains open")
+-        before = time.monotonic()
++        before = clock()
+         result = os.close(fd)
+-        info = self.fds.pop(fd, None)
+-        event("native_source_close", fd=fd, original=info, mono_before=before, mono_after=time.monotonic())
++        info = self.fds.pop(fd, None)  # Native close completed; observation below can never undo or repeat it.
++        note("native_source_close", "NATIVE_OBSERVATION", lambda: dict(fd=fd, original=info, mono_before=before, mono_after=time.monotonic()))
+         return result
+     def waitpid(self, pid, options):
+         case = REQUEST["case"]
+@@ -605,41 +693,53 @@
+             raise ValueError("sole nonblocking wait only")
+         h = next((h for h in STATE.helpers if h.get("pid") == pid), None) if STATE is not None else None
+         is_main = STATE is not None and pid == STATE.pid
+-        start = time.monotonic()
++        start = clock()
+         if is_main and case in RUNTIME and "runtime" not in self.fired:
+             try:
+-                zombie = ENV["short"](pid)["status"] == ENV["SZOMB"]
++                observed = ENV["short"](pid)
+             except OSError:
+-                zombie = False
+-            if zombie:
++                observed = None
++            if observed is not None and observed["status"] == ENV["SZOMB"]:
+                 self.fired.add("runtime")
+                 target = STATE.mono_spawn + {RUNTIME[0]: 9.99, RUNTIME[1]: 10.00, RUNTIME[2]: 10.26}[case]
+-                event("native_successful_wait_target", "FIXED_NATIVE_CALL_SCHEDULING", target_mono=target,
+-                      spawn_mono=STATE.mono_spawn, hook_begin=start, status_observed=ENV["short"](pid))
+-                wait_until(target)
++                note("native_successful_wait_target", "FIXED_NATIVE_CALL_SCHEDULING", lambda: dict(
++                    target_mono=target, spawn_mono=STATE.mono_spawn, hook_begin=start, status_observed=observed))
++                wait_until(target)  # Delays the original CALL only; its native result is never replaced.
+         if h is not None and self.purpose == "start" and case == "nat_helper_late_successful_reap" and "helper_late" not in self.fired:
+-            if ENV["short"](pid)["status"] == ENV["SZOMB"]:
++            try:
++                late = ENV["short"](pid)["status"] == ENV["SZOMB"]
++            except OSError:
++                late = False
++            if late:
+                 self.fired.add("helper_late")
+-                begin = time.monotonic()
++                begin = clock()
+                 wait_until(h["mono_call_deadline"] + 0.01)
+-                event("native_helper_call_crossing", "FIXED_NATIVE_CALL_SCHEDULING", injection_start=begin,
+-                      call_deadline=h["mono_call_deadline"], injection_end=time.monotonic(), pid=pid)
++                note("native_helper_call_crossing", "FIXED_NATIVE_CALL_SCHEDULING", lambda: dict(
++                    injection_start=begin, call_deadline=h["mono_call_deadline"], call_deadline_telemetry=h.get("call_deadline"),
++                    injection_end=time.monotonic(), pid=pid, helper_identity=h.get("identity")))
+         if h is not None and case == "nat_helper_lost_wait" and self.method_negative and "lost_wait" not in self.fired:
+-            if ENV["short"](pid)["status"] == ENV["SZOMB"]:
++            try:
++                lost = ENV["short"](pid)["status"] == ENV["SZOMB"]
++            except OSError:
++                lost = False
++            if lost:
+                 self.fired.add("lost_wait")
+-                destructive = os.waitpid(pid, os.WNOHANG)
+-                event("native_competing_reaper", "MODIFIED_NATIVE_METHOD_NEGATIVE_NOT_CLOCK", pid=pid, options=options,
+-                      native_result=list(destructive), no_recovered_wait_right=True)
+-        before = time.monotonic()
++                destructive = ledger("competing_fixture_reaper", pid, os.waitpid(pid, os.WNOHANG))
++                note("native_competing_reaper", "MODIFIED_NATIVE_METHOD_NEGATIVE_NOT_CLOCK", lambda: dict(
++                    pid=pid, options=options, native_result=list(destructive), no_recovered_wait_right=True))
++        before = clock()
+         try:
+             result = os.waitpid(pid, options)
+         except BaseException as exc:
+-            event("native_waitpid", pid=pid, options=options, mono_before=before, mono_after=time.monotonic(), error=error(exc))
++            note("native_waitpid", "NATIVE_OBSERVATION", lambda: dict(
++                pid=pid, options=options, mono_before=before, mono_after=time.monotonic(), error=error(exc)))
+             raise
+-        # Store the destructive result before ANY other fallible work.
+-        event("native_waitpid", pid=pid, options=options, native_result=list(result), mono_before=before, mono_after=time.monotonic(),
+-              spawn_mono=STATE.mono_spawn if is_main else h.get("mono_spawn") if h else None,
+-              target_mono=(STATE.mono_spawn + {RUNTIME[0]: 9.99, RUNTIME[1]: 10.0, RUNTIME[2]: 10.26}[case]) if is_main and case in RUNTIME else None)
++        # The destructive tuple is ledgered and RETURNED unconditionally; observation is contained.
++        ledger("source_waitpid", pid, result)
++        note("native_waitpid", "NATIVE_OBSERVATION", lambda: dict(
++            pid=pid, options=options, native_result=list(result), mono_before=before, mono_after=time.monotonic(),
++            spawn_mono=STATE.mono_spawn if is_main else h.get("mono_spawn") if h else None,
++            target_mono=(STATE.mono_spawn + {RUNTIME[0]: 9.99, RUNTIME[1]: 10.0, RUNTIME[2]: 10.26}[case]) if is_main and case in RUNTIME else None))
+         return result
+     def write(self, fd, data):
+         stdin = STATE is not None and STATE.child is not None and fd == STATE.child.get("stdin_fd")
+@@ -647,34 +747,52 @@
+             case = REQUEST["case"]
+             if case in GO or case in PROTECTED and "_go_" in case:
+                 target = target_go() if case != "nat_completion_go_deadline" else time.monotonic() + 0.03
+-                start = time.monotonic()
++                start, start_epoch = clock(), clock(True)
+                 if case == "nat_completion_go_deadline":
+                     self.go_deadline.end = min(self.go_deadline.end, start + 0.02)
+                     target = self.go_deadline.end + 0.01
+-                    event("fixed_original_deadline_clamp", "API_RESPONSE_INJECTION", phase="GO", deadline=self.go_deadline.telemetry())
++                    note("fixed_original_deadline_clamp", "API_RESPONSE_INJECTION", lambda: dict(
++                        phase="GO", deadline=self.go_deadline.telemetry()))
++                family = {"nat_protected_go_expiry": "AUTHORIZATION_EXPIRY", "nat_protected_go_stability": "STABILITY_EXPIRY",
++                          "nat_completion_go_deadline": "API_CLAMPED_ORIGINAL_GO_DEADLINE"}.get(case, "GO_COMPLETION_AGE_BOUND")
++                auth_start = None if STATE.authorization is None else dict(STATE.authorization)
++                stability_start = STATE.stability_expiry_mono
++                deadline_start = self.go_deadline.telemetry()
+                 wait_until(target)
+-                event("GO_native_delivery_delay", "FIXED_NATIVE_CALL_SCHEDULING", injection_start=start, target_mono=target,
+-                      injection_end=time.monotonic(), original_deadline=self.go_deadline.telemetry(),
+-                      epoch_end_raw=time.time(), authorization=STATE.authorization, stability_expiry_mono=STATE.stability_expiry_mono)
++                note("GO_native_delivery_delay", "FIXED_NATIVE_CALL_SCHEDULING", lambda: dict(
++                    cutoff_family=family, injection_start=start, injection_start_epoch_raw=start_epoch, target_mono=target,
++                    injection_end=time.monotonic(), epoch_end_raw=time.time(), original_deadline_start=deadline_start,
++                    original_deadline=self.go_deadline.telemetry(), authorization_start=auth_start,
++                    authorization=STATE.authorization, stability_expiry_mono_start=stability_start,
++                    stability_expiry_mono=STATE.stability_expiry_mono))
+             if (case in SIGNALS and case.endswith("go_write")) or case == "nat_pending_after_handled":
+                 signum = signal.SIGTERM if case == "nat_pending_after_handled" else {"term": signal.SIGTERM, "int": signal.SIGINT, "hup": signal.SIGHUP}[case.split("_")[2]]
+                 signal_self(signum, "go_write")
+-            before = time.monotonic()
++            before = clock()
+             result = os.write(fd, data)
+-            event("native_GO_write", fd=fd, data_hex=bytes(data).hex(), native_return=result, mono_before=before, mono_after=time.monotonic())
++            note("native_GO_write", "NATIVE_OBSERVATION", lambda: dict(
++                fd=fd, data_hex=bytes(data).hex(), native_return=result, mono_before=before, mono_after=time.monotonic()))
+             return result
+         return os.write(fd, data)
+     def killpg(self, pgid, signum):
+         if signum != signal.SIGTERM or STATE is None or not any(
+                 p is not None and p["pgid"] == pgid for p in [STATE.ident] + [h.get("identity") for h in STATE.helpers]):
+             raise ValueError("no broadened source TERM scope")
+-        before = time.monotonic()
++        def target():
++            if STATE.ident is not None and STATE.ident["pgid"] == pgid:
++                return {"role": "main", "pid": STATE.pid, "uniqueid": STATE.ident["uniqueid"]}
++            h = next(h for h in STATE.helpers if h.get("identity") is not None and h["identity"]["pgid"] == pgid)
++            return {"role": "helper", "pid": h["pid"], "uniqueid": h["identity"]["uniqueid"]}
++        before = clock()
+         try:
+             result = os.killpg(pgid, signum)
+         except BaseException as exc:
+-            event("native_source_TERM", pgid=pgid, signal=signum, mono_before=before, mono_after=time.monotonic(), error=error(exc))
++            note("native_source_TERM", "NATIVE_OBSERVATION", lambda: dict(
++                pgid=pgid, signal=signum, target=target(), mono_before=before, mono_after=time.monotonic(), error=error(exc)))
+             raise
+-        event("native_source_TERM", pgid=pgid, signal=signum, native_return=result, mono_before=before, mono_after=time.monotonic())
++        # The delivered signal is a completed side effect: observation can never turn it into a failure.
++        note("native_source_TERM", "NATIVE_OBSERVATION", lambda: dict(
++            pgid=pgid, signal=signum, target=target(), native_return=result, mono_before=before, mono_after=time.monotonic()))
+         return result
+ 
+ 
+@@ -698,23 +816,32 @@
+                 elif case == "nat_completion_ack_deadline":
+                     self.proxy.ack_deadline.end = min(self.proxy.ack_deadline.end, start + 0.02)
+                     target = self.proxy.ack_deadline.end + 0.01
+-                    event("fixed_original_deadline_clamp", "API_RESPONSE_INJECTION", phase="ACK", deadline=self.proxy.ack_deadline.telemetry())
++                    note("fixed_original_deadline_clamp", "API_RESPONSE_INJECTION", lambda: dict(
++                        phase="ACK", deadline=self.proxy.ack_deadline.telemetry()))
+                 elif case.endswith("_stability"):
+                     target = STATE.stability_expiry_mono + 0.01
+                 else:
+                     target = start + STATE.authorization["not_after_epoch"] - epoch_start + 0.01
++                family = {"nat_protected_ack_expiry": "AUTHORIZATION_EXPIRY", "nat_protected_ack_stability": "STABILITY_EXPIRY",
++                          "nat_completion_ack_deadline": "API_CLAMPED_ORIGINAL_ACK_DEADLINE"}.get(case, "ACK_CENSUS_AGE")
++                auth_start = None if STATE.authorization is None else dict(STATE.authorization)
++                stability_start = STATE.stability_expiry_mono
++                deadline_start = self.proxy.ack_deadline.telemetry()
+                 wait_until(target)
+-                event("ACK_native_output_delay", "FIXED_NATIVE_CALL_SCHEDULING", injection_start=start, injection_start_epoch_raw=epoch_start,
+-                      target_mono=target, injection_end=time.monotonic(), epoch_end_raw=time.time(),
+-                      census_mono=self.proxy.ack_census["mono_complete"], original_deadline=self.proxy.ack_deadline.telemetry(),
+-                      authorization=STATE.authorization, stability_expiry_mono=STATE.stability_expiry_mono)
+-        before = time.monotonic()
++                note("ACK_native_output_delay", "FIXED_NATIVE_CALL_SCHEDULING", lambda: dict(
++                    cutoff_family=family, injection_start=start, injection_start_epoch_raw=epoch_start, target_mono=target,
++                    injection_end=time.monotonic(), epoch_end_raw=time.time(), census_mono=self.proxy.ack_census["mono_complete"],
++                    original_deadline_start=deadline_start, original_deadline=self.proxy.ack_deadline.telemetry(),
++                    authorization_start=auth_start, authorization=STATE.authorization,
++                    stability_expiry_mono_start=stability_start, stability_expiry_mono=STATE.stability_expiry_mono))
++        before = clock()
+         with LOCK:
+             room(len(raw))
+             counts = full_write(self.stream.fileno(), raw)
+             EMITTED[self.name] += sum(counts)
+-        event("native_source_" + self.name + "_write", mono_before=before, mono_after=time.monotonic(),
+-              bytes=len(raw), sha256=sha(raw), native_counts=counts, ack_started=bool(STATE and STATE.ack_output_started))
++        note("native_source_" + self.name + "_write", "NATIVE_OBSERVATION", lambda: dict(
++            mono_before=before, mono_after=time.monotonic(), bytes=len(raw), sha256=sha(raw), native_counts=counts,
++            ack_started=bool(STATE and STATE.ack_output_started)))
+         return len(text)
+     def flush(self):
+         case = REQUEST["case"]
+@@ -723,11 +850,12 @@
+             self.proxy.fired.add("flush_signal")
+             signum = signal.SIGTERM if case == "nat_integration_printed_ack_actual14" else {"term": signal.SIGTERM, "int": signal.SIGINT, "hup": signal.SIGHUP}[case.split("_")[2]]
+             signal_self(signum, "ack_flush")
+-        before = time.monotonic()
++        before = clock()
+         result = self.stream.flush()
+         if ack:
+-            event("native_ACK_flush_return", mono_before=before, mono_after=time.monotonic(),
+-                  census_mono=self.proxy.ack_census["mono_complete"], pending=sorted(int(s) for s in signal.sigpending()))
++            note("native_ACK_flush_return", "NATIVE_OBSERVATION", lambda: dict(
++                mono_before=before, mono_after=time.monotonic(), census_mono=self.proxy.ack_census["mono_complete"],
++                pending=sorted(int(s) for s in signal.sigpending())))
+         return result
+ 
+ 
+@@ -779,14 +907,17 @@
+                 pgid = os.getpgid(record["pid"])
+             except OSError as exc:
+                 pgid_error = error(exc)
+-            event("native_spawn_registered", pid=record["pid"], pgid=pgid, pgid_error=pgid_error, role=role, argv=argv,
+-                  source_ledger_registered=record in s.keep, purpose=proxy.purpose, setsid=True, setsigmask=[],
+-                  setsigdef=sorted(int(x) for x in env["CANCEL_SIGNALS"] | {signal.SIGPIPE, signal.SIGCHLD}))
++            note("native_spawn_registered", "NATIVE_OBSERVATION", lambda: dict(
++                pid=record["pid"], pgid=pgid, pgid_error=pgid_error, role=role, argv=argv,
++                source_ledger_registered=record in s.keep, purpose=proxy.purpose, setsid=True, setsigmask=[],
++                setsigdef=sorted(int(x) for x in env["CANCEL_SIGNALS"] | {signal.SIGPIPE, signal.SIGCHLD}),
++                mono_spawn=record.get("mono_spawn"), launch_commit=record.get("launch_commit")))
+             if REQUEST["case"] == "nat_helper_registered_pid_setup_failure" and role == "helper" and proxy.purpose == "start":
+-                begin = time.monotonic()
++                begin = clock()
+                 wait_until(dl.end + 0.01)
+-                event("registered_PID_setup_crossing", "API_RESPONSE_INJECTION", pid=record["pid"], injection_start=begin,
+-                      call_deadline=dl.end, injection_end=time.monotonic(), native_PID_registered=True)
++                note("registered_PID_setup_crossing", "API_RESPONSE_INJECTION", lambda: dict(
++                    pid=record["pid"], injection_start=begin, call_deadline=dl.end, call_deadline_telemetry=dl.telemetry(),
++                    injection_end=time.monotonic(), native_PID_registered=True))
+                 try:
+                     dl.check("fixed registered-PID setup completion")
+                 except OSError as exc:
+@@ -803,8 +934,8 @@
+             return original_write(fd, data, dl, on_progress)
+         except BaseException as exc:
+             if STATE.child is not None and fd == STATE.child.get("stdin_fd"):
+-                event("original_GO_write_all_exception", error=error(exc), deadline=dl.telemetry(),
+-                      actual_GO_delivery_not_committed=STATE.rec.get("go_delivered") is not True)
++                note("original_GO_write_all_exception", "NATIVE_OBSERVATION", lambda: dict(
++                    error=error(exc), deadline=dl.telemetry(), actual_GO_delivery_not_committed=STATE.rec.get("go_delivered") is not True))
+             raise
+     env["write_all"] = written
+     original_publish = env["publish"]
+@@ -812,20 +943,27 @@
+         result = original_publish(fd, name, data, dl)
+         for role, target in (("receipt", STATE.cfg["receipt"]), ("staged", STATE.cfg["settlement_record"] + ".staged")):
+             if name == os.path.basename(target):
+-                event("native_original_publication", role=role, path=target, inode=list(result[1]), sha256=result[0], bytes=len(data))
++                note("native_original_publication", "NATIVE_OBSERVATION", lambda: dict(
++                    role=role, path=target, inode=list(result[1]), sha256=result[0], bytes=len(data)))
+         if name == os.path.basename(STATE.cfg["launch_record"]):
+-            event("native_original_launch_publish", inode=list(result[1]), sha256=result[0], bytes=len(data))
++            note("native_original_launch_publish", "NATIVE_OBSERVATION", lambda: dict(
++                inode=list(result[1]), sha256=result[0], bytes=len(data)))
+             case = REQUEST["case"]
+             if case in GO or case in ("nat_protected_go_expiry", "nat_protected_go_stability"):
+                 target = target_go() - 0.6
++                lead_begin = clock()
+                 if target > time.monotonic():
+                     wait_until(target)
+                 else:
+                     MISSING.append("pre-GO census target lead already missed")
++                # The fresh original pre-GO deadline object is created only AFTER this return.
++                note("fixed_pre_GO_census_lead", "FIXED_NATIVE_CALL_SCHEDULING", lambda: dict(
++                    target_mono=target, mono_begin=lead_begin, mono_end=time.monotonic(),
++                    authorization=STATE.authorization, stability_expiry_mono=STATE.stability_expiry_mono))
+             if case == "nat_platform_startup_reexec":
+                 got = await_file(RUN + "/scratch/postexec.json")
+                 if got is not None:
+-                    event("native_startup_reexec_barrier", artifact=got[0], value=decode(got[1]))
++                    note("native_startup_reexec_barrier", "NATIVE_OBSERVATION", lambda: dict(artifact=got[0], value=decode(got[1])))
+         return result
+     env["publish"] = published
+     launch = env["launch_and_go"]
+@@ -835,6 +973,9 @@
+             target = (s.stability_expiry_mono if case.endswith("_stability") else time.monotonic() + s.authorization["not_after_epoch"] - time.time()) - 4.0
+             if target > time.monotonic():
+                 wait_until(target)
++            note("fixed_prelaunch_cutoff_lead", "FIXED_NATIVE_CALL_SCHEDULING", lambda: dict(
++                cutoff_family="STABILITY_EXPIRY" if case.endswith("_stability") else "AUTHORIZATION_EXPIRY", target_mono=target,
++                mono_end=time.monotonic(), authorization=s.authorization, stability_expiry_mono=s.stability_expiry_mono))
+         return launch(s)
+     env["launch_and_go"] = launched
+     original_acquire = cls.acquire_identity
+@@ -843,14 +984,31 @@
+             until = min(WORK_END, time.monotonic() + 10)
+             while time.monotonic() < until and env["short"](pid)["status"] != env["SZOMB"]:
+                 time.sleep(0.002)
+-            event("native_fast_exit_status_before_initial", identity=env["identify"](pid), source_site=source)
++            note("native_fast_exit_status_before_initial", "NATIVE_OBSERVATION", lambda: dict(
++                identity=env["identify"](pid), source_site=source))
+         return original_acquire(self, pid, source, install)
+     cls.acquire_identity = acquired
+     original_census, full = cls.census, cls.full_census
+     def census(self, dl):
+         if proxy.ack_scan:
+             proxy.ack_attempt += 1
+-        return original_census(self, dl)
++        attempt = proxy.ack_attempt if proxy.ack_scan else None
++        entry, before_count = clock(), len(self.census_history)
++        try:
++            result = original_census(self, dl)
++        except BaseException as exc:
++            # Complete call trace: every original census call is retained, including refused post-cap calls.
++            note("original_census_exception", "NATIVE_OBSERVATION", lambda: dict(
++                phase=self.phase, inside_helper=self.in_helper, ack_attempt=attempt, mono_entry=entry,
++                mono_after=time.monotonic(), error=error(exc), history_halted=self.history_halted,
++                census_mono_start=self.census_history[before_count]["mono_start"] if len(self.census_history) > before_count else None))
++            raise
++        note("original_census_return", "NATIVE_OBSERVATION", lambda: dict(
++            phase=self.phase, inside_helper=self.in_helper, ack_attempt=attempt, mono_entry=entry,
++            mono_start=result["mono_start"], mono_complete=result["mono_complete"], complete=result["complete"],
++            incomplete=result["incomplete"], owned_uniqueids=sorted(p["uniqueid"] for p in result["owned_live"]),
++            unproved_uniqueids=sorted(p["uniqueid"] for p in result["unproved_live"])))
++        return result
+     cls.census = census
+     original_observed, stable = cls.observed_identity, cls.identity_stable
+     def observed(self, pid, source, known=False):
+@@ -858,50 +1016,73 @@
+             p = next((p for p in PROBES if p["role"] == "retry%d" % proxy.ack_attempt and p["pid"] == pid and not p["reaped"]), None)
+             if p is not None:
+                 finish_probe(p)
+-                event("native_probe_disappeared_before_identification", pid=pid, attempt=proxy.ack_attempt,
+-                      native_wait_result=p["native_wait_result"])
+-        return original_observed(self, pid, source, known)
++                note("native_probe_disappeared_before_identification", "NATIVE_OBSERVATION", lambda: dict(
++                    pid=pid, role=p["role"], attempt=proxy.ack_attempt, native_wait_result=p["native_wait_result"],
++                    probe_uniqueid=(p["identity"] or {}).get("uniqueid"), reaped=p["reaped"]))
++        if not (proxy.ack_scan or proxy.method_negative):
++            return original_observed(self, pid, source, known)
++        begin = clock()
++        try:
++            result = original_observed(self, pid, source, known)
++        except BaseException as exc:
++            note("original_observed_identity_exception", "NATIVE_OBSERVATION", lambda: dict(
++                pid=pid, source=source, ack_attempt=proxy.ack_attempt if proxy.ack_scan else None,
++                mono_before=begin, mono_after=time.monotonic(), error=error(exc)))
++            raise
++        return result
+     cls.observed_identity = observed
+     def identity_stable(self, pid, before):
+         if proxy.ack_scan and REQUEST["case"] == "nat_ack_disappearing_retry":
+             p = next((p for p in PROBES if p["pid"] == pid and not p["reaped"]), None)
+             if p is not None:
+                 finish_probe(p)
+-                event("native_probe_disappeared_after_identity", pid=pid, identity_before=before, native_wait_result=p["native_wait_result"])
++                note("native_probe_disappeared_after_identity", "NATIVE_OBSERVATION", lambda: dict(
++                    pid=pid, role=p["role"], attempt=proxy.ack_attempt, identity_before=before,
++                    native_wait_result=p["native_wait_result"], reaped=p["reaped"]))
+         return stable(self, pid, before)
+     cls.identity_stable = identity_stable
+     def full_census(self, dl):
+         case = REQUEST["case"]
+         final = self.phase == "FINAL" and not self.in_helper
+         ack = final and self.ack_resources is not None
++        def probe(role):
++            # A fixture probe that cannot be established is a missing prerequisite, never a source failure.
++            try:
++                spawn_probe(role)
++            except BaseException as exc:
++                MISSING.append("fixed fixture probe not established: %s %s" % (role, type(exc).__name__))
+         if final and not ack and case in ("nat_ack_existing_blocker_subset", "nat_ack_additional_blocker") and "final_probe" not in proxy.fired:
+             proxy.fired.add("final_probe")
+-            spawn_probe("final")
++            probe("final")
+         if ack:
+             if case == "nat_post_publication_stop_helper" and "postpub" not in proxy.fired:
+                 proxy.fired.add("postpub")
+                 if self.failures or self.trips or env["pending_cancel"]() or self.stop is not None:
+                     MISSING.append("clean post-publication request_stop entry prerequisite false")
+                 else:
+-                    event("post_publication_API_entry", "API_ENTRY_STIMULUS", helper_prefix=self.helper_reports(), accounting=self.ack_resources,
+-                          stop_before=self.stop, trips_before=self.trips, failures_before=self.failures)
++                    note("post_publication_API_entry", "API_ENTRY_STIMULUS", lambda: dict(
++                        helper_prefix=self.helper_reports(), accounting=self.ack_resources, stop_before=self.stop,
++                        trips_before=self.trips, failures_before=self.failures))
+                     self.request_stop("FIXED_POST_PUBLICATION_API_ENTRY")
+-                    event("post_publication_native_helper_activity", "NATIVE_HELPER_ACTIVITY", helpers=self.helper_reports(),
+-                          stop=self.stop, signal=self.signal, no_resource_excess_claim=True)
++                    note("post_publication_native_helper_activity", "NATIVE_HELPER_ACTIVITY", lambda: dict(
++                        helpers=self.helper_reports(), stop=self.stop, signal=self.signal, no_resource_excess_claim=True))
+             if case in ("nat_ack_new_unproved", "nat_ack_additional_blocker") and "ack_probe" not in proxy.fired:
+                 proxy.fired.add("ack_probe")
+-                spawn_probe("ack")
++                probe("ack")
+             if case == "nat_ack_incomplete" and "retry_probes" not in proxy.fired:
+                 proxy.fired.add("retry_probes")
+                 for role in ("retry1", "retry2", "retry3"):
+-                    spawn_probe(role)
++                    probe(role)
+             if case == "nat_ack_disappearing_retry" and "retry_probe" not in proxy.fired:
+                 proxy.fired.add("retry_probe")
+-                spawn_probe("ack")
++                probe("ack")
+             if case in ("nat_protected_ack_expiry", "nat_protected_ack_stability"):
+                 target = (self.stability_expiry_mono if case.endswith("_stability") else time.monotonic() + self.authorization["not_after_epoch"] - time.time()) - 0.6
+                 if target > time.monotonic():
+                     wait_until(target)
++                note("fixed_pre_ACK_census_lead", "FIXED_NATIVE_CALL_SCHEDULING", lambda: dict(
++                    cutoff_family="STABILITY_EXPIRY" if case.endswith("_stability") else "AUTHORIZATION_EXPIRY", target_mono=target,
++                    mono_end=time.monotonic(), authorization=self.authorization, stability_expiry_mono=self.stability_expiry_mono))
+             proxy.ack_scan, proxy.ack_attempt = True, 0
+             proxy.ack_deadline = proxy.final_phase
+         try:
+@@ -910,7 +1091,7 @@
+             proxy.ack_scan = False
+         if ack:
+             proxy.ack_census = result
+-            event("native_ACK_census_return", census=result, attempt_count=proxy.ack_attempt)
++            note("native_ACK_census_return", "NATIVE_OBSERVATION", lambda: dict(census=result, attempt_count=proxy.ack_attempt))
+         return result
+     cls.full_census = full_census
+     original_auth = cls.authorization_io
+@@ -923,27 +1104,46 @@
+     cls.authorization_io = authorization
+     completion = cls.completion_check
+     def completed(self, phase, dl):
+-        before = time.monotonic()
++        before, epoch_before = clock(), clock(True)
+         try:
+             result = completion(self, phase, dl)
+         except BaseException as exc:
+-            event("original_completion_exception", phase=phase, mono_before=before, mono_after=time.monotonic(), error=error(exc),
+-                  go_delivery=self.rec.get("go_delivery_completion"), deadline=dl.telemetry())
++            note("original_completion_exception", "NATIVE_OBSERVATION", lambda: dict(
++                phase=phase, mono_before=before, mono_after=time.monotonic(), epoch_before=epoch_before, epoch_after=time.time(),
++                error=error(exc), go_delivery=self.rec.get("go_delivery_completion"), deadline=dl.telemetry(),
++                authorization=self.authorization, stability_expiry_mono=self.stability_expiry_mono))
+             raise
+-        event("original_completion_return", phase=phase, mono_before=before, mono_after=time.monotonic(), deadline=dl.telemetry())
++        note("original_completion_return", "NATIVE_OBSERVATION", lambda: dict(
++            phase=phase, mono_before=before, mono_after=time.monotonic(), epoch_before=epoch_before, epoch_after=time.time(),
++            deadline=dl.telemetry(), authorization=self.authorization, stability_expiry_mono=self.stability_expiry_mono))
+         return result
+     cls.completion_check = completed
+     original_age = cls.resource_age
+     def age(self, c):
+-        before = time.monotonic()
++        before = clock()
+         try:
+             result = original_age(self, c)
+         except BaseException as exc:
+-            event("original_resource_age_exception", mono_before=before, mono_after=time.monotonic(), census_mono=c["mono_complete"], error=error(exc))
++            note("original_resource_age_exception", "NATIVE_OBSERVATION", lambda: dict(
++                phase=self.phase, mono_before=before, mono_after=time.monotonic(), census_mono=c["mono_complete"], error=error(exc)))
+             raise
+-        event("original_resource_age_return", mono_before=before, mono_after=time.monotonic(), census_mono=c["mono_complete"])
++        note("original_resource_age_return", "NATIVE_OBSERVATION", lambda: dict(
++            phase=self.phase, mono_before=before, mono_after=time.monotonic(), census_mono=c["mono_complete"]))
+         return result
+     cls.resource_age = age
++    original_runtime = cls.enforce_runtime
++    def runtime(self, where):
++        if REQUEST["case"] not in RUNTIME:
++            return original_runtime(self, where)
++        before, tripped = clock(), "DEADLINE" in self.trips
++        try:
++            return original_runtime(self, where)
++        finally:
++            # Decision-side evidence: the original runtime check interval, including non-tripping checks.
++            note("original_enforce_runtime", "NATIVE_OBSERVATION", lambda: dict(
++                where=where, mono_before=before, mono_after=time.monotonic(), deadline_tripped_before=tripped,
++                deadline_tripped_after="DEADLINE" in self.trips, observations=len(self.runtime_observations)))
++    cls.enforce_runtime = runtime
+     final_body = env["final_body"]
+     def final(s, phase):
+         proxy.final_phase = phase
+@@ -963,9 +1163,10 @@
+             proxy.fired.add("cap")
+             before = self.history_charge
+             self.history_charge = 4 << 20
+-            event("fixed_history_cap_precharge", "API_CAP_STATE_INJECTION_NOT_NATIVE_COUNT", before_charge=before,
+-                  injected_charge=self.history_charge, source_kind=kind, witness=witness, native_cap_attainment_claim=False,
+-                  raw_acquisitions=list(self.raw_acquisitions.values()), main_identity=self.ident, signal=self.signal)
++            note("fixed_history_cap_precharge", "API_CAP_STATE_INJECTION_NOT_NATIVE_COUNT", lambda: dict(
++                before_charge=before, injected_charge=self.history_charge, source_kind=kind, witness=witness,
++                native_cap_attainment_claim=False, raw_acquisitions=list(self.raw_acquisitions.values()),
++                main_identity=self.ident, signal=self.signal, helper_pid=None if proxy.active_helper is None else proxy.active_helper.get("pid")))
+         return original_reserve(self, kind, new, old, witness, extra)
+     cls.reserve_history = reserve
+ 
+@@ -985,9 +1186,10 @@
+     argv = (["/bin/date", "+%Y-%m-%dT%H:%M:%S%z"] if case in ("nat_helper_lost_wait", "nat_helper_missing_eof", "nat_helper_close_error") else
+             [REQUEST["python"]["path"], "-I", "-B", PATHS["child"], "helper", case])
+     dl, h, exc = s.deadline(2.0), None, None
+-    event("declared_native_method_helper", "MODIFIED_NATIVE_METHOD_NEGATIVE_NOT_CLOCK", argv=argv,
+-          original_symbols=["spawn_registered", "Supervisor.helper_probe", "Supervisor.helper_cleanup"], date_assignment_forbidden=True,
+-          source_phase=s.phase, phase_scope="DECLARED_METHOD_PRESTATE_NOT_PRODUCTION_LAUNCH")
++    note("declared_native_method_helper", "MODIFIED_NATIVE_METHOD_NEGATIVE_NOT_CLOCK", lambda: dict(
++        argv=argv, original_symbols=["spawn_registered", "Supervisor.helper_probe", "Supervisor.helper_cleanup"],
++        date_assignment_forbidden=True, source_phase=s.phase, phase_scope="DECLARED_METHOD_PRESTATE_NOT_PRODUCTION_LAUNCH",
++        call_deadline=dl.telemetry()))
+     try:
+         h = env["spawn_registered"](s, argv, dict(cfg["env"]), "helper", dl, 3.0)
+         proxy.active_helper = h
+@@ -1015,7 +1217,9 @@
+             exec(compile(ast.Module(body=nodes, type_ignores=[]), SUP, "exec"), dict(env, h=h))
+     except BaseException as e:
+         exc = error(e)
+-        event("original_helper_method_exception", error=exc, helper_pid=None if h is None else h["pid"])
++        note("original_helper_method_exception", "NATIVE_OBSERVATION", lambda: dict(
++            error=exc, helper_pid=None if h is None else h["pid"], settled_at_exception=None if h is None else h.get("settled"),
++            mono_call_deadline=dl.end))
+         s.fail("HELPER_CALL_FAILED", type(e).__name__)
+         if h is not None:
+             s.helper_cleanup(h)
+@@ -1024,10 +1228,11 @@
+         for fd in list(EXTRA_FDS):
+             os.close(fd)
+             EXTRA_FDS.remove(fd)
+-            event("native_extra_pipe_writer_closed", fd=fd)
++            note("native_extra_pipe_writer_closed", "NATIVE_OBSERVATION", lambda: dict(fd=fd))
+     if h is not None:
+-        event("native_helper_method_end", helper=s.helper_reports()[-1], failure_codes=sorted(s.failure_keys),
+-              history_halted=s.history_halted, no_date_metadata=h.get("date") is None)
++        note("native_helper_method_end", "NATIVE_OBSERVATION", lambda: dict(
++            helper=s.helper_reports()[-1], failure_codes=sorted(s.failure_keys), history_halted=s.history_halted,
++            no_date_metadata=h.get("date") is None))
+     return {"mode": "ORIGINAL_HELPER_METHODS", "exception": exc, "helper": None if h is None else s.helper_reports()[-1],
+             "source_date_now_not_replaced": True, "negative_argv": argv}
+ 
+@@ -1040,13 +1245,32 @@
+             MISSING.append("pinned ABI/header bytes absent or changed")
+             return {"mode": "ORIGINAL_PLATFORM_METHODS", "exception": None}
+         p = os.getpid()
+-        raws = {str(flavor): env["pidinfo"](p, flavor, size, flavor in (3, 13, 17)).hex()
+-                for flavor, size in ((17, 56), (13, 64), (4, 96), (3, 136), (9, 2352))}
+-        event("native_ABI_layout", pinned_files=facts, raw_by_flavor=raws, original_identity=env["identify"](p),
+-              original_task=list(env["task_of"](p)), original_start_epoch_raw=env["start_of"](p),
+-              original_cwd=env["cwd_of"](p), original_argv=env["argv_of"](p, env["argmax"]()),
+-              native_reference={"pid": p, "ppid": os.getppid(), "pgid": os.getpgrp(), "euid": os.geteuid(), "ruid": os.getuid(),
+-                                "cwd": os.getcwd(), "argv": sys.orig_argv, "maxrss": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss},
++        # Scoped pure observer: retain the EXACT native buffers the original methods decode,
++        # so the oracle can decode every claimed value from the bytes behind each result.
++        consumed, original_pidinfo = [], env["pidinfo"]
++        def observed_pidinfo(pid, flavor, size, zombies=False):
++            raw = original_pidinfo(pid, flavor, size, zombies)
++            try:
++                consumed.append({"pid": pid, "flavor": flavor, "size": size, "zombies": bool(zombies), "raw_hex": raw.hex()})
++            except BaseException as exc:
++                latch_observation_failure("abi_consumed_buffer", exc)
++            return raw
++        env["pidinfo"] = observed_pidinfo
++        try:
++            identity = env["identify"](p)
++            task = list(env["task_of"](p))
++            start = env["start_of"](p)
++            cwd = env["cwd_of"](p)
++        finally:
++            env["pidinfo"] = original_pidinfo
++        raws = {str(c["flavor"]): c["raw_hex"] for c in consumed}  # The exact buffers decoded above, not a later sample.
++        reference = {"pid": p, "ppid": os.getppid(), "pgid": os.getpgrp(), "euid": os.geteuid(), "ruid": os.getuid(),
++                     "cwd": os.getcwd(), "argv": sys.orig_argv, "maxrss": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
++                     "epoch": time.time(), "driver_mono_begin": BEGIN}
++        event("native_ABI_layout", pinned_files=facts, raw_by_flavor=raws, consumed_by_original=consumed,
++              consumed_order=["identify:17,13,17,13,17", "task_of:4", "start_of:3", "cwd_of:9"],
++              original_identity=identity, original_task=task, original_start_epoch_raw=start, original_cwd=cwd,
++              original_argv=env["argv_of"](p, env["argmax"]()), native_reference=reference,
+               timebase=env["timebase"](), argmax=env["argmax"]())
+         return {"mode": "ORIGINAL_PLATFORM_METHODS", "exception": None}
+     s = env["Supervisor"](cfg, REQUEST["config"]["path"], REQUEST["config"]["sha256"])
+@@ -1057,37 +1281,55 @@
+     while time.monotonic() < until:
+         dl = env["Deadline"](2, until)
+         for pid in env["all_pids"](dl):
++            begin = clock()
+             try:
+                 before = env["identify"](pid)
+             except OSError as exc:
+-                event("native_readonly_identity_missing", pid=pid, error=error(exc))
++                note("native_readonly_identity_missing", "NATIVE_OBSERVATION", lambda: dict(pid=pid, error=error(exc)))
+                 continue
++            observed = clock()
+             prior = seen.get(pid)
+-            seen[pid] = before
+-            if case == "nat_platform_pid_reuse" and prior is not None and prior["uniqueid"] != before["uniqueid"]:
+-                matches.append({"prior": prior, "current": before})
+-                event("native_real_PID_reuse", prior=prior, current=before)
+-            elif case in ("nat_platform_uid_change_observation", "nat_platform_trace_change_observation") and prior is not None and prior["uniqueid"] == before["uniqueid"]:
++            seen[pid] = {"identity": before, "mono_begin": begin, "mono_observed": observed}
++            if case == "nat_platform_pid_reuse" and prior is not None and prior["identity"]["uniqueid"] != before["uniqueid"]:
++                row = {"prior": prior["identity"], "current": before, "prior_mono_observed": prior["mono_observed"],
++                       "current_mono_begin": begin, "current_mono_observed": observed}
++                matches.append(row)
++                note("native_real_PID_reuse", "NATIVE_OBSERVATION", lambda: dict(row))
++            elif case in ("nat_platform_uid_change_observation", "nat_platform_trace_change_observation") and prior is not None and prior["identity"]["uniqueid"] == before["uniqueid"]:
+                 keys = ("euid", "ruid") if case == "nat_platform_uid_change_observation" else ("traced",)
+-                if any(prior[k] != before[k] for k in keys):
+-                    matches.append({"prior": prior, "current": before})
+-                    event("native_existing_metadata_change", prior=prior, current=before, changed_keys=list(keys),
+-                          no_credential_or_trace_change=True)
++                if any(prior["identity"][k] != before[k] for k in keys):
++                    row = {"prior": prior["identity"], "current": before, "prior_mono_observed": prior["mono_observed"],
++                           "current_mono_begin": begin, "current_mono_observed": observed, "changed_keys": list(keys)}
++                    matches.append(row)
++                    note("native_existing_metadata_change", "NATIVE_OBSERVATION", lambda: dict(row, no_credential_or_trace_change=True))
+             elif case == "nat_platform_trace_observation" and before["traced"]:
+-                after = env["identify"](pid)
+-                matches.append({"before": before, "after": after})
+-                event("native_existing_trace_observation", before=before, after=after, no_trace_change=True)
++                try:
++                    after = env["identify"](pid)
++                except OSError as exc:
++                    note("native_existing_trace_observation", "NATIVE_OBSERVATION", lambda: dict(
++                        before=before, after=None, error=error(exc), stable_full_fingerprint=False, no_trace_change=True))
++                    continue
++                # A match requires the SAME full fingerprint twice with the traced flag still set.
++                stable = env["fingerprint"](before) == env["fingerprint"](after) and after["traced"] is True
++                note("native_existing_trace_observation", "NATIVE_OBSERVATION", lambda: dict(
++                    before=before, after=after, stable_full_fingerprint=stable, no_trace_change=True))
++                if stable:
++                    matches.append({"before": before, "after": after})
+             elif case == "nat_platform_mixed_uid_unreadable" and (before["euid"] == os.getuid() or before["ruid"] == os.getuid()) and before["euid"] != before["ruid"]:
+                 for name, fn in (("cwd", lambda: env["cwd_of"](pid)), ("argv", lambda: env["argv_of"](pid, s.arg_max)), ("task", lambda: env["task_of"](pid))):
+                     try:
+                         value, exc = fn(), None
+                     except OSError as e:
+                         value, exc = None, error(e)
+-                    after = env["identify"](pid)
+-                    event("native_existing_mixed_UID_read", before=before, after=after, operation_target=name, native_result=value,
+-                          error=exc, no_credential_or_trace_change=True)
+-                    if exc is not None and exc["errno"] in (errno.EPERM, errno.EACCES) and env["fingerprint"](before) == env["fingerprint"](after):
+-                        matches.append({"before": before, "after": after, "error": exc})
++                    try:
++                        after = env["identify"](pid)
++                    except OSError:
++                        after = None  # Incarnation not re-established: never a mixed-UID match.
++                    note("native_existing_mixed_UID_read", "NATIVE_OBSERVATION", lambda: dict(
++                        before=before, after=after, operation_target=name, native_result=value, error=exc,
++                        no_credential_or_trace_change=True))
++                    if exc is not None and after is not None and exc["errno"] in (errno.EPERM, errno.EACCES) and env["fingerprint"](before) == env["fingerprint"](after):
++                        matches.append({"before": before, "after": after, "error": exc, "operation_target": name})
+         if matches or not continuous:
+             break
+         time.sleep(0.05)
+@@ -1147,22 +1389,24 @@
+         # Genuine live owner acquisition, explicitly inserted only into a fresh
+         # verifier-negative input; never claimed as original supervisor evidence.
+         identity = ENV["identify"](os.getpid())
+-        _, raw = regular(root + "/fixture-outcome.json", 8 << 20)
++        original, raw = regular(root + "/fixture-outcome.json", 8 << 20)
+         obj = decode(raw)
+         obj["unresolved"] = [{"kind": "ORACLE_NEGATIVE_ACTUAL_LIVE_OWNER", "identity": identity}]
+         copy = exclusive(RUN + "/scratch/unresolved-outcome.json", packed(obj))
+-        out["objects"] = {"copy": copy, "actual_identity": identity, "scope": "ORACLE_NEGATIVE_INPUT_INSERTION"}
++        out["objects"] = {"original": original, "copy": copy, "actual_identity": identity, "replaced_keys": ["unresolved"],
++                          "scope": "ORACLE_NEGATIVE_INPUT_INSERTION"}
+     else:
+         before = []
+         pfd = directory(RUN + "/scratch")
+         try:
+             before = sorted(os.listdir(pfd))
++            scratch_inode = inode(pfd)
+         finally:
+             os.close(pfd)
+         before_mono = time.monotonic()
+         extra = exclusive(RUN + "/scratch/late.bin", b"fixed late artifact after empty captured inventory\n")
+-        out["objects"] = {"before_names": before, "before_mono": before_mono, "late_artifact": extra,
+-                          "reference_scope": "FRESH_ORACLE_NEGATIVE_INVENTORY_NOT_OLD_RUN_MUTATION"}
++        out["objects"] = {"before_names": before, "before_mono": before_mono, "scratch_directory_inode": scratch_inode,
++                          "late_artifact": extra, "reference_scope": "FRESH_ORACLE_NEGATIVE_INVENTORY_NOT_OLD_RUN_MUTATION"}
+     event("fresh_oracle_negative_bytes", "ORACLE_INPUT_NOT_NATIVE_SOURCE_OUTCOME", **out)
+     return out
+ 
+@@ -1199,7 +1443,7 @@
+         if os.path.lexists(member):
+             facts, raw = regular(member)
+             row = decode(raw)
+-            event("native_helper_member_original_record", artifact=facts, value=row)
++            note("native_helper_member_original_record", "NATIVE_OBSERVATION", lambda: dict(artifact=facts, value=row))
+             # Finite read-only observation of this fixed self-expiring member;
+             # no own wait right exists after leader exit, no broadened TERM.
+             until = min(END - 3.0, time.monotonic() + 22.0)
+@@ -1221,8 +1465,8 @@
+                 time.sleep(0.02)
+             if alive is not None and alive["uniqueid"] == row["identity"]["uniqueid"]:
+                 UNRESOLVED.append({"kind": "fixture_member_still_observable_after_bound", "original": row["identity"], "current": alive})
+-            event("native_helper_member_end_observation", pid=row["pid"], last_identity=alive,
+-                  parent_must_independently_prove_ended=True)
++            note("native_helper_member_end_observation", "NATIVE_OBSERVATION", lambda: dict(
++                pid=row["pid"], last_identity=alive, parent_must_independently_prove_ended=True))
+     if any(x.get("kind") == "source_sink_thread" for x in UNRESOLVED):
+         return
+     for fd, facts in list(proxy.fds.items()):
+@@ -1231,7 +1475,7 @@
+         try:
+             if inode(fd) == facts["inode"]:
+                 os.close(fd)
+-                event("native_fixture_releases_source_FD", fd=fd, original=facts)
++                note("native_fixture_releases_source_FD", "NATIVE_OBSERVATION", lambda: dict(fd=fd, original=facts))
+             else:
+                 UNRESOLVED.append({"kind": "source_FD_identity_changed", "fd": fd, "original": facts})
+         except OSError as exc:
+@@ -1245,13 +1489,14 @@
+     artifacts = []
+     for root in (RUN + "/out", RUN + "/tmp", RUN + "/scratch"):
+         artifacts.extend(inventory(root)[0])
+-    value = {"kind": "rqls10-guard-matrix-outcome-v1", "case": case, "scope": "MODIFIED_QUALIFICATION_FIXTURE",
++    value = {"kind": OUTCOME_KIND, "case": case, "scope": "MODIFIED_QUALIFICATION_FIXTURE",
+              "bindings": {"approval_sha256": TRUSTED, "request_sha256": APPROVAL["request_sha256"],
+                           **{k: REQUEST[k] for k in ("sources", "anchors", "allocation", "config", "go", "stability", "python", "created_facts",
+                                                     "hook_set", "negative_control", "ownership_negative", "case_spec_sha256", "derived_base")}},
+              "owner": {"pid": os.getpid(), "pgid": os.getpgrp(), "mono_begin": BEGIN, "mono_end": time.monotonic()},
+              "observations": EVENTS, "source_outcome": source_outcome, "source_state": state_view(), "artifacts": artifacts,
+              "fixture_processes": PROBES, "missing_prerequisites": MISSING, "unresolved": UNRESOLVED,
++             "native_wait_ledger": WAITS, "observation_failures": OBS_FAILURES,
+              "original_main_called": full, "selected_status_not_actual_exit": selected,
+              "terminal": {"source_sha256": SUP_SHA, "ast_lines": [2688, 2692], "unchanged": full},
+              "observed_maxrss_bytes": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss, "limits": LIMITS,

@@ -1,0 +1,109 @@
+--- control/beta_capture_audit_v3.py
++++ control/beta_capture_audit_v4.py
+@@ -204,7 +204,8 @@
+             active.add(pair)
+             stack.append((a, b, True))
+             if type(a) is dict:
+-                if len(a) != len(b) or any(type(k) is not str or k not in b for k in a):
++                if (len(a) != len(b) or any(type(k) is not str for k in b)
++                        or any(type(k) is not str or k not in b for k in a)):
+                     return False
+                 stack.extend((a[k], b[k], False) for k in a)
+             else:
+@@ -221,6 +222,11 @@
+             return False
+     return True
+ 
++def _keys(record, keys):
++    """Exact built-in JSON string keys on every schema boundary; str subclasses never alias authority."""
++    return type(record) is dict and all(type(k) is str for k in record) and set(record) == set(keys)
++
++
+ def _bound_job_dir(expectation):
+     job_dir = _get(expectation, "job_dir")
+     return job_dir if _norm_abs(job_dir) else None
+@@ -229,7 +235,7 @@
+ def _bound_capture_path(expectation, stream):
+     """Declared capture path of stream, or None when the parent binding is unusable."""
+     paths = _get(expectation, "capture_paths")
+-    if type(paths) is not dict or set(paths) != STREAM_KEYS:
++    if not _keys(paths, STREAM_KEYS):
+         return None
+     path = paths[stream]
+     if not _norm_abs(path):
+@@ -249,10 +255,10 @@
+     record = _get(captures, stream)
+     if record is _ABSENT or record is None or (type(record) is dict and _get(record, "present") is False):
+         return _MISSING, None
+-    if any(key not in STREAM_KEYS for key in captures):
++    if type(captures) is not dict or any(type(key) is not str or key not in STREAM_KEYS for key in captures):
+         return _INCOMPLETE, None
+     path = _bound_capture_path(expectation, stream)
+-    if path is None or type(record) is not dict or set(record) != CAPTURE_KEYS or record["present"] is not True:
++    if path is None or not _keys(record, CAPTURE_KEYS) or record["present"] is not True:
+         return _INCOMPLETE, None
+     seen, stored, digest = record["bytes_seen"], record["bytes_stored"], record["sha256"]
+     if (not _same_str(record["path"], path) or not _hex64(digest) or not _count(seen) or not _count(stored)
+@@ -282,7 +288,7 @@
+         return False
+     census = _names(_get(observed, "actual_artifact_names"))
+     ok = (RESULT_NAME in outputs and census is not None and set(census) == set(outputs)
+-          and set(artifacts) == set(outputs))
++          and _keys(artifacts, outputs))
+     for name in sorted(outputs):
+         if not _artifact_ok(_get(artifacts, name), job_dir + "/" + name, reader):
+             ok = False
+@@ -290,7 +296,7 @@
+ 
+ 
+ def _artifact_ok(record, path, reader):
+-    if type(record) is not dict or set(record) != ARTIFACT_KEYS:
++    if not _keys(record, ARTIFACT_KEYS):
+         return False
+     size, digest, ino, nlink = record["bytes"], record["sha256"], record["ino"], record["nlink"]
+     if (not _same_str(record["path"], path) or not _hex64(digest) or not _count(size) or size > READ_CAP
+@@ -302,7 +308,7 @@
+ 
+ def _settled(observed):
+     settlement = _get(observed, "settlement")
+-    if type(settlement) is not dict or set(settlement) != SETTLEMENT_KEYS:
++    if not _keys(settlement, SETTLEMENT_KEYS):
+         return False
+     unresolved, signals = settlement["unresolved"], settlement["signals"]
+     return (settlement["reaped"] is True and settlement["group_empty"] is True
+@@ -318,7 +324,7 @@
+     if type(mode) is not str or mode not in MODES or not _same_str(_get(observed, "mode"), mode):
+         ok = False
+     item = _get(expectation, "item")
+-    if type(item) is not str or item == "" or not _same_str(_get(observed, "item"), item):
++    if type(item) is not str or not _same_str(_get(observed, "item"), item):
+         ok = False
+     plan = _get(expectation, "plan_sha256")
+     if not _same_str(plan, AUTHORITY_PLAN_SHA256) or not _same_str(_get(observed, "plan_sha256"), plan):
+@@ -326,7 +332,7 @@
+     if not _receipt_ok(expectation, observed, reader):
+         ok = False
+     argv = _get(expectation, "resolved_argv")
+-    if (type(argv) is not list or len(argv) == 0 or not all(type(arg) is str for arg in argv)
++    if (type(argv) is not list or not all(type(arg) is str for arg in argv)
+             or not _exact(argv, _get(observed, "resolved_argv"))):
+         ok = False
+     go = _get(expectation, "go_sha256")
+@@ -343,7 +349,7 @@
+ 
+ 
+ def _record_ok(record, keys, form):
+-    return type(record) is dict and set(record) == keys and _same_str(record["format"], form)
++    return _keys(record, keys) and _same_str(record["format"], form)
+ 
+ 
+ def _receipt_ok(expectation, observed, reader):
+@@ -351,7 +357,7 @@
+     if not _norm_abs(path) or not _hex64(digest):
+         return False
+     receipt = _get(observed, "receipt")
+-    ok = (type(receipt) is dict and set(receipt) == RECEIPT_KEYS and _same_str(receipt["path"], path)
++    ok = (_keys(receipt, RECEIPT_KEYS) and _same_str(receipt["path"], path)
+           and _same_str(receipt["sha256"], digest))
+     data = reader.read(path)
+     return ok and data is not None and _sha256(data) == digest

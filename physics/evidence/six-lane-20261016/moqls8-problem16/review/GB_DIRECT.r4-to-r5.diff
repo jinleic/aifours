@@ -1,0 +1,62 @@
+--- gb_direct_r4.py
++++ gb_direct_r5.py
+@@ -1,4 +1,9 @@
+-"""GB direct-leaf production r4 (WORKER results; not parent-qualified evidence).
++"""GB direct-leaf production r5 (WORKER results; not parent-qualified evidence).
++
++r5 = r4 (80d731fe...80c0) + race-free HOLD: before every launch the gate also requires that the number of
++x-created HOLD-*.json markers in evidence/gb_direct_v5/hold/ does not exceed the number of RELEASE-*.json markers
++(markers are only ever created, never deleted). A running pipeline always finishes; the driver then waits
++(until the 17:29 cutoff) instead of being SIGTERMed at a boundary. Everything else is unchanged from r4.
+ 
+ r4 = r3 (619cc455...6e07) + GA-desk priority at launch: a new GB pipeline is launched only when NO GA desk
+ driver (argv/env containing the GA desk marker) is alive, and the launch gate waits for that condition until
+@@ -58,7 +63,8 @@
+ DRAT = '/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-16/review/moqls7-parent-proofcheck-v1/drat-trim'
+ DRAT_SHA = 'a46c0c717f702206a7fe345de5bcdc0b10112bca6bdbf04dd42cd9848ff08e37'
+ BODY_SHA = 'f5da05206f44ff72e5aeade076820e2de52c9d2352f58b048ded1df76bdbf1b9'
+-OUTBASE = ROOT/'evidence/gb_direct_v4'
++OUTBASE = ROOT/'evidence/gb_direct_v5'
++HOLD_DIR = OUTBASE/'hold'
+ OUTDIR = OUTBASE
+ TZ = ZoneInfo('America/Los_Angeles')
+ DEADLINE = datetime.fromisoformat('2026-10-18T17:55:00-07:00').timestamp()
+@@ -395,7 +401,10 @@
+ 
+ def gate(label):
+     fb = shutil.disk_usage(ROOT).free; used = lane_allocated(ROOT); ga = ga_usage()
+-    lane_ok = ga['ga_counted_bytes'] + AGG_CAP <= LANE_CAP_RSS and not ga['ga_roots'] and not ga['ga_unknown']
++    holds = len(list(HOLD_DIR.glob('HOLD-*.json'))); releases = len(list(HOLD_DIR.glob('RELEASE-*.json')))
++    ga['hold_markers'] = holds; ga['release_markers'] = releases
++    lane_ok = (ga['ga_counted_bytes'] + AGG_CAP <= LANE_CAP_RSS and not ga['ga_roots'] and not ga['ga_unknown']
++               and holds <= releases)
+     ok = (fb - MARGIN >= FRESH and used + MARGIN <= LANE_CAP and time.time() < LAUNCH_CUTOFF and lane_ok)
+     return {'item': label, 'at': now(), 'free_bytes': fb, 'lane_allocated_bytes': used, 'ga': ga,
+             'lane_rss_check': {'ga_counted': ga['ga_counted_bytes'], 'pipeline_cap': AGG_CAP, 'lane_cap': LANE_CAP_RSS, 'ok': lane_ok},
+@@ -413,7 +422,7 @@
+     OUTDIR = OUTBASE/('run-' + args.run_tag)
+     OUTDIR.mkdir(parents=True, exist_ok=False)
+     t_start = time.monotonic(); script_sha = sha_file(__file__)
+-    freeze = json.loads((ROOT/'review/GB_DIRECT_FREEZE.r4.json').read_bytes())
++    freeze = json.loads((ROOT/'review/GB_DIRECT_FREEZE.r5.json').read_bytes())
+     if freeze['script_sha256'] != script_sha:
+         raise SystemExit('probe script not frozen')
+     pins = {'generator': (GEN, GEN_SHA), 'own_hashes': (OWN, OWN_SHA), 'WMAN': (WMAN, WMAN_SHA),
+@@ -425,7 +434,7 @@
+     signal.signal(signal.SIGTERM, lambda *a: stopflag.update(sigterm=True))
+     for d in ('fifo', 'logs', 'tmp', 'receipts'):
+         (OUTDIR/d).mkdir(exist_ok=True)
+-    summary = {'schema': 'gb-direct-r4-summary/1', 'started_at': now(), 'script_sha256': script_sha, 'pins': pin_res,
++    summary = {'schema': 'gb-direct-r5-summary/1', 'started_at': now(), 'script_sha256': script_sha, 'pins': pin_res,
+                'run_tag': args.run_tag, 'start_at': args.start_at, 'item_order': ids,
+                'python': sys.version.split()[0], 'scope': 'WORKER GB direct-leaf results; not parent-qualified; no CNF/proof on disk',
+                'items': [], 'gates': []}
+@@ -530,7 +539,7 @@
+ def finish(summary, t_start):
+     summary['finished_at'] = now(); summary['seconds'] = round(time.monotonic() - t_start, 3)
+     summary['self_ru_maxrss_bytes'] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+-    sh = xjson(OUTDIR/'SUMMARY.r4.json', summary)
++    sh = xjson(OUTDIR/'SUMMARY.r5.json', summary)
+     print(json.dumps({'summary_sha256': sh, 'items': summary['items']}, default=str), flush=True)
+ 
+ 

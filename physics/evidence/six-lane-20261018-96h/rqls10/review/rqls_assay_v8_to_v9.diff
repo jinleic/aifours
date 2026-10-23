@@ -1,0 +1,331 @@
+--- code/rqls_assay_v8.py
++++ code/rqls_assay_v9.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""rqls_assay_v8: float feasibility assay for maximal 1-RQLS(10) (NOT a certificate; numeric results are UNKNOWN).
++"""rqls_assay_v9: float feasibility assay for maximal 1-RQLS(10) (NOT a certificate; numeric results are UNKNOWN).
+ 
+ Representation: a Latin square B (resolution) and unit vectors q_p, p in [v]^2, with every row, column and B-class an
+ orthonormal basis. Problems are given by representatives z_r and line slots (r, k) meaning the vector U^k z_r with U
+@@ -65,7 +65,26 @@
+ configuration. Recovery rates of known classical points do NOT transfer to unknown maximal configurations: an R7
+ negative is a scoped UNKNOWN, not a detection-power statement.
+ 
+-Usage: rqls_assay_v8.py OUT.jsonl GLOBAL_BUDGET_S CLASSICAL_JSON EX24_JSON EX24_SHA256 STOP_RECEIPT MODE(r7)
++v9 change (successor worker ContinueRQLS10b, after the settled v8 R7 run): ONE bounded R9 assay for the forced Z_9+1
++ansatz with its OWN in-run positive anchor, exactly in the pattern v7 used for Z_7+3. Representation (Problem, sym),
++Reduced parametrisation, LM, run_reduced, run_perturbed and the full verifier are byte-identical to v8; only main(),
++MODE, argv (two extra arguments: the Z_9+1 classical JSON and its sha256) and the new helper block below differ.
++Gates A, C1, C1p, C2, A5, C3r, C4r, KPc, KRc exactly as in v8 (regression replay of the audited R7 run), then:
++A9 = the 40 classical Z_9+1 instances (20 exact orthogonal pairs of evidence/z9p1_classical_search_v1.result.json x 2
++roles, eigen-label m* = 0) are exact orthogonal pairs, zeros of the reduced residual (< 1e-12) and verify on the full
++configuration with 10 rays; A9m = a one-vector mutation of instance 0 must fail (reduced residual and maxdev >= 0.5);
++K9P = anchor + amp * N(0,1) on all 189 parameters, amp in {1e-3, 1e-2, 0.1, 0.5}, four instances x four seeds, LM <= 200
++iterations (gate: every amp 1e-3 and 1e-2 run verifies with 10 rays, and no LM-converged endpoint fails verification);
++K9R = 128 random LM starts on random classical instances (gate: >= 1 verified; zero converged-but-unverified; verified
++non-classical endpoints are recorded, not gated; any maximal endpoint is frozen with theta/Z/B as in run_reduced).
++R9 = the Z_9+1 resolution squares with D_inf = {0} (w.l.o.g. by column translation), m* = 0 (w.l.o.g.: U -> omega^-c U
++plus a coordinate permutation), enumerated exactly and reduced to classes under symbol translation, the multipliers
++u in Z_9^* and transposition; all classes (if <= R9_MAX_CLASSES) else a seeded sample, x R9_STARTS deterministic LM starts
++(seeds 90000 + R9_STARTS * cfg + j), 200 LM iterations each, every endpoint verified on the full configuration.
++Recovery rates of known classical points do NOT transfer to unknown maximal configurations: an R9 negative is a scoped
++UNKNOWN, not a detection-power statement.
++
++Usage: rqls_assay_v9.py OUT.jsonl GLOBAL_BUDGET_S CLASSICAL_JSON EX24_JSON EX24_SHA256 STOP_RECEIPT MODE(r9) Z9_JSON Z9_SHA256
+ Exit codes: 0 completed (or ended by budget), 2 exception, 3 gate failure, 4 cap stop, 5 terminated by SIGTERM.
+ """
+ import hashlib, itertools, json, math, os, signal, sys, time
+@@ -74,7 +93,8 @@
+ SRC_SHA = hashlib.sha256(open(os.path.abspath(__file__), "rb").read()).hexdigest()
+ OUT, GLOBAL_BUDGET, CLASSICAL_JSON, EX24_JSON, EX24_SHA, STOP_RECEIPT, MODE = (sys.argv[1], float(sys.argv[2]), sys.argv[3],
+                                                                               sys.argv[4], sys.argv[5], sys.argv[6], sys.argv[7])
+-if MODE not in ("r7",):
++Z9_JSON, Z9_SHA = sys.argv[8], sys.argv[9]
++if MODE not in ("r9",):
+     sys.exit(7)
+ TERM = [False]
+ STAGE = ["init"]
+@@ -982,9 +1002,135 @@
+     W.write(rec)
+     return rec
+ 
++# ====================================================================== v9: Z_9 + 1 anchors, enumeration and helpers
++OMEGA9 = np.exp(2j * np.pi / 9)
++R9_MAX_CLASSES = 256
++R9_TARGET_RUNS = 2048
++
++
++def enc9(sym_):
++    z = np.zeros(10, dtype=complex)
++    if sym_ < 9:
++        z[:9] = OMEGA9 ** (np.arange(9) * sym_) / 3.0
++    else:
++        z[9] = 1.0
++    return z
++
++
++def z9_array(d_inf, beta, gamma, delta):
++    """Z_9 + 1 square (symbol 9 = inf); identical to build() of code/z9p1_classical_search_v1.py."""
++    X = [[None] * 10 for _ in range(10)]
++    for i in range(9):
++        for d in range(9):
++            X[i][(i + d) % 9] = 9 if d == d_inf else (i + beta[d]) % 9
++    for j in range(9):
++        X[9][j] = (j + gamma) % 9
++    for i in range(9):
++        X[i][9] = (i + delta) % 9
++    X[9][9] = 9
++    return X
++
++
++def z9p1_reduced(hit, role, mstar=0):
++    """Classical Z_9 + 1 anchor, constructed as parker_reduced (n = 9, h = 1). role 'A': resolution A, vectors from
++    the mate B; role 'B': the reverse. Returns (R, theta_c, exact_orthogonal_pair, Q array)."""
++    bA = {int(k): int(v) for k, v in hit["betaA"].items()}
++    bB = {int(k): int(v) for k, v in hit["betaB"].items()}
++    A = z9_array(0, bA, int(hit["gammaA"]), int(hit["deltaA"]))
++    B = z9_array(int(hit["e"]), bB, int(hit["gammaB"]), int(hit["deltaB"]))
++    orth = latin(A) and latin(B) and len({(A[i][j], B[i][j]) for i in range(10) for j in range(10)}) == 100
++    if role == "A":
++        d_inf, beta, gam, dlt, Q = 0, bA, int(hit["gammaA"]), int(hit["deltaA"]), B
++    else:
++        d_inf, beta, gam, dlt, Q = int(hit["e"]), bB, int(hit["gammaB"]), int(hit["deltaB"]), A
++    R = Reduced(9, 1, [d_inf], beta, [gam], [dlt], [[0]], list(range(9)) + [mstar], [[mstar]])
++    th = np.zeros(R.npar)
++    k = R.nv * R.v
++    for j, d in enumerate(R.Dfin):
++        z = enc9(Q[0][d])
++        th[j * R.v:(j + 1) * R.v] = z.real
++        th[k + j * R.v:k + (j + 1) * R.v] = z.imag
++    base = 2 * k
++    th[base] = math.pi / 2                     # the single corner ray: t = pi/2, f = 0, i.e. e_inf
++    th[base + 1] = 0.0
++    base2 = base + 2 * R.ncorner
++    syms = {("u", 0): Q[0][d_inf], ("w", 0): Q[9][0], ("wp", 0): Q[0][9]}
++    twos = set(int(x) for x in R.MI)
++    for fi, fl in enumerate(R.flats):
++        s_ = syms[fl]
++        for m in range(9):
++            ph = 2 * math.pi * m * s_ / 9
++            if m in twos:
++                ph += math.pi
++            th[base2 + fi * 9 + m] = ph
++    return R, th, orth, Q
++
++
++def z9_mutant(R, th, Q):
++    """A9m: replace v_(Dfin[0]) by the encoding of another symbol of row 0 (a duplicate ray in R0)."""
++    th2 = th.copy()
++    s0 = Q[0][R.Dfin[0]]
++    z = enc9((s0 + 1) % 9 if s0 < 9 else 0)
++    k = R.nv * R.v
++    th2[0:R.v] = z.real
++    th2[k:k + R.v] = z.imag
++    return th2
++
++
++def z9_all_betas():
++    """every beta on D_fin = {1..8} with beta and beta - id injective (Z_9 + 1 squares with D_inf = {0})."""
++    out, vals, usedv, usedw = [], [None] * 8, set(), set()
++
++    def rec(k):
++        if k == 8:
++            out.append(tuple(vals))
++            return
++        d = k + 1
++        for x in range(9):
++            w = (x - d) % 9
++            if x in usedv or w in usedw:
++                continue
++            usedv.add(x)
++            usedw.add(w)
++            vals[k] = x
++            rec(k + 1)
++            usedv.discard(x)
++            usedw.discard(w)
++    rec(0)
++    return out
++
++
++def z9_canon(bt):
++    """canonical form of beta (tuple over d = 1..8) under symbol translation beta + c, multipliers
++    beta'(u d) = u beta(d) (u in Z_9^*) and transposition beta^T(d) = d + beta(-d)."""
++    best = None
++    for tr in (False, True):
++        b0 = {d: bt[d - 1] for d in range(1, 9)}
++        if tr:
++            b0 = {d: (d + b0[(-d) % 9]) % 9 for d in range(1, 9)}
++        for u in (1, 2, 4, 5, 7, 8):
++            bu = {(u * d) % 9: (u * b0[d]) % 9 for d in range(1, 9)}
++            for c in range(9):
++                key = tuple((bu[d] + c) % 9 for d in range(1, 9))
++                if best is None or key < best:
++                    best = key
++    return best
++
++
++def z9_config(bt):
++    beta = {d: bt[d - 1] for d in range(1, 9)}
++    gam = sorted(set(range(9)) - {(beta[d] - d) % 9 for d in range(1, 9)})
++    dlt = sorted(set(range(9)) - set(beta.values()))
++    return beta, gam, dlt
++
++
++def mismatches(recs):
++    """LM-converged endpoints (reduced residual < 1e-13) that fail the full verification: a model defect, not a result."""
++    return [r for r in recs if r != "SKIPPED" and r["status"] == "CONVERGED" and r["maxdev"] >= 1e-8]
++
+ 
+ def main():
+-    W.write({"assay": "rqls_assay_v8", "mode": MODE, "src_sha256": SRC_SHA, "numpy": np.__version__, "python": sys.version,
++    W.write({"assay": "rqls_assay_v9", "mode": MODE, "src_sha256": SRC_SHA, "numpy": np.__version__, "python": sys.version,
+              "flags": {"optimize": sys.flags.optimize, "isolated": sys.flags.isolated, "dont_write_bytecode": sys.flags.dont_write_bytecode},
+              "budget_s": GLOBAL_BUDGET, "argv": sys.argv[1:],
+              "env": {k: os.environ.get(k) for k in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "MKL_NUM_THREADS", "TMPDIR")}})
+@@ -992,8 +1138,11 @@
+         W.write({"GATE": "python_optimize_flag", "pass": False})
+         raise GateFail("optimize flag set")
+     classical = json.load(open(CLASSICAL_JSON))
++    z9raw = open(Z9_JSON, "rb").read()
++    z9sha = hashlib.sha256(z9raw).hexdigest()
++    z9 = json.loads(z9raw.decode("utf-8"))
+     plan = [("A", 30), ("C1", 25), ("C1p", 40), ("C2", 30), ("A5", 10), ("C3r", 40), ("C4r", 70), ("KPc", 20), ("KRc", 40),
+-            ("R7", GLOBAL_BUDGET - 305 - 15)]
++            ("A9", 30), ("K9P", 90), ("K9R", 150), ("R9", GLOBAL_BUDGET - 575 - 15)]
+     ends, acc, t0 = {}, 0, time.monotonic()
+     for tag, b in plan:
+         acc += b
+@@ -1072,31 +1221,111 @@
+          {"runs": len(ran), "verified_seeds": [r["seed"] for r in ver], "v7_verified_seeds": expected_v7,
+           "replay_matches_v7": [r["seed"] for r in ver] == expected_v7,
+           "rule": "32 runs, >= 1 verified, every verified solution classical (10 rays); v7 match recorded, not gated"})
+-    STAGE[0] = "R7"
+-    L3 = latin3_all()
+-    rcfg = np.random.default_rng(20261019)
+-    recs, cfg, seen, attempts = [], 0, set(), 0
+-    while cfg < 256 and not over(ends["R7"]):
+-        attempts += 1
+-        Dinf, beta, gam, dlt, Lc, D2, M = T1_config(rcfg, L3)
+-        conf = {"Dinf": Dinf, "beta": {str(kk): vv for kk, vv in beta.items()}, "gamma": gam, "delta": dlt, "L": Lc, "D2": D2, "M": M}
+-        key = json.dumps(conf, sort_keys=True)
+-        if key in seen:
+-            W.write({"tag": "R7_forced_reduced", "config": conf, "status": "DUPLICATE_CONFIG", "attempt": attempts})
++    STAGE[0] = "A9"
++    hits9 = z9["first_hits"]
++    a9, inst = [], {}
++    for hi, hit in enumerate(hits9):
++        for role in ("A", "B"):
++            R, thc, orth, Q = z9p1_reduced(hit, role, 0)
++            inst[(hi, role)] = (R, thc, Q)
++            r0 = float(np.linalg.norm(R.resid(thc)))
++            md, ry, ms = R.P.verify(R.Z_full(thc))
++            a9.append({"hit": hi, "role": role, "orthogonal_pair": bool(orth), "reduced_resid": r0, "maxdev": md, "rays": ry,
++                       "npar": R.npar})
++    W.write({"tag": "A9_z9p1_classical_anchors", "instances": a9})
++    gate("A9_z9p1_classical_anchors",
++         z9sha == Z9_SHA and len(hits9) == 20 and len(a9) == 40 and
++         all(x["orthogonal_pair"] and x["reduced_resid"] < 1e-12 and x["maxdev"] < 1e-12 and x["rays"] == 10 for x in a9),
++         {"z9_sha_ok": z9sha == Z9_SHA, "instances": len(a9), "max_reduced_resid": max(x["reduced_resid"] for x in a9),
++          "max_maxdev": max(x["maxdev"] for x in a9), "rays": sorted(set(x["rays"] for x in a9)),
++          "rule": "sha256 pin; 20 hits x 2 roles; each an exact orthogonal pair, reduced residual < 1e-12, full maxdev < 1e-12, 10 rays"})
++    R, thc, Q = inst[(0, "A")]
++    thm = z9_mutant(R, thc, Q)
++    rm = float(np.linalg.norm(R.resid(thm)))
++    mdm, rym, msm = R.P.verify(R.Z_full(thm))
++    gate("A9m_z9p1_mutation_negative", rm >= 0.5 and mdm >= 0.5,
++         {"reduced_resid": rm, "maxdev": mdm, "rays": rym,
++          "rule": "one-vector mutation of instance (0, A): reduced residual >= 0.5 and full maxdev >= 0.5"})
++    STAGE[0] = "K9P"
++    k9_inst = [(0, "A"), (1, "B"), (2, "A"), (3, "B")]
++    kp9 = []
++    for ii, (hi, role) in enumerate(k9_inst):
++        R, thc, Q = inst[(hi, role)]
++        for ai, amp in enumerate((1e-3, 1e-2, 0.1, 0.5)):
++            for j in range(4):
++                if over(ends["K9P"]):
++                    break
++                kp9.append(run_perturbed(R, thc, amp, 60000 + 1000 * ii + 100 * ai + j, 200, ends["K9P"],
++                                         {"stage": "K9P", "instance": ii, "hit": hi, "role": role}))
++    small = [r for r in kp9 if r["amp"] <= 1e-2]
++    mm9 = mismatches(kp9)
++    W.write({"summary": "K9P_z9p1_near_anchor",
++             "by_amp_runs_verified": {str(a): [sum(1 for r in kp9 if r["amp"] == a), sum(1 for r in kp9 if r["amp"] == a and r["verified"])]
++                                      for a in (1e-3, 1e-2, 0.1, 0.5)},
++             "verified_rays": sorted(set(r["rays"] for r in kp9 if r["verified"])), "elapsed_s": round(elapsed(), 2)})
++    gate("K9P_z9p1_near_anchor", len(small) == 32 and all(r["verified"] and r["rays"] == 10 for r in small) and not mm9,
++         {"runs": len(kp9), "small_amp_runs": len(small),
++          "small_amp_verified_10": sum(1 for r in small if r["verified"] and r["rays"] == 10), "converged_not_verified": len(mm9),
++          "rule": "all 32 runs at amp 1e-3 and 1e-2 verify with 10 rays; zero LM-converged endpoints failing verification (all amps)"})
++    STAGE[0] = "K9R"
++    rk9 = np.random.default_rng(424242)
++    recs9, k = [], 0
++    while k < 128 and not over(ends["K9R"]):
++        hi = int(rk9.integers(len(hits9)))
++        role = "A" if rk9.integers(2) == 0 else "B"
++        R, thc, Q = inst[(hi, role)]
++        recs9 += run_reduced(R, "K9R_random_start_known_classical", [95000 + k], 200, ends["K9R"], extra={"hit": hi, "role": role})
++        k += 1
++    summary_red("K9R_random_start_known_classical", recs9)
++    ran9 = [r for r in recs9 if r != "SKIPPED"]
++    ver9 = [r for r in ran9 if r["maxdev"] < 1e-8]
++    mmr = mismatches(recs9)
++    gate("K9R_known_classical_recovery", len(ran9) >= 64 and len(ver9) >= 1 and not mmr,
++         {"runs": len(ran9), "verified": len(ver9), "verified_seeds": [r["seed"] for r in ver9],
++          "verified_rays": sorted(set(r["rays"] for r in ver9)), "nonclassical_verified_seeds": [r["seed"] for r in ver9 if r["rays"] != 10],
++          "converged_not_verified": len(mmr),
++          "rule": ">= 64 runs, >= 1 verified, zero converged-but-unverified; ray counts recorded, not gated"})
++    STAGE[0] = "R9"
++    allb = z9_all_betas()
++    canon = sorted({z9_canon(bt) for bt in allb})
++    known = set()
++    for hit in hits9:
++        bA = {int(kk): int(vv) for kk, vv in hit["betaA"].items()}
++        bB = {int(kk): int(vv) for kk, vv in hit["betaB"].items()}
++        e9 = int(hit["e"])
++        known.add(z9_canon(tuple(bA[d] for d in range(1, 9))))
++        known.add(z9_canon(tuple(bB[(d + e9) % 9] for d in range(1, 9))))
++    if len(canon) <= R9_MAX_CLASSES:
++        chosen = canon
++    else:
++        rs9 = np.random.default_rng(20261020)
++        chosen = [canon[i] for i in sorted(int(x) for x in rs9.choice(len(canon), R9_MAX_CLASSES, replace=False))]
++    starts = max(8, min(64, R9_TARGET_RUNS // max(1, len(chosen))))
++    W.write({"summary": "R9_enumeration", "betas": len(allb), "classes": len(canon), "chosen": len(chosen),
++             "starts_per_class": starts, "classes_with_known_classical_pair": len(known & set(chosen)),
++             "equivalences": "symbol translation, multipliers u in Z_9^*, transposition; D_inf = {0}, m* = 0 (both w.l.o.g.)"})
++    recs, cfg = [], 0
++    for bt in chosen:
++        if over(ends["R9"]):
++            break
++        beta, gam, dlt = z9_config(bt)
++        conf = {"beta": {str(kk): vv for kk, vv in beta.items()}, "gamma": gam, "delta": dlt, "Dinf": [0], "mstar": 0,
++                "cfg": cfg, "known_classical_class": bt in known}
++        try:
++            R = Reduced(9, 1, [0], beta, gam, dlt, [[0]], list(range(9)) + [0], [[0]])
++        except AssertionError as ex:
++            W.write({"tag": "R9_9p1_reduced", "config": conf, "status": "BAD_CONFIG", "why": repr(ex)})
++            cfg += 1
+             continue
+-        seen.add(key)
+-        try:
+-            R = Reduced(7, 3, Dinf, beta, gam, dlt, Lc, list(range(7)) + D2, M)
+-        except AssertionError as ex:
+-            W.write({"tag": "R7_forced_reduced", "config": conf, "status": "BAD_CONFIG", "why": repr(ex), "attempt": attempts})
+-            continue
+-        conf["cfg"] = cfg
+-        recs += run_reduced(R, "R7_forced_reduced", [80000 + 8 * cfg + j for j in range(8)], 200, ends["R7"], extra=conf)
++        recs += run_reduced(R, "R9_9p1_reduced", [90000 + starts * cfg + j for j in range(starts)], 200, ends["R9"], extra=conf)
+         cfg += 1
+-    summary_red("R7_forced_reduced", recs)
+-    W.write({"summary": "R7_counts", "configs_completed_or_started": cfg, "generator_attempts": attempts,
++    summary_red("R9_9p1_reduced", recs)
++    mmt = mismatches(recs)
++    W.write({"summary": "R9_counts", "classes_started": cfg, "classes_chosen": len(chosen),
+              "runs_recorded": len([r for r in recs if r != "SKIPPED"]), "skipped": len([r for r in recs if r == "SKIPPED"]),
+-             "target_configs": 256, "starts_per_config": 8})
++             "starts_per_class": starts, "converged_not_verified_MODEL_DEFECT": len(mmt),
++             "verified_by_known_classical_class": [sum(1 for r in recs if r != "SKIPPED" and r["maxdev"] < 1e-8 and r["config"]["known_classical_class"] == kc)
++                                                   for kc in (True, False)]})
+     W.write({"end": True, "mode": MODE, "terminated": TERM[0], "elapsed_s": round(elapsed(), 2), "records": W.records, "bytes": W.n})
+     return 0
+ 

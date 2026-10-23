@@ -1,0 +1,3 @@
+# Terminal frontierv4 — provider-name binding
+
+Recorded 2026-10-21T06:01:07-0700 (`/bin/date`). All `1K1` entries in [olson-terminal-frontier-v4-UPAR.md](/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/review/olson-terminal-frontier-v4-UPAR.md) andtheinterimreporttables mean the SAME acceptedprovider **LOWER-K1** fromfrontierv3'sliteral dictionary andolson-LOWER-K1-parent-verdict-v1.md. No newK1theoremorchangedrangeisintroduced. FuturetablesmustspellLOWER-K1infull. AllsixpartitionsandthegeneralcomplementpassedthefocusedCodexreview0F/0M/1m; thisdisposestheonlyprovider-namefinding.

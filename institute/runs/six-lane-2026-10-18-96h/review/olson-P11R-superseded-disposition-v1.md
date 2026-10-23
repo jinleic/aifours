@@ -1,0 +1,5 @@
+# Olson P11R — review disposition: superseded by accepted FCW, not promoted
+
+Recorded 2026-10-20T03:14:50-0700 (`/bin/date`). P11R (/Users/jinleic/repos/aifours/mathematics/evidence/six-lane-20261018-96h/olson/continuations/kappa3-p11-residual/proof-P11R-v1.md, 6ee3df0985f02d01e6cde08c88944791b91dbc76e389e20f16e6b9accec87ac4) is an UNREVIEWED partial result with an exact obstruction for the (kappa_hat,p)=(3,11) H11-failing residual. Accepted FCW (/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/review/olson-FCW-parent-verdict-v1.md, b28837c9c8a9549b99a6c2205e8bbe40d65ab1aad265595c511395d4c1738f71) now excludes the ENTIRE terminal (3,11) cell without using P11R, K3-11 or any H11 hypothesis. P11R therefore has no remaining consumer in the Olson frontier.
+
+Under the owner's one-third throttle, P11R's queued two-family review is withdrawn as unnecessary. P11R remains UNREVIEWED and is not promoted: neither its partial structure nor its stated obstruction (including its unproved two-signed-pattern connectivity claim, FCW LF267–269) is accepted or rejected. It stays as disclosed untrusted context only. No novelty, Lean, human or runtime claim.

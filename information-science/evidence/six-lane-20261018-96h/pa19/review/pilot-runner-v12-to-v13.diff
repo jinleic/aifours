@@ -1,0 +1,155 @@
+--- code/pilot_file_drat_v12.py	2026-10-19 01:03:19.634942277 -0700
++++ code/pilot_file_drat_v13.py	2026-10-19 01:11:54.689956956 -0700
+@@ -1,5 +1,14 @@
+ #!/usr/bin/env python3
+-"""PA19 96h pilot runner v12 = v11 + fixes for Codex r4 (review/codex-pilot-v11-r4/result.json 92eb788e...):
++"""PA19 96h pilot runner v13 = v12 + fixes for the Codex r5 cleanup findings (review/codex-pilot-v12-r5/result.json
++545eb709...; R4#2-#5 resolved there):
++  r5#1 settle-all sets the emergency stop WITHOUT polling and retries settle() inside a protected loop.
++  r5#2 single SIGTERM: the timestamp is computed before send_signal and the delivery marker is stored
++       immediately after it returns, with no fallible call in between (term() and reap_robust()).
++  r5#3 an existing quarantine receipt counts as published only if it parses and names this pid; a partial
++       artifact is preserved and reported as a publication failure.
++  r5#4 receipt publication is bounded (20 attempts); after the child is reaped the reaper returns and a
++       missing/failed receipt is carried into settlement as UNSETTLED with the latch held.
++PA19 96h pilot runner v12 notes follow (= v11 + fixes for Codex r4, review/codex-pilot-v11-r4/result.json 92eb788e...):
+   r4#1 cleanup: emergency stop state is set before any fallible logging; Child.term marks delivery only
+        after send_signal returns (undelivered SIGTERM is retried); reap_robust protects its whole retry
+        path (including back-off), polls instead of blocking so a pending quarantine receipt is retried
+@@ -516,6 +525,7 @@
+         self.inputs, self.reserve = inputs, reserve
+         self.proc, self.pid, self.pgid, self.started = None, None, None, None
+         self.quarantined, self.refused = False, None
++        self.quarantine_receipt_state = "none"
+         self.lane_before = None
+         self.capture = open(self.out_path, "xb")  # outputs prepared BEFORE admission and spawn
+         child_env = dict(CHILD_ENV, TMPDIR=cwd)   # r4#5: private TMPDIR inside the run tree
+@@ -593,41 +603,45 @@
+         if self.term_sent_at is None and self.proc.returncode is None:
+             if self.stop is None:
+                 self.stop = reason
+-            self.proc.send_signal(signal.SIGTERM)  # Popen polls first; never signals a reaped PID
+-            self.term_sent_at = time.time()        # r4#1: marked only after delivery returned
++            ts = time.time()                        # r5#2: computed before delivery
++            self.proc.send_signal(signal.SIGTERM)   # Popen polls first; never signals a reaped PID
++            self.term_sent_at = ts                  # stored immediately after send_signal returns
+ 
+     def reap_robust(self):
+         """r3#1/r4#1: exception-resistant reap state machine.  The whole retry path is protected; it
+         polls (never blocks) so a pending quarantine receipt keeps being retried; a SIGTERM is (re)tried
+         only while undelivered and only if termination was requested; it returns only after the retained
+         Popen is reaped."""
+-        receipt_pending = False
++        attempts = 0
+         while True:
+             try:
+                 if self.stop is not None and self.term_sent_at is None and self.proc.returncode is None:
++                    ts = time.time()                       # r5#2
+                     self.proc.send_signal(signal.SIGTERM)
+-                    self.term_sent_at = time.time()
++                    self.term_sent_at = ts
+                 if self.term_sent_at is not None and not self.quarantined and self.proc.poll() is None \
+                         and time.time() >= self.term_sent_at + TERM_WAIT:
+                     self.quarantined = True
+-                    receipt_pending = True
++                    self.quarantine_receipt_state = "pending"
+                     try:
+                         latch("quarantine pid %d" % self.pid)
+                     except BaseException:
+                         pass
+-                if receipt_pending:
++                if self.quarantine_receipt_state == "pending":
++                    attempts += 1
+                     try:
+                         write_x(self.quarantine_path, {"pid": self.pid, "pgid": self.pgid, "argv": self.argv,
+                                                        "epoch": time.time(), "note": "survived SIGTERM + 60 s; "
+                                                        "no further signal; runner keeps waiting"})
+-                        receipt_pending = False
+-                    except FileExistsError:
+-                        receipt_pending = False
++                        self.quarantine_receipt_state = "written"
++                    except FileExistsError:                # r5#3: validate, never assume
++                        self.quarantine_receipt_state = "written" if self._receipt_valid() else "failed"
+                     except BaseException:
+-                        self.quarantine_receipt_failures = getattr(self, "quarantine_receipt_failures", 0) + 1
++                        if attempts >= 20:                 # r5#4: bounded publication attempts
++                            self.quarantine_receipt_state = "failed"
+                 rc = self.proc.poll()
+-                if rc is not None and not receipt_pending:
+-                    return self.proc.wait()
++                if rc is not None:
++                    return self.proc.wait()                # r5#4: reaped -> leave; receipt state is settled later
+                 time.sleep(0.1)
+             except BaseException:
+                 try:
+@@ -635,6 +649,14 @@
+                 except BaseException:
+                     pass
+ 
++    def _receipt_valid(self):
++        try:
++            with open(self.quarantine_path, "rb") as f:
++                d = json.loads(f.read())
++            return isinstance(d, dict) and d.get("pid") == self.pid and "note" in d
++        except BaseException:
++            return False
++
+     def census(self):
+         """Other processes with ppid==child or pgid==child (excluding the child itself)."""
+         rows = ps_table()
+@@ -649,6 +671,8 @@
+             return self.settled_rec
+         problems = []
+         rc = self.reap_robust()
++        if self.quarantined and self.quarantine_receipt_state != "written":
++            problems.append("quarantine receipt not published (%s)" % self.quarantine_receipt_state)
+         stream_alive = None
+         if self.reader is not None:
+             self.reader.join(STREAM_JOIN)
+@@ -809,11 +833,14 @@
+         lines = segments(ch.out_path) if rec.get("stream_thread_alive_after_join") is False else []
+         return rec, lines, []
+     finally:
+-        for c in OWNED:
+-            if c.proc is not None and c.settled_rec is None:
+-                if c.stop is None and c.proc.poll() is None:
+-                    c.stop = "runner_escape_cleanup"  # r4#1: request termination before settling
+-                c.settle()  # any escape above still reaps and settles every owned child
++        for c in list(OWNED):
++            while c.proc is not None and c.settled_rec is None:
++                try:
++                    if c.stop is None:
++                        c.stop = "runner_escape_cleanup"  # r5#1: emergency stop without polling first
++                    c.settle()  # protected retry: any escape above still reaps and settles every owned child
++                except BaseException:
++                    continue
+         if sink is not None and (ch is None or ch.proc is None):
+             sink.finish()  # never-spawned producer: unblock and join the reader
+ 
+@@ -1099,7 +1126,7 @@
+     signal.signal(signal.SIGTERM, on_term)
+     signal.signal(signal.SIGINT, on_term)
+     if len(sys.argv) != 4:
+-        print("usage: pilot_file_drat_v12.py GO.json GO_SHA256 OUT_DIR", flush=True)
++        print("usage: pilot_file_drat_v13.py GO.json GO_SHA256 OUT_DIR", flush=True)
+         return EXIT_PRESTART_REFUSED
+     go_path, go_sha, out_dir = sys.argv[1], sys.argv[2], os.path.abspath(sys.argv[3])
+     if not out_dir.startswith(LANE + "/evidence/pilot-v1/"):
+@@ -1129,7 +1156,7 @@
+                  remaining_reserve=RUN_RESERVE + CONTROL_RESERVE + len(ITEMS) * ITEM_RESERVE,
+                  go={"path": go_path, "sha256": go_sha}, runner_sha=self_sha)
+     launch = {
+-        "schema": "PA19-96H-PILOT-LAUNCH-v12", "host_clock": clock(), "owner": "ContinuePA19",
++        "schema": "PA19-96H-PILOT-LAUNCH-v13", "host_clock": clock(), "owner": "ContinuePA19",
+         "go": STATE["go"], "runner": {"path": os.path.abspath(__file__), "sha256": self_sha},
+         "pid": os.getpid(), "ppid": os.getppid(), "pgid": os.getpgid(0), "cwd": os.getcwd(), "argv": sys.argv,
+         "python": sys.version, "binaries": {"kissat": KISSAT, "drat_trim_lane_copy": DRAT, "drat_trim_old": DRAT_OLD},
+@@ -1153,7 +1180,7 @@
+     run_record = os.path.join(out_dir, "launch-record.json")
+     STATE["run_record"] = {"path": run_record, "sha256": write_x(run_record, launch)}
+     print("LAUNCH_RECORD", run_record, flush=True)
+-    summary = {"schema": "PA19-96H-PILOT-SUMMARY-v12", "items": {}, "controls_ok": None, "stopped": None,
++    summary = {"schema": "PA19-96H-PILOT-SUMMARY-v13", "items": {}, "controls_ok": None, "stopped": None,
+                "terminal_policy": "exit code reports runner execution only; per-item records carry the scientific "
+                                   "status; an item counts only if qualify_unsat, the terminal gate and the commit "
+                                   "boundary all pass; case closure is decided by the parent audit"}

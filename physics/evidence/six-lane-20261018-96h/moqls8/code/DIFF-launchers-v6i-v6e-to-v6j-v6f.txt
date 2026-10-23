@@ -1,0 +1,124 @@
+Lane ContinueMOQLS8 launcher successors, recorded 2026-10-19T00:38:43-0700.
+launch_ga_v6j.py sha256 4271b44a851a3c51c62c94b0e5bfead09f5122e790372ab30ecd35232fcf1d2c
+launch_gb_v6f.py sha256 3f541005b2d7dd6de4beb3438afb2289ca0f234f0408b52997b7ae8a614f8d9f
+Only change: no post-spawn stdout/stderr output; fallback settlement path named in the launch record; schema numbers.
+
+--- code/launch_ga_v6i.py
++++ code/launch_ga_v6j.py
+@@ -26,9 +26,11 @@
+ any launcher error or recorded launcher signal occurred, 2 for a refused launch (no spawn). Registration handshake: the driver receives the launch
+ record path (MOQLS8_LAUNCH_RECORD) and refuses every native spawn until that record is published and names it, so no
+-native can run before registration. A failed announcement (stdout) after a successful publication is only recorded.
+-Settlement: the record write and its announcement are guarded separately; if the primary settlement write fails, a
+-minimal record goes to the reserved fallback file; the exit-status decision always runs. (Successor of
++native can run before registration. After the spawn the launcher writes NOTHING to stdout or stderr (the published
++records are the only reports), so a full or broken stdout can neither block reaping/settlement nor alter the exit
++status. Settlement: if the primary settlement write fails, a minimal record goes to the reserved fallback file (both
++paths are named in the launch record); the exit-status decision always runs. (Successor of
+ launch_ga_v6f.py, launch_ga_v6g.py and launch_ga_v6h.py, which are kept unchanged and never used.)
+-Usage: /usr/bin/python3 -I -B launch_ga_v6i.py PREEXEC GO_RECORD"""
++Usage: /usr/bin/python3 -I -B launch_ga_v6j.py PREEXEC GO_RECORD
++(Successor of launch_ga_v6i.py and its predecessors, all kept unchanged and never used.)"""
+ import datetime
+ import hashlib
+@@ -177,5 +179,5 @@
+         try:  # EVERY step until a successful publication: any failure -> one owned SIGTERM (fail closed)
+             os.close(fds.pop("console"))  # only the driver holds the console log now
+-            rec = {"schema": "moqls8-lane-launch-record/7", "owner": "ContinueMOQLS8 (phys-1 lane worker)",
++            rec = {"schema": "moqls8-lane-launch-record/8", "owner": "ContinueMOQLS8 (phys-1 lane worker)",
+                    "launcher": {"path": me, "sha256": me_sha, "pid": os.getpid(), "pgid": os.getpgrp()},
+                    "items": items, "parent_go": {"path": go, "sha256": go_sha},
+@@ -205,5 +207,6 @@
+                    "outputs": {"desk": DESK, "console_log": console, "receipts": DESK + "/receipts/",
+                                "logs": DESK + "/logs/", "fifo": DESK + "/fifo/", "tmp": DESK + "/tmp/",
+-                               "runs": DESK + "/runs/", "settlement_record": settle},
++                               "runs": DESK + "/runs/", "settlement_record": settle,
++                               "settlement_fallback_record": settle_fb},
+                    "retained_reservation_bytes": RESERVATION,
+                    "enforcement": "driver: byte-capped child-output sinks (<= 32 MiB written per log; overflow = safety "
+@@ -216,9 +219,4 @@
+                 os.kill(child.pid, signal.SIGTERM)
+                 state["sigterm_sent"] = time.time()
+-        if state["rec_sha"] is not None:  # announcement only; a failure here is recorded, registration exists
+-            try:
+-                print("LAUNCH RECORD %s sha256 %s driver pid %d" % (record, state["rec_sha"], child.pid), flush=True)
+-            except BaseException as e:
+-                errors.append("launch announcement: %r" % e)
+     except BaseException as e:
+         errors.append("post-spawn: %r" % e)
+@@ -234,5 +232,5 @@
+         except BaseException as e:
+             errors.append("signal block: %r" % e)
+-        out = {"schema": "moqls8-lane-settlement-record/7", "launch_record": record,
++        out = {"schema": "moqls8-lane-settlement-record/8", "launch_record": record,
+                "launch_record_sha256": state["rec_sha"], "driver_pid": child.pid if child is not None else None,
+                "launcher_sigterm_sent_to_driver": state["sigterm_sent"], "errors": errors,
+@@ -265,8 +263,4 @@
+                 except BaseException as e2:
+                     errors.append("settlement fallback write: %r" % e2)
+-            try:
+-                print("SETTLEMENT RECORD %s sha256 %s exit %s" % (settle, sett_sha, state["code"]), flush=True)
+-            except BaseException as e:
+-                errors.append("settlement announcement: %r" % e)
+         finally:
+             for fd in fds.values():
+
+--- code/launch_gb_v6e.py
++++ code/launch_gb_v6f.py
+@@ -26,9 +26,11 @@
+ any launcher error or recorded launcher signal occurred, 2 for a refused launch (no spawn). Registration handshake: the driver receives the launch
+ record path (MOQLS8_LAUNCH_RECORD) and refuses every native spawn until that record is published and names it, so no
+-native can run before registration. A failed announcement (stdout) after a successful publication is only recorded.
+-Settlement: the record write and its announcement are guarded separately; if the primary settlement write fails, a
+-minimal record goes to the reserved fallback file; the exit-status decision always runs. (Successor of
++native can run before registration. After the spawn the launcher writes NOTHING to stdout or stderr (the published
++records are the only reports), so a full or broken stdout can neither block reaping/settlement nor alter the exit
++status. Settlement: if the primary settlement write fails, a minimal record goes to the reserved fallback file (both
++paths are named in the launch record); the exit-status decision always runs. (Successor of
+ launch_gb_v6b.py, launch_gb_v6c.py and launch_gb_v6d.py, which are kept unchanged and never used.)
+-Usage: /usr/bin/python3 -I -B launch_gb_v6e.py PREEXEC GO_RECORD"""
++Usage: /usr/bin/python3 -I -B launch_gb_v6f.py PREEXEC GO_RECORD
++(Successor of launch_gb_v6e.py and its predecessors, all kept unchanged and never used.)"""
+ import datetime
+ import hashlib
+@@ -179,5 +181,5 @@
+         try:  # EVERY step until a successful publication: any failure -> one owned SIGTERM (fail closed)
+             os.close(fds.pop("console"))  # only the driver holds the console log now
+-            rec = {"schema": "moqls8-lane-launch-record/7", "owner": "ContinueMOQLS8 (phys-1 lane worker)",
++            rec = {"schema": "moqls8-lane-launch-record/8", "owner": "ContinueMOQLS8 (phys-1 lane worker)",
+                    "launcher": {"path": me, "sha256": me_sha, "pid": os.getpid(), "pgid": os.getpgrp()},
+                    "items": items, "parent_go": {"path": go, "sha256": go_sha},
+@@ -208,5 +210,6 @@
+                    "outputs": {"desk": DESK, "console_log": console, "receipts": DESK + "/receipts/",
+                                "logs": DESK + "/logs/", "fifo": DESK + "/fifo/", "tmp": DESK + "/tmp/",
+-                               "runs": DESK + "/runs/", "settlement_record": settle},
++                               "runs": DESK + "/runs/", "settlement_record": settle,
++                               "settlement_fallback_record": settle_fb},
+                    "retained_reservation_bytes": RESERVATION,
+                    "enforcement": "driver: byte-capped kissat-output sink and filtered drat-trim log (<= 32 MiB each; "
+@@ -220,9 +223,4 @@
+                 os.kill(child.pid, signal.SIGTERM)
+                 state["sigterm_sent"] = time.time()
+-        if state["rec_sha"] is not None:  # announcement only; a failure here is recorded, registration exists
+-            try:
+-                print("LAUNCH RECORD %s sha256 %s driver pid %d" % (record, state["rec_sha"], child.pid), flush=True)
+-            except BaseException as e:
+-                errors.append("launch announcement: %r" % e)
+     except BaseException as e:
+         errors.append("post-spawn: %r" % e)
+@@ -238,5 +236,5 @@
+         except BaseException as e:
+             errors.append("signal block: %r" % e)
+-        out = {"schema": "moqls8-lane-settlement-record/7", "launch_record": record,
++        out = {"schema": "moqls8-lane-settlement-record/8", "launch_record": record,
+                "launch_record_sha256": state["rec_sha"], "driver_pid": child.pid if child is not None else None,
+                "launcher_sigterm_sent_to_driver": state["sigterm_sent"], "errors": errors,
+@@ -269,8 +267,4 @@
+                 except BaseException as e2:
+                     errors.append("settlement fallback write: %r" % e2)
+-            try:
+-                print("SETTLEMENT RECORD %s sha256 %s exit %s" % (settle, sett_sha, state["code"]), flush=True)
+-            except BaseException as e:
+-                errors.append("settlement announcement: %r" % e)
+         finally:
+             for fd in fds.values():

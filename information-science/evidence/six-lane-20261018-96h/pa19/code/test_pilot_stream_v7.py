@@ -1,0 +1,4286 @@
+#!/usr/bin/env python3
+"""PA19 offline transport/lifecycle/release test suite v7 for P-STREAM v6 (ms06 or ms09) and controls-only D2 v34.
+Source-only successor of immutable test_pilot_stream_v6.py (f43ac1aae1773511f44082d2f9d4479d2948c30e32733c0c096fa9dd237681fa).
+Verified source BYTES are loaded by ModuleType compile/exec ONLY under a separate parent GO/WINDOW.
+P-STREAM selects 59 tests; D2 selects 46 tests. All prior 45 P/34 D cases remain selected in their original order.
+New guard cases use synthetic clocks, isolated registries and refusing native-birth/wait/signal/thread hooks.
+No target/test execution, native/preflight/probe/review launch or scientific qualification follows from this draft.
+Unoptimized Python is mandatory: -O/PYTHONOPTIMIZE refuse in main BEFORE source reads, state/signal or filesystem mutation.
+Required clocks use the runner's bounded pinned /bin/date under SIGCHLD=SIG_DFL/owned wait semantics.
+Late cancel, missing clock, incomplete test/owner/census/accounting or publication failure never yields ALL_OK.
+Every deliberate fixture fault binds the exact object, immutable known-fault state and independent endpoint proof;
+EVERY retained disposition revalidates on EVERY terminal snapshot, even absent from registry and inventory.
+Disk fixtures distinguish logical distinct-inode st_size from allocated st_blocks*512 including directories/root;
+max(logical,allocated) is enforced; APFS shared allocation overcount is conservative, never called exact physical usage.
+receipt.json is first; result.json and terminal-completion.json are exclusively created PROVISIONAL proposals.
+Parent must pin both artifact digests/sizes, observe the ended test-runner identity and match its actual in-budget
+exit 0 before accepting the ALL_OK proposal. Files do not self-certify their fsync/close or process exit.
+Only test-created artifacts under OUT_DIR/work may be deliberately rewritten/moved; old lane/run evidence stays immutable.
+Usage: test_pilot_stream_v7.py RUNNER.py RUNNER_SHA256 OUT_DIR (NEW direct child of LANE/evidence/probes).
+Cooperative 280 s TOTAL budget including the 15 s result reserve; no SIGALRM/SIGKILL/ulimit/automatic subprocess timeout.
+Exit 0 after terminal envelope; 1 failures/setup, 2 budget, 3 cancel, 70 prestart refusal, 71 publication failed.
+One verified SIGTERM plus bounded grace only; uncertainty retains parent block. Source-only until independent parent review.
+"""
+import copy
+import datetime
+import errno
+import hashlib
+import json
+import math
+import os
+import re
+import signal
+import sys
+import threading
+import time
+import traceback
+import types
+import stat
+
+LANE = "/Users/jinleic/repos/aifours/information-science/evidence/six-lane-20261018-96h/pa19"
+BUDGET_S = 280
+PROV_SHA = "a46c0c717f702206a7fe345de5bcdc0b10112bca6bdbf04dd42cd9848ff08e37"
+RESULT_RESERVE_S = 15                 # B1: kept free for the terminal result
+SLICE_S = 0.2                         # B1: wait slice (cancel/budget noticed within this)
+STATE = {"t0": None, "deadline": None, "signal": None, "runner": None, "fixture_dispositions": []}
+HOST_CLOCK_RE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[+-][0-9]{4}")
+TEST_RESULT_SCHEMA = "PA19-PSTREAM-TEST-RESULT-v7"
+TEST_COMPLETION_SCHEMA = "PA19-PSTREAM-TEST-COMPLETION-v7"
+TEST_EXIT_CODES = {"ALL_OK": 0, "FAILURES": 1, "SETUP_FAILED": 1, "BUDGET_EXHAUSTED": 2, "CANCELLED": 3}
+
+
+FROZEN_D_TEST_NAMES = ('t_verified_runner_loading', 't_fixture_latch_consumption', 't_write_all_zero_progress', 't_terminal_ownership', 't_wait_ownership_echild', 't_controls_only_sequence', 't_filter', 't_filter_long_line', 't_filter_continuation_adversarial', 't_filter_continuation_genuine_line', 't_capture_accounting', 't_libproc_self', 't_libproc_validation', 't_tree_census_and_usage', 't_tree_census_fail_closed', 't_out_dir_ancestry', 't_bounded_metadata_reads', 't_monitor_provenance_header', 't_item_shapes', 't_stop_identity', 't_helper_refusals_and_clock', 't_output_guard', 't_allocation_release', 't_commit_charging_and_cutoff', 't_anchored_confinement', 't_c6_timer_predicate', 't_terminal_rule', 't_reap_bounded_survivor', 't_settle_all_bounded', 't_closeout_cancel_race', 't_legacy_unknown_start_liveness', 't_d2_sink_roundtrip', 't_d2_sink_mismatch_and_replacement', 't_d2_qualification_matrix')
+FROZEN_FORBIDDEN_CASES = (('early EOF', 'EARLY_EOF', 'c WARNING: early EOF of the input formula'), ('clauses less than expected', 'LESS_THAN_EXPECTED', 'c WARNING: 3 clauses less than expected'), ('trivial UNSAT', 'TRIVIAL_UNSAT', 'c trivial UNSAT'), ('ERROR', 'ERROR', 'c ERROR: no conflict'), ('MEMOUT', 'MEMOUT', 'c MEMOUT: reallocation of DB failed'), ('wrong binary prefix', 'WRONG_PREFIX', 'c WARNING: wrong binary prefix, stop reading proof'), ('no empty clause detected', 'NO_EMPTY_CLAUSE', 'c WARNING: no empty clause detected'), ('NOT VERIFIED', 'NOT_VERIFIED', 'c s NOT VERIFIED echo'), ('TIMEOUT', 'TIMEOUT', 'c TIMEOUT echo'), ('illegal literal', 'ILLEGAL_LITERAL', 'c illegal literal 5 due to max var 4'), ('error opening', 'ERROR_OPENING', 'c error opening "x".'), ('failed to reallocate', 'FAILED_REALLOC', 'c failed to reallocate unit stack'))
+FROZEN_P_TEST_NAMES = ('t_verified_runner_loading', 't_fixture_latch_consumption', 't_write_all_zero_progress', 't_terminal_ownership', 't_wait_ownership_echild', 't_controls_only_sequence', 't_buffer_roundtrip', 't_buffer_cap', 't_buffer_never_connected', 't_buffer_fifo_replaced', 't_buffer_live_collector_release', 't_feeder_plain', 't_feeder_suffix', 't_feeder_hold_epipe', 't_feeder_midstream_close', 't_feeder_guards', 't_feeder_holder_charge', 't_feeder_abandon_close_error', 't_filter', 't_filter_long_line', 't_filter_continuation_adversarial', 't_filter_continuation_genuine_line', 't_capture_accounting', 't_libproc_self', 't_libproc_validation', 't_tree_census_and_usage', 't_tree_census_fail_closed', 't_out_dir_ancestry', 't_bounded_metadata_reads', 't_monitor_provenance_header', 't_item_shapes', 't_stop_identity', 't_helper_refusals_and_clock', 't_output_guard', 't_allocation_release', 't_run_kissat_owner_on_exception', 't_commit_charging_and_cutoff', 't_anchored_confinement', 't_c6_timer_predicate', 't_terminal_rule', 't_reap_bounded_survivor', 't_settle_all_bounded', 't_qualify_matrix', 't_closeout_cancel_race', 't_legacy_unknown_start_liveness')
+
+class BudgetExhausted(Exception):
+    pass
+
+
+class Cancelled(Exception):
+    pass
+
+
+def on_signal(signum, frame):
+    """B2/N11: lock-free; stamps the first signal number and propagates it into the runner's own cancel stamp, so the
+    runner's helper admission and stop gates see it."""
+    if STATE["signal"] is None:
+        STATE["signal"] = signum
+    R = STATE["runner"]
+    if R is not None and R.STATE["cancel_order"] is None:
+        R.STATE["cancel_order"] = next(R.ORDER)
+
+
+def remaining():
+    return STATE["deadline"] - time.monotonic()
+
+
+def check():
+    if STATE["signal"] is not None:
+        raise Cancelled("signal %d stamped" % STATE["signal"])
+    if remaining() <= RESULT_RESERVE_S:
+        raise BudgetExhausted("budget exhausted: %.1f s left, result reserve %d s" % (remaining(), RESULT_RESERVE_S))
+
+
+def need(seconds, what):
+    check()
+    if remaining() - RESULT_RESERVE_S < seconds:
+        raise BudgetExhausted("%s may take up to %.0f s; only %.1f s left before the result reserve"
+                              % (what, seconds, remaining() - RESULT_RESERVE_S))
+
+
+def spawn(target, args, name):
+    th = threading.Thread(target=target, args=args, name=name, daemon=True)
+    th.start()
+    return th
+
+
+def wait_thread(th, cap, what):
+    """B1: cooperative bounded join (at most `cap` s, in SLICE_S slices); raises Cancelled/BudgetExhausted when a
+    signal is stamped or the budget less the reserve runs out; True iff the thread ended."""
+    end = time.monotonic() + cap
+    while th.is_alive():
+        check()
+        left = end - time.monotonic()
+        if left <= 0:
+            return False
+        th.join(max(0.0, min(SLICE_S, left, remaining() - RESULT_RESERVE_S)))
+    return True
+
+
+def buffer_finish(R, b, connected):
+    """B1: waits for a connected collector cooperatively; ProofBuffer.finish() with a live collector may unblock
+    (<= SINK_UNBLOCK) and join (<= STREAM_JOIN), so it is entered only if the budget can absorb that bound."""
+    if connected:
+        wait_thread(b.thread, 60, "proof collector")
+    if b.thread.is_alive():
+        need(R.SINK_UNBLOCK + R.STREAM_JOIN + 1, "ProofBuffer.finish")
+    else:
+        check()
+    return b.finish()
+
+
+def feeder_finish(f):
+    """B1: a started non-hold feeder is awaited cooperatively; Feeder.finish() (which releases a held feed itself)
+    then joins for at most min(10 s, remaining budget less the reserve)."""
+    if f.started and f.mode != "hold":
+        wait_thread(f.thread, 60, "feeder")
+    need(1, "Feeder.finish")
+    return f.finish(max(0.0, min(10.0, remaining() - RESULT_RESERVE_S)))
+
+
+def sha(b):
+    return hashlib.sha256(b).hexdigest()
+
+
+def write_x(path, obj):
+    return publish_json_x(path, obj)["sha256"]
+
+
+def det_bytes(n, seed):
+    out = bytearray()
+    i = 0
+    while len(out) < n:
+        out += hashlib.sha256(b"%d:%d" % (seed, i)).digest()
+        i += 1
+    return bytes(out[:n])
+
+
+def fifo_writer(path, chunks, res):
+    try:
+        fd = os.open(path, os.O_WRONLY)
+        try:
+            for c in chunks:
+                mv = memoryview(c)
+                while mv:
+                    k = os.write(fd, mv)
+                    if type(k) is not int or k <= 0 or k > len(mv):
+                        raise OSError(errno.EIO, "FIFO writer made no valid progress")
+                    mv = mv[k:]
+        finally:
+            os.close(fd)
+        res["ok"] = True
+    except Exception as exc:
+        res["error"] = repr(exc)
+
+
+def drain(fd, out, limit=None):
+    """Plays the checker's stdin: reads to EOF (or closes after `limit` bytes)."""
+    h, n = hashlib.sha256(), 0
+    try:
+        while limit is None or n < limit:
+            b = os.read(fd, 65536 if limit is None else min(65536, limit - n))
+            if not b:
+                break
+            h.update(b)
+            n += len(b)
+            out.setdefault("tail", b"")
+            out["tail"] = (out["tail"] + b)[-8:]
+    finally:
+        os.close(fd)
+    out.update(sha=h.hexdigest(), n=n)
+
+
+def blocks_of(R, data):
+    return tuple(data[i:i + R.FEED_BLOCK] for i in range(0, len(data), R.FEED_BLOCK))
+
+
+
+
+def host_clock(R):
+    """A8: a required clock is never silently skipped, retried or invented."""
+    if R is None:
+        raise RuntimeError("required host clock unavailable: runner not loaded")
+    check()
+    if R.STATE.get("cancel_order", "missing") is not None:
+        raise Cancelled("runner cancellation stamped before required host clock")
+    need(R.HELPER_ALLOW + 1, "required host clock")
+    stamp = R.clock()
+    check()
+    if R.STATE.get("cancel_order", "missing") is not None:
+        raise Cancelled("runner cancellation stamped during required host clock")
+    if not isinstance(stamp, str) or R.DATE_RE.fullmatch((stamp + "\n").encode()) is None:
+        raise RuntimeError("required host clock failed or was refused")
+    return stamp
+
+
+def anchored(R, path):
+    """N8 fixtures: anchor a test-created directory in the runner's TREE (ProofBuffer FIFOs are created there)."""
+    if path not in R.TREE:
+        R.anchor_existing_dir(path)
+    return path
+
+
+def restore_cancel(R, saved):
+    """Restore a test-set runner cancel stamp unless a real signal arrived meanwhile (then the stamp stays)."""
+    if STATE["signal"] is None:
+        R.STATE["cancel_order"] = saved
+
+
+class RunTreeFixture:
+    """A test-owned run tree created by the runner's own create_run_tree under W/<name>/pilot, plus the runner STATE
+    fields the code under test reads; restore() restores STATE/TREE/WRITTEN/CREATED/LIVE_SINKS only after proven
+    lifecycle closure, retaining exact explicitly disposed D2 fault records for subsequent revalidation."""
+    KEYS = ("out", "mono0", "mono_end", "abs_end", "chunk_end", "mono_chunk_end", "output_limit", "written",
+            "reservation", "remaining_reserve", "pilot_entries", "last_ledger", "prior_census",
+            "runner_identity", "cleanup_deadline", "parent_exclusivity")
+
+    def __init__(self, R, W, name, limit=64 * 1024 * 1024, span=600):
+        self.R = R
+        self.absent = object()
+        self.saved = {k: R.STATE.get(k, self.absent) for k in self.KEYS}
+        self.saved_created = dict(R.CREATED)
+        self.saved_sinks = list(R.LIVE_SINKS)
+        self.tree_keys, self.written_keys = set(R.TREE), set(R.WRITTEN)
+        pilot = os.path.join(W, name, "pilot")
+        os.makedirs(pilot)
+        self.out = os.path.join(pilot, "run-test")
+        R.create_run_tree(self.out, parent=pilot)
+        m, e = time.monotonic(), time.time()
+        R.STATE.update(out=self.out, mono0=m, mono_end=m + span, abs_end=e + span, chunk_end=e + span + 300,
+                       mono_chunk_end=m + span + 300, output_limit=limit, written=0, reservation=limit,
+                       remaining_reserve=limit, pilot_entries=[], last_ledger=None, prior_census={},
+                       cleanup_deadline=None, parent_exclusivity=True)
+
+    def restore(self):
+        R = self.R
+        ownership = terminal_ownership(R)
+        assert ownership["inventory_complete"] is True and ownership["unresolved"] == [] \
+            and ownership["proof_ram_accounting_valid"] is True \
+            and ownership["proof_ram_outstanding_bytes"] == 0 and ownership["errors"] == [], ownership
+        for k, v in self.saved.items():
+            if v is self.absent:
+                R.STATE.pop(k, None)
+            else:
+                R.STATE[k] = v
+        for k in set(R.TREE) - self.tree_keys:
+            fd = R.TREE[k][0]
+            os.close(fd)  # unexpected close failure is a failed fixture, never silently forgotten ownership
+            R.TREE.pop(k)
+        for k in set(R.WRITTEN) - self.written_keys:
+            R.WRITTEN.pop(k)
+        retained_created, retained_sinks = {}, []
+        for disposition in STATE.get("fixture_dispositions", []):
+            obj = disposition["resource"]
+            if disposition["kind"] != "file sink" or not any(s is obj for s in R.LIVE_SINKS):
+                continue
+            state = fixture_disposition_state(R, disposition)
+            assert state["lifecycle_refusals"] == [], state
+            for covered in state.get("covered_partial_publications", []):
+                path = covered["path"]
+                created = R.CREATED[path]
+                assert created.get("state") == covered["state"] == "open" \
+                    and created.get("identity") == covered["identity"], (covered, created)
+                retained_created[path] = dict(created)
+            if not any(s is obj for s in self.saved_sinks):
+                retained_sinks.append(obj)
+        R.CREATED.clear()
+        R.CREATED.update(self.saved_created)
+        R.CREATED.update(retained_created)
+        R.LIVE_SINKS[:] = self.saved_sinks + retained_sinks
+
+
+def t_buffer_roundtrip(R, W):
+    data = det_bytes(3 * R.FEED_BLOCK + 12345, 1)
+    b = R.ProofBuffer(os.path.join(W, "t1.fifo"), 10 * R.FEED_BLOCK)
+    res = {}
+    th = spawn(fifo_writer, (b.fifo_path, [data[i:i + 7777] for i in range(0, len(data), 7777)], res), "t1-writer")
+    assert wait_thread(th, 60, "fifo writer"), "fifo writer did not finish"
+    rec = buffer_finish(R, b, True)
+    assert res.get("ok"), res
+    assert R.sink_complete(rec), rec
+    assert rec["retained"] == rec["received"] == len(data) and rec["sha256_of_retained"] == sha(data)
+    assert isinstance(b.blocks, tuple) and all(len(x) == R.FEED_BLOCK for x in b.blocks[:-1])
+    assert b"".join(b.blocks) == data and rec["buffer_rehash"] == [sha(data), len(data)]
+    assert R.buffer_charge() == len(data), R.buffer_charge()
+    b.release()
+    assert b.blocks == () and R.buffer_charge() == 0
+    return {"bytes": len(data), "blocks": rec["blocks"]}
+
+
+def t_buffer_cap(R, W):
+    b = R.ProofBuffer(os.path.join(W, "t2.fifo"), 4096)
+    res = {}
+    th = spawn(fifo_writer, (b.fifo_path, [b"y" * 1000] * 10, res), "t2-writer")
+    assert wait_thread(th, 60, "fifo writer"), "fifo writer did not finish"
+    rec = buffer_finish(R, b, True)
+    b.release()
+    assert res.get("ok"), res
+    assert rec["over_cap"] and rec["retained"] <= 4096 and rec["received"] == 10000
+    assert rec["discarded"] == 10000 - rec["retained"] and not R.sink_complete(rec)
+    assert rec["thread_alive_after_join"] is False
+    return {"retained": rec["retained"], "discarded": rec["discarded"]}
+
+
+def t_buffer_never_connected(R, W):
+    b = R.ProofBuffer(os.path.join(W, "t3.fifo"), 4096)
+    rec = buffer_finish(R, b, False)
+    b.release()
+    assert rec["unblocked_by_runner"] and rec["eof"] and rec["retained"] == 0
+    assert rec["thread_alive_after_join"] is False and not R.sink_complete(rec)
+    return {"unblocked_by_runner": True}
+
+
+def t_buffer_fifo_replaced(R, W):
+    p = os.path.join(W, "t4.fifo")
+    b = R.ProofBuffer(p, 4096)
+    res = {}
+    th = spawn(fifo_writer, (p, [b"z" * 100], res), "t4-writer")
+    assert wait_thread(th, 60, "fifo writer"), "fifo writer did not finish"
+    assert wait_thread(b.thread, 60, "proof collector"), "proof collector did not finish"
+    os.rename(p, p + ".moved")
+    os.mkfifo(p, 0o600)
+    latch_before = tuple(R.LATCH)
+    rec = buffer_finish(R, b, True)
+    b.release()
+    latched = consume_expected_latches(R, latch_before,
+        [(re.escape("proof buffer integrity/closure unproven: " + p), 1)])
+    assert rec["fifo_same_inode_still_fifo"] is False and rec["sink_settled"] is False and not R.sink_complete(rec)
+    assert res.get("ok"), res
+    disposed = dispose_fixture_fault(R, b, "RAM collector", latched)
+    return {"latched": latched, "fixture_disposition": disposed,
+            "preservation_scope": "only the test-created FIFO OUT_DIR/work/t4.fifo was moved "
+                                  "(to t4.fifo.moved), never deleted; a new FIFO was created at the old path"}
+
+
+def t_feeder_plain(R, W):
+    data = det_bytes(2 * R.FEED_BLOCK + 70000, 2)
+    f = R.Feeder(blocks_of(R, data), "plain")
+    rfd = os.dup(f.rfd)  # independent peer owns only its duplicate; feeder retains its endpoint identity
+    f.close_read()
+    out = {}
+    th = spawn(drain, (rfd, out), "drain")
+    f.start()
+    assert wait_thread(th, 60, "drain"), "drain did not finish"
+    rec = feeder_finish(f)
+    assert out["n"] == len(data) and out["sha"] == sha(data)
+    assert rec["fed_bytes"] == rec["proof_bytes_fed"] == len(data) and rec["fed_sha256"] == sha(data)
+    assert rec["delivery_error"] is None and rec["exception"] is None and rec["close_error"] is None
+    assert rec["thread_alive_after_join"] is False and rec["undelivered_proof_bytes"] == 0 and f.blocks == ()
+    assert rec["read_endpoint_closed"] is True and rec["write_endpoint_closed"] is True, rec
+    assert rec["close_errors"] == [] and rec["errors"] == [], rec
+    return {"fed": rec["fed_bytes"]}
+
+
+def t_feeder_suffix(R, W):
+    data = det_bytes(5000, 3)
+    f = R.Feeder(blocks_of(R, data), "suffix")
+    rfd = os.dup(f.rfd)  # independent peer owns only its duplicate; feeder retains its endpoint identity
+    f.close_read()
+    out = {}
+    th = spawn(drain, (rfd, out), "drain")
+    f.start()
+    assert wait_thread(th, 60, "drain"), "drain did not finish"
+    rec = feeder_finish(f)
+    assert out["n"] == len(data) + len(R.SUFFIX) and out["sha"] == sha(data + R.SUFFIX)
+    assert rec["fed_bytes"] == len(data) + 1 and rec["proof_bytes_fed"] == len(data)
+    assert rec["fed_sha256"] == sha(data + R.SUFFIX) != sha(data)
+    assert rec["read_endpoint_closed"] is True and rec["write_endpoint_closed"] is True, rec
+    assert rec["close_errors"] == [] and rec["errors"] == [], rec
+    return {"fed": rec["fed_bytes"]}
+
+
+def t_feeder_hold_epipe(R, W):
+    data = det_bytes(5000, 4)
+    f = R.Feeder(blocks_of(R, data), "hold")
+    rfd = os.dup(f.rfd)  # independent peer owns only its duplicate; feeder retains its endpoint identity
+    f.close_read()
+    os.close(rfd)                     # the checker exited before reading stdin (C7b)
+    f.start()
+    rec = feeder_finish(f)
+    assert rec["hold_released_by_event"] is True and rec["fed_bytes"] == 0
+    assert str(rec["delivery_error"]).startswith("EPIPE") and rec["thread_alive_after_join"] is False
+    assert rec["undelivered_proof_bytes"] == len(data)
+    assert rec["read_endpoint_closed"] is True and rec["write_endpoint_closed"] is True, rec
+    assert rec["close_errors"] == [] and rec["errors"] == [], rec
+    return {"delivery_error": rec["delivery_error"]}
+
+
+def t_feeder_midstream_close(R, W):
+    data = det_bytes(2 * R.FEED_BLOCK, 5)
+    f = R.Feeder(blocks_of(R, data), "plain")
+    rfd = os.dup(f.rfd)  # independent peer owns only its duplicate; feeder retains its endpoint identity
+    f.close_read()
+    out = {}
+    th = spawn(drain, (rfd, out, 100000), "drain-limited")
+    f.start()
+    assert wait_thread(th, 60, "drain"), "drain did not finish"
+    rec = feeder_finish(f)
+    assert out["n"] == 100000 and rec["fed_bytes"] < len(data)
+    assert str(rec["delivery_error"]).startswith("EPIPE") and rec["thread_alive_after_join"] is False
+    assert rec["proof_bytes_fed"] == rec["fed_bytes"] and rec["undelivered_proof_bytes"] > 0
+    assert rec["read_endpoint_closed"] is True and rec["write_endpoint_closed"] is True, rec
+    assert rec["close_errors"] == [] and rec["errors"] == [], rec
+    return {"fed": rec["fed_bytes"], "read_by_peer": out["n"]}
+
+
+def t_feeder_guards(R, W):
+    ok_unknown = ok_list = False
+    try:
+        R.Feeder((b"a",), "alter")
+    except RuntimeError:
+        ok_unknown = True
+    try:
+        R.Feeder([b"a"], "plain")
+    except RuntimeError:
+        ok_list = True
+    f = R.Feeder((b"a",), "plain")
+    fds = (f.rfd, f.wfd)
+    f.abandon()
+    closed = []
+    for fd in fds:
+        try:
+            os.fstat(fd)
+            closed.append(False)
+        except OSError:
+            closed.append(True)
+    assert ok_unknown and ok_list and f.rfd is None and f.wfd is None and all(closed), (ok_unknown, ok_list, closed)
+    rec = f.finish(1)
+    assert rec["started"] is False and rec["fed_bytes"] == 0
+    assert f.read_endpoint_closed is True and f.write_endpoint_closed is True
+    assert f.close_errors == [] and f.errors == []
+    return {"abandon_closed_both_ends": True}
+
+
+def pipe_writer(w, raw, step, res):
+    """Plays the checker's stdout: writes `raw` in `step` slices (partial writes completed), then closes."""
+    try:
+        for i in range(0, len(raw), step):
+            mv = memoryview(raw)[i:i + step]
+            while mv:
+                k = os.write(w, mv)
+                if type(k) is not int or k <= 0 or k > len(mv):
+                    raise OSError(errno.EIO, "pipe writer made no valid progress")
+                mv = mv[k:]
+        res["ok"] = True
+    except Exception as exc:
+        res["error"] = repr(exc)
+    finally:
+        os.close(w)
+
+
+def run_filter(R, W, name, raw, step):
+    r, w = os.pipe()
+    c = R.Child.__new__(R.Child)
+    c.proc = types.SimpleNamespace(stdout=os.fdopen(r, "rb"))
+    cap = os.path.join(W, name)
+    c.capture = open(cap, "xb")
+    c.captured, c.capture_written, c.over_cap, c.reader_error, c.filt = 0, 0, False, None, R.new_filter()
+    rd = spawn(c._read, (), name + "-reader")
+    wres = {}
+    wr = spawn(pipe_writer, (w, raw, step, wres), name + "-writer")
+    assert wait_thread(wr, 60, "pipe writer") and wres.get("ok"), wres
+    assert wait_thread(rd, 60, "capture reader"), "capture reader did not finish"
+    with open(cap, "rb") as fh:
+        kept = fh.read()
+    return c, kept
+
+
+def t_filter(R, W):
+    lines = [b"\rc reading proof from stdin\n",
+             b"\rc parsing input formula with 10 variables and 20 clauses\n",
+             b"\rc WARNING: detected and deleted duplicate literal -3 at position 1 of proof line 7\n",
+             b"\rc WARNING: detected and deleted duplicate literal 3 at position 2 of proof line 20\n",
+             b"\rc WARNING: detected and deleted duplicate literal 4 at position 2 of proof line 21\n",
+             b"\rc WARNING: detected and deleted duplicate literal 4 at position 2 of proof line 21 x\n",
+             b"c WARNING: detected and deleted duplicate literal 4 at position 2 of proof line 22\n",
+             b"\rc WARNING: detected and deleted duplicate literal 0 at position 2 of proof line 23\n",
+             b"\rc finished parsing, read 100 bytes from proof file\n",
+             b"\rs VERIFIED\n",
+             b"\rc unterminated tail"]
+    raw = b"".join(lines)
+    dropped = (2, 3, 4)
+    want = b"".join(x for i, x in enumerate(lines) if i not in dropped)
+    c, kept = run_filter(R, W, "filter.out", raw, 13)
+    f = c.filt
+    assert c.reader_error is None and f["raw_eof"] is True
+    assert f["raw_bytes"] == len(raw) and f["raw_sha"].hexdigest() == sha(raw)
+    assert kept == want and c.captured == c.capture_written == len(want)
+    assert (f["dup_low"], f["dup_high"]) == (2, 1) and f["dup_bytes"] == sum(len(lines[i]) for i in dropped)
+    assert f["header_clauses"] == 20 and f["tail"] == len(lines[-1])
+    assert f["raw_bytes"] == c.captured + f["dup_bytes"]
+    return {"kept_bytes": c.captured, "dup_bytes": f["dup_bytes"]}
+
+
+def t_filter_long_line(R, W):
+    raw = b"B" * (3 * 65536 + 5) + b"\rc WARNING: detected and deleted duplicate literal 4 at position 2 of proof line 9\n"
+    c, kept = run_filter(R, W, "filter-long.out", raw, 65536)
+    f = c.filt
+    assert c.reader_error is None and kept == raw and f["dup_bytes"] == 0 and f["raw_bytes"] == c.captured
+    assert f["flushes"] >= 1                       # a 196 KiB line is always flushed at least once (read1 <= 64 KiB)
+    return {"kept_bytes": c.captured, "flushes": f["flushes"]}
+
+
+
+class ScriptedStdout:
+    """Deterministic read1() source for the capture filter (each call returns the next scripted chunk)."""
+
+    def __init__(self, chunks):
+        self.chunks = list(chunks)
+        self.closed = False
+
+    def read1(self, n):
+        return self.chunks.pop(0) if self.chunks else b""
+
+    def close(self):
+        self.closed = True
+
+
+def scripted_filter(R, W, name, chunks):
+    c = R.Child.__new__(R.Child)
+    c.proc = types.SimpleNamespace(stdout=ScriptedStdout(chunks))
+    cap = os.path.join(W, name)
+    c.capture = open(cap, "xb")
+    c.captured, c.capture_written, c.over_cap, c.reader_error, c.filt = 0, 0, False, None, R.new_filter()
+    c._read()                                      # never blocks: the script is finite
+    with open(cap, "rb") as fh:
+        kept = fh.read()
+    return c, kept
+
+
+DUPL = b"\rc WARNING: detected and deleted duplicate literal 4 at position 2 of proof line 9\n"
+
+
+def t_filter_continuation_adversarial(R, W):
+    """V8: the flush lands exactly before a DUP-shaped tail of the same physical line: the tail must be kept."""
+    chunks = [b"B" * R.PENDING_MAX, b"B", DUPL]
+    c, kept = scripted_filter(R, W, "cont-adv.out", chunks)
+    f = c.filt
+    raw = b"".join(chunks)
+    assert c.reader_error is None and f["raw_eof"] is True and f["flushes"] == 1
+    assert kept == raw and f["dup_bytes"] == 0 and (f["dup_low"], f["dup_high"]) == (0, 0)
+    assert f["raw_bytes"] == c.captured + f["dup_bytes"] == len(raw)
+    return {"kept_bytes": len(kept), "flushes": f["flushes"]}
+
+
+def t_filter_continuation_genuine_line(R, W):
+    """V8: after the flushed line ends at its newline, a genuine DUP line is dropped and counted again."""
+    chunks = [b"B" * (R.PENDING_MAX + 1), b"\n" + DUPL]
+    c, kept = scripted_filter(R, W, "cont-gen.out", chunks)
+    f = c.filt
+    raw = b"".join(chunks)
+    assert c.reader_error is None and f["flushes"] == 1 and kept == raw[:-len(DUPL)]
+    assert f["dup_bytes"] == len(DUPL) and (f["dup_low"], f["dup_high"]) == (0, 1)
+    assert f["raw_bytes"] == c.captured + f["dup_bytes"] == len(raw)
+    return {"kept_bytes": len(kept), "dup_bytes": f["dup_bytes"]}
+
+
+def t_capture_accounting(R, W):
+    """V13: non-dropped bytes vs bytes physically written to the capped file (LOG_CAP patched for this test)."""
+    saved = R.LOG_CAP
+    R.LOG_CAP = 100
+    try:
+        c, kept = scripted_filter(R, W, "cap.out", [b"x" * 60 + b"\n", b"y" * 89 + b"\n"])
+    finally:
+        R.LOG_CAP = saved
+    assert c.captured == 150 and c.capture_written == 100 and c.over_cap is True and len(kept) == 100
+    return {"nondropped": c.captured, "file_bytes": c.capture_written}
+
+
+def t_feeder_holder_charge(R, W):
+    """V5: proof RAM stays charged while a feeder holds the frozen tuple after the buffer's own release."""
+    data = det_bytes(2 * R.FEED_BLOCK + 3, 7)
+    b = R.ProofBuffer(os.path.join(W, "t5h.fifo"), 4 * R.FEED_BLOCK)
+    res = {}
+    th = spawn(fifo_writer, (b.fifo_path, [data], res), "t5h-writer")
+    assert wait_thread(th, 60, "fifo writer") and res.get("ok"), res
+    rec = buffer_finish(R, b, True)
+    assert R.sink_complete(rec) and R.buffer_charge() == len(data)
+    f = R.Feeder(b.blocks, "plain", label="holder-test")
+    b.release()
+    assert b.released and R.buffer_charge() == len(data), R.buffer_charge()
+    assert b.accounting()["still_held_by_feeders"] == ["holder-test"]
+    errs = f.abandon()
+    assert errs == [] and f.blocks == () and f.rfd is None and f.wfd is None
+    assert R.buffer_charge() == 0 and b.accounting()["still_held_by_feeders"] == []
+    assert f.read_endpoint_closed is True and f.write_endpoint_closed is True
+    assert f.close_errors == [] and f.errors == []
+    return {"charged_while_held": len(data)}
+
+
+def t_libproc_self(R, W):
+    """V1: libproc reads of this test process (no child process): BSD identity fields, RSS, group/parent listings."""
+    me = os.getpid()
+    ident, err = R.bsd_identity(me)
+    assert err is None and ident["pid"] == me and ident["ppid"] == os.getppid() and ident["pgid"] == os.getpgid(0), ident
+    assert ident["comm"] and len(ident["start"]) == 2 and ident["start"][0] > 0
+    rss = R.task_rss(me)
+    assert isinstance(rss, int) and rss > 0
+    assert me in R.list_pids(R.PROC_PGRP_ONLY, os.getpgid(0))
+    assert me in R.list_pids(R.PROC_PPID_ONLY, os.getppid())
+    return {"comm": ident["comm"], "rss": rss}
+
+
+def t_tree_census_and_usage(R, W):
+    """V4/V2/N8: complete census (every kind, hard links, symlink, FIFO; dev/ino/size/mtime/ctime/mode/nlink) and lane
+    usage on a test-owned tree; an added entry and an in-place SAME-SIZE rewrite are both visible."""
+    root = os.path.join(W, "tree")
+    os.mkdir(root)
+    os.mkdir(os.path.join(root, "sub"))
+    with open(os.path.join(root, "a.txt"), "xb") as fh:
+        fh.write(b"0123456789")
+    with open(os.path.join(root, "sub", "b.bin"), "xb") as fh:
+        fh.write(b"x" * 20)
+    os.link(os.path.join(root, "a.txt"), os.path.join(root, "hl"))
+    os.symlink("a.txt", os.path.join(root, "ln"))
+    os.mkfifo(os.path.join(root, "f.fifo"), 0o600)
+    snap = R.run_tree_census(root)
+    kinds = {os.path.relpath(p, root): v[0] for p, v in snap.items()}
+    assert kinds == {"sub": "dir", "a.txt": "file", "sub/b.bin": "file", "hl": "file", "ln": "symlink",
+                     "f.fifo": "fifo"}, kinds
+    assert snap[os.path.join(root, "ln")][3] == len("a.txt") and snap[os.path.join(root, "f.fifo")][3] == 0
+    assert len(snap[os.path.join(root, "sub")]) == 5 and len(snap[os.path.join(root, "a.txt")]) == 9
+    for path, entry in snap.items():
+        st = os.stat(path, follow_symlinks=False)
+        assert entry[-1] == st.st_blocks * 512, (path, entry, st.st_blocks)
+        if entry[0] != "dir":
+            assert entry[3] == st.st_size and entry[7] == st.st_nlink, (path, entry)
+    expected, actual = independent_disk_usage(root), R.disk_usage(root)
+    assert expected["logical_distinct_inode_bytes"] == 10 + 20 + len("a.txt"), expected
+    assert all(actual[key] == value for key, value in expected.items()), (expected, actual)
+    assert actual["directory_allocation_included"] is True
+    assert actual["APFS_shared_allocation_overcount"] == "conservative"
+    assert R.lane_usage(root) == expected["enforced_max_bytes"], (expected, actual)
+    with open(os.path.join(root, "c.txt"), "xb") as fh:      # an added entry is visible to the comparison
+        fh.write(b"z")
+    snap2 = R.run_tree_census(root)
+    assert set(snap2) - set(snap) == {os.path.join(root, "c.txt")}
+    time.sleep(0.01)
+    with open(os.path.join(root, "sub", "b.bin"), "r+b") as fh:   # same-size in-place rewrite of a test file
+        fh.write(b"y" * 20)
+    snap3 = R.run_tree_census(root)
+    b = os.path.join(root, "sub", "b.bin")
+    assert snap3[b][3] == snap2[b][3] == 20 and snap3[b] != snap2[b], (snap2[b], snap3[b])
+    root_stat = types.SimpleNamespace(st_mode=stat.S_IFDIR | 0o700, st_dev=10, st_ino=1, st_blocks=2)
+    tiny = {"sub": ("dir", 10, 2, 0o700, 512),
+            "one-byte": ("file", 10, 3, 1, 0, 0, 0o600, 2, 4096),
+            "same-inode-hardlink": ("file", 10, 3, 1, 0, 0, 0o600, 2, 4096)}
+    tiny_usage = R.usage_from_census(tiny, root_stat)
+    assert tiny_usage["logical_distinct_inode_bytes"] == 1
+    assert tiny_usage["allocated_st_blocks_bytes"] == 1024 + 512 + 4096
+    assert tiny_usage["enforced_max_bytes"] == 5632 and tiny_usage["distinct_inodes"] == 3, tiny_usage
+    sparse = {"sparse": ("file", 10, 4, 1 << 20, 0, 0, 0o600, 1, 0)}
+    sparse_usage = R.usage_from_census(sparse, root_stat)
+    assert sparse_usage["enforced_max_bytes"] == 1 << 20, sparse_usage
+    after = independent_disk_usage(root)
+    assert R.lane_usage(root) == after["enforced_max_bytes"]
+    return {"entries": len(snap3), "disk_usage": after, "synthetic_allocated_limit": tiny_usage,
+            "synthetic_sparse_logical_limit": sparse_usage, "same_size_rewrite_visible": True}
+
+
+def t_tree_census_fail_closed(R, W):
+    """V4: an unreadable directory makes the census raise (fail closed); permissions restored afterwards."""
+    root = os.path.join(W, "tree2")
+    os.mkdir(root)
+    locked = os.path.join(root, "locked")
+    os.mkdir(locked)
+    os.chmod(locked, 0)
+    try:
+        raised = False
+        try:
+            R.run_tree_census(root)
+        except OSError:
+            raised = True
+        raised_usage = False
+        try:
+            R.lane_usage(root)
+        except OSError:
+            raised_usage = True
+    finally:
+        os.chmod(locked, 0o755)
+    assert raised and raised_usage
+    return {"census_raised": True, "usage_raised": True}
+
+
+def t_out_dir_ancestry(R, W):
+    """V4: direct-child rule, symlink ancestor refusal and existing-path refusal on a test-owned tree."""
+    real = os.path.join(W, "real")
+    pilot = os.path.join(real, "pilot")
+    os.makedirs(pilot)
+    alias = os.path.join(W, "alias")
+    os.symlink(real, alias)
+    assert R.out_dir_refusal(os.path.join(pilot, "run-x"), pilot) is None
+    why = R.out_dir_refusal(os.path.join(alias, "pilot", "run-x"), os.path.join(alias, "pilot"))
+    assert why is not None and "not a real directory" in why, why
+    os.mkdir(os.path.join(pilot, "run-y"))
+    assert R.out_dir_refusal(os.path.join(pilot, "run-y"), pilot) == "output path exists"
+    assert "direct child" in R.out_dir_refusal(os.path.join(pilot, "a", "b"), pilot)
+    return {"symlink_ancestor_refusal": why}
+
+
+def _iso(t):
+    return datetime.datetime.fromtimestamp(t).astimezone().isoformat(timespec="seconds")
+
+
+def t_monitor_provenance_header(R, W):
+    """V4: a sample-only monitor is refused; the same samples behind the pinned observer_start header pass."""
+    now = time.time()
+    samples = [json.dumps({"t": _iso(now - 290 + 10 * i), "free": 100_000_000_000, "floor_bytes": 12_000_000_000,
+                           "scope": R.SAMPLE_SCOPE}) for i in range(30)]
+    header = json.dumps({"event": "observer_start", "at": _iso(now - 300), "pid": 1, "pgid": 1, "cwd": R.OBSERVER_CWD,
+                         "source_sha256": R.OBSERVER_SOURCE_SHA})
+    bare, full = os.path.join(W, "mon-bare.jsonl"), os.path.join(W, "mon-full.jsonl")
+    with open(bare, "xb") as fh:
+        fh.write(("\n".join(samples) + "\n").encode())
+    with open(full, "xb") as fh:
+        fh.write(("\n".join([header] + samples) + "\n").encode())
+    saved = R.MONITOR
+    try:
+        R.MONITOR = bare
+        got_bare = R.stability_refusals(1)
+        R.MONITOR = full
+        got_full = R.stability_refusals(1)
+    finally:
+        R.MONITOR = saved
+    assert got_bare == ["monitor lacks the pinned observer_start provenance header"], got_bare
+    assert got_full == [], got_full
+    return {"bare": got_bare, "full": got_full}
+
+
+def t_item_shapes(R, W):
+    """V12: exact item types and shapes for both families (FAMILY patched for the test, then restored)."""
+    good9 = {"id": "b00025:00100-00373", "b": 25, "lo": 100, "hi": 373, "denominator": 374,
+             "list": ("/x/ext.json", "a" * 64), "cnf": ("b" * 64, 9568889, "p cnf 13744 443162")}
+    good6 = {"id": "ms06:b00318:direct", "b": 318, "cnf": ("c" * 64, 8784502, "p cnf 12391 406388")}
+    bad9 = [dict(good9, lo=-1), dict(good9, lo=True), dict(good9, lo=100.0), dict(good9, hi=374),
+            dict(good9, lo=200, hi=150), dict(good9, id="b00025:100-373"), dict(good9, list=("/x", "A" * 64)),
+            dict(good9, cnf=("b" * 64, 9568889, "p cnf 0 1")), dict(good9, denominator=False), dict(good9, b=-25)]
+    bad6 = [dict(good6, lo=0), dict(good6, id="ms06:b318:direct"), dict(good6, cnf=("c" * 63, 1, "p cnf 1 1"))]
+    saved = R.FAMILY
+    try:
+        R.FAMILY = "ms09"
+        r9 = (R.item_shape_refusals(good9), [R.item_shape_refusals(x) for x in bad9])
+        R.FAMILY = "ms06"
+        r6 = (R.item_shape_refusals(good6), [R.item_shape_refusals(x) for x in bad6])
+    finally:
+        R.FAMILY = saved
+    assert r9[0] == [] and all(r9[1]), r9
+    assert r6[0] == [] and all(r6[1]), r6
+    return {"ms09_refused": len(bad9), "ms06_refused": len(bad6)}
+
+
+def t_helper_refusals_and_clock(R, W):
+    """N2/G2: no process while a latch/cancel/unproven owner/cutoff refuses; normal date helper must really settle."""
+    n_helpers, n_latch = len(R.HELPERS), len(R.LATCH)
+    latch_before = tuple(R.LATCH)
+    outcomes = {}
+
+    def attempt(tag):
+        try:
+            R.Helper(R.DATE_ARGV).run()
+            outcomes[tag] = "ran"
+        except R.HelperRefused:
+            outcomes[tag] = "refused"
+
+    fake = types.SimpleNamespace(proc=types.SimpleNamespace(returncode=None), settled_rec={"settled": False},
+                                 launch_state="process_retained", grace_completion_in_bounds=False)
+    R.OWNED.append(fake)
+    try:
+        attempt("unsettled_owner")
+    finally:
+        R.OWNED.remove(fake)
+    # The owner itself is the retained blocker; this refusal is not licensed to emit/erase any additional latch.
+    unsettled_latched = consume_expected_latches(R, latch_before, [])
+    injected_before = tuple(R.LATCH)
+    R.LATCH.append("test latch")
+    try:
+        attempt("latch")
+    finally:
+        consume_expected_latches(R, injected_before, [(re.escape("test latch"), 1)])
+    saved_co = R.STATE["cancel_order"]
+    R.STATE["cancel_order"] = next(R.ORDER)
+    try:
+        attempt("cancel")
+    finally:
+        restore_cancel(R, saved_co)
+    saved = R.STATE["mono_end"], R.STATE["abs_end"]
+    R.STATE["mono_end"], R.STATE["abs_end"] = time.monotonic() + 1, time.time() + 1
+    try:
+        attempt("cutoff")
+    finally:
+        R.STATE["mono_end"], R.STATE["abs_end"] = saved
+    assert outcomes == {"unsettled_owner": "refused", "latch": "refused", "cancel": "refused", "cutoff": "refused"}, outcomes
+    assert len(R.HELPERS) == n_helpers and unsettled_latched == [] and len(R.LATCH) == n_latch, R.LATCH
+    need(R.HELPER_ALLOW + 1, "helper")
+    stamp = R.clock()
+    assert isinstance(stamp, str) and R.DATE_RE.fullmatch((stamp + "\n").encode()), stamp
+    last = R.HELPERS[-1]
+    assert last.settled is True and last.reaped is True and last.wait_lost is None and last.proc.stdout.closed is True
+    assert last.grace_completion_in_bounds is True and last.record["grace_completion_in_bounds"] is True
+    assert last.record["unsettled"] == [] and last.record["invalid"] == [] and last.identity_at_start is not None
+    assert last.proc.returncode == 0 and not last.quarantined and last.term_delivery is None
+    return {"clock": stamp, "helper_record": last.record}
+
+
+def t_output_guard(R, W):
+    """V2: the hard output guard refuses a write that would exceed the run reservation, and latches."""
+    saved = (R.STATE["output_limit"], R.STATE["written"])
+    latch_before = tuple(R.LATCH)
+    R.STATE["output_limit"], R.STATE["written"] = 10, 0
+    try:
+        R.charge_output(5)
+        raised = False
+        try:
+            R.charge_output(6)
+        except RuntimeError:
+            raised = True
+        written = R.STATE["written"]
+    finally:
+        R.STATE["output_limit"], R.STATE["written"] = saved
+    latched = consume_expected_latches(R, latch_before, [(re.escape("output guard: 5 + 6 > 10"), 1)])
+    assert raised and written == 5 and len(latched) == 1
+    return {"refused_at": 11}
+
+
+def _write_json(path, obj):
+    data = json.dumps(obj).encode()
+    with open(path, "xb") as fh:
+        fh.write(data)
+    return sha(data)
+
+
+def t_allocation_release(R, W):
+    """G1/G5/G6: complete synthetic launch/settle/publication inventory; EVERY release needs NEW parent authority.
+    Liveness is deterministic ALL_PIDS + exact identities (including zombies), never a guessed absent real PID.
+    Dispositions are outside pilot roots and bind a census taken after every fixture record closed."""
+    go_sha, old_go = "f" * 64, "e" * 64
+    required = ("all_processes_ended", "ownership_inventory_complete", "all_runner_resources_released",
+                "all_unknown_owners_resolved", "publication_audited", "ram_accounting_audited", "late_artifacts_audited")
+    saved = R.list_pids, R.bsd_identity, R.lane_usage, R.disk_usage
+    present, groups = {}, {}
+    stamp = "2000-01-01T00:00:00+0000"  # syntactic legacy fixture, not an observed clock
+    identities = {"runner": {"pid": 880001, "ppid": 880000, "pgid": 880000, "start": [101, 1], "status": 2},
+                  "child": {"pid": 880002, "ppid": 880001, "pgid": 880002, "start": [102, 2], "status": 2},
+                  "helper": {"pid": 880003, "ppid": 880001, "pgid": 880003, "start": [103, 3], "status": 2},
+                  "descendant": {"pid": 880004, "ppid": 880002, "pgid": 880004, "start": [104, 4], "status": 2},
+                  "group_member": {"pid": 880005, "ppid": 880002, "pgid": 880002, "start": [105, 5], "status": 2}}
+
+    def listed(kind, value):
+        if kind == R.PROC_ALL_PIDS and value == 0:
+            return sorted(present)
+        if kind == R.PROC_PGRP_ONLY:
+            return list(groups.get(value, []))
+        if kind == R.PROC_PPID_ONLY:
+            return []
+        raise AssertionError((kind, value))
+
+    def inspected(pid):
+        ident = present.get(pid)
+        return (copy.deepcopy(ident), None) if ident is not None else (None, {"bsd_bytes": 0, "errno": errno.ESRCH})
+
+    def record(path, body):
+        return publish_json_x(path, body)
+
+    def build(root, base, options):
+        d = os.path.join(root, "run-a")
+        os.makedirs(os.path.join(d, "children"))
+        os.mkdir(os.path.join(d, "cwd"))
+        runner = copy.deepcopy(identities["runner"])
+        launch = {"schema": R.LAUNCH_SCHEMA, "pid": runner["pid"], "ppid": runner["ppid"],
+                  "runner_identity": runner, "runner_started_by_epoch": 101.000001,
+                  "host_clock": stamp, "go": {"sha256": options.get("go_sha", old_go)},
+                  "synthetic_fixture": True}
+        if options.get("legacy"):
+            launch["schema"] = "PA19-96H-PILOT-LAUNCH-v14"
+            launch.pop("runner_identity")
+            launch.pop("runner_started_by_epoch")
+        if options.get("malformed_launch"):
+            launch = {"schema": "unknown", "go": {"sha256": old_go}}
+        launch_pub = ({"sha256": None, "bytes": 0} if options.get("no_launch_record") else
+                      record(os.path.join(d, "launch-record.json"), launch))
+        settled = []
+        census = {"complete": True, "at_epoch": 106.0,
+                  "group_members": [{"pid": identities["group_member"]["pid"],
+                                     "identity": identities["group_member"]}],
+                  "descendants": [{"pid": identities["descendant"]["pid"],
+                                   "identity": identities["descendant"]}]}
+        for seq, kind in enumerate(("child", "helper"), 1):
+            identity = copy.deepcopy(identities[kind])
+            stem = os.path.join(d, "children", "%02d-%s" % (seq, kind))
+            cwd = os.path.join(d, "cwd", kind)
+            os.mkdir(cwd)
+            record(stem + ".intent.json", {"schema": "PA19-OWNER-INTENT-v1", "kind": kind, "seq": seq,
+                                           "label": kind, "argv": ["synthetic-not-executed"],
+                                           "launch_order": seq, "runner_identity": runner})
+            record(stem + ".launch.json", {"kind": kind, "seq": seq, "label": kind,
+                                           "pid": identity["pid"], "pgid": identity["pgid"], "identity": identity,
+                                           "started_by_epoch": float(identity["start"][0]) + 0.1,
+                                           "launch_order": seq, "runner_identity": runner,
+                                           "argv": ["synthetic-not-executed"], "cwd": cwd,
+                                           "capture": stem + ".out", "go": {"sha256": old_go},
+                                           "run_launch_record": launch_pub["sha256"]})
+            with open(stem + ".out", "xb") as fh:
+                fh.flush()
+                os.fsync(fh.fileno())
+            rec = {"seq": seq, "label": kind, "pid": identity["pid"], "pgid": identity["pgid"],
+                   "identity_at_start": identity, "settled": True, "returncode": 0, "rc": 0,
+                   "stop": "self", "actual_owned_reap": True, "wait_lost": None, "problems": [],
+                   "unsettled": None if kind == "child" else [], "invalid": [], "group_empty_after_reap": True,
+                   "stream_thread_alive_after_join": False, "reader_error": None, "quarantined": False,
+                   "stop_refused": False, "settlement_publication_in_bounds": True, "grace_completion_in_bounds": True,
+                   "native_exec_identity_verified": True, "exit_observed_by_deadline": True,
+                   "known_identities": [], "live_census": copy.deepcopy(census), "census_uncertainty": [],
+                   "trips": [], "resource_diagnostics": [],
+                   "output_sha256": sha(b""), "capture_file_bytes": 0}
+            disk_rec = dict(rec, settled=False, settlement_publication_in_bounds=False,
+                            provisionally_resources_closed=True,
+                            authority="PROVISIONAL until observed publication + closeout + parent exit audit")
+            settlement_pub = record(stem + ".settle.json", disk_rec)
+            rec.update(settlement_receipt_sha256=settlement_pub["sha256"],
+                       settlement_publication_done_mono=settlement_pub["publication_observed_mono"])
+            settled.append(rec)
+        if options.get("partial_intent"):
+            record(os.path.join(d, "children", "03-partial.intent.json"),
+                   {"schema": "PA19-OWNER-INTENT-v1", "kind": "child", "argv": ["synthetic-not-executed"]})
+        if options.get("quarantine"):
+            record(os.path.join(d, "children", "01-child.QUARANTINE.json"),
+                   {"pid": identities["child"]["pid"], "identity_at_start": identities["child"],
+                    "settlement": "UNSETTLED", "live_census": census})
+        summary_pub = closeout_pub = None
+        if not options.get("no_summary"):
+            summary = {"schema": "PA19-96H-PILOT-SUMMARY-v14" if options.get("legacy") else R.SUMMARY_SCHEMA,
+                       "publication_authority": "PROVISIONAL", "exit_code": options.get("summary_proposed_exit", 0),
+                       "proposed_exit_code": options.get("summary_proposed_exit", 0),
+                       "all_children_settled": True, "all_helpers_settled": True,
+                       "children": [settled[0]], "metadata_helpers": [settled[1]],
+                       "ownership_manifest": {"runner": runner, "children": [settled[0]], "helpers": [settled[1]],
+                                              "unresolved": []},
+                       "proof_ram_accounting_valid": True, "proof_ram_outstanding_bytes": 0,
+                       "reservation_retained": True, "synthetic_fixture": True}
+            if options.get("malformed_summary"):
+                summary = []
+            summary_name = "summary.real.json" if options.get("symlink_summary") else "summary.json"
+            summary_pub = record(os.path.join(d, summary_name), summary)
+            if options.get("symlink_summary"):
+                os.symlink("summary.real.json", os.path.join(d, "summary.json"))
+        if summary_pub is not None and not options.get("no_closeout") and not options.get("legacy"):
+            closeout_pub = record(os.path.join(d, "closeout.json"),
+                {"schema": R.CLOSEOUT_SCHEMA, "summary_sha256": summary_pub["sha256"],
+                 "summary_bytes": summary_pub["bytes"], "exit_code": options.get("closeout_exit", 0), "runner_identity": runner,
+                 "parent_block": False, "unresolved": [], "publication_defects": [],
+                 "host_clock_required_and_available": True, "publication_completion_self_certified": False})
+        release = {"dir": d, "launch_record_sha256": launch_pub["sha256"],
+                   "summary_sha256": None if summary_pub is None else summary_pub["sha256"],
+                   "closeout_sha256": None if closeout_pub is None else closeout_pub["sha256"]}
+        if options.get("unbound_existing_closeout"):
+            assert closeout_pub is not None
+            release["closeout_sha256"] = None
+        # EXPECTED inventory is explicit, NOT manufactured by attempt_owner_manifest under test.
+        certified = [{"pid": ident["pid"], "start": list(ident["start"]),
+                      "group_leader": kind in ("child", "helper")}
+                     for kind, ident in identities.items() if kind not in options.get("omit_identities", ())]
+        if options.get("legacy") and "runner" not in options.get("omit_identities", ()):
+            # Legacy launch retains an UNKNOWN start in addition to the known start in readable summaries/intents.
+            # Both independently enumerated identities require certification; never weaken the guard to admit one.
+            if options.get("omit_legacy_known_runner"):
+                certified = [x for x in certified if x["pid"] != runner["pid"]]
+            certified.append({"pid": runner["pid"], "start": None, "group_leader": False})
+        disp = dict({key: True for key in required}, schema=R.DISPOSITION_SCHEMA, attempt_dir=d,
+                    launch_record_sha256=release["launch_record_sha256"], summary_sha256=release["summary_sha256"],
+                    closeout_sha256=release["closeout_sha256"], attempt_tree_census=R.census_digest(d),
+                    observed_runner_exit_code=options.get("observed_exit", 0), identities=certified,
+                    runner_identity={"pid": runner["pid"], "start": None if options.get("legacy") else runner["start"]})
+        if options.get("legacy"):
+            disp["legacy_audit"] = True
+        if options.get("publication_failure_disposed"):
+            disp["publication_failure_disposed"] = True
+        disp.update(options.get("disposition_overrides", {}))
+        for key in options.get("drop_disposition_fields", ()):
+            disp.pop(key, None)
+        if not options.get("no_disposition"):
+            path = os.path.join(base, "parent-disposition.json")
+            assert not path.startswith(root + os.sep)
+            release["disposition"] = {"path": path, "sha256": record(path, disp)["sha256"]}
+        if options.get("late_tree_change"):
+            record(os.path.join(d, "late-artifact.json"), {"late": True})
+        if options.get("bad_launch_digest"):
+            release["launch_record_sha256"] = "0" * 64
+        if options.get("bad_summary_digest"):
+            release["summary_sha256"] = "0" * 64
+        if options.get("bad_closeout_digest"):
+            release["closeout_sha256"] = "0" * 64
+        if options.get("bad_disposition_digest"):
+            release["disposition"]["sha256"] = "0" * 64
+        return release
+
+    def scenario(name, options=None, reservation=1000, allocation_overrides=None):
+        check()
+        options = {} if options is None else dict(options)
+        present.clear()
+        groups.clear()
+        if options.get("present_runner"):
+            ident = copy.deepcopy(identities["runner"])
+            if options["present_runner"] == "zombie":
+                ident["status"] = R.SZOMB
+            elif options["present_runner"] == "reused":
+                ident["start"] = [999, 0]
+            present[ident["pid"]] = None if options["present_runner"] == "unreadable" else ident
+        if options.get("surviving_group"):
+            groups[identities["child"]["pid"]] = [identities["group_member"]["pid"]]
+        base = os.path.join(W, "alloc-v2-" + name)
+        root = os.path.join(base, "pilot")
+        os.makedirs(root)
+        rel = build(root, base, options)
+        out_dir = os.path.join(root, "run-new")
+        if options.get("out_exists"):
+            os.mkdir(out_dir)
+        releases = [] if options.get("unlisted") else [rel]
+        if options.get("duplicate_release"):
+            releases.append(copy.deepcopy(rel))
+        if options.get("missing_attempt"):
+            releases.append({"dir": os.path.join(root, "run-missing"), "launch_record_sha256": "1" * 64,
+                             "summary_sha256": None, "closeout_sha256": None})
+        allocation = {"schema": R.ALLOCATION_SCHEMA, "allocation_id": name, "out_dir": out_dir,
+                      "reservation_bytes": reservation, "lane_ceiling_bytes": R.LANE_CEILING,
+                      "busy_slots": R.BUSY_SLOTS, "released_attempts": releases}
+        allocation.update({} if allocation_overrides is None else allocation_overrides)
+        # The synthetic allocator fixture measures its OWN complete tree, not unrelated live lane artifacts.
+        R.lane_usage = lambda: saved[2](root)
+        R.disk_usage = lambda: dict(independent_disk_usage(root), directory_allocation_included=True,
+                                    APFS_shared_allocation_overcount="conservative")
+        return R.allocation_refusals({"allocation": allocation}, go_sha, out_dir, 1000, root=root)[0]
+
+    try:
+        R.list_pids, R.bsd_identity = listed, inspected
+        admitted = {
+            "complete_current": scenario("complete-current"),
+            "absent_runner_launch_after_explicit_parent_inventory_and_failure_audit": scenario("no-launch-audited", {
+                "no_launch_record": True, "publication_failure_disposed": True}),
+            "summary_proposed_vs_closeout_actual_after_explicit_failure_audit": scenario("summary-exit-disposed", {
+                "summary_proposed_exit": 0, "closeout_exit": 50, "observed_exit": 50,
+                "publication_failure_disposed": True}),
+            "known_pid_reuse": scenario("pid-reuse", {"present_runner": "reused"}),
+            "malformed_summary_after_explicit_parent_failure_audit": scenario("bad-summary-disposed", {
+                "malformed_summary": True, "publication_failure_disposed": True}),
+            "malformed_launch_after_explicit_parent_failure_audit": scenario("bad-launch-disposed", {
+                "malformed_launch": True, "publication_failure_disposed": True}),
+            "legacy_after_explicit_parent_audit": scenario("legacy", {"legacy": True}),
+            "summaryless_after_explicit_failed_publication_audit": scenario("nosummary", {
+                "no_summary": True, "publication_failure_disposed": True}),
+            "quarantine_after_explicit_parent_audit": scenario("quarantine-audited", {"quarantine": True})}
+        refused = {
+            "no_allocation": R.allocation_refusals({}, go_sha, os.path.join(W, "no-allocation"), 1000)[0],
+            "known_summary_assertions_without_disposition": scenario("no-disp", {"no_disposition": True}),
+            "small_reservation": scenario("small", reservation=999),
+            "large_reservation": scenario("large", reservation=1001),
+            "boolean_reservation": scenario("bool", reservation=True),
+            "wrong_out_dir": scenario("wrong-out", allocation_overrides={"out_dir": "/elsewhere/run-new"}),
+            "wrong_busy_slots": scenario("busy", allocation_overrides={"busy_slots": R.BUSY_SLOTS + 1}),
+            "wrong_ceiling": scenario("ceiling", allocation_overrides={"lane_ceiling_bytes": R.LANE_CEILING + 1}),
+            "incomplete_identity_inventory": scenario("no-child", {"omit_identities": ("child",)}),
+            "uncovered_descendant": scenario("no-desc", {"omit_identities": ("descendant",)}),
+            "uncovered_group_member": scenario("no-group", {"omit_identities": ("group_member",)}),
+            "live_prior_runner": scenario("live-runner", {"present_runner": "live"}),
+            "same_identity_zombie": scenario("zombie", {"present_runner": "zombie"}),
+            "esrch_but_all_pids_listed": scenario("esrch-listed", {"present_runner": "unreadable"}),
+            "leader_absent_group_still_present": scenario("group-alive", {"surviving_group": True}),
+            "unknown_ram_audit": scenario("ram-unknown", {"drop_disposition_fields": ("ram_accounting_audited",)}),
+            "unknown_publication_audit": scenario("pub-unknown", {"drop_disposition_fields": ("publication_audited",)}),
+            "partial_intent_unresolved": scenario("partial-intent", {"partial_intent": True,
+                "disposition_overrides": {"all_unknown_owners_resolved": False}}),
+            "changed_tree_after_disposition": scenario("tree-changed", {"late_tree_change": True}),
+            "no_closeout_or_explicit_override": scenario("no-closeout", {"no_closeout": True}),
+            "summaryless_without_explicit_override": scenario("nosummary-unproved", {"no_summary": True}),
+            "legacy_known_runner_omitted": scenario("legacy-known-start-omitted", {
+                "legacy": True, "omit_legacy_known_runner": True}),
+            "absent_launch_without_explicit_publication_failure": scenario("no-launch-no-pub-failure", {
+                "no_launch_record": True}),
+            "summary_proposed_exit_mismatch_closeout_actual_match": scenario("summary-proposed-exit", {
+                "summary_proposed_exit": 0, "closeout_exit": 50, "observed_exit": 50}),
+            "summary_proposed_exit_boolean": scenario("summary-proposed-exit-bool", {
+                "summary_proposed_exit": True}),
+            "legacy_without_explicit_legacy_audit": scenario("legacy-unproved", {"legacy": True,
+                "drop_disposition_fields": ("legacy_audit",)}),
+            "absent_launch_without_disposition": scenario("no-launch-no-disp", {
+                "no_launch_record": True, "no_disposition": True}),
+            "absent_launch_unknown_owners_not_resolved": scenario("no-launch-unknown", {
+                "no_launch_record": True, "disposition_overrides": {"all_unknown_owners_resolved": False}}),
+            "absent_launch_uncovered_known_child": scenario("no-launch-no-child", {
+                "no_launch_record": True, "omit_identities": ("child",)}),
+            "absent_launch_uncovered_known_descendant": scenario("no-launch-no-desc", {
+                "no_launch_record": True, "omit_identities": ("descendant",)}),
+            "malformed_launch": scenario("bad-launch", {"malformed_launch": True}),
+            "malformed_summary": scenario("bad-summary", {"malformed_summary": True}),
+            "symlinked_summary": scenario("symlink-summary", {"symlink_summary": True}),
+            "launch_digest_mismatch": scenario("launch-sha", {"bad_launch_digest": True}),
+            "summary_digest_mismatch": scenario("summary-sha", {"bad_summary_digest": True}),
+            "closeout_digest_mismatch": scenario("closeout-sha", {"bad_closeout_digest": True}),
+            "existing_closeout_digest_omitted": scenario("unbound-closeout", {
+                "unbound_existing_closeout": True, "publication_failure_disposed": True}),
+            "disposition_digest_mismatch": scenario("disp-sha", {"bad_disposition_digest": True}),
+            "parent_runner_identity_missing": scenario("runner-id-missing", {"drop_disposition_fields": ("runner_identity",)}),
+            "parent_runner_identity_uncovered": scenario("runner-id-uncovered", {"omit_identities": ("runner",)}),
+            "parent_runner_identity_mismatch": scenario("runner-id-mismatch", {
+                "disposition_overrides": {"runner_identity": {"pid": 880001, "start": [999, 0]}}}),
+            "observed_exit_missing": scenario("exit-missing", {"drop_disposition_fields": ("observed_runner_exit_code",)}),
+            "observed_exit_boolean": scenario("exit-bool", {"disposition_overrides": {"observed_runner_exit_code": True}}),
+            "observed_exit_mismatch": scenario("exit-mismatch", {"disposition_overrides": {"observed_runner_exit_code": 50}}),
+            "go_reuse": scenario("go-reuse", {"go_sha": go_sha}),
+            "out_dir_reuse": scenario("out-exists", {"out_exists": True}),
+            "unlisted_attempt": scenario("unlisted", {"unlisted": True}),
+            "missing_attempt": scenario("missing", {"missing_attempt": True}),
+            "duplicate_release": scenario("duplicate", {"duplicate_release": True})}
+        for field in required:
+            refused["audit_not_true_" + field] = scenario("audit-" + field,
+                {"disposition_overrides": {field: 1}})
+        assert all(value == [] for value in admitted.values()), admitted
+        assert all(refused.values()), {name: value for name, value in refused.items() if not value}
+        return {"admitted": {name: len(value) for name, value in admitted.items()},
+                "refused": {name: len(value) for name, value in refused.items()}}
+    finally:
+        R.list_pids, R.bsd_identity, R.lane_usage, R.disk_usage = saved
+
+
+def good_fixture(R):
+    S = sha(b"proof")
+    sink = {"sink_settled": True, "fifo_same_inode_still_fifo": True, "reader_fd_closed": True,
+            "buffer_rehash_matches": True, "finish_deadline_in_bounds": True, "construction_error": None,
+            "thread_started": True, "unblock_fd_closed": True, "errors": [],
+            "reader_close_error": None, "unblock_close_error": None,
+            "cap": 1000, "connected": True, "eof": True, "over_cap": False, "error": None,
+            "unblocked_by_runner": False, "discarded": 0, "received": 100, "retained": 100,
+            "sha256_of_retained": S, "buffer_rehash": [S, 100], "thread_alive_after_join": False}
+    receipt = {"problems": [], "stream_thread_alive_after_join": False, "group_empty_after_reap": True,
+                       "reader_error": None, "quarantined": False, "stop_refused": False,
+                       "actual_owned_reap": True, "wait_lost": None, "settlement_publication_in_bounds": True, "grace_completion_in_bounds": True,
+                       "native_exec_identity_verified": True, "unsettled": None, "output_sha256": sha(b""), "trips": [], "resource_diagnostics": []}
+    solver = {"returncode": 20, "stop": "self", "settled": True, "capture_over_cap": False, "seq": 1,
+              "proof_sink": sink, "exit_observed_by_deadline": True}
+    solver.update(copy.deepcopy(receipt))
+
+    def chk(seq):
+        rec = {"returncode": 0, "stop": "self", "settled": True, "capture_over_cap": False, "seq": seq,
+               "nondropped_bytes": 500, "exit_observed_by_deadline": True,
+               "stdin_feed": {"mode": "plain", "started": True, "fed_bytes": 100, "fed_sha256": S,
+                              "proof_bytes_fed": 100, "delivery_error": None, "exception": None, "close_error": None,
+                              "thread_alive_after_join": False, "construction_error": None,
+                              "read_endpoint_closed": True, "write_endpoint_closed": True,
+                              "close_errors": [], "errors": [], "finish_deadline_in_bounds": True},
+               "stdout_filter": {"raw_eof": True, "raw_bytes": 700, "dup_bytes_dropped": 200}}
+        rec.update(copy.deepcopy(receipt))
+        lines = [R.STDIN_LINE, "c parsing input formula with 10 variables and 20 clauses",
+                 "c finished parsing, read 100 bytes from proof file", "s VERIFIED"]
+        return [rec, lines]
+    return {"cnf_expect": ("c" * 64, 1000, "p cnf 10 20"), "solver": solver, "kl": ["s UNSATISFIABLE"], "cap": 1000,
+            "checks": [["A"] + chk(2), ["B"] + chk(3)], "cnf_post": ("c" * 64, 1000), "buf_post": [S, 100], "S": S}
+
+
+
+def qualify(R, fx):
+    return R.qualify_stream(fx["cnf_expect"], fx["solver"], fx["kl"], fx["cap"], [tuple(c) for c in fx["checks"]],
+                            fx["cnf_post"], fx["buf_post"])
+
+
+def _zero_proof(fx):
+    """A coherent zero-byte proof: every buffer/feed/consumed field agrees, so only BUFFER_SIZE remains."""
+    S0 = sha(b"")
+    fx["solver"]["proof_sink"].update(retained=0, received=0, sha256_of_retained=S0, buffer_rehash=[S0, 0])
+    for c in fx["checks"]:
+        c[1]["stdin_feed"].update(fed_bytes=0, fed_sha256=S0, proof_bytes_fed=0)
+        c[2][2] = "c finished parsing, read 0 bytes from proof file"
+    fx["buf_post"] = [S0, 0]
+
+
+def _suffix_shape(fx, k):
+    """C3 shape for checker k: suffix mode, one extra byte fed and hashed, 'wrong binary prefix', read N == buffer."""
+    rec, lines = fx["checks"][k][1], fx["checks"][k][2]
+    rec["stdin_feed"].update(mode="suffix", fed_bytes=101, fed_sha256=sha(b"proof" + b"x"))
+    lines.insert(2, "c WARNING: wrong binary prefix, stop reading proof")
+
+
+def _foreign_shape(fx, k):
+    """C4 shape for checker k: completed 's NOT VERIFIED' rc1."""
+    fx["checks"][k][1]["returncode"] = 1
+    fx["checks"][k][2][3] = "s NOT VERIFIED"
+
+
+def mutations(R):
+    S2 = sha(b"other")
+    A = lambda fx: fx["checks"][0][1]          # noqa: E731
+    B = lambda fx: fx["checks"][1][1]          # noqa: E731
+    LA = lambda fx: fx["checks"][0][2]         # noqa: E731
+    LB = lambda fx: fx["checks"][1][2]         # noqa: E731
+    sink = lambda fx: fx["solver"]["proof_sink"]  # noqa: E731
+    m = [
+        ("collector unblock endpoint not closed", lambda fx: sink(fx).update(unblock_fd_closed=False), ["BUFFER_INCOMPLETE"]),
+        ("collector missing unblock closure", lambda fx: sink(fx).pop("unblock_fd_closed"), ["BUFFER_INCOMPLETE"]),
+        ("collector retained unblock error", lambda fx: sink(fx).update(unblock_close_error="x"), ["BUFFER_INCOMPLETE"]),
+        ("collector retained reader-close error", lambda fx: sink(fx).update(reader_close_error="x"), ["BUFFER_INCOMPLETE"]),
+        ("collector errors history nonempty", lambda fx: sink(fx).update(errors=["x"]), ["BUFFER_INCOMPLETE"]),
+        ("collector no thread birth", lambda fx: sink(fx).update(thread_started=False), ["BUFFER_INCOMPLETE"]),
+        ("solver missing grace completion", lambda fx: fx["solver"].pop("grace_completion_in_bounds"), ["SOLVER_RECEIPT"]),
+        ("solver late grace completion", lambda fx: fx["solver"].update(grace_completion_in_bounds=False), ["SOLVER_RECEIPT"]),
+        ("solver truthy grace completion", lambda fx: fx["solver"].update(grace_completion_in_bounds=1), ["SOLVER_RECEIPT"]),
+        ("checker missing grace completion", lambda fx: A(fx).pop("grace_completion_in_bounds"), ["A.RECEIPT"]),
+        ("checker late grace completion", lambda fx: A(fx).update(grace_completion_in_bounds=False), ["A.RECEIPT"]),
+        ("checker truthy grace completion", lambda fx: A(fx).update(grace_completion_in_bounds=1), ["A.RECEIPT"]),
+        ("solver self exit with dirty trips", lambda fx: fx["solver"].update(trips=["owner_cancel_sigterm"]),
+         ["SOLVER_RECEIPT"]),
+        ("checker A self exit with dirty trips", lambda fx: A(fx).update(trips=["owner_cancel_sigterm"]),
+         ["A.RECEIPT"]),
+        ("checker B self exit with proofcap trip", lambda fx: B(fx).update(trips=["proof_cap"]),
+         ["B.RECEIPT"]),
+        ("checker A close-error history despite null aggregate", lambda fx: A(fx)["stdin_feed"].update(close_errors=["x"]),
+         ["A.FEED_STATE"]),
+        ("checker A error history despite null aggregate", lambda fx: A(fx)["stdin_feed"].update(errors=["x"]),
+         ["A.FEED_STATE"]),
+        ("checker A feeder finish outside bound", lambda fx: A(fx)["stdin_feed"].update(finish_deadline_in_bounds=False),
+         ["A.FEED_STATE"]),
+        ("checker missing nullable ownership field", lambda fx: A(fx).pop("wait_lost"), ["A.RECEIPT"]),
+        ("checker resource diagnostics missing", lambda fx: A(fx).pop("resource_diagnostics"), ["A.RECEIPT"]),
+        ("collector error field missing", lambda fx: sink(fx).pop("error"), ["BUFFER_INCOMPLETE"]),
+        ("checker read endpoint not closed", lambda fx: A(fx)["stdin_feed"].update(read_endpoint_closed=False), ["A.FEED_STATE"]),
+        ("checker write endpoint not closed", lambda fx: A(fx)["stdin_feed"].update(write_endpoint_closed=False), ["A.FEED_STATE"]),
+        ("checker close status missing", lambda fx: A(fx)["stdin_feed"].pop("close_error"), ["A.FEED_STATE"]),
+        ("live collector receipt", lambda fx: sink(fx).update(thread_alive_after_join=True), ["BUFFER_INCOMPLETE"]),
+        ("truthy collector settlement", lambda fx: sink(fx).update(sink_settled=1), ["BUFFER_INCOMPLETE"]),
+        ("collector endpoint not closed", lambda fx: sink(fx).update(reader_fd_closed=False), ["BUFFER_INCOMPLETE"]),
+        ("collector publication late", lambda fx: sink(fx).update(finish_deadline_in_bounds=False), ["BUFFER_INCOMPLETE"]),
+        ("solver truthy settlement", lambda fx: fx["solver"].update(settled=1), ["SOLVER_RECEIPT", "SOLVER_SETTLE"]),
+        ("solver contradictory problems", lambda fx: fx["solver"].update(problems=["unresolved"]), ["SOLVER_RECEIPT"]),
+        ("solver not actually reaped", lambda fx: fx["solver"].update(actual_owned_reap=False), ["SOLVER_RECEIPT"]),
+        ("solver settlement publication late", lambda fx: fx["solver"].update(settlement_publication_in_bounds=False), ["SOLVER_RECEIPT"]),
+        ("checker truthy settlement", lambda fx: A(fx).update(settled=1), ["A.RECEIPT", "A.SETTLE"]),
+        ("checker contradictory problems", lambda fx: A(fx).update(problems=["unresolved"]), ["A.RECEIPT"]),
+        ("checker post-reap group nonempty", lambda fx: A(fx).update(group_empty_after_reap=False), ["A.RECEIPT"]),
+        ("checker exclusive wait lost", lambda fx: A(fx).update(wait_lost="ECHILD"), ["A.RECEIPT"]),
+        ("checker live capture receipt", lambda fx: A(fx).update(stream_thread_alive_after_join=True), ["A.RECEIPT"]),
+        ("checker native identity unproved", lambda fx: A(fx).update(native_exec_identity_verified=False), ["A.RECEIPT"]),
+        ("solver rc 0", lambda fx: fx["solver"].update(returncode=0), ["SOLVER_EXIT"]),
+        ("solver tripped", lambda fx: fx["solver"].update(stop="lane_rss"), ["SOLVER_EXIT", "SOLVER_RECEIPT"]),
+        ("solver two status lines", lambda fx: fx["kl"].append("s UNSATISFIABLE"), ["SOLVER_OUTPUT"]),
+        ("solver SAT line", lambda fx: fx["kl"].__setitem__(0, "s SATISFIABLE"), ["SOLVER_OUTPUT"]),
+        ("solver extra diagnostic line", lambda fx: fx["kl"].append("kissat: warning: x"), ["SOLVER_OUTPUT"]),
+        ("solver no output", lambda fx: fx["kl"].clear(), ["SOLVER_OUTPUT"]),
+        ("solver unsettled", lambda fx: fx["solver"].update(settled=False), ["SOLVER_RECEIPT", "SOLVER_SETTLE"]),
+        ("solver capture over cap", lambda fx: fx["solver"].update(capture_over_cap=True), ["SOLVER_SETTLE"]),
+        ("solver exit observed after its deadline", lambda fx: fx["solver"].update(exit_observed_by_deadline=False),
+         ["SOLVER_TIMING"]),
+        ("solver timing evidence missing", lambda fx: fx["solver"].pop("exit_observed_by_deadline"), ["SOLVER_TIMING"]),
+        ("buffer no EOF", lambda fx: sink(fx).update(eof=False), ["BUFFER_INCOMPLETE"]),
+        ("buffer over cap", lambda fx: sink(fx).update(over_cap=True), ["BUFFER_INCOMPLETE"]),
+        ("buffer I/O error", lambda fx: sink(fx).update(error="OSError()"), ["BUFFER_INCOMPLETE"]),
+        ("buffer unblocked by runner", lambda fx: sink(fx).update(unblocked_by_runner=True), ["BUFFER_INCOMPLETE"]),
+        ("buffer discarded bytes", lambda fx: sink(fx).update(discarded=1), ["BUFFER_INCOMPLETE"]),
+        ("buffer received != retained", lambda fx: sink(fx).update(received=101), ["BUFFER_INCOMPLETE"]),
+        ("buffer re-hash differs", lambda fx: sink(fx).update(buffer_rehash=[S2, 100]), ["BUFFER_INCOMPLETE"]),
+        ("buffer not settled", lambda fx: sink(fx).update(sink_settled=False), ["BUFFER_INCOMPLETE"]),
+        ("buffer never connected", lambda fx: sink(fx).update(connected=False), ["BUFFER_INCOMPLETE"]),
+        ("coherent zero-byte proof", _zero_proof, ["BUFFER_SIZE"]),
+        ("proof above cap", lambda fx: fx.update(cap=99), ["BUFFER_SIZE"]),
+        ("checker B missing", lambda fx: fx.update(checks=fx["checks"][:1]), ["CHECKER_SET"]),
+        ("checkers reversed", lambda fx: fx.update(checks=fx["checks"][::-1]), ["CHECKER_SET"]),
+        ("checker A rc 1", lambda fx: A(fx).update(returncode=1), ["A.EXIT"]),
+        ("checker B deadline trip", lambda fx: B(fx).update(stop="absolute_or_elapsed_deadline"), ["B.EXIT", "B.RECEIPT"]),
+        ("checker A two VERIFIED", lambda fx: LA(fx).append("s VERIFIED"), ["A.STATUS"]),
+        ("checker A VERIFIED + NOT VERIFIED", lambda fx: LA(fx).append("s NOT VERIFIED"),
+         ["A.FORBIDDEN.NOT_VERIFIED", "A.STATUS"]),
+        ("checker A TIMEOUT rc0", lambda fx: LA(fx).__setitem__(3, "s TIMEOUT"), ["A.FORBIDDEN.TIMEOUT", "A.STATUS"]),
+        ("checker B header mismatch",
+         lambda fx: LB(fx).__setitem__(1, "c parsing input formula with 11 variables and 20 clauses"), ["B.HEADER"]),
+        ("checker B duplicate header", lambda fx: LB(fx).insert(2, LB(fx)[1]), ["B.HEADER"]),
+        ("checker B conflicting extra header",
+         lambda fx: LB(fx).insert(2, "c parsing input formula with 11 variables and 21 clauses"), ["B.HEADER"]),
+        ("checker A no stdin record", lambda fx: LA(fx).remove(R.STDIN_LINE), ["A.STDIN"]),
+        ("checker A duplicate stdin record", lambda fx: LA(fx).insert(1, R.STDIN_LINE), ["A.STDIN"]),
+        ("checker A suffix mode only", lambda fx: A(fx)["stdin_feed"].update(mode="suffix"), ["A.FEED_MODE"]),
+        ("checker A fed +1", lambda fx: A(fx)["stdin_feed"].update(fed_bytes=101), ["A.CONSUMED", "A.FEED_DIGEST"]),
+        ("checker B fed SHA differs (alter in transit)", lambda fx: B(fx)["stdin_feed"].update(fed_sha256=S2),
+         ["B.FEED_DIGEST"]),
+        ("checker A truncated feed", lambda fx: A(fx)["stdin_feed"].update(fed_bytes=90, proof_bytes_fed=90),
+         ["A.CONSUMED", "A.FEED_DIGEST"]),
+        ("checker A delivery error", lambda fx: A(fx)["stdin_feed"].update(delivery_error="EPIPE after 50 fed bytes"),
+         ["A.FEED_STATE"]),
+        ("checker A feeder exception", lambda fx: A(fx)["stdin_feed"].update(exception="MemoryError()"),
+         ["A.FEED_STATE"]),
+        ("checker B feeder close error", lambda fx: B(fx)["stdin_feed"].update(close_error="OSError()"),
+         ["B.FEED_STATE"]),
+        ("checker A feeder unsettled", lambda fx: A(fx)["stdin_feed"].update(thread_alive_after_join=True),
+         ["A.FEED_STATE"]),
+        ("checker A feeder never started", lambda fx: A(fx)["stdin_feed"].update(started=False), ["A.FEED_STATE"]),
+        ("checker A no feed record", lambda fx: A(fx).update(stdin_feed=None),
+         ["A.CONSUMED", "A.FEED_DIGEST", "A.FEED_MODE", "A.FEED_STATE"]),
+        ("checker B consumed 99", lambda fx: LB(fx).__setitem__(2, "c finished parsing, read 99 bytes from proof file"),
+         ["B.CONSUMED"]),
+        ("checker B no consumed record", lambda fx: LB(fx).pop(2), ["B.CONSUMED"]),
+        ("checker B conflicting extra consumed record",
+         lambda fx: LB(fx).insert(3, "c finished parsing, read 99 bytes from proof file"), ["B.CONSUMED"]),
+        ("checker A filter no EOF", lambda fx: A(fx)["stdout_filter"].update(raw_eof=False), ["A.FILTER"]),
+        ("checker A filter raw +1", lambda fx: A(fx)["stdout_filter"].update(raw_bytes=701), ["A.FILTER"]),
+        ("checker B filter missing", lambda fx: B(fx).update(stdout_filter=None), ["B.FILTER"]),
+        ("checker A nondropped bytes missing", lambda fx: A(fx).pop("nondropped_bytes"), ["A.FILTER"]),
+        ("checker A unsettled", lambda fx: A(fx).update(settled=False), ["A.RECEIPT", "A.SETTLE"]),
+        ("checker B capture over cap", lambda fx: B(fx).update(capture_over_cap=True), ["B.SETTLE"]),
+        ("checker B exit observed after its deadline", lambda fx: B(fx).update(exit_observed_by_deadline=False),
+         ["B.TIMING"]),
+        ("checker A timing evidence missing", lambda fx: A(fx).pop("exit_observed_by_deadline"), ["A.TIMING"]),
+        ("CNF post digest differs", lambda fx: fx.update(cnf_post=("d" * 64, 1000)), ["CNF_POST"]),
+        ("CNF post bytes differ", lambda fx: fx.update(cnf_post=("c" * 64, 999)), ["CNF_POST"]),
+        ("buffer post-check re-hash differs", lambda fx: fx.update(buf_post=[S2, 100]), ["BUFFER_POST"]),
+        ("buffer post-check bytes differ", lambda fx: fx.update(buf_post=[fx["S"], 99]), ["BUFFER_POST"]),
+        ("C3 shape on both checkers", lambda fx: (_suffix_shape(fx, 0), _suffix_shape(fx, 1)),
+         ["A.CONSUMED", "A.FEED_DIGEST", "A.FEED_MODE", "A.FORBIDDEN.WRONG_PREFIX",
+          "B.CONSUMED", "B.FEED_DIGEST", "B.FEED_MODE", "B.FORBIDDEN.WRONG_PREFIX"]),
+        ("C4 shape on checker A", lambda fx: _foreign_shape(fx, 0), ["A.EXIT", "A.FORBIDDEN.NOT_VERIFIED", "A.STATUS"]),
+    ]
+    for pat, key, line in (("early EOF", "EARLY_EOF", "c WARNING: early EOF of the input formula"),
+                           ("clauses less than expected", "LESS_THAN_EXPECTED", "c WARNING: 3 clauses less than expected"),
+                           ("trivial UNSAT", "TRIVIAL_UNSAT", "c trivial UNSAT"),
+                           ("ERROR", "ERROR", "c ERROR: no conflict"),
+                           ("MEMOUT", "MEMOUT", "c MEMOUT: reallocation of DB failed"),
+                           ("wrong binary prefix", "WRONG_PREFIX", "c WARNING: wrong binary prefix, stop reading proof"),
+                           ("no empty clause detected", "NO_EMPTY_CLAUSE", "c WARNING: no empty clause detected"),
+                           ("NOT VERIFIED", "NOT_VERIFIED", "c s NOT VERIFIED echo"),
+                           ("TIMEOUT", "TIMEOUT", "c TIMEOUT echo"),
+                           ("illegal literal", "ILLEGAL_LITERAL", "c illegal literal 5 due to max var 4"),
+                           ("error opening", "ERROR_OPENING", 'c error opening "x".'),
+                           ("failed to reallocate", "FAILED_REALLOC", "c failed to reallocate unit stack")):
+        m.append(("checker A forbidden %r" % pat, (lambda ln: lambda fx: LA(fx).insert(1, ln))(line),
+                  ["A.FORBIDDEN." + key]))
+    return m
+
+
+
+def t_qualify_matrix(R, W):
+    """V10: complete sorted defect-ID list per scenario; the baseline must be exactly []."""
+    base = good_fixture(R)
+    got0 = qualify(R, copy.deepcopy(base))
+    assert got0 == [], got0
+    rows = []
+    for name, mut, want in mutations(R):
+        check()
+        fx = copy.deepcopy(base)
+        mut(fx)
+        got = qualify(R, fx)
+        rows.append({"mutation": name, "intended_ids": sorted(want), "got_ids": R.defect_ids(got),
+                     "exact": R.defect_ids(got) == sorted(want), "defects": got})
+    bad = [r for r in rows if not r["exact"]]
+    assert not bad, bad
+    return {"scenarios": len(rows), "all_complete_id_sets_exact": True}
+
+
+
+class FakeProc:
+    """A never-started stand-in for a retained Popen: no process exists behind it."""
+
+    def __init__(self, rc=None):
+        self.returncode = rc
+
+    def poll(self):
+        return self.returncode
+
+    def wait(self):
+        return self.returncode
+
+
+def t_stop_identity(R, W):
+    """N1/G2: synthetic WNOWAIT observations, never Popen.poll/wait or a real kernel pid/signalled process."""
+    calls, waits = [], []
+    saved = R.KILLPG, R.bsd_identity, R.list_pids, R.os.waitid, R.os.waitpid, R.signal.getsignal
+    latch_before = tuple(R.LATCH)
+    good = {"pid": 424242, "ppid": os.getpid(), "pgid": 424242, "status": 2, "start": [7, 8], "comm": "x"}
+    exited = [False]
+
+    def waitid(kind, pid, flags):
+        waits.append((kind, pid, flags))
+        assert kind == R.os.P_PID and pid == 424242 and flags & R.os.WNOWAIT
+        return types.SimpleNamespace(si_pid=pid, si_code=R.os.CLD_EXITED, si_status=0) if exited[0] else None
+
+    def no_waitpid(*args):
+        raise AssertionError("stop primitive must not reap")
+
+    def owner(identity, reaped=False):
+        o = R.Owned()
+        o._owned_init()
+        o.argv, o.proc, o.pid, o.pgid, o.identity_at_start = ["fake"], FakeProc(0 if reaped else None), 424242, 424242, identity
+        o.reaped, o.exit_status = reaped, 0 if reaped else None
+        return o
+
+    try:
+        R.KILLPG = lambda pgid, sig: calls.append((pgid, sig))
+        R.os.waitid, R.os.waitpid = waitid, no_waitpid
+        R.signal.getsignal = lambda sig: signal.SIG_DFL if sig == signal.SIGCHLD else saved[5](sig)
+        R.list_pids = lambda kind, value: [424242] if exited[0] and kind == R.PROC_PGRP_ONLY else []
+        R.bsd_identity = lambda pid: (dict(good), None)
+        a = owner(None)
+        a.term("t")
+        a.term("t")
+        mismatch = dict(good, start=[9, 9])
+        R.bsd_identity = lambda pid: (dict(mismatch), None)
+        b = owner(dict(good))
+        b.term("t")
+        R.bsd_identity = lambda pid: (dict(good), None)
+        c = owner(dict(good))
+        c.term("t")
+        c.term("t")
+        d = owner(dict(good), reaped=True)
+        d.term("t")
+        exited[0] = True
+        R.bsd_identity = lambda pid: (None, {"bsd_bytes": 0, "errno": errno.ESRCH})
+        e = owner(dict(good))
+        e.term("t")
+    finally:
+        R.KILLPG, R.bsd_identity, R.list_pids, R.os.waitid, R.os.waitpid, R.signal.getsignal = saved
+    latched = consume_expected_latches(R, latch_before, [
+        (re.escape("stop refused for pid 424242: required complete start identity unknown; no signal even to an owned fast-exit group; parent block"), 1),
+        (re.escape("stop refused for pid 424242: live identity unavailable/mismatched %r None; parent block" % mismatch), 1)])
+    assert calls == [(424242, signal.SIGTERM), (424242, signal.SIGTERM)], calls
+    assert a.term_refused_mono is not None and a.term_sent_mono is None and b.term_refused_mono is not None
+    assert c.term_sent_mono is not None and c.term_delivery["delivered"] is True and d.term_delivery is None
+    assert e.term_sent_mono is not None and not e.reaped and len(latched) == 2, latched
+    assert waits and all(flags & R.os.WNOWAIT for _kind, _pid, flags in waits)
+    return {"signals_recorded": len(calls), "refusals_latched": len(latched), "synthetic_wnowait_observations": len(waits)}
+
+
+def t_buffer_live_collector_release(R, W):
+    """N6: release() of a buffer whose collector still runs is deferred: the blocks stay and stay charged; after EOF
+    and finish() the release succeeds and the charge falls to zero."""
+    p = os.path.join(W, "t6.fifo")
+    b = R.ProofBuffer(p, 4 * R.FEED_BLOCK)
+    data = det_bytes(1000, 9)
+    gate = threading.Event()
+    res = {}
+
+    def writer():
+        try:
+            fd = os.open(p, os.O_WRONLY)
+            try:
+                mv = memoryview(data)
+                while mv:
+                    k = os.write(fd, mv)
+                    if type(k) is not int or k <= 0 or k > len(mv):
+                        raise OSError(errno.EIO, "collector fixture writer made no valid progress")
+                    mv = mv[k:]
+                gate.wait(30)
+            finally:
+                os.close(fd)
+            res["ok"] = True
+        except Exception as exc:
+            res["error"] = repr(exc)
+
+    th = spawn(writer, (), "t6-writer")
+    end = time.monotonic() + 30
+    try:
+        while b.retained < len(data):
+            check()
+            assert time.monotonic() < end, "collector did not receive the bytes"
+            time.sleep(SLICE_S)
+        deferred = b.release()
+        still_list = isinstance(b.blocks, list)
+        charge_live = R.buffer_charge()
+    finally:
+        gate.set()
+    assert wait_thread(th, 60, "writer") and res.get("ok"), res
+    rec = buffer_finish(R, b, True)
+    released = b.release()
+    assert deferred is False and still_list and charge_live >= len(data) and b.release_requested
+    assert R.sink_complete(rec) and released is True and R.buffer_charge() == 0
+    return {"charged_while_live": charge_live}
+
+
+def t_run_kissat_owner_on_exception(R, W):
+    """N6: a ProofBuffer created by run_kissat is owned by the caller's list from creation, so it is released even when
+    run_child raises before run_kissat returns (run_child patched; no process is started)."""
+    fx = RunTreeFixture(R, W, "t-owner")
+    saved = R.run_child
+    owner = []
+    raised = False
+
+    def boom(*a, **k):
+        raise RuntimeError("injected run_child failure")
+
+    try:
+        R.run_child = boom
+        try:
+            R.run_kissat(os.path.join(fx.out, "x.cnf"), "T6", 1, 4096, 0, {}, owner)
+        except RuntimeError:
+            raised = True
+    finally:
+        R.run_child = saved
+    try:
+        assert raised and len(owner) == 1 and isinstance(owner[0], R.ProofBuffer), (raised, owner)
+        rec = buffer_finish(R, owner[0], False)    # never connected: the runner unblocks and joins it
+        assert owner[0].release() is True and R.buffer_charge() == 0 and rec["unblocked_by_runner"]
+    finally:
+        fx.restore()
+    return {"owned_at_creation": True}
+
+
+def t_commit_charging_and_cutoff(R, W):
+    """Capacity is charged before creation; an expired cutoff REFUSES publication rather than minting late UNKNOWN."""
+    fx = RunTreeFixture(R, W, "t-commit", limit=10)
+    latch_before = tuple(R.LATCH)
+    late_error = None
+    try:
+        first = os.path.join(fx.out, "a.record.json")
+        capacity_refused = False
+        try:
+            R.commit_record(first, {"status": "UNKNOWN"}, {"status": "UNSAT"})
+        except RuntimeError:
+            capacity_refused = True
+        first_created = os.path.lexists(first)
+        R.STATE["output_limit"] = R.STATE["reservation"] = 1 << 20
+        R.STATE["mono_end"] = time.monotonic() - 1
+        late = os.path.join(fx.out, "b.record.json")
+        try:
+            R.commit_record(late, {"status": "UNKNOWN"}, {"status": "UNSAT"})
+        except TimeoutError as exc:
+            late_error = exc
+        else:
+            raise AssertionError("after-cutoff commit returned a publication")
+        assert not os.path.lexists(late) and late not in R.CREATED and late not in R.WRITTEN
+    finally:
+        fx.restore()
+    assert late_error is not None
+    expected_late = "item publication not admitted within frozen cutoff: %r" % late_error
+    latched = consume_expected_latches(R, latch_before, [
+        (r"output guard: 0 \+ [1-9][0-9]* > 10", 1), (re.escape(expected_late), 1)])
+    assert capacity_refused and not first_created
+    return {"late_commit": "REFUSED_BEFORE_CREATION", "late_error": repr(late_error), "exact_faults": latched}
+
+
+def t_bounded_metadata_reads(R, W):
+    """N7: metadata reads refuse a FIFO without blocking, a final symlink and an oversize file; hashing refuses a FIFO
+    too; a regular file within the bound is read exactly."""
+    fifo = os.path.join(W, "t7.fifo")
+    os.mkfifo(fifo, 0o600)
+    real = os.path.join(W, "t7.json")
+    with open(real, "xb") as fh:
+        fh.write(b"x" * 100)
+    link = os.path.join(W, "t7.link")
+    os.symlink("t7.json", link)
+    out = {}
+    for name, fn in (("fifo_read", lambda: R.read_regular_bounded(fifo, 1000)), ("fifo_hash", lambda: R.sha_file(fifo)),
+                     ("symlink_read", lambda: R.read_regular_bounded(link, 1000)),
+                     ("oversize", lambda: R.read_regular_bounded(real, 99))):
+        check()
+        try:
+            fn()
+            out[name] = "accepted"
+        except (OSError, RuntimeError) as exc:
+            out[name] = type(exc).__name__
+    assert all(v != "accepted" for v in out.values()), out
+    assert R.read_regular_bounded(real, 100) == b"x" * 100
+    return out
+
+
+def t_anchored_confinement(R, W):
+    """N8: after an anchored run-tree directory is moved aside and replaced by a symlink, confinement is refused and
+    anchored writes still land in the anchored (moved) directory, never in the symlink target.  Preservation scope:
+    the test-created 'controls' directory is moved (never deleted) and a test-created symlink is made."""
+    fx = RunTreeFixture(R, W, "t-confine")
+    try:
+        ctl = os.path.join(fx.out, "controls")
+        elsewhere = os.path.join(W, "t-confine", "elsewhere")
+        os.mkdir(elsewhere)
+        before = R.confinement_refusals()
+        os.rename(ctl, ctl + ".moved")
+        os.symlink(elsewhere, ctl)
+        why = R.confinement_refusals()
+        R.write_bytes_x(os.path.join(ctl, "probe.txt"), b"anchored")
+        landed = os.path.exists(os.path.join(ctl + ".moved", "probe.txt"))
+        leaked = os.path.exists(os.path.join(elsewhere, "probe.txt"))
+    finally:
+        fx.restore()
+    assert before == [], before
+    assert why and any("moved or replaced" in w for w in why), why
+    assert landed and not leaked
+    return {"refusals": why[:2]}
+
+
+def t_closeout_cancel_race(R, W):
+    """N9/A8: after-helper closeout cancellation wins; fixtures retain provisional publication/parent-exit boundary."""
+    fx = RunTreeFixture(R, W, "t-closeout")
+    saved_census, saved_co, saved_usage = R.run_tree_census, R.STATE["cancel_order"], R.disk_usage
+    saved_inventory, saved_ledger = R.unresolved_inventory, R.ledger_refusals
+    latch_before = tuple(R.LATCH)
+
+    def usage_and_cancel(root=fx.out):
+        if R.STATE["cancel_order"] is None:
+            R.STATE["cancel_order"] = next(R.ORDER)
+        return dict(independent_disk_usage(root), directory_allocation_included=True,
+                    APFS_shared_allocation_overcount="conservative")
+
+    def fixture_inventory():
+        return filter_fixture_inventory(R, saved_inventory())[0]
+
+    def fixture_ledger():
+        snap = saved_census(fx.out)
+        independent = independent_disk_usage(fx.out)
+        logical = independent["logical_distinct_inode_bytes"]
+        allocated = independent["allocated_st_blocks_bytes"]
+        enforced = independent["enforced_max_bytes"]
+        assert enforced <= R.STATE["reservation"] and R.STATE["parent_exclusivity"] is True
+        dirs = {}
+        for path, (_fd, dev, ino) in R.TREE.items():
+            if path == fx.out or path.startswith(fx.out + os.sep):
+                st = os.lstat(path)
+                assert (st.st_dev, st.st_ino) == (dev, ino), path
+                dirs[path] = [dev, ino]
+        with os.scandir(os.path.dirname(fx.out)) as entries:
+            assert sorted(entry.name for entry in entries) == [os.path.basename(fx.out)]
+        zero = {"logical_distinct_inode_bytes": 0, "allocated_st_blocks_bytes": 0, "enforced_max_bytes": 0,
+                "distinct_inodes": 0, "directory_allocation_included": True,
+                "APFS_shared_allocation_overcount": "conservative"}
+        return [], {"outside_run_usage": zero, "this_run_usage": dict(independent, directory_allocation_included=True,
+                    APFS_shared_allocation_overcount="conservative"),
+                    "lane_logical_distinct_inode_bytes": logical, "lane_allocated_st_blocks_bytes": allocated,
+                    "lane_usage_bytes": enforced, "full_reservation_bytes": R.STATE["reservation"],
+                    "logical_future_bound_bytes": R.STATE["reservation"],
+                    "allocated_future_bound_bytes": R.STATE["reservation"],
+                    "conservative_bound_bytes": R.STATE["reservation"], "ceiling_bytes": R.LANE_CEILING,
+                    "charged_logical_capacity_bytes": R.STATE["written"], "pilot_entries_unchanged": True,
+                    "directory_identities": dirs, "parent_exclusivity": True, "fixture_root": fx.out,
+                    "synthetic_scope": "exact exclusively owned fixture root; no production-lane admission claim"}
+
+    try:
+        need(R.HELPER_ALLOW + 5, "closeout helper")
+        R.disk_usage, R.unresolved_inventory, R.ledger_refusals = usage_and_cancel, fixture_inventory, fixture_ledger
+        code = R.final_code({"schema": "test"}, {"sat": False, "controls_failed": False, "refused": False,
+                                                  "exception": False, "complete": True})
+        summary = json.loads(R.read_tree(os.path.join(fx.out, "summary.json"), R.RECORD_MAX))
+        closeout = json.loads(R.read_tree(os.path.join(fx.out, "closeout.json"), R.RECORD_MAX))
+    finally:
+        R.disk_usage, R.unresolved_inventory, R.ledger_refusals = saved_usage, saved_inventory, saved_ledger
+        restore_cancel(R, saved_co)
+        fx.restore()
+        latched = consume_expected_latches(R, latch_before, [])
+    assert code == R.EXIT_CANCELLED and summary["cancel_before_closeout"] is True, (code, summary, latched)
+    assert summary["cancel_order"] < summary["closeout_boundary"] and summary["chunk_claim"] == "held"
+    assert summary["publication_authority"].startswith("PROVISIONAL")
+    assert closeout["exit_code"] == R.EXIT_CANCELLED and closeout["publication_completion_self_certified"] is False
+    return {"exit": code, "host_clock_end": summary.get("host_clock_end"), "provisional_closeout": True}
+
+
+def t_c6_timer_predicate(R, W):
+    """A10: raw lower 1.49996 and upper 5.00004 FAIL; cleanup and display rounding cannot widen [1.5, 5.0]."""
+    def rec(started, last_alive, exit_obs, rc=0, popen_call=None, **kw):
+        r = {"stop": "self", "settled": True, "capture_over_cap": False, "returncode": rc,
+             "resource_diagnostics": [], "trips": [], "exit_observed_by_deadline": True,
+             "problems": [], "stream_thread_alive_after_join": False, "group_empty_after_reap": True,
+             "reader_error": None, "quarantined": False, "stop_refused": False,
+             "actual_owned_reap": True, "wait_lost": None, "settlement_publication_in_bounds": True, "grace_completion_in_bounds": True, "native_exec_identity_verified": True, "unsettled": None, "output_sha256": sha(b"s UNKNOWN\n"),
+             "timing": {"popen_call_s": started - 0.01 if popen_call is None else popen_call,
+                        "started_s": started, "last_alive_s": last_alive,
+                        "exit_observed_s": exit_obs, "settle_done_s": exit_obs + 50.0}}
+        r.update(kw)
+        return r
+    ok = R.c6_timer_refusals(rec(10.0, 11.95, 12.02), ["s UNKNOWN"])
+    exact = R.c6_timer_refusals(rec(0.0, 1.5, 5.0, popen_call=0.0), ["s UNKNOWN"])
+    integers = R.c6_timer_refusals(rec(10, 12, 13, popen_call=10), ["s UNKNOWN"])
+    bad = {"immediate_exit_slow_cleanup": R.c6_timer_refusals(rec(10.0, 10.0, 10.05), ["s UNKNOWN"]),
+           "too_long": R.c6_timer_refusals(rec(10.0, 15.5, 15.6), ["s UNKNOWN"]),
+           "extra_output": R.c6_timer_refusals(rec(10.0, 11.95, 12.02), ["s UNKNOWN", "c extra"]),
+           "rc1": R.c6_timer_refusals(rec(10.0, 11.95, 12.02, rc=1), ["s UNKNOWN"]),
+           "late": R.c6_timer_refusals(rec(10.0, 11.95, 12.02, exit_observed_by_deadline=False), ["s UNKNOWN"]),
+           "no_timing": R.c6_timer_refusals(dict(rec(10.0, 11.95, 12.02), timing={}), ["s UNKNOWN"]),
+           "raw_lower_1_49996": R.c6_timer_refusals(rec(0.0, 1.49996, 2.0, popen_call=0.0), ["s UNKNOWN"]),
+           "raw_upper_5_00004": R.c6_timer_refusals(rec(0.0, 2.0, 5.00004, popen_call=0.0), ["s UNKNOWN"])}
+    class IntSubclass(int):
+        pass
+    class FloatSubclass(float):
+        pass
+    fields = ("popen_call_s", "started_s", "last_alive_s", "exit_observed_s")
+    for field in fields:
+        for name, value in (("bool_true", True), ("bool_false", False), ("string", "11"),
+                            ("null", None), ("int_subclass", IntSubclass(11)),
+                            ("float_subclass", FloatSubclass(11.0)), ("complex", 11 + 0j),
+                            ("NaN", float("nan")), ("positive_inf", float("inf")),
+                            ("negative_inf", -float("inf"))):
+            malformed = rec(10.0, 11.95, 12.02)
+            malformed["timing"][field] = value
+            bad[field + ":" + name] = R.c6_timer_refusals(malformed, ["s UNKNOWN"])
+        missing = rec(10.0, 11.95, 12.02)
+        missing["timing"].pop(field)
+        bad[field + ":missing"] = R.c6_timer_refusals(missing, ["s UNKNOWN"])
+    for name, value in (("all_positive_inf", float("inf")), ("all_negative_inf", -float("inf")),
+                        ("all_NaN", float("nan"))):
+        malformed = rec(10.0, 11.95, 12.02)
+        malformed["timing"].update({field: value for field in fields})
+        bad[name] = R.c6_timer_refusals(malformed, ["s UNKNOWN"])
+    # Each duration below remains in [1.5,5.0]; ONLY event order can reject these counterexamples.
+    for name, values in (("popen_after_start", (11.0, 10.0, 12.0, 12.5)),
+                         ("exit_before_last_alive", (10.0, 10.0, 13.0, 12.0)),
+                         ("negative_monotone_events", (-1.0, -0.5, 1.0, 2.0))):
+        malformed = rec(10.0, 11.95, 12.02)
+        malformed["timing"].update(dict(zip(fields, values)))
+        bad[name] = R.c6_timer_refusals(malformed, ["s UNKNOWN"])
+    # This fully reversed sequence must refuse too, even though it also violates the lower duration bound.
+    reversed_events = rec(10.0, 11.95, 12.02)
+    reversed_events["timing"].update(dict(zip(fields, (13.0, 12.0, 11.0, 10.0))))
+    bad["all_events_reversed"] = R.c6_timer_refusals(reversed_events, ["s UNKNOWN"])
+    assert ok == [] and exact == [] and integers == [] and all(bad.values()), (ok, exact, integers, bad)
+    # This exercises the producer too: a predicate-only raw fixture would not catch Child.timing rounding.
+    c = R.Child.__new__(R.Child)
+    c._owned_init()
+    c.popen_call_mono = c.started_mono = 0.0
+    c.last_alive_mono, c.exit_observed_mono = 1.49996, 5.00004
+    c.deadline_mono, c.deadline, c.exit_observed_epoch = 100.0, 100.0, 5.00004
+    saved_mono0 = R.STATE["mono0"]
+    try:
+        R.STATE["mono0"] = 0.0
+        produced = c.timing()
+    finally:
+        R.STATE["mono0"] = saved_mono0
+    assert produced["last_alive_s"] - produced["started_s"] < R.C6_MIN_RUN_S, produced
+    assert produced["exit_observed_s"] - produced["popen_call_s"] > R.C6_MAX_RUN_S, produced
+    raw_from_child = rec(0.0, 1.49996, 5.00004, popen_call=0.0, timing=produced)
+    assert R.c6_timer_refusals(raw_from_child, ["s UNKNOWN"]), produced
+    # Oracle-only NaN/Inf/type objects never enter returned result details.
+    return {"accepted": 3, "refused": len(bad), "refused_case_names": sorted(bad), "raw_child_timing": produced}
+
+
+def t_libproc_validation(R, W):
+    """N12: proc_listpids results are validated: partial entries, out-of-buffer counts and non-positive pids raise; a
+    well-formed result is deduplicated and sorted."""
+    good = R.parse_pid_buffer([5, 3, 5, 0, 0], 12)
+    all_pids = R.parse_pid_buffer([0, 5, 3], 12, allow_kernel_zero=True)
+    assert all_pids == [3, 5], all_pids
+    try:
+        R.parse_pid_buffer([0, -1], 8, allow_kernel_zero=True)
+    except OSError:
+        pass
+    else:
+        raise AssertionError("negative ALL_PIDS entry accepted")
+    bad = []
+    for vals, n in (([5, 3], 7), ([5, 3], 12), ([5, 0, 3], 12), ([5, -1], 8), ([5], -4)):
+        try:
+            R.parse_pid_buffer(vals, n)
+            bad.append("accepted")
+        except OSError:
+            bad.append("refused")
+    assert good == [3, 5] and bad == ["refused"] * 5, (good, bad)
+    return {"good": good}
+
+
+def t_feeder_abandon_close_error(R, W):
+    """Exact EBADF fixture: real endpoints independently close, uncertain synthetic fd identity is NEVER erased."""
+    f = R.Feeder((b"a",), "plain", label="close-error-test")
+    originals = f.rfd, f.wfd
+    fingerprints = [[s.st_dev, s.st_ino, s.st_mode] for s in map(os.fstat, originals)]
+    os.close(f.rfd)
+    synthetic = 999999
+    try:
+        os.fstat(synthetic)
+    except OSError as exc:
+        assert exc.errno == errno.EBADF, exc
+    else:
+        raise AssertionError("synthetic never-open descriptor is unexpectedly open")
+    f.rfd = synthetic  # named mutation of this test-created object only, not a production closeout claim
+    errs = f.abandon()
+    expected = "read endpoint closure uncertain: %r" % OSError(errno.EBADF, os.strerror(errno.EBADF))
+    assert errs == [expected] and f.rfd == synthetic and f.wfd is None, (errs, f.rfd, f.wfd)
+    assert f.read_endpoint_identity == originals[0] and f.write_endpoint_identity == originals[1]
+    assert f.read_endpoint_closed is None and f.write_endpoint_closed is True
+    assert f.read_close_attempted is True and f.write_close_attempted is True and f.read_close_fd == synthetic
+    assert f.close_error == expected and f.close_errors == [expected] and f.errors == [expected]
+    saved_close, retried = R.os.close, []
+    def no_retry(fd):
+        retried.append(fd)
+        raise AssertionError("uncertain endpoint close was retried")
+    try:
+        R.os.close = no_retry
+        assert f.abandon() == [expected]
+        try:
+            f.close_read()
+        except RuntimeError as exc:
+            assert str(exc) == expected, exc
+        else:
+            raise AssertionError("uncertain close_read did not retain its prior refusal")
+    finally:
+        R.os.close = saved_close
+    assert retried == [] and f.close_errors == [expected] and f.errors == [expected]
+    for fd in originals:
+        try:
+            os.fstat(fd)
+        except OSError as exc:
+            assert exc.errno == errno.EBADF, exc
+        else:
+            raise AssertionError(("real fixture endpoint remains open", fd))
+    disposed = dispose_fixture_fault(R, f, "stdin feeder", errs,
+        both_original_descriptors_observed_closed=True, original_descriptor_identities=list(originals),
+        original_endpoint_fingerprints=fingerprints, synthetic_never_open_fd=synthetic)
+    return {"errors": errs, "fixture_disposition": disposed, "uncertain_endpoint_identity_retained": True}
+
+
+
+def t_reap_bounded_survivor(R, W):
+    """B1/G2/G4: bounded survivors, one verified SIGTERM, irreversible quarantine BEFORE any later waitid/reap."""
+    calls, wait_calls = [], []
+    saved = R.KILLPG, R.bsd_identity, R.list_pids, R.descendants, R.os.waitid, R.os.waitpid, R.signal.getsignal
+    latch_before = tuple(R.LATCH)
+    good = {"pid": 434343, "ppid": os.getpid(), "pgid": 434343, "status": 2, "start": [3, 4], "comm": "x"}
+
+    def waitid(kind, pid, flags):
+        wait_calls.append((kind, pid, flags))
+        assert kind == R.os.P_PID and pid == 434343 and flags & R.os.WNOWAIT
+        return None
+
+    def no_waitpid(*args):
+        raise AssertionError("a live survivor must not be reaped")
+
+    def survivor(identity):
+        o = R.Owned()
+        o._owned_init()
+        o.argv, o.proc, o.pid, o.pgid, o.identity_at_start = ["fake"], FakeProc(None), 434343, 434343, identity
+        return o
+
+    grace = 0.3
+    try:
+        R.KILLPG = lambda pgid, sig: calls.append((pgid, sig))
+        R.bsd_identity = lambda pid: (dict(good), None)
+        R.list_pids = lambda kind, value: [434343] if kind == R.PROC_PGRP_ONLY else []
+        R.descendants = lambda pid, pgid, deadline=None, roots=(): []
+        R.os.waitid, R.os.waitpid = waitid, no_waitpid
+        R.signal.getsignal = lambda sig: signal.SIG_DFL if sig == signal.SIGCHLD else saved[6](sig)
+        a = survivor(dict(good))
+        t0 = time.monotonic()
+        rc_a = a.reap_owned(grace)
+        took_a = time.monotonic() - t0
+        prior_observations = list(wait_calls)
+        # A cached fake Popen returncode cannot bypass the irreversible quarantine boundary.
+        a.proc.returncode = 0
+        t1 = time.monotonic()
+        rc_a2 = a.reap_owned(grace)
+        took_a2 = time.monotonic() - t1
+        assert wait_calls == prior_observations, (prior_observations, wait_calls)
+        b = survivor(None)
+        t2 = time.monotonic()
+        rc_b = b.reap_owned(grace)
+        took_b = time.monotonic() - t2
+    finally:
+        R.KILLPG, R.bsd_identity, R.list_pids, R.descendants, R.os.waitid, R.os.waitpid, R.signal.getsignal = saved
+    latched = consume_expected_latches(R, latch_before, [
+        (re.escape("UNSETTLED pid 434343: finite grace exhausted or wait/census ownership unproven; reservation retained"), 2),
+        (re.escape("stop refused for pid 434343: required complete start identity unknown; no signal even to an owned fast-exit group; parent block"), 1)])
+    assert rc_a is None and rc_a2 is None and rc_b is None, (rc_a, rc_a2, rc_b)
+    assert calls == [(434343, signal.SIGTERM)], calls
+    assert took_a < grace + 1.0 and took_a2 < 0.2 and took_b < grace + 1.0, (took_a, took_a2, took_b)
+    assert a.quarantined and b.quarantined and a.unsettled and b.unsettled
+    assert a.unsettled["pid"] == 434343 and a.unsettled["live_census"]["leader_pid"] == 434343
+    assert a.unsettled["late_obligations"] and a.quarantine_receipt_state.startswith("unpublishable")
+    assert a.reaped is False and b.reaped is False and b.term_delivery["delivered"] is False
+    return {"reap_seconds": [took_a, took_a2, took_b], "signals": len(calls), "exact_faults": latched}
+
+
+def t_settle_all_bounded(R, W):
+    """G4: ONE idempotent settlement attempt per child; escaped cleanup retains a real UNSETTLED inventory."""
+    latch_before = tuple(R.LATCH)
+
+    class StuckChild(R.Owned):
+        def __init__(self):
+            self._owned_init()
+            self.proc, self.settled_rec = FakeProc(None), None
+            self.seq, self.label, self.pid, self.pgid, self.attempts = 99, "stuck", 454545, 454545, 0
+            self.argv = ["synthetic-never-launched"]
+
+        def settle(self):
+            self.attempts += 1
+            raise RuntimeError("injected settlement failure")
+
+    c = StuckChild()
+    R.OWNED.append(c)
+    t0 = time.monotonic()
+    try:
+        R.settle_all()
+        R.settle_all()  # the failed receipt is final: no second cleanup/wait pass
+    finally:
+        R.OWNED.remove(c)
+    took = time.monotonic() - t0
+    latched = consume_expected_latches(R, latch_before, [
+        (re.escape("UNSETTLED pid 454545: settlement escaped: RuntimeError('injected settlement failure'); reservation retained"), 1),
+        (re.escape("child cleanup unproven; retain parent block"), 1)])
+    assert c.attempts == 1 and R.SETTLE_ALL_ATTEMPTS == 1 and c.settled_rec["settled"] is False, c.settled_rec
+    assert c.quarantined and c.unsettled is not None and c.reaped is False and took < 5.0, (latched, took)
+    assert c.settled_rec["actual_owned_reap"] is False and c.settled_rec["settlement_publication_in_bounds"] is False
+    return {"attempts": c.attempts, "seconds": took, "exact_faults": latched}
+
+def decide_terminal(results, n_tests, alive_threads, runner_latch, helpers_unsettled, closeout_errors):
+    """A8: callers include terminal_refusals AFTER clocks, cancellation, budget and ownership inspection."""
+    if len(results) == n_tests and all(r.get("ok") is True for r in results) and not alive_threads \
+            and not runner_latch and not helpers_unsettled and not closeout_errors:
+        return "ALL_OK"
+    return "FAILURES"
+
+
+def t_terminal_rule(R, W):
+    """A8: old terminal cases plus after-last-test cancel, required clock, budget and unknown-accounting cases."""
+    ok = [{"ok": True}] * 3
+    cases = {"all_good": decide_terminal(ok, 3, [], [], [], []),
+             "missing_test": decide_terminal(ok[:2], 3, [], [], [], []),
+             "failed_test": decide_terminal(ok[:2] + [{"ok": False}], 3, [], [], [], []),
+             "truthy_not_true_test": decide_terminal(ok[:2] + [{"ok": 1}], 3, [], [], [], []),
+             "live_thread": decide_terminal(ok, 3, ["t"], [], [], []),
+             "latch": decide_terminal(ok, 3, [], ["x"], [], []),
+             "helper": decide_terminal(ok, 3, [], [], [1], []),
+             "closeout": decide_terminal(ok, 3, [], [], [], ["e"])}
+    assert cases["all_good"] == "ALL_OK" and all(v == "FAILURES" for k, v in cases.items() if k != "all_good"), cases
+    stamp = "2000-01-01T00:00:00+0000"  # syntax-only fixture, not a claimed host-clock observation
+    base = {"signal": None, "runner_cancel_order": None, "start_clock": stamp, "end_clock": stamp,
+            "start_clock_valid": True, "end_clock_valid": True, "budget_started_mono": 0.0,
+            "budget_deadline_mono": 100.0, "observed_mono": 99.0,
+            "ownership": {"inventory_complete": True, "unresolved": [], "errors": [],
+                          "proof_ram_accounting_valid": True, "proof_ram_outstanding_bytes": 0}}
+    assert terminal_refusals(base) == []
+    assert terminal_choice(ok, 3, [], [], [], [], base) == "ALL_OK"
+    mutations = [("signal_after_last_test", lambda e: e.update(signal=signal.SIGTERM), "CANCELLED"),
+                 ("runner_cancel_after_last_test", lambda e: e.update(runner_cancel_order=1), "CANCELLED"),
+                 ("null_final_clock", lambda e: e.update(end_clock=None, end_clock_valid=False), "FAILURES"),
+                 ("skipped_clock_allowance", lambda e: e.update(end_clock=None, end_clock_valid=False,
+                                                               end_clock_status="skipped_allowance"), "FAILURES"),
+                 ("failed_clock", lambda e: e.update(end_clock=None, end_clock_valid=False,
+                                                    end_clock_status="failed"), "FAILURES"),
+                 ("missing_required_clock", lambda e: e.pop("end_clock"), "FAILURES"),
+                 ("invalid_clock", lambda e: e.update(end_clock="invented"), "FAILURES"),
+                 ("truthy_clock_validity", lambda e: e.update(end_clock_valid=1), "FAILURES"),
+                 ("elapsed_budget", lambda e: e.update(observed_mono=100.00001), "BUDGET_EXHAUSTED"),
+                 ("exact_deadline", lambda e: e.update(observed_mono=100.0), "BUDGET_EXHAUSTED"),
+                 ("budget_unknown", lambda e: e.update(budget_deadline_mono=None), "FAILURES"),
+                 ("budget_nan", lambda e: e.update(observed_mono=float("nan")), "FAILURES"),
+                 ("ownership_incomplete", lambda e: e["ownership"].update(inventory_complete=False), "FAILURES"),
+                 ("ownership_unknown", lambda e: e.update(ownership=None), "FAILURES"),
+                 ("unresolved_owner_without_optional_record", lambda e: e["ownership"].update(
+                     unresolved=[{"kind": "child", "settled": False, "unsettled": None}]), "FAILURES"),
+                 ("held_feeder", lambda e: e["ownership"].update(
+                     unresolved=[{"kind": "feeder", "held_blocks": 1}]), "FAILURES"),
+                 ("feeder_endpoint", lambda e: e["ownership"].update(
+                     unresolved=[{"kind": "feeder", "rfd": 999999}]), "FAILURES"),
+                 ("live_empty_collector", lambda e: e["ownership"].update(
+                     unresolved=[{"kind": "buffer", "retained": 0, "collector_alive": True}]), "FAILURES"),
+                 ("partial_transport", lambda e: e["ownership"].update(
+                     unresolved=[{"kind": "buffer", "thread": None}]), "FAILURES"),
+                 ("accounting_unknown", lambda e: e["ownership"].update(
+                     proof_ram_accounting_valid=False, proof_ram_outstanding_bytes=None), "FAILURES"),
+                 ("accounting_boolean", lambda e: e["ownership"].update(proof_ram_outstanding_bytes=False), "FAILURES")]
+    envelope_cases = {}
+    for name, mutate, expected in mutations:
+        e = copy.deepcopy(base)
+        mutate(e)
+        reasons = terminal_refusals(e)
+        got = terminal_choice(ok, 3, [], [], [], [], e)
+        assert reasons and got == expected, (name, reasons, got, expected)
+        envelope_cases[name] = {"terminal": got, "refusals": reasons}
+    for prior in ("FAILURES", "SETUP_FAILED", "BUDGET_EXHAUSTED", "CANCELLED"):
+        assert terminal_choice(ok, 3, [], [], [], [], base, prior) == prior
+    return {"legacy_cases": cases, "envelope_cases": envelope_cases}
+
+def consume_expected_latches(R, before, expected):
+    """Consume an exact full-match multiset only; every check precedes deletion even when called with -O."""
+    before, current = tuple(before), tuple(R.LATCH)
+    if current[:len(before)] != before:
+        raise AssertionError(("fixture changed an existing latch", before, current))
+    patterns = []
+    for pattern, count in expected:
+        if not isinstance(pattern, str) or type(count) is not int or count <= 0:
+            raise AssertionError(("invalid expected fixture latch specification", expected))
+        patterns.append((re.compile(pattern), count))
+    suffix, counts = current[len(before):], [0] * len(patterns)
+    for fault in suffix:
+        matches = [i for i, (pattern, _count) in enumerate(patterns)
+                   if isinstance(fault, str) and pattern.fullmatch(fault) is not None]
+        if len(matches) != 1:
+            raise AssertionError(("unexpected or ambiguous fixture latch", fault, expected, suffix))
+        counts[matches[0]] += 1
+    if counts != [count for _pattern, count in patterns]:
+        raise AssertionError(("fixture latch counts differ", expected, suffix))
+    if tuple(R.LATCH) != current:
+        raise AssertionError("latch changed while checking fixture faults")
+    # Fixed validated range ONLY: an append after the final sample remains an unexpected terminal blocker.
+    del R.LATCH[len(before):len(before) + len(suffix)]
+    return list(suffix)
+
+def dispose_fixture_fault(R, obj, kind, expected_faults, both_original_descriptors_observed_closed=False,
+                          original_descriptor_identities=None, original_endpoint_fingerprints=None, synthetic_never_open_fd=None):
+    """Retain exact TEST-only fault evidence; never clear production flags, owners, errors or endpoint identities."""
+    disposition = {"resource": obj, "resource_id": id(obj), "kind": kind,
+                   "expected_faults": list(expected_faults),
+                   "both_original_descriptors_observed_closed": both_original_descriptors_observed_closed,
+                   "original_descriptor_identities": original_descriptor_identities,
+                   "original_endpoint_fingerprints": original_endpoint_fingerprints,
+                   "synthetic_never_open_fd": synthetic_never_open_fd}
+    if kind == "stdin feeder":
+        proof = [original_descriptor_identities, original_endpoint_fingerprints, synthetic_never_open_fd,
+                 both_original_descriptors_observed_closed]
+        disposition["original_endpoint_proof_sha256"] = sha(json.dumps(proof, sort_keys=True, allow_nan=False).encode())
+        snapshot = feeder_disposition_snapshot(obj)
+        disposition["known_fault_snapshot"] = snapshot
+        disposition["known_fault_snapshot_sha256"] = sha(json.dumps(snapshot, sort_keys=True, allow_nan=False).encode())
+    state = fixture_disposition_state(R, disposition)
+    if state["lifecycle_refusals"]:
+        raise AssertionError(state)
+    if any(d["resource"] is obj for d in STATE.setdefault("fixture_dispositions", [])):
+        raise AssertionError("duplicate disposition")
+    obj.fixture_disposed = True
+    STATE["fixture_dispositions"].append(disposition)
+    return dict(state, expected_faults=list(expected_faults))
+
+def filter_fixture_inventory(R, inventory):
+    """Every retained disposition is revalidated, including ones absent from BOTH registry and inventory."""
+    filtered, observed, validated = [], [], []
+    for disposition in STATE.get("fixture_dispositions", []):
+        state = fixture_disposition_state(R, disposition)
+        state = dict(state, expected_faults=list(disposition["expected_faults"]))
+        observed.append(state)
+        validated.append((disposition, state))
+        if state["lifecycle_refusals"]:
+            filtered.append({"kind": "invalid retained test fixture disposition",
+                             "resource_id": id(disposition["resource"]), "state": state})
+    for entry in inventory:
+        matches = []
+        if isinstance(entry, dict):
+            for disposition, state in validated:
+                if state["lifecycle_refusals"]:
+                    continue
+                kind, obj = disposition["kind"], disposition["resource"]
+                if entry.get("kind") == "partial publication" and kind == "file sink":
+                    for covered in state.get("covered_partial_publications", []):
+                        current = R.CREATED.get(covered.get("path"))
+                        if entry.get("path") == covered.get("path") and isinstance(current, dict) \
+                                and entry.get("state") == current and current.get("state") == covered.get("state") == "open" \
+                                and current.get("identity") == covered.get("identity"):
+                            matches.append((disposition, state))
+                    continue
+                if entry.get("kind") == kind and type(entry.get("resource_id")) is int \
+                        and entry["resource_id"] == id(obj) == disposition.get("resource_id"):
+                    matches.append((disposition, state))
+        if len(matches) != 1:
+            filtered.append(entry)
+    return filtered, observed
+
+def fixture_disposition_state(R, disposition):
+    """Recheck only the physical lifecycle of an EXACT deliberate integrity/EBADF fixture, on every snapshot."""
+    kind, obj = disposition["kind"], disposition["resource"]
+    if disposition.get("resource_id") != id(obj):
+        return {"kind": kind, "object_id": id(obj), "lifecycle_refusals": ["disposition resource identity changed"]}
+    if kind == "file sink":
+        # Defined by the separately parent-integrated offline D2 fixture extension, never a production hook.
+        state = d2_fixture_fault_state(R, obj, disposition["expected_faults"])
+        assert isinstance(state, dict) and isinstance(state.get("lifecycle_refusals"), list), state
+        if state.get("kind") != kind or state.get("object_id") != id(obj) \
+                or state.get("key") != getattr(obj, "file_path", None):
+            state["lifecycle_refusals"].append("D2 disposition does not bind the exact fixture object/path")
+        if sum(item is obj for item in R.LIVE_SINKS) != 1:
+            state["lifecycle_refusals"].append("disposed D2 sink no longer has exactly one registry owner")
+        return state
+    th = getattr(obj, "thread", None)
+    state = {"kind": kind, "object_id": id(obj), "thread_constructed": th is not None,
+             "thread_alive": None if th is None else th.is_alive(), "blocks_empty": getattr(obj, "blocks", None) == (),
+             "construction_error": getattr(obj, "construction_error", "unknown")}
+    reasons = []
+    if kind == "RAM collector":
+        registry = R.LIVE_BUFFERS
+        rec = getattr(obj, "finished", None)
+        state.update(key=getattr(obj, "fifo_path", None), released=getattr(obj, "released", None),
+                     reader_fd=getattr(obj, "reader_fd", "unknown"),
+                     reader_fd_closed=getattr(obj, "reader_fd_closed", None), error=getattr(obj, "error", "unknown"),
+                     unblock_fd=getattr(obj, "unblock_fd", "unknown"),
+                     unblock_fd_closed=getattr(obj, "unblock_fd_closed", None))
+        if state["released"] is not True or state["reader_fd"] is not None \
+                or state["reader_fd_closed"] is not True or state["error"] is not None \
+                or state["unblock_fd"] is not None or state["unblock_fd_closed"] is not True \
+                or getattr(obj, "reader_close_error", "unknown") is not None \
+                or getattr(obj, "unblock_close_error", "unknown") is not None or getattr(obj, "errors", None) != []:
+            reasons.append("collector lifecycle/endpoint/error not proven closed")
+        if not isinstance(rec, dict) or rec.get("sink_settled") is not False \
+                or rec.get("fifo_same_inode_still_fifo") is not False \
+                or rec.get("thread_alive_after_join") is not False or rec.get("reader_fd_closed") is not True \
+                or rec.get("buffer_rehash_matches") is not True or rec.get("finish_deadline_in_bounds") is not True \
+                or rec.get("construction_error") is not None or rec.get("error") is not None:
+            reasons.append("not the exact replaced-FIFO-only integrity fixture")
+        if disposition["expected_faults"] != ["proof buffer integrity/closure unproven: " + str(state["key"])]:
+            reasons.append("FIFO fixture fault evidence differs")
+    elif kind == "stdin feeder":
+        registry = R.LIVE_FEEDERS
+        snapshot = feeder_disposition_snapshot(obj)
+        frozen = disposition.get("known_fault_snapshot")
+        frozen_sha = disposition.get("known_fault_snapshot_sha256")
+        if not isinstance(frozen, dict) or sha(json.dumps(frozen, sort_keys=True, allow_nan=False).encode()) != frozen_sha \
+                or sha(json.dumps(snapshot, sort_keys=True, allow_nan=False).encode()) != frozen_sha:
+            reasons.append("exact known-fault feeder snapshot changed or was not independently retained")
+        state["known_fault_snapshot_sha256"] = frozen_sha
+        state.update(key=getattr(obj, "label", None), rfd=getattr(obj, "rfd", "unknown"),
+                     wfd=getattr(obj, "wfd", "unknown"), started=getattr(obj, "started", None),
+                     close_error=getattr(obj, "close_error", None),
+                     close_errors=list(getattr(obj, "close_errors", [])), errors=list(getattr(obj, "errors", [])),
+                     read_endpoint_closed=getattr(obj, "read_endpoint_closed", "unknown"),
+                     write_endpoint_closed=getattr(obj, "write_endpoint_closed", "unknown"))
+        expected = "read endpoint closure uncertain: %r" % OSError(errno.EBADF, os.strerror(errno.EBADF))
+        proof = [disposition.get(key) for key in ("original_descriptor_identities",
+            "original_endpoint_fingerprints", "synthetic_never_open_fd", "both_original_descriptors_observed_closed")]
+        if sha(json.dumps(proof, sort_keys=True, allow_nan=False).encode()) != disposition.get("original_endpoint_proof_sha256"):
+            reasons.append("independent original-endpoint closure proof changed or was not retained")
+        originals, fingerprints, synthetic = (disposition.get(k) for k in
+            ("original_descriptor_identities", "original_endpoint_fingerprints", "synthetic_never_open_fd"))
+        if not isinstance(originals, (tuple, list)) or len(originals) != 2 \
+                or any(type(fd) is not int or fd < 0 for fd in originals) or type(synthetic) is not int \
+                or synthetic in originals or not isinstance(fingerprints, (list, tuple)) or len(fingerprints) != 2:
+            reasons.append("missing exact independently recorded original and synthetic endpoint identities")
+        else:
+            if getattr(obj, "read_endpoint_identity", None) != originals[0] \
+                    or getattr(obj, "write_endpoint_identity", None) != originals[1] \
+                    or state["rfd"] != synthetic or getattr(obj, "read_close_fd", None) != synthetic:
+                reasons.append("failed-close endpoint identity was erased or changed")
+            for fd, original in list(zip(originals, fingerprints)) + [(synthetic, None)]:
+                try:
+                    current = os.fstat(fd)
+                except OSError as exc:
+                    if exc.errno != errno.EBADF:
+                        reasons.append("independent endpoint check is not EBADF: %d" % fd)
+                else:
+                    if original is None or list(original) == [current.st_dev, current.st_ino, current.st_mode]:
+                        reasons.append("disposed original/synthetic endpoint is open: %d" % fd)
+        if state["wfd"] is not None or state["started"] is not False \
+                or state["read_endpoint_closed"] is not None or state["write_endpoint_closed"] is not True \
+                or getattr(obj, "read_close_attempted", None) is not True \
+                or getattr(obj, "write_close_attempted", None) is not True \
+                or state["close_error"] != expected or state["close_errors"] != [expected] \
+                or state["errors"] != [expected] or disposition["expected_faults"] != [expected] \
+                or getattr(obj, "read_close_error", None) != expected or getattr(obj, "write_close_error", "unknown") is not None \
+                or getattr(obj, "exception", "unknown") is not None or getattr(obj, "abandon_error", "unknown") is not None \
+                or getattr(obj, "pipe_acquisition_unknown", None) is not False \
+                or getattr(obj, "start_acquisition_unknown", None) is not False \
+                or disposition.get("both_original_descriptors_observed_closed") is not True:
+            reasons.append("not the exact retained never-open-fd EBADF fixture with real endpoints independently closed")
+    else:
+        registry = []
+        state["key"] = None
+        reasons.append("unsupported fixture disposition kind")
+    if sum(item is obj for item in registry) != 1:
+        reasons.append("disposed fixture no longer has exactly one registry owner")
+    if state["thread_constructed"] is not True or state["thread_alive"] is not False \
+            or state["blocks_empty"] is not True or state["construction_error"] is not None:
+        reasons.append("fixture thread/blocks/construction lifecycle remains unproved")
+    state["lifecycle_refusals"] = reasons
+    return state
+
+def load_verified_runner(raw, expect, filename, name="pstream_runner_under_test"):
+    """A2: compile/execute the retained verified bytes; filename is a diagnostic label, never reopened."""
+    if not isinstance(raw, bytes):
+        raise TypeError("runner source must be retained bytes")
+    got = sha(raw)
+    if got != expect:
+        raise RuntimeError("runner pin mismatch %s" % got)
+    code = compile(raw, filename, "exec", dont_inherit=True)
+    module = types.ModuleType(name)
+    module.__file__, module.__package__, module.__spec__ = filename, "", None
+    exec(code, module.__dict__)
+    return module
+
+def publish_json_x(path, obj):
+    """Return publication evidence only AFTER exclusive write, flush, fsync AND close have returned."""
+    data = (json.dumps(obj, indent=1, sort_keys=True) + "\n").encode()
+    with open(path, "xb") as fh:
+        if fh.write(data) != len(data):
+            raise OSError("short JSON write")
+        fh.flush()
+        os.fsync(fh.fileno())
+    observed = time.monotonic()
+    return {"sha256": sha(data), "bytes": len(data), "publication_observed_mono": observed}
+
+def selected_tests(R):
+    """Preserve all frozen 45 P/34 D cases in order, then expand; no old test may disappear or duplicate."""
+    if hasattr(R, "ProofBuffer") and hasattr(R, "Feeder"):
+        tests, required = list(TESTS), FROZEN_P_TEST_NAMES
+    elif hasattr(R, "ProofSink"):
+        p_only = ('t_buffer_roundtrip', 't_buffer_cap', 't_buffer_never_connected', 't_buffer_fifo_replaced', 't_buffer_live_collector_release', 't_feeder_plain', 't_feeder_suffix', 't_feeder_hold_epipe', 't_feeder_midstream_close', 't_feeder_guards', 't_feeder_holder_charge', 't_feeder_abandon_close_error', 't_run_kissat_owner_on_exception', 't_qualify_matrix', 't_c7b_feeder_predicate', 't_transport_close_fault_identity')
+        tests = [test for test in TESTS if test.__name__ not in p_only]
+        for name in ("t_d2_sink_roundtrip", "t_d2_sink_mismatch_and_replacement", "t_d2_qualification_matrix"):
+            test = globals().get(name)
+            if not callable(test):
+                raise RuntimeError("required frozen D2 offline test bundle not integrated: " + name)
+            tests.append(test)
+        required = FROZEN_D_TEST_NAMES
+    else:
+        raise RuntimeError("runner has neither the complete P-STREAM nor D2 transport interface")
+    names = [test.__name__ for test in tests]
+    if len(names) != len(set(names)) or any(name not in names for name in required):
+        raise RuntimeError(("frozen test coverage disappeared or duplicated", required, names))
+    retained = [name for name in names if name in required]
+    if retained != list(required):
+        raise RuntimeError(("frozen test ordering changed", required, retained))
+    return tests
+
+def t_controls_only_sequence(R, W):
+    """The controls stub is the SOLE planned interface; birth and preparation boundaries always refuse first."""
+    assert R.PHASE == "controls-only" and R.ITEMS == [], (R.PHASE, R.ITEMS)
+    missing = object()
+    hooks = ("sha_file", "read_pinned", "controls", "write_x", "terminal_gate", "load_verified_module",
+             "run_child", "Child", "Helper", "run_kissat", "run_check", "verify_sat", "php_cnf",
+             "write_bytes_x", "commit_record", "item_shape_refusals", "clock", "mkdir_anchored", "mkfifo_anchored",
+             "ProofBuffer", "ProofSink", "Feeder", "read_tree", "sha_tree", "create_excl", "open_wb", "open",
+             "subprocess", "os")
+    saved = {name: getattr(R, name, missing) for name in hooks}
+    pins = {R.DRAT_OLD[0]: R.DRAT_OLD[1], R.DRAT: R.DRAT_OLD[1], R.KISSAT[0]: R.KISSAT[1]}
+    if hasattr(R, "DRAT_PROV"):
+        pins[R.DRAT_PROV[0]] = R.DRAT_PROV[1]
+    inodes, cases = {path: i + 10 for i, path in enumerate(pins)}, {}
+    def restore_hooks():
+        for name, value in saved.items():
+            if value is missing:
+                if hasattr(R, name):
+                    delattr(R, name)
+            else:
+                setattr(R, name, value)
+    try:
+        for name, control_ok, gate in (("controls_pass", True, []), ("controls_fail", False, []),
+                                       ("terminal_gate_refuses", True, ["synthetic terminal refusal"])):
+            fx = RunTreeFixture(R, W, "sequence-" + name)
+            calls, forbidden_calls = [], []
+            def forbid(boundary):
+                def refused(*args, **kwargs):
+                    forbidden_calls.append(boundary)
+                    raise AssertionError("controls-only native/preparation boundary reached: " + boundary)
+                return refused
+            def pinned_hash(path, *args, **kwargs):
+                if calls or path not in pins:
+                    return forbid("unexpected/after-controls hash:" + str(path))()
+                return pins[path], 1
+            def pinned_read(path, expected, *args, **kwargs):
+                if calls or not hasattr(R, "DRAT_PROV_RECEIPT") or (path, expected) != R.DRAT_PROV_RECEIPT:
+                    return forbid("encoder/science/after-controls read:" + str(path))()
+                return json.dumps({"drat_trim": {"binary_sha256": R.DRAT_PROV[1],
+                                                "source_sha256": R.DRAT_SOURCE_SHA}}).encode()
+            def lstat(path, *args, **kwargs):
+                if calls:
+                    return forbid("after-controls lstat:" + str(path))()
+                return types.SimpleNamespace(st_ino=inodes[path]) if path in inodes \
+                    else saved["os"].lstat(path, *args, **kwargs)
+            def controls():
+                calls.append("controls")
+                return control_ok, {"synthetic_sequence_fixture": True, "ok": control_ok}
+            def publish_controls(path, body, **kwargs):
+                if path != os.path.join(fx.out, "controls.json") or calls != ["controls"] or kwargs:
+                    return forbid("unexpected/science publication:" + str(path))()
+                calls.append("write_controls")
+                return write_x(path, body)
+            def terminal_gate():
+                calls.append("terminal_gate")
+                return list(gate)
+            summary = {}
+            outcome = {"sat": False, "controls_failed": False, "refused": False, "exception": False, "complete": False}
+            try:
+                for boundary in hooks:
+                    if boundary not in ("sha_file", "read_pinned", "controls", "write_x", "terminal_gate", "subprocess", "os"):
+                        setattr(R, boundary, forbid(boundary))
+                native = types.SimpleNamespace(**vars(saved["subprocess"]))
+                native.Popen = forbid("subprocess.Popen")
+                R.subprocess = native
+                filesystem = types.SimpleNamespace(**vars(saved["os"]))
+                filesystem.lstat = lstat
+                for boundary in ("open", "read", "write", "mkdir", "makedirs", "mkfifo"):
+                    setattr(filesystem, boundary, forbid("os." + boundary))
+                R.os = filesystem
+                R.sha_file, R.read_pinned = pinned_hash, pinned_read
+                R.controls, R.write_x, R.terminal_gate = controls, publish_controls, terminal_gate
+                R.run_plan(summary, outcome)
+            finally:
+                restore_hooks()
+                fx.restore()
+            assert forbidden_calls == [], (name, forbidden_calls)
+            assert calls == (["controls", "write_controls", "terminal_gate"] if control_ok
+                             else ["controls", "write_controls"]), calls
+            assert outcome["controls_failed"] is (not control_ok), (name, outcome)
+            assert outcome["complete"] is (control_ok and not gate), (name, outcome)
+            assert summary["controls_ok"] is control_ok and not outcome["sat"], (name, summary, outcome)
+            cases[name] = {"calls": calls, "forbidden_birth_or_preparation": forbidden_calls,
+                           "outcome": outcome, "summary": summary}
+    finally:
+        restore_hooks()
+    return cases
+
+def t_fixture_latch_consumption(R, W):
+    """A8: exact counts only; unknown, duplicate, ambiguous and preexisting-prefix faults survive rejection."""
+    fake = types.SimpleNamespace(LATCH=["older", "expected", "expected"])
+    consumed = consume_expected_latches(fake, ("older",), [(r"expected", 2)])
+    assert consumed == ["expected", "expected"] and fake.LATCH == ["older"]
+    bad = [(["older", "expected", "extra"], ("older",), [(r"expected", 1)]),
+           (["older", "expected", "expected"], ("older",), [(r"expected", 1)]),
+           (["older"], ("older",), [(r"expected", 1)]),
+           (["changed", "expected"], ("older",), [(r"expected", 1)]),
+           (["older", "expected"], ("older",), [(r"expected", 1), (r"ex.*", 1)]),
+           (["older", "unexpected"], ("older",), []),
+           (["older", "expected"], ("older",), [(r"expected", True)]),
+           (["older", "expected"], ("older",), [(r"expected", 0)]),
+           (["older", "expected"], ("older",), [(r"expected", -1)]),
+           (["older", "expected"], ("older",), [(r"expected", 1.0)])]
+    for faults, before, expected in bad:
+        fake.LATCH = list(faults)
+        refused = False
+        try:
+            consume_expected_latches(fake, before, expected)
+        except AssertionError:
+            refused = True
+        assert refused and fake.LATCH == faults, (faults, expected, fake.LATCH)
+    class AppendBeforeDeletion(list):
+        def __delitem__(self, key):
+            self.append("late unexpected fault")
+            return list.__delitem__(self, key)
+    fake.LATCH = AppendBeforeDeletion(["older", "expected"])
+    consumed = consume_expected_latches(fake, ("older",), [(r"expected", 1)])
+    assert consumed == ["expected"] and fake.LATCH == ["older", "late unexpected fault"], fake.LATCH
+    return {"exact_consumption": True, "mismatches_retained": len(bad),
+            "append_after_validation_retained": True}
+
+def t_terminal_ownership(R, W):
+    """A8: complete synthetic registry protocols, never a real pid/wait/child; resource zero is not settlement."""
+    names = ("OWNED", "HELPERS", "LIVE_BUFFERS", "LIVE_FEEDERS", "LIVE_SINKS", "CREATED")
+    missing = object()
+    saved = {name: getattr(R, name, missing) for name in names}
+    saved_charge = R.buffer_charge
+    cases = {}
+    dead = types.SimpleNamespace(is_alive=lambda: False, ident=1)
+    live = types.SimpleNamespace(is_alive=lambda: True, ident=1)
+    receipt = {"settled": True, "problems": [], "stream_thread_alive_after_join": False,
+               "group_empty_after_reap": True, "reader_error": None, "quarantined": False,
+               "stop_refused": False, "actual_owned_reap": True, "wait_lost": None, "unsettled": None,
+               "settlement_publication_in_bounds": True, "grace_completion_in_bounds": True, "native_exec_identity_verified": True,
+               "output_sha256": sha(b""), "resource_diagnostics": [], "returncode": 0, "stop": "self", "trips": []}
+
+    def reset():
+        for name in names:
+            setattr(R, name, {} if name == "CREATED" else [])
+        R.buffer_charge = saved_charge
+
+    def owner(kind, proven=True, reader=dead, capture_closed=True):
+        rec = dict(receipt, settled=proven)
+        return types.SimpleNamespace(proc=types.SimpleNamespace(returncode=0, stdout=types.SimpleNamespace(closed=True)),
+            settled_rec=rec, settled=proven, unsettled=None, pid=999991, pgid=999991, seq=1,
+            label="synthetic-" + kind, launch_order=1, quarantined=False, reader=reader,
+            capture=types.SimpleNamespace(closed=capture_closed), reaped=True, wait_lost=None,
+            group_closed_before_reap=True, identity_at_start={"pid": 999991, "start": [1, 1]},
+            started_epoch=1.0, known_identities={}, last_census={"complete": True}, census_uncertainty=[],
+            launch_state="process_retained", launch_error=None, launch_intent="synthetic.intent.json",
+            grace_completion_in_bounds=True,
+            late_obligations=lambda: [{"kind": "synthetic owner"}], quarantine_path=None,
+            quarantine_receipt_state="none", record={"settled": proven, "actual_owned_reap": True,
+                "group_empty_after_reap": True, "wait_lost": None, "problems": [], "unsettled": [],
+                "invalid": [], "eof": True, "exe_identity_ok": True, "grace_completion_in_bounds": True})
+
+    def buffer(alive, partial=False):
+        state = {"fifo": "synthetic-empty.fifo", "retained": 0, "collector_alive": alive,
+                 "released": not alive and not partial, "reader_fd_closed": not alive, "unblock_fd_closed": not alive,
+                 "construction_error": "synthetic partial constructor" if partial else None,
+                 "finished": None if alive or partial else {"sink_settled": True}}
+        return types.SimpleNamespace(blocks=(), retained=0, released=state["released"],
+            thread=live if alive else None if partial else dead,
+            accounting=lambda: copy.deepcopy(state), late_obligations=lambda: [{"what": "synthetic collector"}])
+
+    def feeder(blocks=(), rfd=None, wfd=None, alive=False, partial=False):
+        state = {"unresolved": bool(blocks or rfd is not None or wfd is not None or alive or partial),
+                 "read_endpoint": rfd, "write_endpoint": wfd, "thread_alive": alive,
+                 "read_endpoint_closed": rfd is None, "write_endpoint_closed": wfd is None}
+        return types.SimpleNamespace(blocks=blocks, expected=sum(map(len, blocks)), label="synthetic-feeder",
+            thread=live if alive else None if partial else dead, rfd=rfd, wfd=wfd, started=alive,
+            finished=None, construction_error="synthetic partial constructor" if partial else None, close_error=None,
+            accounting=lambda: copy.deepcopy(state), late_obligations=lambda: [{"what": "synthetic feeder"}])
+
+    def rejected(name):
+        ownership = terminal_ownership(R)
+        assert ownership["inventory_complete"] is True and ownership["unresolved"], (name, ownership)
+        cases[name] = ownership
+
+    try:
+        reset()
+        clean = terminal_ownership(R)
+        assert clean == {"inventory_complete": True, "unresolved": [], "proof_ram_accounting_valid": True,
+                         "proof_ram_outstanding_bytes": 0, "errors": []}, clean
+        R.OWNED = [owner("clean")]
+        clean_owner = terminal_ownership(R)
+        assert clean_owner["inventory_complete"] is True and clean_owner["unresolved"] == [] \
+            and clean_owner["errors"] == [], clean_owner
+        R.OWNED = [owner("unproven", proven=False)]
+        rejected("unresolved_owner_without_optional_unsettled")
+        reset()
+        R.HELPERS = [owner("helper", proven=False)]
+        rejected("unsettled_helper_without_optional_unsettled")
+        reset()
+        R.LIVE_FEEDERS = [feeder((b"held",))]
+        rejected("retained_feeder_blocks")
+        reset()
+        R.LIVE_FEEDERS = [feeder(rfd=999999)]
+        rejected("retained_feeder_read_endpoint")
+        reset()
+        R.LIVE_FEEDERS = [feeder(wfd=999998)]
+        rejected("retained_feeder_write_endpoint")
+        reset()
+        R.LIVE_FEEDERS = [feeder(alive=True)]
+        rejected("zero_byte_live_feeder")
+        reset()
+        R.LIVE_FEEDERS = [feeder(partial=True)]
+        rejected("partial_feeder")
+        reset()
+        R.LIVE_BUFFERS = [buffer(True)]
+        rejected("zero_byte_live_collector")
+        reset()
+        R.LIVE_BUFFERS = [buffer(False, partial=True)]
+        rejected("partial_collector_without_thread")
+        reset()
+        R.LIVE_SINKS = [types.SimpleNamespace(written=0, thread=live, finished=None,
+            accounting=lambda: {"thread_alive": True, "written": 0}, late_obligations=lambda: [])]
+        rejected("zero_byte_live_sink")
+        reset()
+        R.OWNED = [owner("capture", reader=live)]
+        rejected("live_capture_despite_settled_receipt")
+        reset()
+        R.OWNED = [owner("open-capture", capture_closed=False)]
+        rejected("open_capture_despite_settled_receipt")
+        reset()
+        h = owner("open-helper")
+        h.proc.stdout.closed = False
+        R.HELPERS = [h]
+        rejected("open_helper_stdout_despite_settled_flag")
+        reset()
+        R.CREATED = {"synthetic-partial.json": {"state": "open"}}
+        rejected("partial_publication")
+        reset()
+        R.buffer_charge = lambda: None
+        unknown = terminal_ownership(R)
+        assert unknown["proof_ram_accounting_valid"] is False and unknown["errors"], unknown
+        cases["unknown_accounting"] = unknown
+        R.buffer_charge = lambda: False
+        malformed = terminal_ownership(R)
+        assert malformed["proof_ram_accounting_valid"] is False and malformed["errors"], malformed
+        cases["boolean_accounting"] = malformed
+    finally:
+        R.buffer_charge = saved_charge
+        for name, old in saved.items():
+            if old is missing:
+                delattr(R, name)
+            else:
+                setattr(R, name, old)
+    return cases
+
+def t_verified_runner_loading(R, W):
+    """A2: a nonexistent filename still loads the verified retained bytes; a bad pin never reaches compile/exec."""
+    label = os.path.join(W, "verified-bytes-source-never-created.py")
+    assert not os.path.lexists(label)
+    raw = b"VALUE = ('verified retained bytes', 17)\n"
+    loaded = load_verified_runner(raw, sha(raw), label, "pa19_verified_bytes_fixture")
+    assert isinstance(loaded, types.ModuleType) and loaded.VALUE == ("verified retained bytes", 17)
+    assert loaded.__file__ == label and not os.path.lexists(label)
+    refused = False
+    try:
+        load_verified_runner(b"this is not Python syntax @@@", sha(raw), label, "pa19_bad_pin_fixture")
+    except RuntimeError as exc:
+        refused = str(exc).startswith("runner pin mismatch ")
+    assert refused
+    return {"verified_bytes_loaded_without_path": True, "bad_pin_refused_before_compile": True}
+
+def t_wait_ownership_echild(R, W):
+    """G2: synthetic ECHILD never fabricates rc0/reaping, either at WNOWAIT or the actual owned waitpid."""
+    saved = R.os.waitid, R.os.waitpid
+    latch_before = tuple(R.LATCH)
+
+    def owner():
+        o = R.Owned()
+        o._owned_init()
+        o.proc, o.pid, o.pgid = FakeProc(None), 464646, 464646
+        return o
+
+    def echild(*args):
+        raise ChildProcessError(errno.ECHILD, "synthetic exclusive wait lost")
+
+    try:
+        R.os.waitid = echild
+        a = owner()
+        assert a.observe_exit() is None and a.reaped is False and a.proc.returncode is None
+        assert a.wait_lost.startswith("ECHILD:")
+        R.os.waitid = lambda kind, pid, flags: types.SimpleNamespace(
+            si_pid=pid, si_code=R.os.CLD_EXITED, si_status=0)
+        R.os.waitpid = echild
+        b = owner()
+        assert b.observe_exit() == 0 and b.reaped is False and b.proc.returncode is None
+        assert b._reap_once() is None and b.reaped is False and b.proc.returncode is None
+        assert b.wait_lost.startswith("ECHILD from owned waitpid")
+        # A matching WNOWAIT observation is NOT settlement; only a real returned waitpid status promotes it.
+        R.os.waitpid = lambda pid, flags: (pid, 20 << 8)
+        c = owner()
+        R.os.waitid = lambda kind, pid, flags: types.SimpleNamespace(
+            si_pid=pid, si_code=R.os.CLD_EXITED, si_status=20)
+        assert c.observe_exit() == 20 and not c.reaped and c.proc.returncode is None
+        assert c._reap_once() == 20 and c.reaped is True and c.proc.returncode == 20
+    finally:
+        R.os.waitid, R.os.waitpid = saved
+    first = "ECHILD: exclusive wait ownership lost: %r" % ChildProcessError(errno.ECHILD, "synthetic exclusive wait lost")
+    second = "ECHILD from owned waitpid (never normalized to rc0): %r" % ChildProcessError(errno.ECHILD, "synthetic exclusive wait lost")
+    latched = consume_expected_latches(R, latch_before, [(re.escape(first), 1), (re.escape(second), 1)])
+    return {"echild_refusals": len(latched), "owned_waitpid_status": c.exit_status}
+
+def t_write_all_zero_progress(R, W):
+    """G4: zero progress raises after ONE mocked write, never spins or touches a native descriptor."""
+    saved = R.os.write
+    calls = []
+
+    def zero_write(fd, data):
+        calls.append((fd, len(data)))
+        if len(calls) > 1:
+            raise AssertionError("write_all retried after zero progress")
+        return 0
+
+    refused = False
+    try:
+        R.os.write = zero_write
+        R.write_all(999999, b"")
+        assert calls == [], calls
+        try:
+            R.write_all(999999, b"x")
+        except (RuntimeError, OSError) as exc:
+            refused = "progress" in str(exc).lower() or "zero" in str(exc).lower()
+    finally:
+        R.os.write = saved
+    assert refused and calls == [(999999, 1)], (refused, calls)
+    return {"zero_progress_refused_after_one_write": True}
+
+def terminal_choice(results, n_tests, alive_threads, runner_latch, helpers_unsettled, closeout_errors,
+                    envelope, prior_terminal=None):
+    """Never upgrade an earlier nonqualifying outcome; resample this after EACH terminal publication."""
+    sig, cancel = envelope.get("signal"), envelope.get("runner_cancel_order")
+    if (isinstance(sig, int) and not isinstance(sig, bool)) or type(cancel) is int:
+        return "CANCELLED"
+    deadline, observed = envelope.get("budget_deadline_mono"), envelope.get("observed_mono")
+    if type(deadline) in (int, float) and type(observed) in (int, float) \
+            and math.isfinite(deadline) and math.isfinite(observed) and observed >= deadline:
+        return "BUDGET_EXHAUSTED"
+    if prior_terminal is not None and prior_terminal != "ALL_OK":
+        return prior_terminal
+    return decide_terminal(results, n_tests, alive_threads, runner_latch, helpers_unsettled,
+                           list(closeout_errors) + terminal_refusals(envelope))
+
+def terminal_envelope(R, start_clock, end_clock):
+    """Collect required clocks and COMPLETE ownership first; sample thread/latch/cancel/budget metadata afterwards."""
+    ownership = terminal_ownership(R)
+    stamp_ok = lambda stamp: isinstance(stamp, str) and HOST_CLOCK_RE.fullmatch(stamp) is not None
+    alive = sorted(th.name for th in threading.enumerate()
+                   if th is not threading.main_thread() and th.is_alive())
+    runner_latch = ["runner not loaded"] if R is None else list(R.LATCH)
+    helpers_unsettled = ["unknown"] if R is None else [getattr(h, "launch_order", i)
+                         for i, h in enumerate(R.HELPERS) if getattr(h, "settled", None) is not True]
+    cancel = "unknown" if R is None else R.STATE.get("cancel_order", "unknown")
+    return {"signal": STATE.get("signal", "unknown"), "runner_cancel_order": cancel,
+            "start_clock": start_clock, "end_clock": end_clock,
+            "start_clock_valid": stamp_ok(start_clock), "end_clock_valid": stamp_ok(end_clock),
+            "threads_alive": alive, "runner_latch": runner_latch, "helpers_unsettled": helpers_unsettled,
+            "ownership": ownership, "budget_started_mono": STATE.get("t0"),
+            "budget_deadline_mono": STATE.get("deadline"), "observed_mono": time.monotonic()}
+
+def terminal_ownership(R):
+    """A8: derive ownership from every runner registry, never from optional .unsettled objects or byte totals."""
+    out = {"inventory_complete": False, "unresolved": [], "proof_ram_accounting_valid": False,
+           "proof_ram_outstanding_bytes": None, "errors": []}
+    if R is None:
+        out["errors"].append("runner not loaded; ownership unknown")
+        return out
+    try:
+        inventory = R.unresolved_inventory()
+        if not isinstance(inventory, list):
+            raise TypeError("unresolved_inventory did not return the complete list")
+        # Inspect actual construction state in addition to records: zero bytes and a clean receipt are not owners.
+        for kind, registry in (("RAM collector", R.LIVE_BUFFERS), ("stdin feeder", R.LIVE_FEEDERS),
+                               ("file sink", R.LIVE_SINKS)):
+            for index, resource in enumerate(registry):
+                th = getattr(resource, "thread", None)
+                if th is None or not callable(getattr(th, "is_alive", None)):
+                    inventory.append({"kind": "partial transport thread", "registry": kind, "index": index,
+                                      "resource_id": id(resource)})
+        for index, child in enumerate(R.OWNED):
+            if getattr(child, "proc", None) is not None:
+                reader = getattr(child, "reader", None)
+                if reader is None or getattr(reader, "ident", None) is None:
+                    inventory.append({"kind": "partial capture thread", "index": index, "resource_id": id(child)})
+        for index, helper in enumerate(R.HELPERS):
+            if getattr(helper, "proc", None) is None:
+                continue
+            rec = getattr(helper, "record", None)
+            required_true = ("settled", "actual_owned_reap", "group_empty_after_reap", "eof", "exe_identity_ok",
+                             "grace_completion_in_bounds")
+            if not isinstance(rec, dict) or any(rec.get(k) is not True for k in required_true) \
+                    or rec.get("wait_lost") is not None or rec.get("problems") != [] \
+                    or rec.get("unsettled") != [] or rec.get("invalid") != []:
+                inventory.append({"kind": "helper receipt contradiction", "index": index, "resource_id": id(helper)})
+        # Revalidation is unconditional even when the production inventory is empty.
+        inventory, disposed = filter_fixture_inventory(R, inventory)
+        out["inventory_complete"], out["unresolved"] = True, inventory
+        if disposed:
+            out["explicitly_disposed_test_integrity_faults"] = disposed
+    except BaseException as exc:
+        out["errors"].append("ownership inventory failed: %r" % (exc,))
+    try:
+        charged = R.buffer_charge()
+        out["proof_ram_outstanding_bytes"] = charged
+        out["proof_ram_accounting_valid"] = type(charged) is int and charged >= 0
+        if not out["proof_ram_accounting_valid"]:
+            out["errors"].append("proof RAM accounting unknown or malformed")
+    except BaseException as exc:
+        out["errors"].append("proof RAM accounting failed: %r" % (exc,))
+    return out
+
+def terminal_refusals(envelope):
+    """A8: no missing, nullable, truthy substitute or unknown envelope field can authorize ALL_OK."""
+    if not isinstance(envelope, dict):
+        return ["terminal envelope unavailable"]
+    reasons = []
+    if envelope.get("signal", "unknown") is not None:
+        reasons.append("test cancellation/signal stamped or unknown")
+    if envelope.get("runner_cancel_order", "unknown") is not None:
+        reasons.append("runner cancellation stamped or unknown")
+    for which in ("start", "end"):
+        stamp = envelope.get(which + "_clock")
+        if envelope.get(which + "_clock_valid") is not True or not isinstance(stamp, str) \
+                or HOST_CLOCK_RE.fullmatch(stamp) is None:
+            reasons.append("required %s host clock missing, skipped, failed or invalid" % which)
+    started, deadline, observed = (envelope.get(k) for k in
+                                   ("budget_started_mono", "budget_deadline_mono", "observed_mono"))
+    if any(type(x) not in (int, float) or not math.isfinite(x) for x in (started, deadline, observed)):
+        reasons.append("terminal budget observation unavailable or invalid")
+    elif not started <= observed < deadline:
+        reasons.append("terminal budget expired or inconsistent")
+    ownership = envelope.get("ownership")
+    if not isinstance(ownership, dict):
+        reasons.append("complete terminal ownership evidence missing")
+    else:
+        if ownership.get("inventory_complete") is not True:
+            reasons.append("terminal ownership inventory incomplete")
+        if ownership.get("unresolved") != []:
+            reasons.append("terminal ownership unresolved or unknown")
+        if ownership.get("errors") != []:
+            reasons.append("terminal ownership inspection failed or unknown")
+        charge = ownership.get("proof_ram_outstanding_bytes")
+        if ownership.get("proof_ram_accounting_valid") is not True or type(charge) is not int or charge != 0:
+            reasons.append("terminal proof RAM still held or accounting unknown")
+    return reasons
+
+def d2_assert_sink_endpoints_closed(sink, file_fd, writer=None):
+    """Independent OS checks of every recorded endpoint, not merely the sink's settlement assertions."""
+    assert sink.thread is not None and not sink.thread.is_alive(), sink.accounting()
+    assert sink.file is not None and sink.file.closed is True, sink.accounting()
+    assert sink.reader_fd_closed is True and sink.unblock_fd_closed is True and sink.rehash_fd_closed is True
+    assert sink.flush_completed is True and sink.fsync_completed is True and sink.close_completed is True
+    descriptors = [file_fd, sink.reader_fd, sink.unblock_fd, sink.rehash_fd]
+    if writer is not None:
+        assert writer.get("closed") is True and "close_error" not in writer, writer
+        descriptors.append(writer.get("fd"))
+    checked = []
+    for fd in sorted({fd for fd in descriptors if fd is not None}):
+        try:
+            os.fstat(fd)
+        except OSError as exc:
+            assert exc.errno == errno.EBADF, (fd, exc)
+        else:
+            raise AssertionError("D2 fixture descriptor still open: %d" % fd)
+        checked.append(fd)
+    return checked
+
+def d2_fifo_writer(path, chunks, result, end):
+    """Test-owned nonblocking writer; records real endpoint closure and never waits beyond its fixed deadline."""
+    fd = None
+    result.update(opened=False, closed=True, ok=False)
+    try:
+        while fd is None:
+            if time.monotonic() >= end:
+                raise RuntimeError("D2 fixture writer open deadline")
+            try:
+                fd = os.open(path, os.O_WRONLY | os.O_NONBLOCK | os.O_NOFOLLOW | os.O_CLOEXEC)
+                result.update(fd=fd, opened=True, closed=False)
+            except OSError as exc:
+                if exc.errno != errno.ENXIO:
+                    raise
+                time.sleep(min(0.01, max(0.0, end - time.monotonic())))
+        for chunk in chunks:
+            view = memoryview(chunk)
+            while view:
+                if time.monotonic() >= end:
+                    raise RuntimeError("D2 fixture writer progress deadline")
+                try:
+                    n = os.write(fd, view)
+                except BlockingIOError:
+                    time.sleep(min(0.01, max(0.0, end - time.monotonic())))
+                    continue
+                if not isinstance(n, int) or isinstance(n, bool) or n <= 0 or n > len(view):
+                    raise RuntimeError("D2 fixture writer invalid progress %r" % (n,))
+                view = view[n:]
+        result["ok"] = True
+    except BaseException as exc:
+        result["error"] = repr(exc)
+    finally:
+        if fd is not None:
+            try:
+                os.close(fd)
+                result["closed"] = True
+            except BaseException as exc:
+                result["close_error"] = repr(exc)
+
+def d2_finish_sink(R, sink, connected):
+    if connected:
+        assert wait_thread(sink.thread, 5.0, "D2 collector"), sink.accounting()
+    need(6.0, "bounded D2 sink finish")
+    return sink.finish(timeout=5.0)
+
+def d2_fixture_fault_state(R, obj, expected_faults):
+    """TEST-ONLY validation hook; never edits LIVE_SINKS, CREATED, settlement receipts or production flags."""
+    why = []
+    state = {"kind": "file sink", "object_id": id(obj), "key": getattr(obj, "file_path", None),
+             "lifecycle_refusals": why, "covered_partial_publications": []}
+    allowed = (["proof rehash mismatch"], ["proof inode replacement"])
+    if list(expected_faults) not in allowed:
+        why.append("unknown file-sink fixture fault disposition")
+        return state
+    try:
+        if sum(s is obj for s in R.LIVE_SINKS) != 1:
+            why.append("file sink is not retained exactly once by production ownership")
+        a, rec = obj.accounting(), obj.finished
+        state["accounting"] = a
+        state["failed_receipt"] = copy.deepcopy(rec)
+        if not isinstance(rec, dict) or rec.get("sink_settled") is not False:
+            why.append("fixture does not retain its failed settlement receipt")
+            return state
+        if obj.thread is None or obj.thread.is_alive() or obj.thread.ident is None \
+                or obj.started is not True or a.get("thread_inspection_error") is not None:
+            why.append("collector thread closure is unproved")
+        if obj.file is None or obj.file.closed is not True or obj.file_closed is not True:
+            why.append("proof file wrapper is not actually closed")
+        for key in ("reader_fd_closed", "unblock_fd_closed", "rehash_fd_closed", "flush_completed",
+                    "fsync_completed", "close_completed"):
+            if getattr(obj, key, None) is not True or rec.get(key) is not True:
+                why.append("file sink lifecycle closure unproved: " + key)
+        if obj.construction_error is not None or rec.get("construction_error") is not None \
+                or a.get("outstanding_growth_bytes") != 0:
+            why.append("file sink retains construction/growth uncertainty")
+        if rec.get("thread_alive_after_join") is not False or rec.get("finish_deadline_in_bounds") is not True \
+                or rec.get("fifo_same_inode_still_fifo") is not True:
+            why.append("file sink has an unintended thread/deadline/FIFO failure")
+        if rec.get("connected") is not True or rec.get("eof") is not True or rec.get("over_cap") is not False \
+                or rec.get("unblocked_by_runner") is not False or rec.get("discarded") != 0 \
+                or rec.get("received") != rec.get("written") or rec.get("written") != obj.written \
+                or rec.get("sha256_of_written") != obj.sha.hexdigest():
+            why.append("fixture has an unintended transport/counter failure")
+        made = R.CREATED.get(obj.file_path)
+        if not isinstance(made, dict) or made.get("state") != "open" or made.get("kind") != "file" \
+                or made.get("identity") != obj.file_identity or made.get("error") is not None:
+            why.append("partial publication is not the exact retained original proof creation")
+        if obj.file_path in R.WRITTEN:
+            why.append("failed proof has unexpectedly acquired complete-publication authority")
+        fifo = os.stat(obj.fifo_path, follow_symlinks=False)
+        if not R.stat.S_ISFIFO(fifo.st_mode) or [fifo.st_dev, fifo.st_ino] != obj.fifo_identity:
+            why.append("disposed fixture FIFO changed or disappeared")
+        current = os.stat(obj.file_path, follow_symlinks=False)
+        if not R.stat.S_ISREG(current.st_mode) or current.st_nlink != 1 or current.st_size != obj.written \
+                or not 0 <= current.st_size <= obj.cap:
+            why.append("disposed proof file has unproved kind/link/size/cap")
+        current_pin = R.sha_file(obj.file_path, limit=obj.cap)
+        state["current_file_identity"] = [current.st_dev, current.st_ino]
+        state["current_file_pin"] = list(current_pin)
+        if list(expected_faults) == ["proof rehash mismatch"]:
+            true_integrity = ("file_same_identity_regular", "file_nlink_one", "file_size_matches_written",
+                              "file_within_cap", "file_metadata_stable_during_rehash")
+            if obj.error is not None or rec.get("error") is not None or "finish_error" in rec:
+                why.append("rehash mismatch has an additional I/O/lifecycle error")
+            if any(rec.get(k) is not True for k in true_integrity) \
+                    or rec.get("file_rehash_matches") is not False or rec.get("file_integrity") is not False:
+                why.append("failed receipt does not contain exactly the intended digest mismatch")
+            if [current.st_dev, current.st_ino] != obj.file_identity \
+                    or rec.get("file_identity_at_finish") != obj.file_identity \
+                    or rec.get("file_rehash") != list(current_pin) \
+                    or current_pin[1] != obj.written or current_pin[0] == obj.sha.hexdigest():
+                why.append("observed same-inode mismatch is not preserved exactly")
+            intended_latches = ["proof file identity/size/rehash mismatch: " + obj.file_path,
+                                "proof sink not settled: " + obj.file_path]
+        else:
+            message = "rehash descriptor is not the retained singly-linked proof at written size"
+            error_repr = repr(RuntimeError(message))
+            known_error = "finish:" + error_repr
+            if obj.error != known_error or rec.get("error") != known_error \
+                    or rec.get("finish_error") != error_repr:
+                why.append("inode replacement has an additional or unknown I/O/lifecycle error")
+            if any(rec.get(k) is not False for k in
+                   ("file_same_identity_regular", "file_nlink_one", "file_size_matches_written", "file_within_cap",
+                    "file_metadata_stable_during_rehash", "file_rehash_matches", "file_integrity")) \
+                    or rec.get("file_rehash") is not None or rec.get("file_identity_at_finish") is not None:
+                why.append("failed receipt is not the exact early retained-inode refusal")
+            if [current.st_dev, current.st_ino] == obj.file_identity \
+                    or current_pin != (obj.sha.hexdigest(), obj.written):
+                why.append("replacement proof is not the intended same-bytes different-inode fixture")
+            original = os.stat(obj.file_path + ".original", follow_symlinks=False)
+            if not R.stat.S_ISREG(original.st_mode) or [original.st_dev, original.st_ino] != obj.file_identity \
+                    or original.st_nlink != 1 or original.st_size != obj.written \
+                    or R.sha_file(obj.file_path + ".original", limit=obj.cap) != (obj.sha.hexdigest(), obj.written):
+                why.append("original proof inode/bytes are not preserved")
+            intended_latches = ["proof sink finish failed %s: %s" % (obj.file_path, error_repr),
+                                "proof sink I/O error " + known_error,
+                                "proof sink not settled: " + obj.file_path]
+        if any(message in R.LATCH for message in intended_latches):
+            why.append("intended file-sink fixture latches have not been consumed exactly")
+        state["expected_latches"] = intended_latches
+        if not why:
+            state["covered_partial_publications"] = [{"path": obj.file_path,
+                                                       "identity": list(obj.file_identity), "state": "open",
+                                                       "kind": "file"}]
+    except BaseException as exc:
+        why.append("file-sink fixture disposition revalidation failed %r" % (exc,))
+    return state
+
+def d2_good_fixture(R):
+    """Complete synthetic predicate receipts only; these never stand in for native launch/release authority."""
+    data = b"proof" * 20
+    S = sha(data)
+    sink = {"sink_settled": True, "connected": True, "eof": True, "over_cap": False,
+            "error": None, "construction_error": None, "unblocked_by_runner": False,
+            "discarded": 0, "received": len(data), "written": len(data), "cap": 1000,
+            "sha256_of_written": S, "file_rehash": [S, len(data)],
+            "thread_started": True, "thread_alive_after_join": False,
+            "reader_fd_closed": True, "unblock_fd_closed": True, "rehash_fd_closed": True,
+            "file_closed": True, "flush_completed": True, "fsync_completed": True, "close_completed": True,
+            "fifo_same_inode_still_fifo": True, "file_same_identity_regular": True,
+            "file_nlink_one": True, "file_size_matches_written": True, "file_within_cap": True,
+            "file_metadata_stable_during_rehash": True, "file_rehash_matches": True,
+            "file_integrity": True, "finish_deadline_in_bounds": True,
+            "file_identity": [17, 23], "file_identity_at_finish": [17, 23]}
+
+    def receipt(seq, rc):
+        pid = 454540 + seq
+        return {"seq": seq, "label": "offline-d2-%d" % seq, "pid": pid, "pgid": pid,
+                "identity_at_start": {"pid": pid, "ppid": os.getpid(), "pgid": pid,
+                                      "start": [7, seq], "status": 2, "comm": "offline-fixture"},
+                "returncode": rc, "stop": "self", "trips": [], "settled": True,
+                "capture_over_cap": False, "problems": [], "resource_diagnostics": [],
+                "stream_thread_alive_after_join": False, "group_empty_after_reap": True,
+                "reader_error": None, "quarantined": False, "stop_refused": False,
+                "actual_owned_reap": True, "wait_lost": None,
+                "settlement_publication_in_bounds": True, "grace_completion_in_bounds": True, "native_exec_identity_verified": True,
+                "output_sha256": sha(("offline-output-%d" % seq).encode()),
+                "exit_observed_by_deadline": True, "unsettled": None,
+                "term_delivery": None, "cancel_order": None}
+
+    solver = receipt(1, 20)
+    solver["proof_sink"] = sink
+    checker = receipt(2, 0)
+    checker["proof_sink"] = None
+    checker_lines = ["c parsing input formula with 10 variables and 20 clauses",
+                     "c finished parsing, read 100 bytes from proof file", "s VERIFIED"]
+    return {"cnf_expect": ("c" * 64, 1000, "p cnf 10 20"), "solver": solver,
+            "kl": ["s UNSATISFIABLE"], "proof_sha": S, "proof_bytes": len(data), "cap": 1000,
+            "checker": checker, "checker_lines": checker_lines,
+            "cnf_post": ("c" * 64, 1000), "proof_post": (S, len(data)), "proof_data": data}
+
+def d2_qualify(R, fx):
+    return R.qualify_unsat(fx["cnf_expect"], fx["solver"], fx["kl"], fx["proof_sha"], fx["proof_bytes"],
+                           fx["cap"], fx["checker"], fx["checker_lines"], fx["cnf_post"], fx["proof_post"])
+
+def t_d2_qualification_matrix(R, W):
+    """D-only complete ID oracle, including strict receipts and fresh physical file hashes; no native execution."""
+    fixture = RunTreeFixture(R, W, "t-d2-qualification")
+    before_latches = tuple(R.LATCH)
+    rows = []
+    try:
+        base = d2_good_fixture(R)
+        raw = b"p cnf 10 20\n" + b"1 0\n" * 20
+        cnf = os.path.join(fixture.out, "controls", "qualifier.cnf")
+        ch, cn = R.write_bytes_x(cnf, raw)
+        proof = os.path.join(fixture.out, "controls", "qualifier.drat")
+        ph, pn = R.write_bytes_x(proof, base["proof_data"])
+        base.update(cnf_expect=(ch, cn, "p cnf 10 20"), cnf_post=R.sha_tree(cnf),
+                    proof_sha=ph, proof_bytes=pn, proof_post=R.sha_tree(proof))
+        assert R.receipt_contradictions(base["solver"]) == [], base["solver"]
+        assert R.receipt_contradictions(base["checker"]) == [], base["checker"]
+        assert R.sink_integrity(base["solver"]["proof_sink"]) is True
+        assert R.sink_complete(base["solver"]["proof_sink"]) is True
+        assert d2_qualify(R, copy.deepcopy(base)) == []
+
+        def case(name, mutate, want):
+            check()
+            fx = copy.deepcopy(base)
+            mutate(fx)
+            defects = d2_qualify(R, fx)
+            got = R.defect_ids(defects)
+            row = {"mutation": name, "intended_ids": sorted(want), "got_ids": got,
+                   "exact": got == sorted(want), "defects": defects}
+            rows.append(row)
+            assert row["exact"], row
+
+        sink = lambda fx: fx["solver"]["proof_sink"]
+        checker = lambda fx: fx["checker"]
+        lines = lambda fx: fx["checker_lines"]
+        case("solver self exit dirty trips", lambda fx: fx["solver"].update(trips=["owner_cancel_sigterm"]),
+             ["SOLVER_RECEIPT"])
+        case("checker self exit dirty trips", lambda fx: checker(fx).update(trips=["proof_cap"]), ["A.RECEIPT"])
+        case("solver rc0", lambda fx: fx["solver"].update(returncode=0), ["SOLVER_EXIT"])
+        case("solver trip", lambda fx: fx["solver"].update(stop="lane_rss"), ["SOLVER_EXIT", "SOLVER_RECEIPT"])
+        case("solver duplicate status", lambda fx: fx["kl"].append("s UNSATISFIABLE"), ["SOLVER_OUTPUT"])
+        case("solver diagnostic", lambda fx: fx["kl"].append("kissat: warning: fixture"), ["SOLVER_OUTPUT"])
+        case("solver settled false", lambda fx: fx["solver"].update(settled=False),
+             ["SOLVER_RECEIPT", "SOLVER_SETTLE"])
+        case("solver settled integer1", lambda fx: fx["solver"].update(settled=1), ["SOLVER_RECEIPT"])
+        case("solver capture cap", lambda fx: fx["solver"].update(capture_over_cap=True), ["SOLVER_SETTLE"])
+        case("solver late exit", lambda fx: fx["solver"].update(exit_observed_by_deadline=False), ["SOLVER_TIMING"])
+        case("sink live despite settled", lambda fx: sink(fx).update(thread_alive_after_join=True), ["SINK_INCOMPLETE"])
+        case("sink settled integer1", lambda fx: sink(fx).update(sink_settled=1), ["SINK_INCOMPLETE"])
+        case("sink no EOF", lambda fx: sink(fx).update(eof=False), ["SINK_INCOMPLETE"])
+        case("sink capped", lambda fx: sink(fx).update(over_cap=True), ["SINK_INCOMPLETE"])
+        case("sink runner unblocked", lambda fx: sink(fx).update(unblocked_by_runner=True), ["SINK_INCOMPLETE"])
+        case("sink wrong rehash", lambda fx: sink(fx).update(file_rehash=[sha(b"other"), pn]), ["SINK_INCOMPLETE"])
+        case("sink wrong final inode", lambda fx: sink(fx).update(file_identity_at_finish=[17, 24]), ["SINK_INCOMPLETE"])
+        case("sink open rehash fd", lambda fx: sink(fx).update(rehash_fd_closed=False), ["SINK_INCOMPLETE"])
+        for field in ("reader_fd_closed", "unblock_fd_closed", "file_closed", "flush_completed", "fsync_completed",
+                      "close_completed", "fifo_same_inode_still_fifo", "file_same_identity_regular", "file_nlink_one",
+                      "file_size_matches_written", "file_within_cap", "file_metadata_stable_during_rehash",
+                      "file_rehash_matches", "file_integrity", "finish_deadline_in_bounds"):
+            case("sink integrity false: " + field, lambda fx, key=field: sink(fx).update({key: False}),
+                 ["SINK_INCOMPLETE"])
+        for side, prefix in (("solver", "SOLVER"), ("checker", "A")):
+            for field, value in (("problems", ["fixture contradiction"]), ("group_empty_after_reap", False),
+                                 ("stream_thread_alive_after_join", True), ("reader_error", "fixture read error"),
+                                 ("quarantined", True), ("stop_refused", True), ("actual_owned_reap", False),
+                                 ("wait_lost", "ECHILD"), ("settlement_publication_in_bounds", False),
+                                 ("native_exec_identity_verified", False), ("grace_completion_in_bounds", False),
+                                 ("grace_completion_in_bounds", 1), ("output_sha256", None),
+                                 ("unsettled", {"fixture": True})):
+                case(side + " receipt contradiction: " + field,
+                     lambda fx, target=side, key=field, val=value: fx[target].update({key: val}),
+                     [prefix + "_RECEIPT" if prefix == "SOLVER" else "A.RECEIPT"])
+        for side, code in (("solver", "SOLVER_RECEIPT"), ("checker", "A.RECEIPT")):
+            case(side + " missing grace completion", lambda fx, target=side: fx[target].pop("grace_completion_in_bounds"), [code])
+        case("checker settled false", lambda fx: checker(fx).update(settled=False), ["A.RECEIPT", "A.SETTLE"])
+        case("checker settled integer1", lambda fx: checker(fx).update(settled=1), ["A.RECEIPT"])
+        case("checker capture cap", lambda fx: checker(fx).update(capture_over_cap=True), ["A.SETTLE"])
+        case("checker late exit", lambda fx: checker(fx).update(exit_observed_by_deadline=False), ["A.TIMING"])
+        case("checker rc1", lambda fx: checker(fx).update(returncode=1), ["A.EXIT"])
+        case("checker duplicate VERIFIED", lambda fx: lines(fx).append("s VERIFIED"), ["A.STATUS"])
+        case("checker duplicate header", lambda fx: lines(fx).insert(1, lines(fx)[0]), ["A.HEADER"])
+        case("checker conflicting consumed record",
+             lambda fx: lines(fx).insert(2, "c finished parsing, read 99 bytes from proof file"), ["A.CONSUMED"])
+        case("proof above passed cap", lambda fx: fx.update(cap=pn - 1), ["PROOF_SIZE"])
+
+        def zero(fx):
+            h0 = sha(b"")
+            sink(fx).update(received=0, written=0, sha256_of_written=h0, file_rehash=[h0, 0])
+            fx.update(proof_sha=h0, proof_bytes=0, proof_post=(h0, 0))
+            lines(fx)[1] = "c finished parsing, read 0 bytes from proof file"
+        case("coherent empty proof", zero, ["PROOF_SIZE"])
+        case("passed digest not solver sink",
+             lambda fx: fx.update(proof_sha=sha(b"other"), proof_post=(sha(b"other"), pn)), ["PROOF_SINK_BINDING"])
+
+        def different_bytes(fx):
+            fx.update(proof_bytes=pn + 1, proof_post=(ph, pn + 1))
+            lines(fx)[1] = "c finished parsing, read %d bytes from proof file" % (pn + 1)
+        case("passed bytes not solver sink", different_bytes, ["PROOF_SINK_BINDING"])
+        case("CNF post differs", lambda fx: fx.update(cnf_post=("d" * 64, cn)), ["CNF_POST"])
+        case("proof post digest differs", lambda fx: fx.update(proof_post=(sha(b"different"), pn)), ["PROOF_POST"])
+        case("proof post size differs", lambda fx: fx.update(proof_post=(ph, pn + 1)), ["PROOF_POST"])
+
+        # Both negative post-tuples below are obtained by fresh anchored reads of exclusive physical fixtures.
+        changed = os.path.join(fixture.out, "controls", "post-changed.drat")
+        R.write_bytes_x(changed, b"x" * pn)
+        actual_changed_post = R.sha_tree(changed)
+        assert actual_changed_post != (ph, pn)
+        case("fresh changed proof post is not replaced by a historical tuple",
+             lambda fx: fx.update(proof_post=actual_changed_post), ["PROOF_POST"])
+        trailing = os.path.join(fixture.out, "controls", "trailing.drat")
+        p3h, p3n = R.write_bytes_x(trailing, base["proof_data"] + b"x")
+        actual_cnf_post, actual_trailing_post = R.sha_tree(cnf), R.sha_tree(trailing)
+
+        def c3_shape(fx):
+            fx.update(proof_sha=p3h, proof_bytes=p3n, cap=1001,
+                      cnf_post=actual_cnf_post, proof_post=actual_trailing_post)
+            lines(fx).insert(1, "c WARNING: wrong binary prefix, stop reading proof")
+        case("C3 full file-transport shape", c3_shape,
+             ["A.CONSUMED", "A.FORBIDDEN.WRONG_PREFIX", "PROOF_SINK_BINDING"])
+
+        def c4_shape(fx):
+            checker(fx)["returncode"] = 1
+            lines(fx)[2] = "s NOT VERIFIED"
+        case("C4 measured foreign-proof shape", c4_shape, ["A.EXIT", "A.FORBIDDEN.NOT_VERIFIED", "A.STATUS"])
+        # Frozen normative inventory is independent of the runner catalog: dropping R.FORBIDDEN cannot drop a case.
+        for pattern, key, line in FROZEN_FORBIDDEN_CASES:
+            case("checker forbidden " + key, lambda fx, value=line: lines(fx).insert(1, value),
+                 ["A.FORBIDDEN." + key])
+        case("checker VERIFIED plus TIMEOUT echo", lambda fx: lines(fx).append("c TIMEOUT echo"),
+             ["A.FORBIDDEN.TIMEOUT"])
+        assert tuple(R.LATCH) == before_latches, (before_latches, R.LATCH)
+        return {"scenarios": len(rows), "all_complete_id_sets_exact": True,
+                "fresh_post_hashes_read_from_exclusive_fixtures": True,
+                "native_execution": False, "rows": rows}
+    finally:
+        fixture.restore()
+
+def t_d2_sink_mismatch_and_replacement(R, W):
+    """Real file corruption/replacement must latch exactly, retain production blockers, then receive TEST-ONLY disposition."""
+    fixture = RunTreeFixture(R, W, "t-d2-sink-integrity")
+    sinks, writers, rows = [], [], []
+    try:
+        for name, fault in (("same-inode-mismatch", "proof rehash mismatch"),
+                            ("different-inode-replacement", "proof inode replacement")):
+            need(12.0, "D2 integrity fixture " + name)
+            before_latches = tuple(R.LATCH)
+            data = det_bytes(257, 57)
+            sink = R.ProofSink(os.path.join(fixture.out, "fifo", name + ".fifo"),
+                               os.path.join(fixture.out, "controls", name + ".drat"), 4096)
+            sinks.append(sink)
+            file_fd = sink.file.fileno()
+            writer = {}
+            end = min(time.monotonic() + 5.0, STATE["deadline"] - RESULT_RESERVE_S)
+            th = spawn(d2_fifo_writer, (sink.fifo_path, [data], writer, end), "d2-integrity-" + name)
+            writers.append(th)
+            assert wait_thread(th, 5.0, "D2 integrity writer"), writer
+            assert writer.get("ok") is True and "error" not in writer, writer
+            assert wait_thread(sink.thread, 5.0, "D2 integrity collector"), sink.accounting()
+            assert sink.file.closed is True and sink.error is None and sink.written == len(data)
+            assert tuple(R.LATCH) == before_latches, (before_latches, R.LATCH)
+            if fault == "proof rehash mismatch":
+                # Only this test-created proof is altered; preserve its original bytes in an exclusive sibling.
+                R.write_bytes_x(sink.file_path + ".before-mismatch", data)
+                changed = bytes([data[0] ^ 1]) + data[1:]
+                dfd, final = R.tree_path(sink.file_path)
+                fd = os.open(final, os.O_WRONLY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=dfd)
+                try:
+                    st = os.fstat(fd)
+                    assert [st.st_dev, st.st_ino] == sink.file_identity and st.st_size == len(data)
+                    view = memoryview(changed)
+                    while view:
+                        n = os.write(fd, view)
+                        assert isinstance(n, int) and not isinstance(n, bool) and 0 < n <= len(view)
+                        view = view[n:]
+                    os.fsync(fd)
+                finally:
+                    os.close(fd)
+                expected_messages = ["proof file identity/size/rehash mismatch: " + sink.file_path,
+                                     "proof sink not settled: " + sink.file_path]
+            else:
+                # Move only the fixture's own proof; preserve the original inode and bytes, never delete it.
+                os.rename(sink.file_path, sink.file_path + ".original")
+                with open(sink.file_path, "xb") as replacement:
+                    replacement.write(data)
+                    replacement.flush()
+                    os.fsync(replacement.fileno())
+                error_repr = repr(RuntimeError("rehash descriptor is not the retained singly-linked proof at written size"))
+                expected_messages = ["proof sink finish failed %s: %s" % (sink.file_path, error_repr),
+                                     "proof sink I/O error finish:" + error_repr,
+                                     "proof sink not settled: " + sink.file_path]
+            rec = d2_finish_sink(R, sink, True)
+            closed_fds = d2_assert_sink_endpoints_closed(sink, file_fd, writer)
+            assert rec["sink_settled"] is False and R.sink_integrity(rec) is False and R.sink_complete(rec) is False
+            assert sink.accounting()["unresolved"] is True and rec["thread_alive_after_join"] is False
+            if fault == "proof rehash mismatch":
+                assert rec["error"] is None and rec["file_same_identity_regular"] is True
+                assert rec["file_rehash"] == [sha(changed), len(data)] and rec["file_rehash_matches"] is False
+                assert rec["file_identity_at_finish"] == sink.file_identity
+            else:
+                assert rec["file_rehash"] is None and rec["file_same_identity_regular"] is False
+                st = os.stat(sink.file_path + ".original", follow_symlinks=False)
+                assert [st.st_dev, st.st_ino] == sink.file_identity
+            raw_inventory = R.unresolved_inventory()
+            matching_sink = [entry for entry in raw_inventory if entry.get("kind") == "file sink"
+                             and entry.get("state", {}).get("file") == sink.file_path]
+            matching_partial = [entry for entry in raw_inventory if entry.get("kind") == "partial publication"
+                                and entry.get("path") == sink.file_path]
+            assert len(matching_sink) == len(matching_partial) == 1, raw_inventory
+            assert matching_partial[0]["state"]["identity"] == sink.file_identity
+            pending, _ = filter_fixture_inventory(R, raw_inventory)
+            assert any(entry.get("kind") == "file sink" and entry.get("state", {}).get("file") == sink.file_path
+                       for entry in pending), pending
+            assert any(entry.get("kind") == "partial publication" and entry.get("path") == sink.file_path
+                       for entry in pending), pending
+            consumed = consume_expected_latches(R, before_latches, [(R.re.escape(message), 1)
+                                                                    for message in expected_messages])
+            assert consumed == expected_messages, consumed
+            failed_receipt = copy.deepcopy(sink.finished)
+            partial_state = copy.deepcopy(R.CREATED[sink.file_path])
+            disposition = dispose_fixture_fault(R, sink, "file sink", [fault],
+                                                 both_original_descriptors_observed_closed=True)
+            assert disposition["lifecycle_refusals"] == [] and disposition["object_id"] == id(sink), disposition
+            remaining_inventory, explicit = filter_fixture_inventory(R, R.unresolved_inventory())
+            assert not any(entry.get("kind") == "file sink" and entry.get("state", {}).get("file") == sink.file_path
+                           for entry in remaining_inventory), remaining_inventory
+            assert not any(entry.get("kind") == "partial publication" and entry.get("path") == sink.file_path
+                           for entry in remaining_inventory), remaining_inventory
+            assert any(entry.get("object_id") == id(sink) and entry.get("kind") == "file sink" for entry in explicit)
+            assert sum(obj is sink for obj in R.LIVE_SINKS) == 1
+            assert sink.finished == failed_receipt and sink.finished["sink_settled"] is False
+            assert R.CREATED[sink.file_path] == partial_state and partial_state["state"] == "open"
+            assert R.unresolved_inventory() == raw_inventory, "TEST disposition weakened production ownership inventory"
+            assert tuple(R.LATCH) == before_latches, (before_latches, R.LATCH)
+            rows.append({"fault": fault, "exact_latches": consumed, "closed_fds": closed_fds,
+                         "production_blockers_retained": ["file sink", "partial publication"],
+                         "test_only_disposition": disposition})
+        return {"cases": rows, "native_execution": False,
+                "preservation_scope": "only these newly test-created proof fixtures are mutated/moved; originals and receipts retained"}
+    finally:
+        if all(not th.is_alive() for th in writers) and all(s.thread is not None and not s.thread.is_alive()
+                   and s.file is not None and s.file.closed is True and s.reader_fd_closed is True
+                   and s.unblock_fd_closed is True and s.rehash_fd_closed is True for s in sinks):
+            fixture.restore()
+
+def t_d2_sink_roundtrip(R, W):
+    """Actual FIFO/thread file transport: normal, hard-capped and initially never-connected sinks, no subprocess."""
+    fixture = RunTreeFixture(R, W, "t-d2-sink-roundtrip")
+    before_latches = tuple(R.LATCH)
+    sinks, writers, results = [], [], []
+    try:
+        for name, data, cap, connected in (("roundtrip", det_bytes(196733, 41), 262144, True),
+                                            ("capped", b"y" * 10000, 4096, True),
+                                            ("never-connected", b"", 4096, False)):
+            need(12.0, "D2 " + name)
+            sink = R.ProofSink(os.path.join(fixture.out, "fifo", name + ".fifo"),
+                               os.path.join(fixture.out, "controls", name + ".drat"), cap)
+            sinks.append(sink)
+            file_fd = sink.file.fileno()
+            writer = None
+            if connected:
+                writer = {}
+                end = min(time.monotonic() + 5.0, STATE["deadline"] - RESULT_RESERVE_S)
+                th = spawn(d2_fifo_writer,
+                           (sink.fifo_path, [data[i:i + 997] for i in range(0, len(data), 997)], writer, end),
+                           "d2-" + name + "-writer")
+                writers.append(th)
+                assert wait_thread(th, 5.0, "D2 FIFO writer"), writer
+                assert writer.get("ok") is True and "error" not in writer, writer
+            rec = d2_finish_sink(R, sink, connected)
+            closed_fds = d2_assert_sink_endpoints_closed(sink, file_fd, writer)
+            assert rec["sink_settled"] is True and R.sink_integrity(rec) is True, rec
+            assert rec["thread_alive_after_join"] is False and rec["file_closed"] is True
+            assert rec["file_rehash"] == [rec["sha256_of_written"], rec["written"]]
+            assert R.sha_tree(sink.file_path, limit=cap) == (rec["sha256_of_written"], rec["written"])
+            st = os.stat(os.path.basename(sink.file_path),
+                         dir_fd=R.tree_path(sink.file_path)[0], follow_symlinks=False)
+            assert [st.st_dev, st.st_ino] == sink.file_identity and st.st_nlink == 1
+            assert st.st_size == rec["written"] <= cap
+            assert sink.census_paths() == {sink.fifo_path, sink.file_path}
+            assert sink.census_refusals(R.run_tree_census()) == [], sink.accounting()
+            assert sink.accounting()["unresolved"] is False, sink.accounting()
+            unresolved = R.unresolved_inventory()
+            assert not any(entry.get("kind") == "file sink" and entry.get("state", {}).get("file") == sink.file_path
+                           for entry in unresolved), unresolved
+            assert not any(entry.get("kind") == "partial publication" and entry.get("path") == sink.file_path
+                           for entry in unresolved), unresolved
+            if name == "roundtrip":
+                assert R.sink_complete(rec) is True and rec["received"] == rec["written"] == len(data)
+                assert rec["discarded"] == 0 and rec["sha256_of_written"] == sha(data)
+                assert rec["over_cap"] is False and rec["unblocked_by_runner"] is False
+            elif name == "capped":
+                assert R.sink_complete(rec) is False and rec["over_cap"] is True
+                assert rec["received"] == len(data) and rec["discarded"] > 0
+                assert rec["received"] == rec["written"] + rec["discarded"]
+                assert rec["sha256_of_written"] == sha(b"y" * rec["written"])
+                assert rec["unblocked_by_runner"] is False
+            else:
+                assert R.sink_complete(rec) is False and rec["unblocked_by_runner"] is True
+                assert rec["eof"] is True and rec["received"] == rec["written"] == rec["discarded"] == 0
+                assert rec["file_rehash"] == [sha(b""), 0]
+            assert tuple(R.LATCH) == before_latches, (before_latches, R.LATCH)
+            results.append({"case": name, "received": rec["received"], "written": rec["written"],
+                            "discarded": rec["discarded"], "sink_integrity": True, "closed_fds": closed_fds})
+        return {"cases": results, "native_execution": False}
+    finally:
+        # Never hide a live endpoint by closing its anchored fixture directories or dropping its registry entry.
+        if all(not th.is_alive() for th in writers) and all(s.thread is not None and not s.thread.is_alive()
+                   and s.file is not None and s.file.closed is True and s.reader_fd_closed is True
+                   and s.unblock_fd_closed is True and s.rehash_fd_closed is True for s in sinks):
+            fixture.restore()
+
+def t_legacy_unknown_start_liveness(R, W):
+    """Release r11: wall-clock bounds never prove PID reuse when the original start identity is unknown."""
+    saved = R.list_pids, R.bsd_identity
+    pid = 887711
+    current = {"pid": pid, "ppid": 1, "pgid": pid, "start": [2_000_000_000, 0], "status": 2}
+    original = {"pid": pid, "start": None, "started_by_epoch": 0.0, "group_leader": True}
+    members = []
+    outcomes = {}
+
+    def group(kind, value):
+        assert kind == R.PROC_PGRP_ONLY and value == pid, (kind, value)
+        return list(members)
+
+    try:
+        R.list_pids = group
+        R.bsd_identity = lambda got: (dict(current), None)
+        # Old epoch-bound inference would wrongly accept this listed pid as reused.
+        outcomes["unknown_start_listed_after_old_clock_bound"] = R.identity_ended_refusals(original, {pid})
+        outcomes["legacy_absent_empty_group"] = R.identity_ended_refusals(original, set())
+        same = dict(original, start=list(current["start"]))
+        outcomes["known_same_identity_listed"] = R.identity_ended_refusals(same, {pid})
+        different = dict(original, start=[1, 0])
+        outcomes["known_different_start_reuse"] = R.identity_ended_refusals(different, {pid})
+        members.append(pid + 1)
+        outcomes["absent_leader_nonempty_group"] = R.identity_ended_refusals(original, set())
+        members.clear()
+        R.bsd_identity = lambda got: (dict(current, status=R.SZOMB), None)
+        outcomes["zombie_even_with_different_start"] = R.identity_ended_refusals(different, {pid})
+        R.bsd_identity = lambda got: (None, {"errno": errno.ESRCH, "bsd_bytes": 0})
+        outcomes["esrch_but_still_listed"] = R.identity_ended_refusals(original, {pid})
+    finally:
+        R.list_pids, R.bsd_identity = saved
+    admitted = ("legacy_absent_empty_group", "known_different_start_reuse")
+    assert all(outcomes[name] == [] for name in admitted), outcomes
+    assert all(value for name, value in outcomes.items() if name not in admitted), outcomes
+    return outcomes
+
+
+def feeder_disposition_snapshot(obj):
+    """Immutable primitive snapshot of this exact feeder's complete deliberate-close-fault state."""
+    fields = ("mode", "label", "expected", "fed", "proof_fed", "delivery_error", "exception", "construction_error",
+        "hold_released_by_event", "started", "start_attempted", "start_completed", "start_acquisition_unknown",
+        "pipe_acquisition_started", "pipe_acquisition_completed", "pipe_acquisition_unknown",
+        "rfd", "wfd", "read_endpoint_identity", "write_endpoint_identity", "read_endpoint_acquired",
+        "write_endpoint_acquired", "read_endpoint_closed", "write_endpoint_closed", "read_close_attempted",
+        "write_close_attempted", "read_close_fd", "write_close_fd", "read_close_error", "write_close_error",
+        "abandon_error", "finish_started", "finish_deadline", "close_error")
+    state = {field: getattr(obj, field, "unknown") for field in fields}
+    state.update(resource_id=id(obj), errors=list(getattr(obj, "errors", [])),
+        close_errors=list(getattr(obj, "close_errors", [])), finished=copy.deepcopy(getattr(obj, "finished", None)),
+        blocks_empty=getattr(obj, "blocks", None) == ())
+    for field in ("thread", "hold", "sha"):
+        retained = getattr(obj, field, None)
+        state[field + "_object_id"] = None if retained is None else id(retained)
+    thread = getattr(obj, "thread", None)
+    state["thread_ident"] = None if thread is None else thread.ident
+    state["thread_alive"] = None if thread is None else thread.is_alive()
+    digest = getattr(obj, "sha", None)
+    state["fed_digest"] = None if digest is None else digest.hexdigest()
+    return state
+
+def independent_disk_usage(root):
+    """Test-owned independent stat walk; logical st_size is NEVER described as physical allocation."""
+    logical = allocated = 0
+    seen, stack, count = set(), [root], 0
+    while stack:
+        path = stack.pop()
+        count += 1
+        if count > 50000:
+            raise AssertionError("independent fixture disk-walk cap")
+        st = os.stat(path, follow_symlinks=False)
+        key = st.st_dev, st.st_ino
+        if key not in seen:
+            seen.add(key)
+            allocated += st.st_blocks * 512
+            if not stat.S_ISDIR(st.st_mode):
+                logical += st.st_size
+        if stat.S_ISDIR(st.st_mode):
+            with os.scandir(path) as entries:
+                for entry in entries:
+                    stack.append(os.path.join(path, entry.name))
+    return {"logical_distinct_inode_bytes": logical, "allocated_st_blocks_bytes": allocated,
+            "enforced_max_bytes": max(logical, allocated), "distinct_inodes": len(seen)}
+
+def synthetic_guard_namespace(R):
+    """Rebind reviewed Python code into isolated state; no import/exec, production latch clearing or real birth/wait."""
+    target = types.ModuleType("pa19_synthetic_guard_fixture")
+    target.__dict__.update(vars(R))
+    g = target.__dict__
+    for name in ("OWNED", "HELPERS", "HELPER_LOG", "LIVE_BUFFERS", "LIVE_FEEDERS", "LIVE_SINKS", "LATCH"):
+        g[name] = []
+    for name in ("CREATED", "TREE", "WRITTEN"):
+        g[name] = {}
+    g["STATE"] = dict(R.STATE)
+    g["STATE"].update(seq=0, out="/synthetic/pa19", written=0, output_limit=1 << 30,
+        remaining_reserve=1 << 30, reservation=1 << 30, mono0=0.0, mono_end=10000.0,
+        abs_end=10000.0, chunk_end=10000.0, mono_chunk_end=10000.0,
+        cleanup_deadline=None, cancel_order=None, runner_identity={"pid": 770000, "start": [1, 0]})
+    g["ORDER"] = iter(range(1, 1000000))
+    for name in ("os", "time", "subprocess", "signal", "threading", "select"):
+        if name in g:
+            g[name] = types.SimpleNamespace(**vars(g[name]))
+    def forbidden(*args, **kwargs):
+        raise AssertionError("synthetic fixture attempted a real native birth, wait, signal or thread")
+    g["subprocess"].Popen = forbidden
+    g["os"].waitid = g["os"].waitpid = g["os"].killpg = forbidden
+    g["KILLPG"] = forbidden
+    g["threading"].Thread = forbidden
+    g["NATIVE_LAUNCH_STOP"] = 9000.0
+    def rebound(fn):
+        copied = types.FunctionType(fn.__code__, g, fn.__name__, fn.__defaults__, fn.__closure__)
+        copied.__kwdefaults__ = fn.__kwdefaults__
+        return copied
+    for name, value in vars(R).items():
+        if isinstance(value, types.FunctionType) and value.__globals__ is vars(R):
+            g[name] = rebound(value)
+    replacements = {}
+    for name in ("Owned", "Helper", "Child", "ProofBuffer", "Feeder", "ProofSink"):
+        original = getattr(R, name, None)
+        if not isinstance(original, type):
+            continue
+        attrs = {key: rebound(value) if isinstance(value, types.FunctionType) else value
+                 for key, value in vars(original).items() if key not in ("__dict__", "__weakref__")}
+        bases = tuple(replacements.get(base, base) for base in original.__bases__)
+        copied = type(name, bases, attrs)
+        g[name], replacements[original] = copied, copied
+    return target
+
+def t_bounded_namespace_consumers(R, W):
+    """Incremental scandir stops at cap/deadline; allocation, ledger and registry never whole-list namespaces."""
+    X = synthetic_guard_namespace(R)
+    now = [0.0]
+    X.time.monotonic = lambda: now[0]
+    class Scan:
+        def __init__(self, names, cross_at=None):
+            self.names, self.cross_at, self.reads, self.closed = iter(names), cross_at, 0, False
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            self.closed = True
+        def __iter__(self):
+            return self
+        def __next__(self):
+            name = next(self.names)
+            self.reads += 1
+            if self.cross_at == self.reads:
+                now[0] = 1.01
+            if self.reads > 4:
+                raise AssertionError("namespace consumed beyond first over-cap entry")
+            return types.SimpleNamespace(name=name)
+    over = Scan(("d", "c", "b", "a", "never-consumed"))
+    X.os.scandir = lambda path: over
+    try:
+        X.bounded_names("/synthetic", deadline=1.0, cap=3)
+    except RuntimeError as exc:
+        assert str(exc) == "namespace entry cap exhausted; inventory incomplete", exc
+    else:
+        raise AssertionError("over-cap namespace accepted")
+    assert over.reads == 4 and over.closed is True
+    normal = Scan(("c", "a", "b"))
+    X.os.scandir = lambda path: normal
+    assert X.bounded_names("/synthetic", deadline=1.0, cap=3) == ["a", "b", "c"] and normal.closed
+    late = Scan(("one", "never-consumed"), cross_at=1)
+    X.os.scandir = lambda path: late
+    try:
+        X.bounded_names("/synthetic", deadline=1.0, cap=3)
+    except TimeoutError as exc:
+        assert str(exc) == "namespace enumeration: remaining operation budget exhausted", exc
+    else:
+        raise AssertionError("namespace success crossed deadline")
+    assert late.reads == 1 and late.closed
+    now[0] = 0.0
+    calls = []
+    def forbidden_list(*args, **kwargs):
+        raise AssertionError("whole-directory os.listdir reached by bounded namespace consumer")
+    X.os.listdir = forbidden_list
+    X.PILOT_ROOT, X.STATE["out"] = "/synthetic/pilot", "/synthetic/pilot/run-new"
+    X.STATE["pilot_entries"], X.STATE["prior_census"] = [], {}
+    def bounded(path, deadline=None, cap=None):
+        calls.append((path, deadline))
+        return []
+    X.bounded_names = bounded
+    X.disk_usage = lambda: {"logical_distinct_inode_bytes": 0, "allocated_st_blocks_bytes": 0,
+                            "enforced_max_bytes": 0, "distinct_inodes": 0}
+    allocation = {"schema": X.ALLOCATION_SCHEMA, "allocation_id": "synthetic", "out_dir": X.STATE["out"],
+        "reservation_bytes": 1000, "lane_ceiling_bytes": X.LANE_CEILING, "busy_slots": X.BUSY_SLOTS,
+        "released_attempts": []}
+    why, allocation_record = X.allocation_refusals({"allocation": allocation}, "a" * 64,
+        X.STATE["out"], 1000, root=X.PILOT_ROOT)
+    assert why == [] and [path for path, end in calls] == [X.PILOT_ROOT], (why, calls)
+    calls[:] = []
+    X.bounded_names = lambda path, deadline=None, cap=None: calls.append((path, deadline)) or ["run-new"]
+    X.walk_bounded = lambda *args, **kwargs: {}
+    X.os.lstat = lambda path: types.SimpleNamespace(st_mode=stat.S_IFDIR | 0o700, st_dev=1, st_ino=1, st_blocks=0)
+    why, ledger = X.ledger_refusals()
+    assert why == [] and [path for path, end in calls] == [X.PILOT_ROOT], (why, calls, ledger)
+    calls[:] = []
+    def registry_names(path, deadline=None, cap=None):
+        calls.append((path, deadline))
+        return list(X.OLD_LIVE_MARKERS) if path == X.OLD + "/cycle2" else []
+    X.bounded_names = registry_names
+    pins = {X.REGISTRY[0]: X.REGISTRY[1], X.LAUNCH_CONTRACT[0]: X.LAUNCH_CONTRACT[1]}
+    pins.update({X.OLD + "/cycle2/" + name: digest for name, digest in X.OLD_LIVE_MARKERS.items()})
+    X.sha_file = lambda path, **kwargs: (pins[path], 1)
+    assert X.registry_refusals() == []
+    assert [path for path, end in calls] == [X.LANE + "/control", X.RUN + "/control", X.OLD + "/cycle2"], calls
+    assert all(type(end) in (int, float) for path, end in calls), calls
+    return {"cap_entries_consumed": over.reads, "deadline_entries_consumed": late.reads,
+            "namespace_consumers": ["allocation_refusals", "ledger_refusals", "registry_refusals"]}
+
+def t_c7b_feeder_predicate(R, W):
+    """Exact C7b predicate counterexamples use only synthetic receipts, NEVER a control launch."""
+    baseline = copy.deepcopy(good_fixture(R)["checks"][0][1])
+    lines = ['c error opening "/synthetic/absent-checker.cnf".']
+    baseline["returncode"] = 255
+    feed = baseline["stdin_feed"]
+    feed.update(mode="hold", fed_bytes=0, proof_bytes_fed=0, delivery_error="EPIPE after 0 fed bytes",
+                hold_released_by_event=True)
+    assert R.c7b_missing_input_refusals(baseline, lines, lines) == []
+    bad = {}
+    for key, value in (("read_endpoint_closed", False), ("write_endpoint_closed", False),
+                       ("read_endpoint_closed", 1), ("write_endpoint_closed", None),
+                       ("close_error", "synthetic close failure"), ("close_errors", ["synthetic close failure"]),
+                       ("errors", ["synthetic historical failure"]), ("exception", "synthetic failure"),
+                       ("construction_error", "synthetic construction failure"), ("mode", "plain"),
+                       ("fed_bytes", 1), ("fed_bytes", False), ("proof_bytes_fed", 1), ("proof_bytes_fed", False),
+                       ("delivery_error", "EPIPE after 0 fed bytes extra"), ("delivery_error", "EPIPE after 1 fed bytes"),
+                       ("started", False), ("thread_alive_after_join", True), ("hold_released_by_event", False),
+                       ("finish_deadline_in_bounds", False)):
+        changed = copy.deepcopy(baseline)
+        changed["stdin_feed"][key] = value
+        bad[key + ":" + repr(value)] = R.c7b_missing_input_refusals(changed, lines, lines)
+    for key in ("read_endpoint_closed", "write_endpoint_closed", "close_error", "close_errors", "errors",
+                "exception", "construction_error", "finish_deadline_in_bounds"):
+        changed = copy.deepcopy(baseline)
+        changed["stdin_feed"].pop(key)
+        bad[key + ":missing"] = R.c7b_missing_input_refusals(changed, lines, lines)
+    contradictory = copy.deepcopy(baseline)
+    contradictory.update(trips=["owner_cancel_sigterm"])
+    bad["dirty_self_exit_receipt"] = R.c7b_missing_input_refusals(contradictory, lines, lines)
+    bad["extra_complete_output"] = R.c7b_missing_input_refusals(baseline, lines + ["c extra"], lines)
+    bad["wrong_diagnostic"] = R.c7b_missing_input_refusals(baseline, ['c error opening "/other".'], lines)
+    assert all(bad.values()), bad
+    return {"clean_exact_missing_input": True, "refused": bad, "native_execution": False}
+
+def t_fixture_disposition_object_binding(R, W):
+    """Same-label second feeder NEVER inherits an exemption; every retained disposition revalidates each snapshot."""
+    saved = STATE.get("fixture_dispositions", [])
+    expected = "read endpoint closure uncertain: %r" % OSError(errno.EBADF, os.strerror(errno.EBADF))
+    dead = types.SimpleNamespace(is_alive=lambda: False, ident=None)
+    f = types.SimpleNamespace(label="close-error-test", thread=dead, blocks=(), expected=0, started=False,
+        construction_error=None, rfd=999999, wfd=None, read_endpoint_identity=999997,
+        write_endpoint_identity=999998, read_close_fd=999999, read_close_attempted=True,
+        write_close_attempted=True, read_endpoint_closed=None, write_endpoint_closed=True,
+        close_error=expected, close_errors=[expected], errors=[expected], read_close_error=expected,
+        write_close_error=None, exception=None, abandon_error=None, pipe_acquisition_unknown=False,
+        start_acquisition_unknown=False)
+    inventory = []
+    fake = types.SimpleNamespace(OWNED=[], HELPERS=[], LIVE_BUFFERS=[], LIVE_FEEDERS=[f], LIVE_SINKS=[], CREATED={},
+        buffer_charge=lambda: 0, unresolved_inventory=lambda: copy.deepcopy(inventory))
+    cases = {}
+    try:
+        STATE["fixture_dispositions"] = []  # isolated synthetic fixture list, restored without altering real dispositions
+        dispose_fixture_fault(fake, f, "stdin feeder", [expected], True, [999997, 999998],
+                              [[0, 1, 0], [0, 2, 0]], 999999)
+        inventory[:] = [{"kind": "stdin feeder", "label": f.label, "resource_id": id(f)}]
+        exact = terminal_ownership(fake)
+        assert exact["unresolved"] == [] and exact["errors"] == [], exact
+        assert len(exact["explicitly_disposed_test_integrity_faults"]) == 1
+        cases["exact_object"] = exact
+        second = types.SimpleNamespace(label=f.label, thread=dead, blocks=(), expected=0, started=False,
+            construction_error=None, rfd=999996, wfd=999995, close_error=None, close_errors=[], errors=[],
+            read_endpoint_closed=False, write_endpoint_closed=False)
+        fake.LIVE_FEEDERS.append(second)
+        inventory.append({"kind": "stdin feeder", "label": f.label, "resource_id": id(second),
+                          "read_endpoint": second.rfd, "write_endpoint": second.wfd})
+        same_label = terminal_ownership(fake)
+        assert any(x.get("resource_id") == id(second) for x in same_label["unresolved"]), same_label
+        cases["same_label_second_open_object"] = same_label
+        inventory[:] = [{"kind": "stdin feeder", "label": f.label}]
+        no_id = terminal_ownership(fake)
+        assert no_id["unresolved"], no_id
+        cases["label_only_entry"] = no_id
+        fake.LIVE_FEEDERS[:] = []
+        inventory[:] = []
+        missing = terminal_ownership(fake)
+        assert missing["unresolved"] and any("registry owner" in reason
+            for state in missing["explicitly_disposed_test_integrity_faults"]
+            for reason in state["lifecycle_refusals"]), missing
+        cases["missing_from_registry_and_inventory"] = missing
+        fake.LIVE_FEEDERS[:] = [f]
+        f.blocks = (b"unexpected retained proof",)
+        changed = terminal_ownership(fake)
+        assert changed["unresolved"], changed
+        cases["changed_retained_disposition_without_inventory"] = changed
+    finally:
+        STATE["fixture_dispositions"] = saved
+    return cases
+
+def t_grace_completion_fences(R, W):
+    """Advance only a synthetic clock INSIDE final RSS/waitid/waitpid; no successful late settlement is minted."""
+    results = {}
+    for phase in ("final_identity_rss", "exit_observation", "owned_waitpid"):
+        X = synthetic_guard_namespace(R)
+        now, observations, reaps = [0.9], [], []
+        X.time.monotonic, X.time.time = lambda: now[0], lambda: 100.0 + now[0]
+        X.time.sleep = lambda amount: now.__setitem__(0, now[0] + amount)
+        X.signal.getsignal = lambda sig: signal.SIG_DFL
+        X.list_pids = lambda kind, value: [780001] if kind == X.PROC_PGRP_ONLY else []
+        X.descendants = lambda pid, pgid, deadline=None, roots=(): []
+        ident = {"pid": 780001, "ppid": os.getpid(), "pgid": 780001, "start": [1, 1], "status": 2}
+        X.bsd_identity = lambda pid: (dict(ident), None)
+        def rss(pid):
+            if phase == "final_identity_rss":
+                now[0] = 1.01
+            return 0
+        X.task_rss = rss
+        def observed(kind, pid, flags):
+            observations.append((kind, pid, flags))
+            if phase == "exit_observation":
+                now[0] = 1.01
+            return types.SimpleNamespace(si_pid=pid, si_code=X.os.CLD_EXITED, si_status=0)
+        def reaped(pid, flags):
+            reaps.append((pid, flags))
+            if phase == "owned_waitpid":
+                now[0] = 1.01
+            return pid, 0
+        X.os.waitid, X.os.waitpid = observed, reaped
+        owner = X.Child.__new__(X.Child)
+        owner._owned_init()
+        owner.proc, owner.pid, owner.pgid = FakeProc(None), 780001, 780001
+        owner.cwd, owner.out_path = "/synthetic/cwd", "/synthetic/capture"
+        owner.feeder = owner.sink_obj = None
+        owner.argv, owner.identity_at_start = ["synthetic-not-executed"], dict(ident)
+        owner.launch_state, owner.cleanup_end, owner.term_sent_mono = "process_retained", 5.0, 0.0
+        owner.term_delivery = {"delivered": True, "pgid": owner.pgid}
+        rc = owner.reap_owned(1.0)
+        assert rc is None and owner.quarantined is True and owner.grace_completion_in_bounds is False, vars(owner)
+        assert owner.group_closed_before_reap is False and owner.unsettled is not None
+        if phase == "final_identity_rss":
+            assert owner.last_census["complete"] is False and observations == [] and reaps == []
+        elif phase == "exit_observation":
+            assert len(observations) == 1 and reaps == [] and owner.reaped is False
+        else:
+            assert len(observations) == len(reaps) == 1 and owner.reaped is True and owner.proc.returncode == 0
+        assert X.LATCH == ["UNSETTLED pid 780001: finite grace exhausted or wait/census ownership unproven; reservation retained"], X.LATCH
+        before = len(observations), len(reaps)
+        assert owner.reap_owned(1.0) is None and before == (len(observations), len(reaps))
+        # Exercise Child.settle too: restoring the longer total tail cannot restore lost stop-grace authority.
+        owner.seq, owner.label, owner.settled_rec, owner.cleanup_started = 1, "late-grace", None, False
+        owner.deadline_mono, owner.deadline = 10.0, 110.0
+        owner.started_epoch, owner.started_mono, owner.popen_call_mono = 100.0, 0.0, 0.0
+        owner.reader = types.SimpleNamespace(ident=1, join=lambda timeout: None, is_alive=lambda: False)
+        owner.reader_error, owner.feeder, owner.fd_errors, owner.descendants = None, None, [], []
+        owner.sink_obj, owner.filt, owner.trips, owner.over_cap = None, None, ["proof_cap"], False
+        owner.out_path, owner.cwd = "/synthetic/capture", "/synthetic/cwd"
+        owner.intent_path, owner.nolaunch_path = "/synthetic/owner.intent.json", "/synthetic/owner.nolaunch.json"
+        owner.launch_path, owner.settle_path = "/synthetic/owner.launch.json", "/synthetic/owner.settle.json"
+        owner.tree_before, owner.captured, owner.capture_written = {}, 0, 0
+        X.walk_bounded = lambda *args, **kwargs: {}
+        X.run_tree_census = lambda *args, **kwargs: {}
+        X.confinement_refusals = lambda *args, **kwargs: []
+        X.exe_refusals = lambda *args, **kwargs: []
+        X.sha_tree = lambda *args, **kwargs: (sha(b""), 0)
+        X.register_written = lambda *args, **kwargs: None
+        X.read_tree = lambda *args, **kwargs: b""
+        X.write_x = lambda *args, **kwargs: sha(b"synthetic provisional settlement")
+        rec = owner.settle()
+        assert rec["settled"] is False and rec["grace_completion_in_bounds"] is False, rec
+        assert "owned reap/census completion not within stop grace" in rec["problems"], rec
+        assert X.receipt_resource_contradictions(rec), rec
+        results[phase] = {"rc": rc, "actual_owned_reap": owner.reaped,
+                          "stop_grace_end": owner.stop_grace_end, "settled": rec["settled"],
+                          "waitid_calls": len(observations), "waitpid_calls": len(reaps)}
+    return results
+
+def t_helper_native_cutoff_boundaries(R, W):
+    """Mandatory date has NO native-cutoff exemption, including the last check after prior admissible work."""
+    results = {}
+    for name, crossing_call in (("initial_admission", 1), ("after_intent", 2), ("actual_birth_boundary", 3)):
+        X = synthetic_guard_namespace(R)
+        X.NATIVE_LAUNCH_STOP = 100.0
+        epochs, births, publications = [], [], []
+        def epoch():
+            value = 100.01 if len(epochs) + 1 >= crossing_call else 99.0
+            epochs.append(value)
+            return value
+        X.time.time, X.time.monotonic = epoch, lambda: 10.0
+        X.exe_identity, X.exe_refusals = lambda path, pin: {"path": path}, lambda binding: []
+        X.TREE[os.path.join(X.STATE["out"], "children")] = (999999, 1, 2)
+        X.write_x = lambda path, body, deadline=None: publications.append((path, copy.deepcopy(body))) or sha(b"fixture")
+        def no_birth(*args, **kwargs):
+            births.append((args, kwargs))
+            raise AssertionError("date crossed the actual native birth cutoff")
+        X.subprocess.Popen = no_birth
+        helper = X.Helper(X.DATE_ARGV)
+        try:
+            helper.run()
+        except X.HelperRefused:
+            pass
+        else:
+            raise AssertionError(("late mandatory helper was not refused", name))
+        assert births == [] and helper.proc is None, (name, births)
+        assert len(epochs) >= crossing_call and epochs[-1] > X.NATIVE_LAUNCH_STOP, (name, epochs)
+        results[name] = {"epoch_observations": epochs, "popen_calls": 0,
+                         "launch_state": helper.launch_state, "publications": publications}
+    X = synthetic_guard_namespace(R)
+    X.NATIVE_LAUNCH_STOP = 100.0
+    epoch_value, births = [99.0], []
+    X.time.time, X.time.monotonic = lambda: epoch_value[0], lambda: 10.0
+    X.exe_identity, X.exe_refusals = lambda path, pin: {"path": path}, lambda binding: []
+    X.identity_checked = lambda pid, parent: {"pid": pid, "ppid": parent, "pgid": pid, "start": [1, 1]}
+    X.write_x = lambda *args, **kwargs: sha(b"synthetic helper record")
+    stdout = types.SimpleNamespace(closed=False)
+    stdout.close = lambda: setattr(stdout, "closed", True)
+    def completed_late(*args, **kwargs):
+        births.append(epoch_value[0])
+        epoch_value[0] = 100.01
+        return types.SimpleNamespace(pid=780101, stdout=stdout, returncode=0)
+    X.subprocess.Popen = completed_late
+    def synthetic_reap(helper, allowance):
+        helper.reaped = helper.group_closed_before_reap = helper.grace_completion_in_bounds = True
+        helper.exit_observed_mono, helper.exit_observed_epoch = 10.0, epoch_value[0]
+        return 0
+    X.Helper.reap_owned = synthetic_reap
+    helper = X.Helper(X.DATE_ARGV)
+    try:
+        helper.run()
+    except RuntimeError as exc:
+        assert str(exc) == "required host clock invalid", exc
+    else:
+        raise AssertionError("postspawn completion after native cutoff returned a qualifying clock")
+    assert births == [99.0] and "date actual launch completion observed after native cutoff" in helper.record["exception"]
+    assert helper.record["invalid"] == ["stopped/incomplete/invalid required host clock"], helper.record
+    assert X.LATCH == ["metadata helper invalid: %r" % helper.record["invalid"]], X.LATCH
+    results["postspawn_late_completion_nonqualifying"] = {"synthetic_birth_epoch": births[0],
+        "observed_start_epoch": helper.started_epoch, "exception": helper.record["exception"]}
+    return results
+
+def t_parent_block_with_available_refused_ledger(R, W):
+    """An available snapshot with refusal reasons still blocks BOTH publications even if owner inventory is empty."""
+    X = synthetic_guard_namespace(R)
+    X.time.monotonic, X.time.time = lambda: 1.0, lambda: 100.0
+    X.clock = lambda: "2000-01-01T00:00:00+0000"  # synthetic predicate fixture, NEVER an observed host clock
+    X.buffer_charge, X.unresolved_inventory = lambda: 0, lambda: []
+    X.confinement_refusals = X.preservation_refusals = lambda: []
+    usage = {"logical_distinct_inode_bytes": 0, "allocated_st_blocks_bytes": 0, "enforced_max_bytes": 0,
+             "distinct_inodes": 1, "directory_allocation_included": True,
+             "APFS_shared_allocation_overcount": "conservative"}
+    ledger = {"this_run_usage": usage, "outside_run_usage": usage, "lane_usage_bytes": 0,
+              "full_reservation_bytes": X.STATE["reservation"], "conservative_bound_bytes": X.STATE["reservation"]}
+    X.disk_usage = lambda root: dict(usage)
+    X.ledger_refusals = lambda: (["synthetic ledger refusal"], dict(ledger))
+    publications = {}
+    def publish_bytes(path, raw, **kwargs):
+        publications[os.path.basename(path)] = json.loads(raw)
+        return sha(raw), len(raw)
+    def publish_json(path, body, **kwargs):
+        publications[os.path.basename(path)] = copy.deepcopy(body)
+        return sha(json.dumps(body, sort_keys=True).encode())
+    X.write_bytes_x, X.write_x = publish_bytes, publish_json
+    outcome = {"sat": False, "controls_failed": False, "refused": False, "exception": False, "complete": True}
+    code = X.final_code({}, outcome)
+    summary, closeout = publications["summary.json"], publications["closeout.json"]
+    assert code == X.EXIT_SAFETY_STOP and X.LATCH == ["closeout: synthetic ledger refusal"], (code, X.LATCH)
+    assert summary["parent_block"] is True and closeout["parent_block"] is True, publications
+    assert summary["ownership_manifest"]["unresolved"] == closeout["unresolved"] == []
+    assert summary["proposed_exit_code"] == closeout["exit_code"] == X.EXIT_SAFETY_STOP
+    assert summary["reservation_retained"] is True
+    assert closeout["full_parent_reservation_retained_until_disposition"] == X.STATE["reservation"]
+    assert summary["run_tree_usage_before_summary"] == usage and summary["run_tree_enforced_bytes_before_summary"] == 0
+    assert closeout["publication_completion_self_certified"] is False and X.STATE["cleanup_deadline"] is None
+    return {"exit": code, "summary_parent_block": summary["parent_block"], "closeout_parent_block": closeout["parent_block"],
+            "available_ledger_was_not_authority": True}
+
+def t_persistent_identity_and_root_traversal(R, W):
+    """Known-start, unreadable and reused-PID observations coexist; group and retained roots seed traversal."""
+    X = synthetic_guard_namespace(R)
+    X.time.monotonic, X.time.time = lambda: 1.0, lambda: 100.0
+    owner = X.Owned()
+    owner._owned_init()
+    for start, error in (([1, 2], None), (None, {"errno": errno.ESRCH}), ([3, 4], None), ([1, 2], None)):
+        item = {"pid": 780301, "identity": None if start is None else {"pid": 780301, "start": list(start)},
+                "identity_error": error, "observed_by_epoch": 100.0, "rss_bytes": 0}
+        owner.remember_identity(item)
+    assert set(owner.known_identities) == {(780301, (1, 2)), (780301, None), (780301, (3, 4))}
+    assert owner.known_identities[(780301, (1, 2))]["identity"]["start"] == [1, 2]
+    assert owner.known_identities[(780301, (1, 2))]["observations"] == 2 and owner.census_uncertainty
+    queries = []
+    children = {780300: [], 780301: [780304], 780302: [780305], 780304: [780306], 780305: [], 780306: []}
+    def listed(kind, value):
+        queries.append((kind, value))
+        if kind == X.PROC_PGRP_ONLY:
+            return [780301]
+        if kind == X.PROC_PPID_ONLY:
+            return list(children[value])
+        raise AssertionError((kind, value))
+    X.list_pids = listed
+    found = X.descendants(780300, 780300, deadline=2.0, roots=(780302,))
+    assert found == [780301, 780302, 780304, 780305, 780306], (found, queries)
+    assert {value for kind, value in queries if kind == X.PROC_PPID_ONLY} == set(children), queries
+    observed = X.Owned()
+    observed._owned_init()
+    observed.pid = observed.pgid = 780300
+    observed.identity_at_start = {"pid": 780300, "start": [1, 0]}
+    observed.remember_identity({"pid": 780302, "identity": {"pid": 780302, "start": [2, 0]},
+                                "identity_error": None, "observed_by_epoch": 99.0})
+    X.bsd_identity = lambda pid: ({"pid": pid, "start": [pid, 0]}, None)
+    X.task_rss = lambda pid: 0
+    census = observed.live_census(deadline=2.0)
+    assert census["complete"] is False and observed.census_uncertainty, census
+    assert {entry["pid"] for entry in census["descendants"]} == set(found)
+    assert observed.known_pids() == [780301, 780302, 780304, 780305, 780306], observed.known_identities
+    return {"retained_starts": [list(key[1]) if key[1] is not None else None for key in owner.known_identities],
+            "group_and_known_root_descendants": found, "live_census": census}
+
+def t_popen_exception_retains_unknown_intent(R, W):
+    """A raised constructor has no returned proc, NOT proof of no child; retain exact unknown intent and block."""
+    results = {}
+    for kind in ("child", "helper"):
+        X = synthetic_guard_namespace(R)
+        X.time.monotonic, X.time.time = lambda: 100.0, lambda: 100.0
+        publications, births = [], []
+        X.TREE[os.path.join(X.STATE["out"], "children")] = (999999, 1, 2)
+        def publication(path, body, deadline=None):
+            publications.append((path, copy.deepcopy(body), deadline))
+            return sha(json.dumps(body, sort_keys=True).encode())
+        X.write_x = publication
+        X.run_tree_census = lambda *args, **kwargs: {}
+        X.exe_identity = lambda path, pin: {"path": path, "sha256": pin}
+        X.exe_refusals = lambda binding: []
+        X.full_admission = lambda *args, **kwargs: []
+        X.preservation_refusals = lambda *args, **kwargs: []
+        X.sha_tree = lambda *args, **kwargs: (sha(b""), 0)
+        def capture(path):
+            wrapper = types.SimpleNamespace(closed=False)
+            wrapper.close = lambda: setattr(wrapper, "closed", True)
+            X.CREATED[path] = {"state": "open", "kind": "file", "identity": [1, 3]}
+            return wrapper
+        X.open_wb = capture
+        def failed_popen(*args, **kwargs):
+            births.append((args, kwargs))
+            raise RuntimeError("synthetic Popen parent-side acquisition failure")
+        X.subprocess.Popen = failed_popen
+        try:
+            if kind == "child":
+                X.Child([X.KISSAT[0]], "unknown-acquisition", 1, 0, {}, None, "/synthetic/cwd")
+            else:
+                X.Helper(X.DATE_ARGV).run()
+        except RuntimeError as exc:
+            assert str(exc) == "synthetic Popen parent-side acquisition failure", exc
+        else:
+            raise AssertionError("synthetic Popen failure was not propagated")
+        registry = X.OWNED if kind == "child" else X.HELPERS
+        assert len(births) == len(registry) == 1, (births, registry)
+        owner = registry[0]
+        assert owner.proc is None and owner.launch_state == "popen_exception_unproven", vars(owner)
+        assert owner.launch_error == repr(RuntimeError("synthetic Popen parent-side acquisition failure"))
+        assert owner.launch_intent and any(path == owner.launch_intent for path, body, end in publications)
+        assert not any(path.endswith(".nolaunch.json") or body.get("no_launch") is True
+                       for path, body, end in publications), publications
+        inventory = X.unresolved_inventory()
+        matched = [entry for entry in inventory if entry.get("kind") == "unknown process acquisition"
+                   and entry.get("resource_id") == id(owner)]
+        assert len(matched) == 1 and owner.quarantined is True and owner.unsettled is not None, inventory
+        assert X.LATCH == ["UNSETTLED pid None: Popen acquisition exception; no-child outcome unproven; reservation retained"], X.LATCH
+        assert X.choose_exit_code({"complete": True}, inventory, None) == X.EXIT_SAFETY_STOP
+        assert X.Helper(X.DATE_ARGV).admission_refusals(), "unknown acquisition did not block later helper admission"
+        X.clock = lambda: None  # no replacement date birth when owner acquisition is already unknown
+        usage = {"logical_distinct_inode_bytes": 0, "allocated_st_blocks_bytes": 0, "enforced_max_bytes": 0,
+                 "distinct_inodes": 0, "directory_allocation_included": True,
+                 "APFS_shared_allocation_overcount": "conservative"}
+        X.disk_usage = lambda root: dict(usage)
+        X.ledger_refusals = lambda: ([], {"this_run_usage": usage, "outside_run_usage": usage})
+        X.confinement_refusals = X.preservation_refusals = lambda: []
+        published = {}
+        def publish_bytes(path, raw, **kwargs):
+            published[os.path.basename(path)] = json.loads(raw)
+            return sha(raw), len(raw)
+        def publish_json(path, body, **kwargs):
+            published[os.path.basename(path)] = copy.deepcopy(body)
+            return sha(json.dumps(body, sort_keys=True).encode())
+        X.write_bytes_x, X.write_x = publish_bytes, publish_json
+        code = X.final_code({}, {"complete": True})
+        summary = published["summary.json"]
+        flag = "all_children_settled" if kind == "child" else "all_helpers_settled"
+        assert code == X.EXIT_SAFETY_STOP and summary[flag] is False and summary["parent_block"] is True, summary
+        assert X.LATCH == [
+            "UNSETTLED pid None: Popen acquisition exception; no-child outcome unproven; reservation retained",
+            "closeout: owned settlement unproven",
+            "closeout: unproven owners/resources/publications retain parent block"], X.LATCH
+        results[kind] = {"launch_state": owner.launch_state, "inventory": inventory,
+                         "no_launch_publications": 0, "synthetic_popen_calls": len(births),
+                         flag: summary[flag], "exit": code}
+    return results
+
+def t_prestart_unoptimized_guard(R, W):
+    """Invoke only this suite's main with an optimized-flag proxy; argv/path/target/mutation are unreachable."""
+    reached = []
+    class ForbiddenArgv:
+        def __len__(self):
+            reached.append("argv")
+            raise AssertionError("optimized prestart inspected argv")
+    def forbidden(*args, **kwargs):
+        reached.append("mutation_or_load")
+        raise AssertionError("optimized prestart crossed a read/mutation/load boundary")
+    for optimize in (1, 2):
+        namespace = dict(globals())
+        namespace.update(sys=types.SimpleNamespace(flags=types.SimpleNamespace(optimize=optimize), argv=ForbiddenArgv()),
+                         os=types.SimpleNamespace(mkdir=forbidden, path=types.SimpleNamespace(abspath=forbidden)),
+                         open=forbidden, load_verified_runner=forbidden,
+                         signal=types.SimpleNamespace(signal=forbidden),
+                         time=types.SimpleNamespace(monotonic=forbidden), STATE=types.MappingProxyType({}))
+        isolated_main = types.FunctionType(main.__code__, namespace, main.__name__)
+        code = isolated_main()
+        if code != 70 or reached:
+            raise AssertionError(("optimized invocation was not a mutation-free prestart refusal", code, reached))
+    return {"optimized_flags_refused": [1, 2], "prestart_boundaries_reached": reached}
+
+def t_publication_deadline_progress(R, W):
+    """Positive short writes crossing the common deadline fail; partial creation and failed close remain visible."""
+    results = {}
+    for phase in ("positive_short_write", "file_fsync", "file_close", "parent_fsync", "file_close_error"):
+        X = synthetic_guard_namespace(R)
+        now, writes, closes, fsyncs = [0.0], [], [], []
+        X.time.monotonic = lambda: now[0]
+        X.STATE["mono_end"] = 100.0
+        path = "/synthetic/publication.json"
+        def create(current):
+            assert current == path
+            X.CREATED[path] = {"state": "open", "kind": "file", "identity": [1, 2]}
+            return 999999
+        def writing(fd, data):
+            assert fd == 999999
+            writes.append(len(data))
+            if phase == "positive_short_write":
+                now[0] += 0.4
+                return 1
+            return len(data)
+        def closing(fd):
+            closes.append(fd)
+            if phase == "file_close":
+                now[0] = 1.01
+            if phase == "file_close_error":
+                raise OSError(errno.EIO, "synthetic descriptor-close uncertainty")
+        def syncing(fd):
+            fsyncs.append(fd)
+            if (phase == "file_fsync" and fd == 999999) or (phase == "parent_fsync" and fd == 999998):
+                now[0] = 1.01
+        X.create_excl, X.os.write, X.os.close, X.os.fsync = create, writing, closing, syncing
+        X.tree_path = lambda current: (999998, "publication.json")
+        try:
+            X.write_bytes_x(path, b"abcde", deadline=1.0)
+        except (TimeoutError, OSError) as exc:
+            if phase == "file_close_error":
+                assert type(exc) is OSError and exc.errno == errno.EIO, exc
+            else:
+                assert type(exc) is TimeoutError, exc
+        else:
+            raise AssertionError(("publication completed after deadline", phase))
+        retained = X.CREATED[path]
+        assert retained["state"] == "failed" and retained["publication_complete"] is False, retained
+        assert retained["writer_fd"] == 999999
+        if phase == "file_close_error":
+            assert retained["writer_fd_close_confirmed"] is None
+            assert retained["writer_close_error"] == repr(OSError(errno.EIO, "synthetic descriptor-close uncertainty"))
+        else:
+            assert retained["writer_fd_close_confirmed"] is True
+        assert closes == [999999] and path not in X.WRITTEN and X.LATCH == [], (closes, X.WRITTEN, X.LATCH)
+        if phase == "positive_short_write":
+            assert writes == [5, 4, 3] and fsyncs == [], (writes, fsyncs)
+        results[phase] = {"writes": writes, "fsyncs": fsyncs, "closes": closes, "retained": retained}
+    X = synthetic_guard_namespace(R)
+    X.time.monotonic = lambda: 2.0
+    created = []
+    X.create_excl = lambda path: created.append(path) or 999999
+    try:
+        X.write_bytes_x("/synthetic/never-created", b"x", deadline=1.0)
+    except TimeoutError as exc:
+        expected = "required publication not admitted within remaining budget: %r" % exc
+    else:
+        raise AssertionError("expired publication reached creation")
+    assert created == [] and X.CREATED == {} and X.LATCH == [expected], (created, X.CREATED, X.LATCH)
+    results["expired_before_creation"] = {"created": created, "exact_faults": X.LATCH}
+    return results
+
+def t_quarantine_publication_budget(R, W):
+    """Quarantine publication borrows no new grace; late/missing-budget evidence keeps the owner blocked."""
+    results = {}
+    for phase in ("no_common_budget", "expired_common_budget", "publication_crosses_common_budget"):
+        X = synthetic_guard_namespace(R)
+        now = [2.0 if phase == "expired_common_budget" else 0.0]
+        X.time.monotonic, X.time.time = lambda: now[0], lambda: 100.0 + now[0]
+        publications = []
+        def publication(path, body, deadline=None):
+            publications.append((path, deadline))
+            now[0] = deadline + 0.01
+            return sha(b"late provisional quarantine")
+        X.write_x = publication
+        owner = X.Owned()
+        owner._owned_init()
+        owner.pid = owner.pgid = 780401
+        owner.argv, owner.quarantine_path = ["synthetic-not-executed"], "/synthetic/owner.QUARANTINE.json"
+        owner.cleanup_end = None if phase == "no_common_budget" else 1.0
+        owner._record_unsettled("synthetic publication budget")
+        assert owner.quarantined is True and owner.unsettled is not None
+        assert owner.quarantine_receipt_state != "written", owner.quarantine_receipt_state
+        assert X.LATCH == ["UNSETTLED pid 780401: synthetic publication budget; reservation retained"], X.LATCH
+        if phase == "publication_crosses_common_budget":
+            assert len(publications) == 1 and publications[0][1] <= 1.0, publications
+            assert owner.quarantine_receipt_state.startswith("late/unavailable publication; parent block:")
+        else:
+            assert publications == [] and owner.quarantine_receipt_state.startswith("unpublished:"), publications
+        prior = list(publications)
+        owner._record_unsettled("must not retry publication or process inspection")
+        assert publications == prior and len(X.LATCH) == 1
+        assert owner.reap_owned(10) is None
+        results[phase] = {"publication_calls": publications, "receipt_state": owner.quarantine_receipt_state,
+                          "reservation": owner.unsettled["reservation"]}
+    return results
+
+def t_readable_settlement_leader_manifest(R, W):
+    """With no other readable file, the settlement's top-level leader remains independently covered."""
+    X = synthetic_guard_namespace(R)
+    X.time.monotonic, X.time.time = lambda: 1.0, lambda: 100.0
+    root = "/synthetic/settlement-only"
+    path = root + "/children/01-owner.settle.json"
+    ident = {"pid": 780201, "pgid": 780201, "start": [9, 7]}
+    record = {"pid": ident["pid"], "identity_at_start": ident, "known_identities": [],
+              "live_census": {"complete": True, "group_members": [], "descendants": []}, "census_uncertainty": []}
+    X.run_tree_census = lambda directory: {path: ("file", 1, 2, 1, 0, 0, 0o600, 1, 512)}
+    X.read_regular_bounded = lambda current, limit: json.dumps(record).encode() if current == path \
+        else (_ for _ in ()).throw(AssertionError(("unexpected ownership read", current)))
+    X.os.path = types.SimpleNamespace(**vars(R.os.path))
+    X.os.path.lexists = lambda current: current == path
+    manifest = X.attempt_owner_manifest(root, None)
+    retained = {(item["pid"], None if item["start"] is None else tuple(item["start"])) for item in manifest["identities"]}
+    assert (780201, (9, 7)) in retained and manifest["unknowns"], manifest
+    census = {"sha256": "a" * 64, "entries": 1, "root_identity": [1, 10]}
+    runner = {"pid": 780200, "start": [8, 1]}
+    disposition = {key: True for key in ("all_processes_ended", "ownership_inventory_complete", "all_runner_resources_released",
+        "all_unknown_owners_resolved", "publication_audited", "ram_accounting_audited", "late_artifacts_audited")}
+    disposition.update(schema=X.DISPOSITION_SCHEMA, attempt_dir=root, launch_record_sha256=None, summary_sha256=None,
+        closeout_sha256=None, attempt_tree_census=census, observed_runner_exit_code=50, publication_failure_disposed=True,
+        runner_identity=runner, identities=[dict(runner, group_leader=False)])
+    release = {"dir": root, "launch_record_sha256": None, "summary_sha256": None, "closeout_sha256": None,
+               "disposition": {"path": "/synthetic/parent-disposition", "sha256": "b" * 64}}
+    X.read_pinned = lambda *args, **kwargs: json.dumps(disposition).encode()
+    X.census_digest, X.list_pids = lambda directory: census, lambda *args: []
+    missing = X.disposition_refusals(root, release, manifest, None)
+    assert any("does not cover known identity" in reason for reason in missing), missing
+    disposition["identities"].append({"pid": 780201, "start": [9, 7], "group_leader": True})
+    complete = X.disposition_refusals(root, release, manifest, None)
+    assert complete == [], complete
+    return {"manifest": manifest, "omitted_leader_refusals": missing, "complete_independent_inventory": complete}
+
+def t_receipt_trip_contract(R, W):
+    """Ordinary qualification is clean/self; structural closure never grants a blanket intended-control exception."""
+    baseline = d2_good_fixture(R)["solver"] if hasattr(R, "ProofSink") else good_fixture(R)["solver"]
+    assert R.receipt_resource_contradictions(baseline) == [] and R.receipt_contradictions(baseline) == []
+    capped = copy.deepcopy(baseline)
+    capped.update(stop="proof_cap", trips=["proof_cap"])
+    assert R.receipt_resource_contradictions(capped) == [], capped
+    assert R.receipt_contradictions(capped), "ordinary qualifier accepted the control-only proofcap cause"
+    assert R.receipt_contradictions(capped, allowed_trips=("proof_cap",)) == [], capped
+    bad = {}
+    for name, changed in (("self_with_cancel_trip", {"stop": "self", "trips": ["owner_cancel_sigterm"]}),
+                          ("self_with_proofcap_trip", {"stop": "self", "trips": ["proof_cap"]}),
+                          ("nonself_without_trip", {"stop": "proof_cap", "trips": []}),
+                          ("mismatched_stop_and_trip", {"stop": "proof_cap", "trips": ["owner_cancel_sigterm"]}),
+                          ("proofcap_with_safety", {"stop": "proof_cap", "trips": ["proof_cap", "lane_rss"]}),
+                          ("duplicate_proofcap", {"stop": "proof_cap", "trips": ["proof_cap", "proof_cap"]})):
+        rec = copy.deepcopy(baseline)
+        rec.update(changed)
+        bad[name] = R.receipt_contradictions(rec, allowed_trips=("proof_cap",))
+    for field in ("grace_completion_in_bounds", "actual_owned_reap", "settlement_publication_in_bounds"):
+        for name, value in (("false", False), ("truthy_int", 1), ("null", None)):
+            rec = copy.deepcopy(capped)
+            rec[field] = value
+            bad[field + ":" + name] = R.receipt_resource_contradictions(rec)
+        missing = copy.deepcopy(capped)
+        missing.pop(field)
+        bad[field + ":missing"] = R.receipt_resource_contradictions(missing)
+    assert all(bad.values()), bad
+    return {"clean_ordinary": True, "proofcap_only_explicitly_permitted": True, "refused": bad}
+
+def t_transport_close_fault_identity(R, W):
+    """Synthetic endpoint operations retain exact identities and append-only error history; NEVER open an OS fd."""
+    results = {}
+    X = synthetic_guard_namespace(R)
+    X.time.monotonic = lambda: 0.0
+    X.threading.Event = lambda: types.SimpleNamespace(set=lambda: None, wait=lambda cap: True)
+    X.threading.Thread = lambda **kwargs: types.SimpleNamespace(ident=None, is_alive=lambda: False)
+    X.os.pipe = lambda: (999996, 999995)
+    closes = []
+    read_error, write_error = OSError(errno.EBADF, "synthetic read close"), OSError(errno.EIO, "synthetic write close")
+    def both_fail(fd):
+        closes.append(fd)
+        raise read_error if fd == 999996 else write_error
+    X.os.close = both_fail
+    feeder = X.Feeder((b"a",), "plain", label="same-label-does-not-own-endpoints")
+    expected = ["read endpoint closure uncertain: %r" % read_error,
+                "write endpoint closure uncertain: %r" % write_error]
+    assert feeder.abandon() == expected and closes == [999996, 999995]
+    assert feeder.rfd == feeder.read_endpoint_identity == feeder.read_close_fd == 999996
+    assert feeder.wfd == feeder.write_endpoint_identity == feeder.write_close_fd == 999995
+    assert feeder.read_endpoint_closed is None and feeder.write_endpoint_closed is None
+    assert feeder.close_errors == feeder.errors == expected and feeder.close_error == "; ".join(expected)
+    assert feeder.abandon() == expected and closes == [999996, 999995]
+    feed_rec = feeder.finish(1.0)
+    assert feed_rec["read_endpoint"] == 999996 and feed_rec["write_endpoint"] == 999995
+    assert feed_rec["read_endpoint_closed"] is None and feed_rec["write_endpoint_closed"] is None
+    assert feed_rec["close_errors"] == feed_rec["errors"] == expected and X.LATCH == []
+    assert feeder.finish(1.0) is feed_rec and closes == [999996, 999995]
+    inventory = X.unresolved_inventory()
+    assert any(entry.get("kind") == "stdin feeder" and entry.get("resource_id") == id(feeder) for entry in inventory)
+    results["both_feeder_close_failures"] = {"receipt": feed_rec, "close_attempts": closes}
+    for side in ("reader", "unblock"):
+        X = synthetic_guard_namespace(R)
+        X.time.monotonic = lambda: 0.0
+        alive, joins, closes = [side == "unblock"], [], []
+        thread = types.SimpleNamespace(ident=1, start=lambda: None, is_alive=lambda: alive[0])
+        def joined(timeout):
+            joins.append(timeout)
+            alive[0] = False
+        thread.join = joined
+        X.threading.Thread = lambda **kwargs: thread
+        fifo_stat = types.SimpleNamespace(st_dev=1, st_ino=2, st_mode=stat.S_IFIFO | 0o600)
+        X.tree_path = lambda path: (999998, "synthetic.fifo")
+        X.mkfifo_anchored = lambda path: fifo_stat
+        X.os.open = lambda *args, **kwargs: 999997
+        X.os.fstat = lambda fd: fifo_stat
+        X.os.stat = lambda *args, **kwargs: fifo_stat
+        failure = OSError(errno.EIO, "synthetic " + side + " close uncertainty")
+        def failed_close(fd):
+            closes.append(fd)
+            raise failure
+        X.os.close = failed_close
+        buffer = X.ProofBuffer("/synthetic/" + side + ".fifo", 100)
+        if side == "reader":
+            buffer.connected = buffer.eof = True
+            buffer.reader_fd = buffer.reader_fd_identity = 999997
+            buffer.reader_fd_closed = False
+            buffer._close_reader()
+        rec = buffer.finish(timeout=1.0)
+        prefix = "reader fd close: " if side == "reader" else "unblock fd close: "
+        error = prefix + repr(failure)
+        assert buffer.errors == [error] and buffer.error == error and rec["errors"] == [error], rec
+        assert getattr(buffer, side + "_fd") == getattr(buffer, side + "_fd_identity") == 999997
+        assert getattr(buffer, side + "_fd_closed") is None
+        assert getattr(buffer, side + "_close_attempted") is True and getattr(buffer, side + "_close_error") == error
+        assert rec["sink_settled"] is False and rec["thread_alive_after_join"] is False
+        assert rec["finish_deadline_in_bounds"] is True and closes == [999997]
+        assert X.LATCH == ["proof buffer integrity/closure unproven: " + buffer.fifo_path], X.LATCH
+        before = list(closes), list(joins), list(X.LATCH)
+        assert buffer.finish(timeout=1.0) is rec
+        getattr(buffer, "_close_" + side)()
+        buffer.release()
+        assert before == (closes, joins, X.LATCH) and getattr(buffer, side + "_fd") == 999997
+        inventory = X.unresolved_inventory()
+        assert any(entry.get("kind") == "RAM collector" and entry.get("resource_id") == id(buffer) for entry in inventory)
+        results[side + "_buffer_close_failure"] = {"receipt": rec, "close_attempts": closes, "join_attempts": len(joins)}
+    return results
+
+
+TESTS = [t_verified_runner_loading,
+         t_fixture_latch_consumption,
+         t_write_all_zero_progress,
+         t_terminal_ownership,
+         t_wait_ownership_echild,
+         t_controls_only_sequence,
+         t_buffer_roundtrip,
+         t_buffer_cap,
+         t_buffer_never_connected,
+         t_buffer_fifo_replaced,
+         t_buffer_live_collector_release,
+         t_feeder_plain,
+         t_feeder_suffix,
+         t_feeder_hold_epipe,
+         t_feeder_midstream_close,
+         t_feeder_guards,
+         t_feeder_holder_charge,
+         t_feeder_abandon_close_error,
+         t_filter,
+         t_filter_long_line,
+         t_filter_continuation_adversarial,
+         t_filter_continuation_genuine_line,
+         t_capture_accounting,
+         t_libproc_self,
+         t_libproc_validation,
+         t_tree_census_and_usage,
+         t_tree_census_fail_closed,
+         t_out_dir_ancestry,
+         t_bounded_metadata_reads,
+         t_monitor_provenance_header,
+         t_item_shapes,
+         t_stop_identity,
+         t_helper_refusals_and_clock,
+         t_output_guard,
+         t_allocation_release,
+         t_run_kissat_owner_on_exception,
+         t_commit_charging_and_cutoff,
+         t_anchored_confinement,
+         t_c6_timer_predicate,
+         t_terminal_rule,
+         t_reap_bounded_survivor,
+         t_settle_all_bounded,
+         t_qualify_matrix,
+         t_closeout_cancel_race,
+         t_legacy_unknown_start_liveness,
+         t_prestart_unoptimized_guard,
+         t_fixture_disposition_object_binding,
+         t_popen_exception_retains_unknown_intent,
+         t_grace_completion_fences,
+         t_helper_native_cutoff_boundaries,
+         t_readable_settlement_leader_manifest,
+         t_persistent_identity_and_root_traversal,
+         t_bounded_namespace_consumers,
+         t_publication_deadline_progress,
+         t_quarantine_publication_budget,
+         t_receipt_trip_contract,
+         t_c7b_feeder_predicate,
+         t_transport_close_fault_identity,
+         t_parent_block_with_available_refused_ledger]
+
+
+def main():
+    # Assert-based correctness oracles are INVALID under -O or PYTHONOPTIMIZE; refuse before ANY mutation/read.
+    if sys.flags.optimize != 0 or not __debug__:
+        print("REFUSED: unoptimized Python is required (-O/PYTHONOPTIMIZE are forbidden)", flush=True)
+        return 70
+    if len(sys.argv) != 4:
+        print("usage: test_pilot_stream_v7.py RUNNER.py RUNNER_SHA256 OUT_DIR", flush=True)
+        return 70
+    runner, runner_sha, out = os.path.abspath(sys.argv[1]), sys.argv[2], os.path.abspath(sys.argv[3])
+    if os.path.dirname(out) != LANE + "/evidence/probes" or os.path.lexists(out):
+        print("REFUSED: OUT_DIR must be a new directory directly under LANE/evidence/probes", flush=True)
+        return 70
+    with open(runner, "rb") as fh:
+        runner_bytes = fh.read()
+    got = sha(runner_bytes)
+    if got != runner_sha:
+        print("REFUSED: runner pin mismatch %s" % got, flush=True)
+        return 70
+    STATE["t0"] = time.monotonic()
+    STATE["deadline"] = STATE["t0"] + BUDGET_S
+    signal.signal(signal.SIGTERM, on_signal)
+    signal.signal(signal.SIGINT, on_signal)
+    os.mkdir(out)
+    with open(os.path.abspath(__file__), "rb") as fh:
+        self_sha = sha(fh.read())
+    write_x(os.path.join(out, "receipt.json"), {"pid": os.getpid(), "ppid": os.getppid(), "argv": sys.argv,
+                                                "start": None, "start_note": "required host clock is read after "
+                                                "verified-byte loading through the owned bounded /bin/date helper",
+                                                "runner": [runner, runner_sha], "test_version": 7,
+                                                "test_source_sha256": self_sha, "budget_s": BUDGET_S,
+                                                "python_optimize": sys.flags.optimize, "python_debug": __debug__,
+                                                "unoptimized_python_required": True,
+                                                "exclusive_wait_premise": "this single runner exclusively owns "
+                                                "waitid/waitpid for its helpers; SIGCHLD=SIG_DFL before first helper",
+                                                "budget_mode": "cooperative monotonic deadline; no SIGALRM/kill/ulimit",
+                                                "result_reserve_s": RESULT_RESERVE_S,
+                                                "signals_handled": ["SIGTERM", "SIGINT"],
+                                                "result_is_provisional": True,
+                                                "completion_artifact": "terminal-completion.json",
+                                                "parent_observed_exit_required": True})
+    results, in_flight, not_started, terminal, setup_error, R = [], None, [], None, None, None
+    start_clock = None
+    tests = list(TESTS)
+    work = os.path.join(out, "work")
+    try:
+        check()
+        os.mkdir(work)
+        sys.dont_write_bytecode = True
+        R = load_verified_runner(runner_bytes, runner_sha, runner)
+        STATE["runner"] = R
+        if signal.getsignal(signal.SIGCHLD) != signal.SIG_DFL:
+            raise RuntimeError("test requires default SIGCHLD and exclusive owned helper waits")
+        signal.signal(signal.SIGCHLD, signal.SIG_DFL)
+        runner_identity, identity_error = R.bsd_identity(os.getpid())
+        if not isinstance(runner_identity, dict) or not runner_identity.get("start"):
+            raise RuntimeError("test runner start identity unavailable: %r" % (identity_error,))
+        R.STATE["runner_identity"] = runner_identity
+        if STATE["signal"] is not None and R.STATE["cancel_order"] is None:
+            R.STATE["cancel_order"] = next(R.ORDER)
+        anchored(R, work)
+        tests = selected_tests(R)
+        start_clock = host_clock(R)
+    except BudgetExhausted as exc:
+        terminal, setup_error = "BUDGET_EXHAUSTED", repr(exc)
+    except Cancelled as exc:
+        terminal, setup_error = "CANCELLED", repr(exc)
+    except BaseException as exc:
+        terminal, setup_error = "SETUP_FAILED", repr(exc)[:4000]
+    if terminal is not None:
+        not_started = [t.__name__ for t in tests]
+    else:
+        for k, t in enumerate(tests):
+            try:
+                check()
+            except (BudgetExhausted, Cancelled) as exc:
+                terminal = "CANCELLED" if isinstance(exc, Cancelled) else "BUDGET_EXHAUSTED"
+                not_started = [x.__name__ for x in tests[k:]]
+                in_flight = {"test": None, "stopped_before_start_of": t.__name__, "reason": repr(exc)}
+                break
+            started = time.monotonic()
+            latch_before = tuple(R.LATCH)
+            try:
+                detail = t(R, work)
+                assert tuple(R.LATCH) == latch_before, ("test changed/retained unexpected latches", t.__name__,
+                                                       latch_before, R.LATCH)
+                results.append({"test": t.__name__, "ok": True, "detail": detail,
+                                "seconds": round(time.monotonic() - started, 3)})
+            except (BudgetExhausted, Cancelled) as exc:
+                terminal = "CANCELLED" if isinstance(exc, Cancelled) else "BUDGET_EXHAUSTED"
+                not_started = [x.__name__ for x in tests[k + 1:]]
+                in_flight = {"test": t.__name__, "reason": repr(exc), "seconds": round(time.monotonic() - started, 3),
+                             "traceback": traceback.format_exc()[-4000:]}
+                break
+            except BaseException as exc:
+                results.append({"test": t.__name__, "ok": False, "error": repr(exc)[:4000],
+                                "traceback": traceback.format_exc()[-4000:],
+                                "seconds": round(time.monotonic() - started, 3)})
+    closeout_errors, end_clock = [], None
+    try:
+        end_clock = host_clock(R)
+    except (BudgetExhausted, Cancelled) as exc:
+        closeout_errors.append(repr(exc)[:4000])
+        if terminal is None:
+            terminal = "CANCELLED" if isinstance(exc, Cancelled) else "BUDGET_EXHAUSTED"
+    except BaseException as exc:
+        closeout_errors.append(repr(exc)[:4000])
+
+    def observe(prior):
+        envelope = terminal_envelope(R, start_clock, end_clock)
+        selected = terminal_choice(results, len(tests), envelope["threads_alive"], envelope["runner_latch"],
+                                   envelope["helpers_unsettled"], closeout_errors, envelope, prior)
+        return envelope, selected
+
+    # No terminal choice precedes required clocks and complete ownership/cancellation/budget closeout.
+    envelope, terminal = observe(terminal)
+    final = {"schema": TEST_RESULT_SCHEMA, "terminal": "PROVISIONAL", "all_ok": False,
+             "proposed_terminal": terminal, "proposed_all_ok": terminal == "ALL_OK",
+             "publication_state": "PROVISIONAL", "parent_observed_exit_required": True,
+             "completion_artifact": "terminal-completion.json",
+             "start_host_clock": start_clock, "end_host_clock": end_clock, "terminal_envelope": envelope,
+             "terminal_refusals": terminal_refusals(envelope), "results": results,
+             "in_flight": in_flight, "not_started": not_started, "setup_error": setup_error,
+             "threads_alive_at_result": envelope["threads_alive"],
+             "elapsed_s": envelope["observed_mono"] - STATE["t0"], "budget_s": BUDGET_S,
+             "signal": envelope["signal"], "runner_cancel_order": envelope["runner_cancel_order"],
+             "runner_latch_after_tests": envelope["runner_latch"],
+             "runner_helpers_unsettled": envelope["helpers_unsettled"], "closeout_errors": closeout_errors,
+             "runner_helper_log": None if R is None else R.HELPER_LOG,
+             "preservation_scope": "only test-created entries under OUT_DIR/work were created; test-created entries "
+                                   "were moved (never deleted), one test-created directory was chmod 000 then 0755 "
+                                   "and one test-created file was rewritten in place at the same size",
+             "runner": [runner, runner_sha], "test_source_sha256": self_sha,
+             "test_runner_identity": None if R is None else R.STATE.get("runner_identity")}
+    result_path = os.path.join(out, "result.json")
+    completion_path = os.path.join(out, "terminal-completion.json")
+    try:
+        result_publication = publish_json_x(result_path, final)
+    except BaseException as exc:
+        print("RESULT WRITE FAILED %r" % (exc,), flush=True)
+        return 71
+    after_result, terminal = observe(terminal)
+    proposed_code = TEST_EXIT_CODES[terminal]
+    completion = {"schema": TEST_COMPLETION_SCHEMA, "terminal": "PROVISIONAL", "all_ok": False,
+                  "publication_state": "PROVISIONAL", "parent_observed_exit_required": True,
+                  "parent_must_bind_completion_sha256_and_bytes": True,
+                  "parent_must_match_observed_exit_code": True,
+                  "parent_must_observe_runner_ended": True,
+                  "parent_must_match_test_runner_identity": True,
+                  "parent_must_verify_observed_exit_in_budget": True,
+                  "parent_must_reconcile_cancellation_through_observed_exit": True,
+                  "budget_deadline_mono": STATE["deadline"],
+                  "test_runner_identity": None if R is None else R.STATE.get("runner_identity"),
+                  "proposed_terminal": terminal, "expected_parent_observed_exit_code": proposed_code,
+                  "result": dict(result_publication, name="result.json"),
+                  "result_publication_completed": True,
+                  "result_publication_in_bounds": result_publication["publication_observed_mono"] < STATE["deadline"],
+                  "post_result_envelope": after_result, "terminal_refusals": terminal_refusals(after_result),
+                  "closeout_errors": list(closeout_errors), "pid": os.getpid(), "ppid": os.getppid(),
+                  "runner": [runner, runner_sha], "test_source_sha256": self_sha,
+                  "authority_note": "Neither artifact certifies its own successful fsync/close or process exit. "
+                                    "Qualification requires exact result and completion digests/sizes, an independently "
+                                    "parent-observed ended runner with matching start identity, observed in-budget exit 0, "
+                                    "no intervening cancellation, and ALL_OK proposals with no "
+                                    "envelope refusals. Any missing observation or return-code mismatch is nonqualifying."}
+    try:
+        completion_publication = publish_json_x(completion_path, completion)
+    except BaseException as exc:
+        print("TERMINAL COMPLETION WRITE FAILED %r" % (exc,), flush=True)
+        return 71
+    # This diagnostic is nonauthoritative. Its own blocking time is included in the FINAL observation below.
+    print("RESULT", result_path, "PROVISIONAL", "completion", completion_path,
+          "completion_sha256", completion_publication["sha256"], "expected_exit", proposed_code, flush=True)
+    after_completion, returned_terminal = observe(terminal)
+    returned_code = TEST_EXIT_CODES[returned_terminal]
+    # A late cancel, expired budget or newly unresolved resource invalidates the immutable proposal via rc mismatch.
+    if returned_terminal != terminal and returned_code == proposed_code:
+        return 1
+    return returned_code
+
+
+
+if __name__ == "__main__":
+    sys.exit(main())

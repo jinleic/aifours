@@ -1,0 +1,268 @@
+--- v3
++++ v4
+@@ -1,4 +1,4 @@
+ #!/usr/bin/env python3
+-"""rqls_assay_v3: float feasibility assay for maximal 1-RQLS(10) (NOT a certificate; numeric results are UNKNOWN).
++"""rqls_assay_v4: float feasibility assay for maximal 1-RQLS(10) (NOT a certificate; numeric results are UNKNOWN).
+ 
+ Representation: a Latin square B (resolution) and unit vectors q_p, p in [v]^2, with every row, column and B-class an
+@@ -34,5 +34,11 @@
+ polished maxdev < 1e-8.
+ 
+-Usage: rqls_assay_v3.py OUT.jsonl GLOBAL_BUDGET_S CLASSICAL_JSON EX24_JSON EX24_SHA256 STOP_RECEIPT MODE(smoke|full)
++v4 change (after the v3 full run showed unqualified sensitivity at v = 10): same representation, RRR, polish and
++gates, plus (a) gate C1p: two v = 6 RRR endpoints are force-polished (Gauss-Newton regardless of RRR error) and must
++not verify - a negative challenge of the polisher; (b) RRR error trajectories every TRAJ iterations; (c) modes
++"sens1"/"sens2" = gates + long unsymmetric calibration/target runs (v = 9 Cay(Z_9); v = 10 Parker-type B with known
++classical mates; v = 10 Cay(Z_10) and Cay(D_5)), to measure whether RRR converges at all at v = 10.
++
++Usage: rqls_assay_v4.py OUT.jsonl GLOBAL_BUDGET_S CLASSICAL_JSON EX24_JSON EX24_SHA256 STOP_RECEIPT MODE(smoke|sens1|sens2)
+ Exit codes: 0 completed (or ended by budget), 2 exception, 3 gate failure, 4 cap stop, 5 terminated by SIGTERM.
+ """
+@@ -43,5 +49,5 @@
+ OUT, GLOBAL_BUDGET, CLASSICAL_JSON, EX24_JSON, EX24_SHA, STOP_RECEIPT, MODE = (sys.argv[1], float(sys.argv[2]), sys.argv[3],
+                                                                               sys.argv[4], sys.argv[5], sys.argv[6], sys.argv[7])
+-if MODE not in ("smoke", "full"):
++if MODE not in ("smoke", "sens1", "sens2"):
+     sys.exit(7)
+ TERM = [False]
+@@ -63,4 +69,5 @@
+ POLISH_ERR = 1e-2
+ POLISH_ITERS = 20
++TRAJ = 5000
+ 
+ 
+@@ -487,5 +494,5 @@
+ 
+ # ------------------------------------------------------------------ RRR runner
+-def rrr(P, X, max_iter, end):
++def rrr(P, X, max_iter, end, traj=None):
+     err, status, it = float("inf"), "MAX_ITER", 0
+     for it in range(1, max_iter + 1):
+@@ -494,4 +501,6 @@
+         d = pa - pb
+         err = float(np.sqrt(np.mean(np.sum(np.abs(d) ** 2, axis=2))))
++        if traj is not None and (it % TRAJ) == 0:
++            traj.append([it, round(err, 6)])
+         X = X + BETA * d
+         if not np.isfinite(err):
+@@ -508,5 +517,5 @@
+ 
+ 
+-def run(P, tag, seeds, max_iter, end, extra=None, start=None, noise=0.0):
++def run(P, tag, seeds, max_iter, end, extra=None, start=None, noise=0.0, force_polish=False):
+     out = []
+     for seed in seeds:
+@@ -518,8 +527,9 @@
+         rng = np.random.default_rng(seed)
+         X = P.init_random(rng) if start is None else P.init_from(start, noise, rng)
+-        status, it, err, Z = rrr(P, X, max_iter, end)
++        traj = []
++        status, it, err, Z = rrr(P, X, max_iter, end, traj)
+         raw = P.verify(Z)
+         polished, presid, pit = False, None, 0
+-        if err < POLISH_ERR and not over(end):
++        if (force_polish or err < POLISH_ERR) and not over(end):
+             Z, presid, pit = polish(P, Z, end)
+             polished = True
+@@ -529,5 +539,5 @@
+                "rays": rays, "minsep": minsep, "secs": round(time.monotonic() - t0, 3), "maximal_candidate": maximal,
+                "raw": {"maxdev": raw[0], "rays": raw[1], "minsep": raw[2]}, "polished": polished, "polish_resid": presid,
+-               "polish_iters": pit}
++               "polish_iters": pit, "forced_polish": bool(force_polish), "traj": traj}
+         if extra is not None:
+             rec["config"] = extra
+@@ -696,5 +706,6 @@
+ 
+ def main():
+-    W.write({"assay": "rqls_assay_v3", "mode": MODE, "polish_err": POLISH_ERR, "polish_iters": POLISH_ITERS, "src_sha256": SRC_SHA, "numpy": np.__version__, "python": sys.version,
++    W.write({"assay": "rqls_assay_v4", "mode": MODE, "polish_err": POLISH_ERR, "polish_iters": POLISH_ITERS, "traj_every": TRAJ,
++             "src_sha256": SRC_SHA, "numpy": np.__version__, "python": sys.version,
+              "flags": {"optimize": sys.flags.optimize, "isolated": sys.flags.isolated, "dont_write_bytecode": sys.flags.dont_write_bytecode},
+              "budget_s": GLOBAL_BUDGET, "tol": TOL, "beta": BETA, "argv": sys.argv[1:],
+@@ -704,30 +715,35 @@
+         raise GateFail("optimize flag set")
+     classical = json.load(open(CLASSICAL_JSON))
++    gates = [("A", 30), ("C1", 25), ("C1p", 40), ("C2", 30)]
+     if MODE == "smoke":
+-        plan = [("A", 30), ("C1", 25), ("C2", 25)]
+-        c1 = ([11, 12], 4000)
+-        c2 = ([21, 22, 23], 8000)
++        plan = gates
++    elif MODE == "sens1":
++        plan = gates + [("S9", 300), ("S10P", GLOBAL_BUDGET - 125 - 300 - 30)]
+     else:
+-        plan = [("A", 30), ("C1", 50), ("C2", 30), ("L", 400), ("C3", 60), ("C4", 80), ("C5", 40), ("C6", 40), ("C7", 50),
+-                ("T1", 240), ("T1t", 120), ("T1c", 120), ("T2", 140), ("T3", 100), ("T4", 160)]
+-        c1 = ([11, 12, 13, 14], 15000)
+-        c2 = ([21, 22, 23, 24, 25, 26], 15000)
++        plan = gates + [("S10Z", (GLOBAL_BUDGET - 125 - 30) / 2), ("S10D", (GLOBAL_BUDGET - 125 - 30) / 2)]
+     ends, acc, t0 = {}, 0, time.monotonic()
+     for tag, b in plan:
+         acc += b
+         ends[tag] = t0 + acc
+-    # ---- gates (fail closed)
+     STAGE[0] = "A"
+     okA = stage_A(classical, ends["A"])
+     gate("A_anchors", okA, "A1 Ex2.4 64 rays, A2 mutation, A3 x4 classical encodings, A4 unsym classical; all must pass")
+     STAGE[0] = "C1"
+-    recs = run(unsym("v6_cayley", cayley_cyclic(6)), "C1_neg_v6", c1[0], c1[1], ends["C1"])
++    recs = run(unsym("v6_cayley", cayley_cyclic(6)), "C1_neg_v6", [11, 12], 4000, ends["C1"])
+     summary("C1_neg_v6", recs)
+     ran = [r for r in recs if r != "SKIPPED"]
+-    false_pos = [r for r in ran if r["maxdev"] < 1e-8]
+-    gate("C1_negative_v6", len(ran) >= 1 and all(r["iters"] >= 1000 for r in ran) and not false_pos,
+-         {"runs": len(ran), "verified_solutions": len(false_pos), "rule": ">=1 run, every run >=1000 iterations, zero verified solutions"})
++    fp = [r for r in ran if r["maxdev"] < 1e-8]
++    gate("C1_negative_v6", len(ran) >= 1 and all(r["iters"] >= 1000 for r in ran) and not fp,
++         {"runs": len(ran), "verified_solutions": len(fp), "rule": ">=1 run, every run >=1000 iterations, zero verified solutions"})
++    STAGE[0] = "C1p"
++    recs = run(unsym("v6_cayley", cayley_cyclic(6)), "C1p_neg_v6_forced_polish", [15, 16], 4000, ends["C1p"], force_polish=True)
++    summary("C1p_neg_v6_forced_polish", recs)
++    ran = [r for r in recs if r != "SKIPPED"]
++    fp = [r for r in ran if r["maxdev"] < 1e-8]
++    gate("C1p_polisher_negative", len(ran) >= 1 and all(r["polished"] and r["polish_iters"] >= 1 for r in ran) and not fp,
++         {"runs": len(ran), "verified_solutions": len(fp), "polish_resid": [r["polish_resid"] for r in ran],
++          "rule": ">=1 run, every run force-polished with >=1 Gauss-Newton step, zero verified solutions"})
+     STAGE[0] = "C2"
+-    recs = run(unsym("v5_cayley", cayley_cyclic(5)), "C2_v5_classical_only", c2[0], c2[1], ends["C2"])
++    recs = run(unsym("v5_cayley", cayley_cyclic(5)), "C2_v5_classical_only", [21, 22, 23], 8000, ends["C2"])
+     summary("C2_v5_classical_only", recs)
+     ran = [r for r in recs if r != "SKIPPED"]
+@@ -738,122 +754,19 @@
+         W.write({"end": True, "mode": "smoke", "gates": "PASS", "elapsed_s": round(elapsed(), 2), "records": W.records, "bytes": W.n})
+         return 0
+-    # ---- science stages (only after all gates passed)
+-    STAGE[0] = "L"
+-    stage_L(classical, ends["L"], np.random.default_rng(20261019))
+-    STAGE[0] = "C3"
+-    summary("C3_cal_v7_cayley", run(unsym("v7_cayley", cayley_cyclic(7)), "C3_cal_v7_cayley", [31, 32, 33, 34, 35, 36], 20000, ends["C3"]))
+-    STAGE[0] = "C4"
+-    summary("C4_cal_v8_xor", run(unsym("v8_xor", xor8()), "C4_cal_v8_xor", [41, 42, 43, 44, 45, 46], 20000, ends["C4"]))
+-    STAGE[0] = "C5"
+-    summary("C5_cal_sym_7p0", run(sym("sym_7p0", 7, 0, [], {d: (4 * d) % 7 for d in range(7)}, [], [], [], list(range(7)), []),
+-                                  "C5_cal_sym_7p0", list(range(51, 61)), 20000, ends["C5"]))
+-    STAGE[0] = "C6"
+-    F8beta = {1: 3, 2: 6, 3: 1, 4: 5, 5: 4, 6: 2}
+-    summary("C6_cal_sym_7p1_F8", run(sym("sym_7p1_F8", 7, 1, [0], F8beta, [0], [0], [[0]], list(range(7)) + [0], [[0]]),
+-                                     "C6_cal_sym_7p1_F8", list(range(61, 71)), 20000, ends["C6"]))
+-    STAGE[0] = "C7"
+     hit0 = classical["pairs"][0]
+-    Pc, Zc, labc, Mc = parker_problem(hit0, "B", None, "sym_7p3_parker_classicalU")
+-    summary("C7_cal_sym_7p3_classical", run(Pc, "C7_cal_sym_7p3_classical", list(range(71, 81)), 20000, ends["C7"]))
+-    L3 = latin3_all()
+-    rcfg = np.random.default_rng(777)
+-    STAGE[0] = "T1"
+-    recs, cfg = [], 0
+-    while not over(ends["T1"]):
+-        Dinf, beta, gam, dlt, Lc, D2, M = T1_config(rcfg, L3)
+-        conf = {"Dinf": Dinf, "beta": {str(k): v for k, v in beta.items()}, "gamma": gam, "delta": dlt, "L": Lc, "D2": D2, "M": M, "cfg": cfg}
+-        try:
+-            P = sym("sym_7p3_forced", 7, 3, Dinf, beta, gam, dlt, Lc, list(range(7)) + D2, M)
+-        except AssertionError as ex:
+-            W.write({"tag": "T1_sym_7p3_forced", "config": conf, "status": "BAD_CONFIG", "why": repr(ex)})
+-            cfg += 1
+-            continue
+-        recs += run(P, "T1_sym_7p3_forced", [1000 + 2 * cfg, 1001 + 2 * cfg], 6000, ends["T1"], extra=conf)
+-        cfg += 1
+-    summary("T1_sym_7p3_forced", recs)
+-    STAGE[0] = "T1t"
+-    recs, cfg = [], 0
+-    while not over(ends["T1t"]):
+-        Dinf, beta, gam, dlt, Lc, D2, M = T1_config(rcfg, L3)
+-        conf = {"Dinf": Dinf, "beta": {str(k): v for k, v in beta.items()}, "gamma": gam, "delta": dlt, "L": Lc, "D2": D2, "M": M, "cfg": cfg, "corners": "fixed real trines"}
+-        try:
+-            P = sym("sym_7p3_trine", 7, 3, Dinf, beta, gam, dlt, Lc, list(range(7)) + D2, M)
+-        except AssertionError as ex:
+-            W.write({"tag": "T1t_sym_7p3_trine", "config": conf, "status": "BAD_CONFIG", "why": repr(ex)})
+-            cfg += 1
+-            continue
+-        lab = list(range(7)) + D2
+-        for a in range(3):
+-            for b in range(3):
+-                m = M[a][b]
+-                k = [7 + kk for kk in range(3) if lab[7 + kk] == m][0]
+-                vec = np.zeros(10, dtype=complex)
+-                vec[m] = math.cos(math.pi * a / 3)
+-                vec[k] = math.sin(math.pi * a / 3)
+-                P.set_fixed(7 + 6 + 3 * a + b, vec)
+-        recs += run(P, "T1t_sym_7p3_trine", [6000 + 2 * cfg, 6001 + 2 * cfg], 6000, ends["T1t"], extra=conf)
+-        cfg += 1
+-    summary("T1t_sym_7p3_trine", recs)
+-    STAGE[0] = "T1c"
+-    recs, k = [], 0
+-    while not over(ends["T1c"]):
+-        hi = k % len(classical["pairs"])
+-        res = "B" if (k // len(classical["pairs"])) % 2 == 0 else "A"
+-        a, b = [int(x) for x in rcfg.choice(np.arange(1, 7), 2, replace=False)]
+-        P, Z0, lab, M = parker_problem(classical["pairs"][hi], res, (0, a, b), "parker_forced_start")
+-        recs += run(P, "T1c_classical_start", [5000 + k], 6000, ends["T1c"], extra={"hit": hi, "resolution": res, "mlab": [0, a, b]},
+-                    start=Z0, noise=0.15)
+-        k += 1
+-    summary("T1c_classical_start", recs)
+-    STAGE[0] = "T2"
+-    recs, cfg = [], 0
+-    while not over(ends["T2"]):
+-        Dfin = list(range(1, 9))
+-        bl = valid_betas(9, Dfin, rcfg, 1)
+-        if not bl:
+-            continue
+-        beta = bl[0]
+-        gam = sorted(set(range(9)) - {(beta[d] - d) % 9 for d in Dfin})
+-        dlt = sorted(set(range(9)) - set(beta.values()))
+-        mstar = int(rcfg.integers(9))
+-        conf = {"Dinf": [0], "beta": {str(k): v for k, v in beta.items()}, "gamma": gam, "delta": dlt, "mstar": mstar, "cfg": cfg}
+-        try:
+-            P = sym("sym_9p1", 9, 1, [0], beta, gam, dlt, [[0]], list(range(9)) + [mstar], [[mstar]])
+-        except AssertionError as ex:
+-            W.write({"tag": "T2_sym_9p1", "config": conf, "status": "BAD_CONFIG", "why": repr(ex)})
+-            cfg += 1
+-            continue
+-        recs += run(P, "T2_sym_9p1", [2000 + 2 * cfg, 2001 + 2 * cfg], 6000, ends["T2"], extra=conf)
+-        cfg += 1
+-    summary("T2_sym_9p1", recs)
+-    STAGE[0] = "T3"
+-    recs, cfg = [], 0
+-    while not over(ends["T3"]):
+-        Dinf = [int(x) for x in rcfg.permutation(5)]
+-        gam = [int(x) for x in rcfg.permutation(5)]
+-        dlt = [int(x) for x in rcfg.permutation(5)]
+-        s_, t_ = [int(x) for x in rcfg.integers(1, 5, 2)]
+-        while True:
+-            s2, t2 = [int(x) for x in rcfg.integers(1, 5, 2)]
+-            if (s_ * t2 - t_ * s2) % 5 != 0:
+-                break
+-        Lc = [[(s_ * a + t_ * b) % 5 for b in range(5)] for a in range(5)]
+-        M = [[(s2 * a + t2 * b) % 5 for b in range(5)] for a in range(5)]
+-        conf = {"Dinf": Dinf, "gamma": gam, "delta": dlt, "L": Lc, "M": M, "cfg": cfg}
+-        try:
+-            P = sym("sym_5p5", 5, 5, Dinf, {}, gam, dlt, Lc, list(range(5)) + list(range(5)), M)
+-        except AssertionError as ex:
+-            W.write({"tag": "T3_sym_5p5", "config": conf, "status": "BAD_CONFIG", "why": repr(ex)})
+-            cfg += 1
+-            continue
+-        recs += run(P, "T3_sym_5p5", [3000 + 2 * cfg, 3001 + 2 * cfg], 6000, ends["T3"], extra=conf)
+-        cfg += 1
+-    summary("T3_sym_5p5", recs)
+-    STAGE[0] = "T4"
+-    recs = []
+-    for nm, B in (("v10_parkerB", hit0["B_array"]), ("v10_cayD5", cayley_d5()), ("v10_cayZ10", cayley_cyclic(10))):
+-        recs += run(unsym(nm, B), "T4_unsym_v10", [4001, 4002], 20000, ends["T4"], extra={"B": nm})
+-    summary("T4_unsym_v10", recs)
+-    W.write({"end": True, "mode": "full", "terminated": TERM[0], "elapsed_s": round(elapsed(), 2), "records": W.records, "bytes": W.n})
++    if MODE == "sens1":
++        STAGE[0] = "S9"
++        summary("S9_cal_v9_cayley", run(unsym("v9_cayley", cayley_cyclic(9)), "S9_cal_v9_cayley", [901, 902, 903, 904], 40000, ends["S9"]))
++        STAGE[0] = "S10P"
++        summary("S10P_v10_parkerB", run(unsym("v10_parkerB", hit0["B_array"]), "S10P_v10_parkerB", [1101, 1102, 1103, 1104, 1105, 1106], 300000,
++                                        ends["S10P"], extra={"B": "parker hit0 B_array (classical mates exist)"}))
++    else:
++        STAGE[0] = "S10Z"
++        summary("S10Z_v10_cayZ10", run(unsym("v10_cayZ10", cayley_cyclic(10)), "S10Z_v10_cayZ10", [1201, 1202, 1203], 300000, ends["S10Z"],
++                                       extra={"B": "Cay(Z_10)"}))
++        STAGE[0] = "S10D"
++        summary("S10D_v10_cayD5", run(unsym("v10_cayD5", cayley_d5()), "S10D_v10_cayD5", [1301, 1302, 1303], 300000, ends["S10D"],
++                                      extra={"B": "Cay(D_5)"}))
++    W.write({"end": True, "mode": MODE, "terminated": TERM[0], "elapsed_s": round(elapsed(), 2), "records": W.records, "bytes": W.n})
+     return 0
+ 

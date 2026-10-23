@@ -1,0 +1,1897 @@
+--- code/pilot_stream_drat_ms06_v1.py
++++ code/pilot_stream_drat_ms06_v2.py
+@@ -1,5 +1,58 @@
+ #!/usr/bin/env python3
+-"""PA19 96h P-STREAM runner v1, multiset ms06: pilot_file_drat_v26.py (d31f1a8e...) + the P-STREAM transport
++"""PA19 96h P-STREAM runner v2, multiset ms06: code/pilot_stream_drat_ms06_v1.py (e66cbc5d...) + focused fixes for the
++parent-routed Codex source review (RUN/review/pa19-PSTREAM-source-codex-v1.prompt.stdout.txt af15a4e1..., HOLD, 13
++findings) under the parent runtime-guard HOLD (RUN/review/runtime-guard-admission-HOLD-v1.json 6c1d8440...):
++  V1 (Codex 1) No /bin/ps.  The start identity, the owned-process census (own process group + transitive PPID closure,
++     zombies listed) and RSS (PROC_PIDTASKINFO) are read in-process through libproc (ctypes), fail-closed.  The
++     user-required /bin/date host clock is KEPT as an owned, bounded metadata helper (class Helper): pinned binary,
++     own session, pre-registered in HELPERS, admitted only while no native child or helper is unreaped and no cancel
++     is stamped (V7 boundary), communicate() bounded by HELPER_WALL, then ONE SIGTERM and HELPER_TERM_WAIT; a
++     survivor is latched and quarantined (waited for without bound, no further signal, UNSETTLED, parent
++     disposition).  Helpers never overlap a native child (busy <= 2 processes, contract per_lane_busy_processes);
++     HELPER_ALLOW per call is in the timing model.  A refused or failed read records null; no timestamp is invented.
++     After an owner cancel no new process of any kind starts.
++  V2 (Codex 2) Cumulative lane ceiling: lane usage (lstat walk of LANE, hard links once, traversal errors raise) +
++     this run's outstanding reservation + every other admitted attempt (a pilot-v1 launch record without a summary,
++     at its recorded reservation) <= LANE_CEILING (RUN/contract-v1.json per_lane_new_disk_bytes, pinned and
++     re-read at prestart), checked at prestart, at every child admission and at every terminal gate.  Hard output
++     guard: every retained write is charged against the run's reservation before it is made (capture files
++     pre-charged at LOG_CAP each).
++  V3 (Codex 3) Absolute (epoch) and elapsed (monotonic) cutoffs are enforced separately for the run and every child;
++     helper allowances are in the arithmetic.  The chunk claim holds only if every owned process settles within
++     its tail; a quarantined process voids it (recorded) and stays UNSETTLED under parent disposition.
++  V4 (Codex 4) The output directory must be a new direct child of LANE/evidence/pilot-v1 whose ancestors are all
++     real directories (lstat; a symlink refuses); its (dev, inode) is re-checked at closeout.  A complete,
++     fail-closed run-tree census (every entry kind, lstat only, never opens FIFO/socket payloads, removals
++     detected, traversal errors raise) brackets EVERY child.  The monitor must begin with the pinned observer_start
++     provenance record.
++  V5 (Codex 5) Proof RAM stays charged while ANY collector or feeder holds it (one frozen tuple counted once); every
++     buffer is released in a finally on every control and item path; closeout reports per-buffer holders and
++     latches if any proof RAM is still held.
++  V6 (Codex 6) Ownership fields are set immediately after Popen; never-started transport endpoints are closed before
++     reaping; every descriptor/cleanup step is independent and its outcome enters the settlement record before
++     publication; a capture reader error trips supervision.  Single-SIGTERM behaviour unchanged.
++  V7 (Codex 7) Launch/cancel boundary: launch_order = next(ORDER) is drawn, then latch/cancel/deadlines are checked,
++     then Popen.  A cancel ordered before the boundary prevents the launch; a later one applies to the owned child.
++  V8 (Codex 8, PS1-F1) After an over-long partial line is flushed, the rest of that physical line passes through
++     unconditionally; duplicate matching resumes only at a genuine line start.  Duplicate warnings of BOTH phases
++     are counted and disclosed per item, never required and never gated.
++  V9 (Codex 9) Canonical parser records: exactly one stdin record, exactly one parse header equal to the CNF pin
++     header, exactly one consumed record equal to the fed bytes, exactly one status line; the complete solver
++     output must be exactly ['s UNSATISFIABLE'].
++  V10 (Codex 10) Every defect carries a stable ID ('ID: text'); controls and tests compare complete ID sets.
++  V11 (Codex 11) Each control evaluates a checker's intended predicate before the next child is launched; C2/C3/C4
++     compare complete defect-ID sets; C6 is bound to kissat's measured timer expiry (rc 0, output exactly
++     ['s UNKNOWN'], >= 1 s); C7 to kissat's missing-input diagnostic (rc 1, exactly "kissat: error: can not read
++     '<path>'"); C7b to drat-trim's (rc 255, exactly 'c error opening "<path>".', drat-trim.c:1425-1427).
++  V12 (Codex 12) Items are type/shape-checked at prestart and again before generation (ms09: exact non-bool ints,
++     0 <= lo <= hi < denominator, canonical id; ms06: canonical id, no interval fields).
++  V13 (Codex 13) Capture records distinguish non-dropped bytes from bytes physically written to the capped file.
++Not changed: transport identity checks of v1 (C3 + offline tests establish only the transport-identity rejection
++predicate; native checker behaviour on altered/truncated proofs is NOT claimed), CHECK_SECONDS 600, at most two
++items per run, ITEMS = [] (controls-only qualification; production only by a later reviewed item-only delta bound
++to the then-current frontier).
++PA19 96h P-STREAM runner v1 notes follow.
++PA19 96h P-STREAM runner v1, multiset ms06: pilot_file_drat_v26.py (d31f1a8e...) + the P-STREAM transport
+ (parent request 2026-10-19 04:5x; design notes/p-stream-design-v1.md and review/p-stream-design-v1.json):
+   S1 No proof byte is ever written to disk.  kissat writes its proof into an owned FIFO; the ProofBuffer collector
+      thread retains it in RAM (immutable FEED_BLOCK blocks) under the HARD byte cap and measures bytes and SHA-256
+@@ -87,6 +140,7 @@
+ removed.  The only signal ever sent is ONE SIGTERM to an UNREAPED owned Popen child, then a bounded
+ 60 s wait; a survivor gets a quarantine receipt, no further signal, LATCH, and the runner keeps waiting.
+ """
++import ctypes
+ import errno
+ import hashlib
+ import importlib.util
+@@ -96,6 +150,7 @@
+ import re
+ import signal
+ import stat
++import struct
+ import subprocess
+ import sys
+ import threading
+@@ -114,6 +169,10 @@
+                      "parent-result.json", "200d307dd52ab4d6559ff89d5faa6c3859e256bbd20c6d1fb439d237b9af3bfe")
+ DRAT_SOURCE_SHA = "d834b649f437e091597f5347f259b9f681087f89ca0844d0cee250a1a1a0c2ee"
+ CHECKERS = (("A", DRAT, DRAT_OLD[1]), ("B", DRAT_PROV[0], DRAT_PROV[1]))  # S2: sequential, same frozen buffer
++DATE = ("/bin/date", "931edbfcbd847f3c1ccb504325a502db313ce20db27634744a7416c3c4b812f0")   # V1: pinned helper
++CONTRACT = (RUN + "/contract-v1.json", "55baff0cf1ac1a4b0ab38b0eb1b1fa5a35a47c890f352b79dae4dfea919ffcaa")
++LANE_CEILING = 10_737_418_240         # V2: contract resources.per_lane_new_disk_bytes (re-read at prestart)
++PILOT_ROOT = LANE + "/evidence/pilot-v1"
+ ENC = (LANE + "/code/vendor/encode_skel_b.py", "d0002e60d11ef5cba568309fde5b15e29280ca127bc0e6bb1f4d22929a5628e5")
+ SKEL = (OLD + "/cycle2/skel-b/skeletons-b-ms06.json", "9ec0fd1dd036cbddf197f495684c2d6a54bc36feff35cb6466799a13493e0488")
+ REGISTRY = (LANE + "/evidence/inherited-stop-registry-v1.json", "ee370929f20ffe514e71bce6961e31ed32faaf243e0433d9268179956a0e9873")
+@@ -135,6 +194,7 @@
+     "STOP-m2r12": "94b56f04b59849923b41db6929760de00a33c12f077983faa2670a2080015bb2",
+     "STOP-K1": "b05f12b9587bb89a8b30d3d040074e1958463109d866bddeb96527d79c9716bf",
+ }
++FAMILY = "ms06"                       # V12: item shape family of this runner
+ P0 = [4, 3, 3, 3, 3, 3]
+ ITEMS = []  # P-STREAM v1: controls-only qualification; production items only by a later item-only delta
+ SOLVER_SECONDS = 300
+@@ -164,8 +224,15 @@
+ LANE_RSS_TRIP = 6 * 1024 ** 3
+ CONTROL_CHILD_WALL = 60
+ CONTROLS_WORST_SECONDS = CONTROL_CHILDREN * (CONTROL_CHILD_WALL + GRACE + SETTLE_TAIL + 30)
++HELPER_WALL = 5                       # V1: /bin/date helper bounded wait
++HELPER_TERM_WAIT = 10                 # V1: bounded wait after the helper's single SIGTERM
++HELPER_ALLOW = HELPER_WALL + HELPER_TERM_WAIT + 5   # V1/V3: per helper call in the timing model
++HELPERS_PER_ITEM = 3                  # item start, item end, SAT candidate
++HELPERS_PER_RUN = 2                   # launch record, closeout
++HELPER_OUT_CAP = 4096
+ ITEM_WORST_SECONDS = (30 + (SOLVER_SECONDS + GRACE + SETTLE_TAIL) + 30
+-                      + len(CHECKERS) * (CHECK_SECONDS + GRACE + SETTLE_TAIL + 30))
++                      + len(CHECKERS) * (CHECK_SECONDS + GRACE + SETTLE_TAIL + 30) + HELPERS_PER_ITEM * HELPER_ALLOW)
++RUN_HELPER_SECONDS = HELPERS_PER_RUN * HELPER_ALLOW
+ MAX_CHUNK = 10800
+ SETTLE = 120
+ MARGIN = 60
+@@ -191,13 +258,29 @@
+                       rb"of proof line ([1-9][0-9]*)\n")
+ PARSE_LINE = re.compile(rb"\rc parsing input formula with ([0-9]+) variables and ([0-9]+) clauses\n")
+ PENDING_MAX = 1 << 16                 # S3: no duplicate-literal line is this long; longer pending bytes are kept
++DATE_ARGV = [DATE[0], "+%Y-%m-%dT%H:%M:%S%z"]
++DATE_RE = re.compile(rb"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[+-][0-9]{4}\n")
++LIBPROC = ctypes.CDLL("/usr/lib/libproc.dylib", use_errno=True)   # V1: in-process process metadata (no /bin/ps)
++LIBPROC.proc_pidinfo.argtypes = (ctypes.c_int, ctypes.c_int, ctypes.c_uint64, ctypes.c_void_p, ctypes.c_int)
++LIBPROC.proc_pidinfo.restype = ctypes.c_int
++LIBPROC.proc_listpids.argtypes = (ctypes.c_uint32, ctypes.c_uint32, ctypes.c_void_p, ctypes.c_int)
++LIBPROC.proc_listpids.restype = ctypes.c_int
++PROC_PGRP_ONLY, PROC_PPID_ONLY = 2, 6
++PROC_PIDTBSDINFO, BSD_SIZE = 3, 136   # sys/proc_info.h struct proc_bsdinfo
++PROC_PIDTASKINFO, TASK_SIZE = 4, 96   # sys/proc_info.h struct proc_taskinfo
++SZOMB = 5
++LIST_SLOTS = 4096
+ 
+ ORDER = itertools.count(1)
+ LATCH = []          # persistent safety/unsettled reasons; non-empty refuses every later child
+ OWNED = []          # every Child (pre-allocated before Popen), for the computed settlement summary
+ LIVE_BUFFERS = []   # S5: every ProofBuffer; the unreleased ones are charged to the lane RSS trip
++LIVE_FEEDERS = []   # V5: every Feeder; a feeder still holding its tuple is charged too
++HELPERS = []        # V1: every metadata Helper (pre-allocated before Popen)
++HELPER_LOG = []     # V1: bounded helper records for the summary
+ STATE = {"seq": 0, "out": None, "abs_end": None, "chunk_end": None, "remaining_reserve": 0,
+-         "cancel_order": None, "run_record": None, "go": None, "runner_sha": None}
++         "cancel_order": None, "run_record": None, "go": None, "runner_sha": None, "mono0": None, "mono_end": None,
++         "mono_chunk_end": None, "written": 0, "output_limit": None, "out_identity": None, "last_ledger": None}
+ 
+ 
+ def on_term(signum, frame):
+@@ -215,8 +298,17 @@
+ 
+ 
+ def clock():
+-    return subprocess.run(["/bin/date", "+%Y-%m-%dT%H:%M:%S%z"], capture_output=True, text=True,
+-                          check=True, stdin=subprocess.DEVNULL).stdout.strip()
++    """V1: host clock read through the owned, bounded /bin/date Helper.  Returns the /bin/date text, or None when the
++    helper is refused (cancel stamped) or fails (latched); a timestamp is never invented."""
++    try:
++        return Helper(DATE_ARGV).run()
++    except HelperRefused as exc:
++        if len(HELPER_LOG) < LIST_MAX:
++            HELPER_LOG.append({"refused": str(exc)[:STR_MAX]})
++        return None
++    except BaseException as exc:
++        latch("host clock helper failed %r" % (exc,))
++        return None
+ 
+ 
+ def bounded(x):
+@@ -242,8 +334,18 @@
+     return data
+ 
+ 
++def charge_output(n):
++    """V2: hard output guard.  Every retained write is counted against this run's total reservation before it is
++    made; capture files are pre-charged at LOG_CAP each when their child is prepared."""
++    if STATE["output_limit"] is not None and STATE["written"] + n > STATE["output_limit"]:
++        latch("output guard: %d + %d > %d" % (STATE["written"], n, STATE["output_limit"]))
++        raise RuntimeError("output guard: retained bytes would exceed the run reservation")
++    STATE["written"] += n
++
++
+ def write_x(path, obj):
+     data = serialize(obj)
++    charge_output(len(data))
+     with open(path, "xb") as f:
+         f.write(data)
+         f.flush()
+@@ -252,6 +354,7 @@
+ 
+ 
+ def write_bytes_x(path, data):
++    charge_output(len(data))
+     with open(path, "xb") as f:
+         f.write(data)
+         f.flush()
+@@ -289,47 +392,169 @@
+     return st.f_bavail * st.f_frsize
+ 
+ 
+-def ps_table():
+-    """Process table rows (pid, ppid, pgid, rss_kib); raises on failure (callers latch)."""
+-    out = subprocess.run(["/bin/ps", "-A", "-o", "pid=,ppid=,pgid=,rss="], capture_output=True, text=True,
+-                         stdin=subprocess.DEVNULL)
+-    if out.returncode != 0:
+-        raise RuntimeError("ps -A failed rc %d" % out.returncode)
+-    rows = []
+-    for ln in out.stdout.splitlines():
+-        parts = ln.split()
+-        if len(parts) != 4 or not all(p.isdigit() for p in parts):
+-            raise RuntimeError("malformed ps row %r" % ln)
+-        rows.append(tuple(int(p) for p in parts))
+-    if not rows:
+-        raise RuntimeError("empty ps table")
+-    return rows
++def _pidinfo(pid, flavor, size):
++    buf = ctypes.create_string_buffer(size)
++    ctypes.set_errno(0)
++    n = LIBPROC.proc_pidinfo(pid, flavor, 0, buf, size)
++    return n, ctypes.get_errno(), buf.raw
++
++
++def list_pids(kind, value):
++    """V1: proc_listpids in-process (no /bin/ps); fail-closed: raises on an error or a possibly truncated listing.
++    The kernel lists exited-but-unreaped processes too."""
++    buf = (ctypes.c_int * LIST_SLOTS)()
++    ctypes.set_errno(0)
++    n = LIBPROC.proc_listpids(kind, value, buf, ctypes.sizeof(buf))
++    err = ctypes.get_errno()
++    if n < 0 or (n == 0 and err != 0) or n >= ctypes.sizeof(buf):
++        raise OSError(err, "proc_listpids(%d, %d) returned %d" % (kind, value, n))
++    return sorted({p for p in buf[:n // ctypes.sizeof(ctypes.c_int)] if p > 0})
++
++
++def bsd_identity(pid):
++    """(identity, None) from PROC_PIDTBSDINFO (sys/proc_info.h struct proc_bsdinfo, 136 bytes), or (None, error)."""
++    n, err, raw = _pidinfo(pid, PROC_PIDTBSDINFO, BSD_SIZE)
++    if n != BSD_SIZE:
++        return None, {"bsd_bytes": n, "errno": err}
++    status, _xstatus, rpid, ppid = struct.unpack_from("=IIII", raw, 4)
++    return {"pid": rpid, "ppid": ppid, "pgid": struct.unpack_from("=I", raw, 100)[0], "status": status,
++            "start": list(struct.unpack_from("=QQ", raw, 120)),
++            "comm": raw[48:64].split(b"\0")[0].decode("ascii", "replace")}, None
++
++
++def task_rss(pid):
++    """Resident bytes from PROC_PIDTASKINFO (struct proc_taskinfo, 96 bytes, pti_resident_size at offset 8); None
++    when unreadable, never mapped to zero."""
++    n, _err, raw = _pidinfo(pid, PROC_PIDTASKINFO, TASK_SIZE)
++    if n != TASK_SIZE:
++        return None
++    return struct.unpack_from("=Q", raw, 8)[0]
+ 
+ 
+ def identity_checked(pid, runner_pid):
+-    """Start identity; must parse and show ppid==runner and pgid==pid (own session)."""
+-    out = subprocess.run(["/bin/ps", "-o", "pid=,ppid=,pgid=,lstart=,comm=", "-p", str(pid)],
+-                         capture_output=True, text=True, stdin=subprocess.DEVNULL)
+-    line = out.stdout.strip()
+-    parts = line.split()
+-    if out.returncode != 0 or len(parts) < 8 or not all(p.isdigit() for p in parts[:3]):
+-        raise RuntimeError("unavailable/malformed start identity %r" % line)
+-    if int(parts[0]) != pid or int(parts[1]) != runner_pid or int(parts[2]) != pid:
+-        raise RuntimeError("start identity mismatch %r" % line)
+-    return line
+-
+-
+-def lane_files():
+-    """r3#4/#5: (path -> (inode, size)) for every non-directory entry under the run output tree and
+-    LANE/tmp (the trees a misbehaving child could reach through its paths/cwd; symlinks not followed)."""
++    """V1: start identity through libproc.  A readable child must show pid, ppid == runner and pgid == pid (own
++    session).  A child that already exited is unreaped (Popen still owns the pid, which cannot be reused): its
++    BSD read fails with ESRCH while the kernel still lists it in its own process group; that is recorded as such.
++    Anything else raises (fail closed)."""
++    ident, err = bsd_identity(pid)
++    if ident is not None:
++        if ident["pid"] != pid or ident["ppid"] != runner_pid or ident["pgid"] != pid:
++            raise RuntimeError("start identity mismatch %r" % (ident,))
++        return dict(ident, state="zombie" if ident["status"] == SZOMB else "alive")
++    if err["errno"] == errno.ESRCH and pid in list_pids(PROC_PGRP_ONLY, pid):
++        return {"pid": pid, "state": "exited_unreaped_listed_in_own_group", "bsd_read": err}
++    raise RuntimeError("unavailable start identity %r" % (err,))
++
++
++def descendants(pid, pgid):
++    """V1/V4: owned-process census through libproc, fail-closed: every member of the child's own process group other
++    than the child, plus the transitive closure of PROC_PPID_ONLY listings from the child (zombies included).
++    Limit (documented): a descendant that both leaves the group and is re-parented away is not linkable."""
++    found = {p for p in list_pids(PROC_PGRP_ONLY, pgid) if p != pid}
++    seen, todo = {pid}, [pid]
++    while todo:
++        q = todo.pop()
++        for c in list_pids(PROC_PPID_ONLY, q):
++            if c not in seen:
++                if len(seen) > LIST_SLOTS:
++                    raise RuntimeError("descendant census exceeds %d processes" % LIST_SLOTS)
++                seen.add(c)
++                found.add(c)
++                todo.append(c)
++    return sorted(found)
++
++
++def _entry_kind(m):
++    return ("dir" if stat.S_ISDIR(m) else "file" if stat.S_ISREG(m) else "symlink" if stat.S_ISLNK(m)
++            else "fifo" if stat.S_ISFIFO(m) else "socket" if stat.S_ISSOCK(m) else "other")
++
++
++def _walk_fail(exc):
++    raise exc
++
++
++def run_tree_census(root=None):
++    """V4: complete entry set of the run output tree: path -> (kind, inode, size; 0 for directories) for EVERY entry
++    (directories, symlinks, FIFOs, sockets, files); lstat only, never opens a payload; any traversal error raises."""
+     snap = {}
+-    for root in (STATE["out"],):  # r4#5: private per-child TMPDIR lives inside the run tree
+-        for dp, dns, fns in os.walk(root, followlinks=False):
+-            for n in fns:
+-                p = os.path.join(dp, n)
+-                st = os.lstat(p)
+-                snap[p] = (st.st_ino, st.st_size)
++    for dp, dns, fns in os.walk(root or STATE["out"], onerror=_walk_fail, followlinks=False):
++        for n in dns + fns:
++            p = os.path.join(dp, n)
++            st = os.lstat(p)
++            k = _entry_kind(st.st_mode)
++            snap[p] = (k, st.st_ino, 0 if k == "dir" else st.st_size)
+     return snap
++
++
++def lane_usage(root=LANE):
++    """V2: logical bytes of every non-directory entry under root (lstat, symlinks not followed, hard links counted
++    once); any traversal or stat error raises (fail closed)."""
++    total, seen = 0, set()
++    for dp, dns, fns in os.walk(root, onerror=_walk_fail, followlinks=False):
++        for n in dns + fns:
++            st = os.lstat(os.path.join(dp, n))
++            if stat.S_ISDIR(st.st_mode):
++                continue
++            key = (st.st_dev, st.st_ino)
++            if key not in seen:
++                seen.add(key)
++                total += st.st_size
++    return total
++
++
++def other_admitted_reservations(root=PILOT_ROOT):
++    """V2: every OTHER admitted attempt in this lane (a pilot-v1 run directory holding a launch record but no
++    summary: active or never closed) counts at its recorded retained-output reservation; unreadable or malformed
++    records raise (fail closed)."""
++    total, names = 0, []
++    for name in sorted(os.listdir(root)):
++        d = os.path.join(root, name)
++        if d == STATE["out"] or not stat.S_ISDIR(os.lstat(d).st_mode):
++            continue
++        lr = os.path.join(d, "launch-record.json")
++        if not os.path.lexists(lr) or os.path.lexists(os.path.join(d, "summary.json")):
++            continue
++        with open(lr, "rb") as f:
++            res = json.loads(f.read()).get("retained_output_reservation_bytes")
++        if not isinstance(res, int) or isinstance(res, bool) or res < 0:
++            raise RuntimeError("malformed reservation in " + lr)
++        total += res
++        names.append(name)
++    return total, names
++
++
++def ledger_refusals(reserve):
++    """V2: cumulative lane ceiling: lane usage + this run's outstanding reservation + other admitted attempts must
++    not exceed LANE_CEILING.  Returns (refusals, ledger)."""
++    try:
++        usage = lane_usage()
++        others, names = other_admitted_reservations()
++    except BaseException as exc:
++        return ["lane ledger unavailable %r" % (exc,)], None
++    led = {"lane_usage_bytes": usage, "this_run_outstanding_reservation_bytes": reserve,
++           "other_admitted_attempts": names, "other_reservation_bytes": others, "ceiling_bytes": LANE_CEILING}
++    if usage + reserve + others > LANE_CEILING:
++        return ["lane ledger %d + %d + %d > ceiling %d" % (usage, reserve, others, LANE_CEILING)], led
++    return [], led
++
++
++def out_dir_refusal(out_dir, parent=PILOT_ROOT):
++    """V4: the output must be a NEW direct child of parent, and parent and each of its ancestors must be a real
++    directory (lstat: a symlink anywhere refuses); creation stays exclusive."""
++    if os.path.dirname(out_dir) != parent or os.path.basename(out_dir) in ("", ".", ".."):
++        return "output must be a direct child of " + parent
++    p = os.sep
++    for comp in [c for c in parent.split(os.sep) if c]:
++        p = os.path.join(p, comp)
++        try:
++            st = os.lstat(p)
++        except OSError as exc:
++            return "ancestor %s unreadable %r" % (p, exc)
++        if not stat.S_ISDIR(st.st_mode):
++            return "ancestor %s is not a real directory" % p
++    if os.path.lexists(out_dir):
++        return "output path exists"
++    return None
+ 
+ 
+ def registry_refusals():
+@@ -374,7 +599,8 @@
+ 
+ 
+ def stability_refusals(projected):
+-    """resource-stability-addendum v1 rule over the v2-pinned v3 monitor; strict schema."""
++    """resource-stability-addendum v1 rule over the v2-pinned v3 monitor; strict schema.  V4: the first record must be
++    the pinned observer_start provenance header (a sample-only log is refused)."""
+     st = os.lstat(MONITOR)
+     if not stat.S_ISREG(st.st_mode):
+         return ["monitor is not a regular file"]
+@@ -382,6 +608,7 @@
+         raw = f.read()
+     complete = raw.split(b"\n")[:-1]  # last element: b"" after a final newline, or an ignored partial line
+     rows = []
++    header_seen = False
+     for i, ln in enumerate(complete):
+         try:
+             o = json.loads(ln)
+@@ -395,6 +622,7 @@
+                 _aware(o["at"])
+                 _int(o["pid"], 1)
+                 _int(o["pgid"], 1)
++                header_seen = True
+                 continue
+             if set(o) != {"t", "free", "floor_bytes", "scope"} or o["floor_bytes"] != 12_000_000_000 \
+                     or o["scope"] != SAMPLE_SCOPE:
+@@ -403,6 +631,8 @@
+             rows.append((_aware(o["t"]).timestamp(), _int(o["free"], 0)))
+         except Exception as exc:
+             return ["malformed monitor line %d: %r (%r)" % (i, ln[:160], exc)]
++    if not header_seen:
++        return ["monitor lacks the pinned observer_start provenance header"]
+     if not rows:
+         return ["no monitor samples"]
+     for a, b in zip(rows, rows[1:]):
+@@ -430,8 +660,9 @@
+     return why
+ 
+ 
+-def full_admission(projected, child_deadline):
+-    """Blocking part of admission (registry, monitor, statvfs, fit). Returns refusal reasons."""
++def full_admission(projected, child_deadline, child_deadline_mono):
++    """Blocking part of admission (registry, monitor, statvfs, V2 lane ledger, V3 absolute and elapsed fit).
++    Returns refusal reasons."""
+     why = []
+     try:
+         why += registry_refusals()
+@@ -441,17 +672,34 @@
+             why.append(f"fresh free {fb} < 12.2e9 + {projected}")
+         if fb - STATE["remaining_reserve"] < FREE_FLOOR:
+             why.append(f"free {fb} - remaining reservations {STATE['remaining_reserve']} < 12e9")
++        led_why, STATE["last_ledger"] = ledger_refusals(STATE["remaining_reserve"])
++        why += led_why
+     except Exception as exc:
+         why.append("admission exception %r" % exc)
+     if child_deadline + SETTLE_TAIL > STATE["abs_end"] or child_deadline + SETTLE_TAIL + MARGIN > STATE["chunk_end"] \
+-            or child_deadline + SETTLE_TAIL > OWNED_SETTLED_BY - 180:
+-        why.append("per-child chunk fit / absolute end (with full settlement tail)")
++            or child_deadline + SETTLE_TAIL > OWNED_SETTLED_BY - 180 \
++            or child_deadline_mono + SETTLE_TAIL > STATE["mono_end"] \
++            or child_deadline_mono + SETTLE_TAIL + MARGIN > STATE["mono_chunk_end"]:
++        why.append("per-child chunk fit / absolute or elapsed end (with full settlement tail)")
+     return why
+ 
+ 
+ def buffer_charge():
+-    """S5: bytes retained by unreleased proof buffers, charged in full to the lane RSS trip."""
+-    return sum(b.retained for b in list(LIVE_BUFFERS) if not b.released)
++    """V5: proof RAM still held by ANY collector or feeder.  An unreleased buffer counts its retained bytes; a feeder
++    that has not dropped its blocks counts its tuple even after the buffer was released; one frozen tuple is
++    counted once (keyed by identity)."""
++    held = {}
++    for b in list(LIVE_BUFFERS):
++        if not b.released:
++            blocks = b.blocks
++            key = ("tuple", id(blocks)) if isinstance(blocks, tuple) else ("collector", id(b))
++            held[key] = max(held.get(key, 0), b.retained)
++    for f in list(LIVE_FEEDERS):
++        blocks = f.blocks
++        if blocks:
++            key = ("tuple", id(blocks))
++            held[key] = max(held.get(key, 0), f.expected)
++    return sum(held.values())
+ 
+ 
+ class ProofBuffer:
+@@ -468,6 +716,7 @@
+         self.sha = hashlib.sha256()
+         self.retained = self.received = self.discarded = 0
+         self.over_cap = self.connected = self.eof = self.released = False
++        self.frozen_id = None                   # V5: identity of the frozen tuple shared with feeders
+         self.error = None
+         self.unblocked_by_runner = False
+         self.finished = None
+@@ -553,6 +802,7 @@
+         else:
+             try:
+                 self.blocks = tuple(self.blocks)    # frozen: the feeders share it read-only
++                self.frozen_id = id(self.blocks)
+                 rec["blocks"] = len(self.blocks)
+                 rec["buffer_rehash"] = self.digest()
+             except Exception as exc:
+@@ -566,9 +816,19 @@
+         return rec
+ 
+     def release(self):
+-        """Drop the RAM blocks (after the last feed, or when the item ends); the charge falls to zero."""
++        """Drop this buffer's reference to the RAM blocks (V5: called in a finally on every path).  The bytes stay
++        charged while any feeder still holds the frozen tuple (buffer_charge, holders())."""
+         self.released = True
+         self.blocks = ()
++
++    def holders(self):
++        """V5: feeders that still hold this buffer's frozen tuple."""
++        return [f.label for f in list(LIVE_FEEDERS) if f.blocks and self.frozen_id is not None
++                and id(f.blocks) == self.frozen_id]
++
++    def accounting(self):
++        return {"fifo": self.fifo_path, "retained": self.retained, "released": self.released,
++                "still_held_by_feeders": self.holders(), "frozen": self.frozen_id is not None}
+ 
+ 
+ class Feeder:
+@@ -577,12 +837,12 @@
+     waits until the checker was reaped).  The runner's read end is closed right after Popen (close_read);
+     the write end is closed exactly once: by the thread, or by abandon() when the thread never started."""
+ 
+-    def __init__(self, blocks, mode="plain"):
++    def __init__(self, blocks, mode="plain", label=""):
+         if mode not in ("plain", "suffix", "hold"):
+             raise RuntimeError("unknown feed mode %r" % (mode,))
+         if not isinstance(blocks, tuple):
+             raise RuntimeError("proof buffer not frozen")
+-        self.blocks, self.mode = blocks, mode
++        self.blocks, self.mode, self.label = blocks, mode, label
+         self.expected = sum(len(b) for b in blocks)
+         self.sha = hashlib.sha256()
+         self.fed = self.proof_fed = 0
+@@ -593,6 +853,7 @@
+         self.finished = None
+         self.thread = threading.Thread(target=self._run, daemon=True)
+         self.rfd, self.wfd = os.pipe()             # non-inheritable: only the checker's dup2'd stdin holds rfd
++        LIVE_FEEDERS.append(self)                  # V5: charged while it holds the tuple
+ 
+     def plan(self):
+         return {"mode": self.mode, "buffer_bytes": self.expected, "blocks": len(self.blocks)}
+@@ -607,7 +868,9 @@
+         self.started = True
+ 
+     def abandon(self):
+-        """Never-started feeder: close whichever pipe ends are still open."""
++        """Never-started feeder: close each still-open pipe end independently and drop the blocks.  V6: returns the
++        close errors so that the caller incorporates them before any settlement is published."""
++        errs = []
+         for name in ("rfd", "wfd"):
+             fd = getattr(self, name)
+             setattr(self, name, None)
+@@ -615,7 +878,11 @@
+                 try:
+                     os.close(fd)
+                 except OSError as exc:
+-                    self.close_error = repr(exc)
++                    errs.append("%s %r" % (name, exc))
++        self.blocks = ()
++        if errs:
++            self.close_error = "; ".join(errs)
++        return errs
+ 
+     def _deliver(self, data):
+         mv, off = memoryview(data), 0
+@@ -673,13 +940,78 @@
+ 
+ 
+ def new_filter():
+-    """S3: per-checker capture-filter state."""
++    """S3: per-checker capture-filter state; V8: 'cont' = pass through until the next newline after an over-long
++    partial line was flushed."""
+     return {"raw_sha": hashlib.sha256(), "raw_bytes": 0, "raw_eof": False, "pending": b"", "header_clauses": None,
+-            "dup_low": 0, "dup_high": 0, "dup_bytes": 0, "tail": 0}
++            "dup_low": 0, "dup_high": 0, "dup_bytes": 0, "tail": 0, "cont": False, "flushes": 0}
++
++
++class HelperRefused(Exception):
++    pass
++
++
++class Helper:
++    """V1: one OWNED, BOUNDED metadata helper process (only the pinned /bin/date).
++    Ownership: pre-registered in HELPERS before Popen; own session; never overlaps a native child or another helper
++    (refused, and latched, if any owned process is unreaped), so at most one process besides the runner exists at
++    any time.  Launch/cancel boundary as V7: after an owner cancel no helper starts.  Bounds: communicate() waits at
++    most HELPER_WALL s, then ONE SIGTERM and at most HELPER_TERM_WAIT s; a survivor is latched and quarantined (no
++    further signal, waited for without bound, UNSETTLED, parent disposition).  Output must be exactly one /bin/date
++    line (<= HELPER_OUT_CAP bytes) with rc 0 and empty stderr, else the read fails closed (latched by clock())."""
++
++    def __init__(self, argv):
++        self.argv = argv
++        self.proc = None
++        self.quarantined = False
++
++    def run(self):
++        if any(c.proc is not None and c.proc.returncode is None for c in OWNED) or \
++                any(h.proc is not None and h.proc.returncode is None for h in HELPERS):
++            latch("metadata helper refused: an owned process is unreaped")
++            raise HelperRefused("an owned native child or helper is unreaped")
++        if sha_file(self.argv[0])[0] != DATE[1]:
++            raise RuntimeError("helper binary pin mismatch")
++        rec = {"argv": self.argv}
++        HELPERS.append(self)                        # ownership exists before the process does
++        self.launch_order = next(ORDER)             # V7 boundary
++        if STATE["cancel_order"] is not None:
++            HELPERS.remove(self)
++            raise HelperRefused("cancel stamped (order %s) before helper launch boundary %d"
++                                % (STATE["cancel_order"], self.launch_order))
++        t0 = time.monotonic()
++        self.proc = subprocess.Popen(self.argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
++                                     stderr=subprocess.PIPE, start_new_session=True, close_fds=True)
++        rec.update(pid=self.proc.pid, launch_order=self.launch_order)
++        out = err = b""
++        term_sent = False
++        try:
++            out, err = self.proc.communicate(timeout=HELPER_WALL)
++        except subprocess.TimeoutExpired:
++            if self.proc.returncode is None:
++                self.proc.send_signal(signal.SIGTERM)   # the single SIGTERM (Popen never signals a reaped pid)
++                term_sent = True
++            try:
++                out, err = self.proc.communicate(timeout=HELPER_TERM_WAIT)
++            except subprocess.TimeoutExpired:
++                self.quarantined = True
++                latch("metadata helper pid %d survived SIGTERM + %d s: quarantined (UNSETTLED, parent disposition)"
++                      % (self.proc.pid, HELPER_TERM_WAIT))
++                while self.proc.poll() is None:     # never abandoned, never signalled again
++                    time.sleep(0.5)
++        rec.update(rc=self.proc.returncode, seconds=round(time.monotonic() - t0, 3), term_sent=term_sent,
++                   quarantined=self.quarantined, out_bytes=len(out or b""), err_bytes=len(err or b""))
++        if len(HELPER_LOG) < LIST_MAX:
++            HELPER_LOG.append(rec)
++        if self.quarantined or term_sent or self.proc.returncode != 0 or err or len(out) > HELPER_OUT_CAP \
++                or DATE_RE.fullmatch(out or b"") is None:
++            raise RuntimeError("metadata helper read failed %r" % ({k: rec[k] for k in ("rc", "term_sent", "quarantined",
++                                                                                         "out_bytes", "err_bytes")},))
++        return out.decode("ascii").strip()
+ 
+ 
+ class Child:
+-    """One owned native child: pre-allocated ownership, own session, HARD capped capture, records."""
++    """One owned native child: pre-allocated ownership, V7 launch/cancel boundary, own session, HARD capped capture,
++    V4 complete run-tree census before admission and after settlement, V6 independent descriptor cleanup."""
+ 
+     def __init__(self, argv, label, wall, reserve, inputs, sink, cwd, feeder=None):
+         STATE["seq"] += 1
+@@ -690,47 +1022,63 @@
+         base = os.path.join(STATE["out"], "children", "%02d-%s" % (self.seq, label))
+         self.out_path, self.launch_path, self.settle_path = base + ".out", base + ".launch.json", base + ".settle.json"
+         self.quarantine_path = base + ".QUARANTINE.json"
+-        self.captured, self.over_cap, self.reader_error = 0, False, None
++        self.captured, self.capture_written = 0, 0  # V13: non-dropped bytes vs bytes physically in the capped file
++        self.over_cap, self.reader_error = False, None
+         self.term_sent_at, self.stop, self.reader, self.settled_rec = None, None, None, None
+         self.identity_at_start, self.descendants = None, []
+         self.inputs, self.reserve = inputs, reserve
+-        self.proc, self.pid, self.pgid, self.started = None, None, None, None
++        self.proc, self.pid, self.pgid, self.started, self.started_mono = None, None, None, None, None
+         self.quarantined, self.refused = False, None
+         self.quarantine_receipt_state = "none"
+-        self.lane_before = None
+-        self.capture = open(self.out_path, "xb")  # outputs prepared BEFORE admission and spawn
+-        child_env = dict(CHILD_ENV, TMPDIR=cwd)   # r4#5: private TMPDIR inside the run tree
+-        if sink is not None:
+-            self.lane_before = lane_files()        # r4#3: blocking census BEFORE final admission
+-        now = time.time()
++        self.fd_errors, self.launch_order = [], None
++        charge_output(LOG_CAP)                     # V2: the capped capture file is pre-charged in full
++        self.capture = open(self.out_path, "xb")   # outputs prepared BEFORE admission and spawn
++        child_env = dict(CHILD_ENV, TMPDIR=cwd)    # r4#5: private TMPDIR inside the run tree
++        try:
++            self.tree_before = run_tree_census()   # V4: complete census before admission, for EVERY child
++        except BaseException:
++            self._close_refused_capture()
++            raise
++        now, mono = time.time(), time.monotonic()
+         self.deadline = min(now + wall + GRACE, STATE["abs_end"] - SETTLE_TAIL)
+-        why = full_admission(reserve, self.deadline)
++        self.deadline_mono = min(mono + wall + GRACE, STATE["mono_end"] - SETTLE_TAIL)   # V3: elapsed cutoff
++        why = full_admission(reserve, self.deadline, self.deadline_mono)
+         if why:
+-            self.capture.close()
++            self._close_refused_capture()
+             self.refused = why
+             return
+         OWNED.append(self)  # r3#1: ownership exists before the process does
+-        # r4#3: final non-blocking checks, immediately followed by Popen.
+-        if LATCH or cancelled() or time.time() + wall > self.deadline:
++        self.launch_order = next(ORDER)            # V7: launch/cancel boundary, drawn BEFORE the final check
++        if LATCH or STATE["cancel_order"] is not None or time.time() + wall > self.deadline \
++                or time.monotonic() + wall > self.deadline_mono:
+             OWNED.remove(self)
+-            self.capture.close()
+-            self.refused = ["final pre-spawn check: latch=%r cancel=%r deadline_close=%r"
+-                            % (bool(LATCH), cancelled(), time.time() + wall > self.deadline)]
++            self._close_refused_capture()
++            self.refused = ["final pre-spawn check: latch=%r cancel_order=%r launch_order=%d deadline_close=%r"
++                            % (bool(LATCH), STATE["cancel_order"], self.launch_order,
++                               time.time() + wall > self.deadline or time.monotonic() + wall > self.deadline_mono)]
+             return
+-        self.proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL if feeder is None else feeder.rfd,
+-                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+-                                     start_new_session=True, close_fds=True, cwd=cwd, env=child_env)
+         try:
++            self.proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL if feeder is None else feeder.rfd,
++                                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
++                                         start_new_session=True, close_fds=True, cwd=cwd, env=child_env)
++        except BaseException:
++            OWNED.remove(self)                     # V6: no process exists; release ownership and the capture
++            self._close_refused_capture()
++            raise
++        try:
++            self.pid = self.pgid = self.proc.pid   # V6: ownership fields first, before any fallible step
++            self.started, self.started_mono = time.time(), time.monotonic()
+             if feeder is not None:
+                 feeder.close_read()                # S2: from here only the checker holds the read end
+-            self.pid = self.pgid = self.proc.pid
+-            self.started = time.time()
+             self.identity_at_start = identity_checked(self.pid, os.getpid())
+             write_x(self.launch_path, {"seq": self.seq, "label": label, "runner_pid": os.getpid(), "pid": self.pid,
+                                        "pgid": self.pgid, "identity": self.identity_at_start, "argv": argv,
+-                                       "cwd": cwd, "start_epoch": self.started,
+-                                       "absolute_deadline_epoch": self.deadline, "capture": self.out_path,
+-                                       "capture_cap": LOG_CAP, "retained_reservation_bytes": reserve,
++                                       "cwd": cwd, "start_epoch": self.started, "launch_order": self.launch_order,
++                                       "cancel_order_at_launch": STATE["cancel_order"],
++                                       "absolute_deadline_epoch": self.deadline,
++                                       "elapsed_deadline_s": round(self.deadline_mono - STATE["mono0"], 3),
++                                       "capture": self.out_path, "capture_cap": LOG_CAP,
++                                       "retained_reservation_bytes": reserve, "lane_ledger": STATE["last_ledger"],
+                                        "inputs": inputs, "run_launch_record": STATE["run_record"],
+                                        "go": STATE["go"], "runner_sha256": STATE["runner_sha"],
+                                        "binaries": {"kissat": KISSAT, "checkers": CHECKERS},
+@@ -743,6 +1091,8 @@
+         except BaseException as exc:
+             if self.stop is None:
+                 self.stop = "registration_failure"   # r4#1: emergency stop state before fallible logging
++            if feeder is not None and not feeder.started:
++                self.fd_errors += feeder.abandon()   # V6: never-started endpoints closed BEFORE reaping (child sees EOF)
+             try:
+                 latch("post-Popen registration failure %r" % (exc,))
+             except BaseException:
+@@ -750,17 +1100,27 @@
+             self.reap_robust()
+             raise
+ 
++    def _close_refused_capture(self):
++        try:
++            self.capture.close()
++        except Exception as exc:
++            self.fd_errors.append("capture close %r" % (exc,))
++            latch("refused child capture close failed %r" % (exc,))
++
+     def _keep(self, b):
+-        room = LOG_CAP - self.captured
++        room = LOG_CAP - self.capture_written
+         if room > 0:
+-            self.capture.write(b[:room])
++            chunk = b[:room]
++            self.capture.write(chunk)
++            self.capture_written += len(chunk)
+         self.captured += len(b)
+         if self.captured > LOG_CAP:
+             self.over_cap = True
+ 
+     def _read(self):
+-        """Capped capture.  S3: for a checker child the raw stream is hashed/counted in-stream and ONLY lines
+-        that fullmatch DUP_LINE are dropped (counted by phase and bytes); every other byte is kept."""
++        """Capped capture.  S3: for a checker child the raw stream is hashed/counted in-stream and ONLY lines that
++        fullmatch DUP_LINE at a genuine line start are dropped (counted by phase and bytes); V8: after an over-long
++        partial line is flushed, the rest of that physical line is kept unconditionally."""
+         f = self.filt
+         try:
+             while True:
+@@ -778,6 +1138,10 @@
+                 f["pending"] = parts.pop()
+                 for ln in parts:
+                     ln += b"\n"
++                    if f["cont"]:                  # V8: tail of a flushed physical line, never a whole line
++                        f["cont"] = False
++                        self._keep(ln)
++                        continue
+                     m = DUP_LINE.fullmatch(ln)
+                     if m is None:
+                         hm = PARSE_LINE.fullmatch(ln)
+@@ -793,6 +1157,8 @@
+                 if len(f["pending"]) > PENDING_MAX:
+                     self._keep(f["pending"])
+                     f["pending"] = b""
++                    f["cont"] = True
++                    f["flushes"] += 1
+             if f is not None and f["pending"]:
+                 f["tail"] = len(f["pending"])
+                 self._keep(f["pending"])
+@@ -800,13 +1166,12 @@
+         except Exception as exc:
+             self.reader_error = repr(exc)
+         finally:
+-            try:
+-                self.capture.flush()
+-                os.fsync(self.capture.fileno())
+-                self.capture.close()
+-                self.proc.stdout.close()
+-            except Exception as exc:
+-                self.reader_error = (self.reader_error or "") + " close:" + repr(exc)
++            for what, fn in (("flush", self.capture.flush), ("fsync", lambda: os.fsync(self.capture.fileno())),
++                             ("capture close", self.capture.close), ("stdout close", self.proc.stdout.close)):
++                try:
++                    fn()                           # V6: every cleanup step independent
++                except Exception as exc:
++                    self.reader_error = (self.reader_error or "") + " %s:%r" % (what, exc)
+ 
+     def alive(self):
+         return self.proc.poll() is None
+@@ -844,7 +1209,9 @@
+                     try:
+                         write_x(self.quarantine_path, {"pid": self.pid, "pgid": self.pgid, "argv": self.argv,
+                                                        "epoch": time.time(), "note": "survived SIGTERM + 60 s; "
+-                                                       "no further signal; runner keeps waiting"})
++                                                       "no further signal; runner keeps waiting without bound",
++                                                       "settlement": "UNSETTLED", "chunk_claim": "voided",
++                                                       "disposition_owner": "parent"})
+                         self.quarantine_receipt_state = "written"
+                     except FileExistsError:                # r5#3: validate, never assume
+                         self.quarantine_receipt_state = "written" if self._receipt_valid() else "failed"
+@@ -870,37 +1237,45 @@
+             return False
+ 
+     def census(self):
+-        """Other processes with ppid==child or pgid==child (excluding the child itself)."""
+-        rows = ps_table()
+-        found = [r for r in rows if r[0] != self.pid and (r[1] == self.pid or r[2] == self.pgid)]
+-        rss = sum(r[3] for r in rows if r[0] == self.pid or r in found) * 1024
++        """V1: owned-process census through libproc (no /bin/ps): descendants of the child (own group + PPID
++        closure) and the resident bytes of the child and every listed descendant (None if the child's is
++        unreadable).  Raises on a failed listing (the monitor trips)."""
++        found = descendants(self.pid, self.pgid)
++        rss = task_rss(self.pid)
++        if rss is not None:
++            for d in found:
++                rss += task_rss(d) or 0
+         return found, rss
+ 
+     def settle(self):
+-        """Always reaches wait(); settlement final only after streams, sink, FIFO/cwd/lane checks,
+-        hashes and the receipt; any failure clears 'settled' and latches."""
++        """Always reaches wait(); settlement final only after streams, transport endpoints, sink, cwd/run-tree
++        checks, hashes and the receipt; every cleanup outcome is incorporated BEFORE the record is published; any
++        failure clears 'settled' and latches."""
+         if self.settled_rec is not None:
+             return self.settled_rec
+         problems = []
+         rc = self.reap_robust()
+         if self.quarantined and self.quarantine_receipt_state != "written":
+             problems.append("quarantine receipt not published (%s)" % self.quarantine_receipt_state)
++        if self.quarantined:
++            problems.append("quarantined: UNSETTLED, chunk claim voided, parent disposition")
+         stream_alive = None
+         if self.reader is not None and self.reader.ident is not None:
+             self.reader.join(STREAM_JOIN)
+             stream_alive = self.reader.is_alive()
+         else:
+             problems.append("no started capture reader")  # r6#2: explicit settlement failure
+-            try:
+-                self.proc.stdout.close()
+-            except Exception as exc:
+-                problems.append("stdout close %r" % exc)
+-            try:
+-                self.capture.close()
+-            except Exception as exc:
+-                problems.append("capture close %r" % exc)
++            for what, fn in (("stdout close", self.proc.stdout.close), ("capture close", self.capture.close)):
++                try:
++                    fn()                           # V6: independent closes
++                except Exception as exc:
++                    problems.append("%s %r" % (what, exc))
++        if self.reader_error is not None:
++            problems.append("capture reader error %s" % self.reader_error)
+         feed_rec = filt_rec = None
+-        if self.feeder is not None:   # S2: the checker is reaped, so a held feed now meets a closed read end
++        if self.feeder is not None:
++            if not self.feeder.started:
++                self.fd_errors += self.feeder.abandon()   # V6: before the record is published
+             try:
+                 feed_rec = self.feeder.finish(STREAM_JOIN)
+                 if not feed_rec["started"] or feed_rec["thread_alive_after_join"]:
+@@ -914,20 +1289,22 @@
+                 filt_rec = {"raw_bytes": f["raw_bytes"], "raw_sha256": f["raw_sha"].hexdigest(), "raw_eof": f["raw_eof"],
+                             "header_clauses": f["header_clauses"], "dup_bytes_dropped": f["dup_bytes"],
+                             "dup_lines_at_or_below_header_clauses": f["dup_low"],
+-                            "dup_lines_above_header_clauses": f["dup_high"], "kept_bytes": self.captured,
+-                            "unterminated_tail_bytes": f["tail"]}
++                            "dup_lines_above_header_clauses": f["dup_high"], "nondropped_bytes": self.captured,
++                            "capture_file_bytes": self.capture_written, "unterminated_tail_bytes": f["tail"],
++                            "over_long_line_flushes": f["flushes"]}
++        if self.fd_errors:
++            problems.append("descriptor close errors %r" % self.fd_errors)
+         group_empty = None
+         try:
+-            os.killpg(self.pgid, 0)
+-            group_empty = False
+-        except ProcessLookupError:
+-            group_empty = True
++            group_empty = list_pids(PROC_PGRP_ONLY, self.pgid) == []   # V1: zombies are listed too
++            if not group_empty:
++                problems.append("process group not empty after reap")
+         except BaseException as exc:
+-            problems.append("killpg probe %r" % exc)
++            problems.append("group census failed %r" % exc)
+         try:
+-            after, _ = self.census()
++            after = descendants(self.pid, self.pgid)
+             if after:
+-                problems.append("descendants after reap %r" % after)
++                problems.append("descendants after reap %r" % after[:10])
+         except BaseException as exc:
+             problems.append("post-reap census failed %r" % exc)
+         if self.descendants:
+@@ -937,29 +1314,30 @@
+             try:
+                 sink_rec = self.sink_obj.finish()
+                 if not sink_rec["sink_settled"]:
+-                    problems.append("proof sink not settled")
++                    problems.append("proof collector not settled")
+             except BaseException as exc:
+-                problems.append("sink finish failed %r" % exc)
++                problems.append("collector finish failed %r" % exc)
+         try:
+             if os.listdir(self.cwd):
+                 problems.append("child cwd not empty: %r" % os.listdir(self.cwd)[:10])
+         except BaseException as exc:
+             problems.append("cwd check failed %r" % exc)
+-        if self.lane_before is not None:
+-            try:
+-                expected = {self.out_path, self.launch_path, self.settle_path, self.quarantine_path}  # S1: no proof file
+-                now = lane_files()
+-                unexpected = [p for p, v in now.items()
+-                              if p not in expected and (p not in self.lane_before or self.lane_before[p] != v)]
+-                if unexpected:
+-                    problems.append("unexpected lane file changes %r" % unexpected[:10])
+-            except BaseException as exc:
+-                problems.append("lane census failed %r" % exc)
++        try:
++            expected = {self.out_path, self.launch_path, self.settle_path, self.quarantine_path}  # S1: no proof file
++            now = run_tree_census()
++            changed = sorted(p for p in set(now) | set(self.tree_before)
++                             if p not in expected and now.get(p) != self.tree_before.get(p))
++            if changed:
++                problems.append("unexpected run-tree changes (added/changed/removed) %r" % changed[:10])
++        except BaseException as exc:
++            problems.append("run-tree census failed %r" % exc)
+         diag = []
+         out_sha = None
+         if stream_alive is False:
+             try:
+-                out_sha = sha_file(self.out_path)[0]
++                out_sha, out_len = sha_file(self.out_path)
++                if out_len != self.capture_written:
++                    problems.append("capture file bytes %d != written %d" % (out_len, self.capture_written))
+                 with open(self.out_path, "rb") as f:
+                     diag = sorted(set(m.group(0) for m in RESOURCE_DIAG.finditer(f.read().decode("utf-8", "replace"))))
+             except BaseException as exc:
+@@ -969,7 +1347,10 @@
+         rec = {"seq": self.seq, "label": self.label, "pid": self.pid, "pgid": self.pgid,
+                "identity_at_start": self.identity_at_start, "argv": self.argv, "returncode": rc,
+                "stop": self.stop or "self", "seconds": round(time.time() - self.started, 3),
+-               "captured_bytes": self.captured, "capture_over_cap": self.over_cap, "reader_error": self.reader_error,
++               "elapsed_mono_s": round(time.monotonic() - self.started_mono, 3),
++               "launch_order": self.launch_order, "cancel_order": STATE["cancel_order"],
++               "nondropped_bytes": self.captured, "capture_file_bytes": self.capture_written,
++               "capture_over_cap": self.over_cap, "reader_error": self.reader_error,
+                "stream_thread_alive_after_join": stream_alive, "group_empty_after_reap": group_empty,
+                "quarantined": self.quarantined, "problems": problems, "resource_diagnostics": diag,
+                "proof_sink": sink_rec, "stdin_feed": feed_rec, "stdout_filter": filt_rec,
+@@ -995,43 +1376,46 @@
+ 
+ 
+ def supervise(child, sink):
+-    """Monitor until exit or a single trip; any monitor exception is itself a trip."""
++    """Monitor until exit or a single trip; any monitor exception is itself a trip.  V1: census and RSS through
++    libproc (no child process); V3: absolute AND elapsed (monotonic) deadlines; V6: a capture reader error trips."""
+     me = os.getpid()
+     last_rss = last_reg = 0.0
+     peak = 0
+     while child.alive():
+         try:
+-            now = time.time()
++            now, mono = time.time(), time.monotonic()
+             if cancelled():
+                 child.term("owner_cancel_sigterm")
+-            elif now > child.deadline:
+-                child.term("absolute_or_wall_deadline")
++            elif now > child.deadline or mono > child.deadline_mono:
++                child.term("absolute_or_elapsed_deadline")
+             elif sink is not None and sink.over_cap:
+                 child.term("proof_cap")
+             elif sink is not None and sink.error:
+                 child.term("proof_sink_error")
+             elif child.feeder is not None and child.feeder.exception is not None:
+                 child.term("feeder_exception")
++            elif child.reader_error is not None:
++                child.term("capture_reader_error")
+             elif child.over_cap:
+                 child.term("capture_cap")
+             elif free_bytes() < FREE_FLOOR:
+                 child.term("inflight_disk_floor")
+-            if child.term_sent_at is None and now - last_rss >= 1.0:
+-                last_rss = now
++            if child.term_sent_at is None and mono - last_rss >= 1.0:
++                last_rss = mono
+                 found, rss = child.census()
+-                rows = ps_table()
+-                runner_rss = sum(r[3] for r in rows if r[0] == me) * 1024
++                runner_rss = task_rss(me)
+                 if found:
+                     child.descendants.extend(found)
+                     child.term("descendant_process")
+-                total = rss + max(runner_rss, buffer_charge())  # S5: the RAM proof buffer is charged in full
+-                peak = max(peak, total)
+-                if runner_rss == 0 or (rss == 0 and child.alive()):
++                elif runner_rss is None or (rss is None and child.alive()):
+                     child.term("rss_unreadable")
+-                elif total > LANE_RSS_TRIP:
+-                    child.term("lane_rss")
+-            if child.term_sent_at is None and now - last_reg >= 5.0:
+-                last_reg = now
++                else:
++                    total = (rss or 0) + max(runner_rss, buffer_charge())  # S5/V5: proof RAM charged in full
++                    peak = max(peak, total)
++                    if total > LANE_RSS_TRIP:
++                        child.term("lane_rss")
++            if child.term_sent_at is None and mono - last_reg >= 5.0:
++                last_reg = mono
+                 if registry_refusals():
+                     child.term("stop_registry")
+         except Exception as exc:
+@@ -1071,7 +1455,9 @@
+         if sink is not None and (ch is None or ch.proc is None):
+             sink.finish()  # never-spawned producer: unblock and join the reader
+         if feeder is not None and not feeder.started:
+-            feeder.abandon()  # S2: never-spawned checker or never-started feeder: close both pipe ends
++            errs = feeder.abandon()  # never-spawned checker: both pipe ends closed; V6: errors latch
++            if errs:
++                latch("never-started feeder endpoint close errors %r" % (errs,))
+ 
+ 
+ def settle_all():
+@@ -1122,14 +1508,14 @@
+ 
+ def run_check(cnf_path, buf, checker, label, seconds, reserve, inputs, mode="plain"):
+     """S2: one pinned checker [DRAT_X, CNF, -i, -t S] with the frozen RAM buffer on stdin via an owned Feeder;
+-    the binary is re-hashed immediately before the spawn."""
++    the binary is re-hashed when its child is prepared."""
+     name, path, pin = checker
+     if sha_file(path)[0] != pin:
+         latch("checker %s binary pin mismatch at spawn" % name)
+         raise RuntimeError("checker %s binary pin mismatch" % name)
+     if buf.released:
+         raise RuntimeError("proof buffer already released")
+-    feeder = Feeder(buf.blocks, mode)
++    feeder = Feeder(buf.blocks, mode, label="%s.drat%s" % (label, name))
+     return run_child([path, cnf_path, "-i", "-t", str(seconds)], "%s.drat%s" % (label, name), seconds, reserve,
+                      dict(inputs, cnf=cnf_path, checker=[name, path, pin], proof_source="RAM buffer on stdin",
+                           feed_mode=mode), feeder=feeder)
+@@ -1146,67 +1532,89 @@
+     return [s[:200] for s in lines if s.startswith("s ")][:8]
+ 
+ 
++FORBIDDEN = (("early EOF", "EARLY_EOF"), ("clauses less than expected", "LESS_THAN_EXPECTED"),
++             ("trivial UNSAT", "TRIVIAL_UNSAT"), ("ERROR", "ERROR"), ("MEMOUT", "MEMOUT"),
++             ("wrong binary prefix", "WRONG_PREFIX"), ("no empty clause detected", "NO_EMPTY_CLAUSE"),
++             ("NOT VERIFIED", "NOT_VERIFIED"), ("TIMEOUT", "TIMEOUT"), ("illegal literal", "ILLEGAL_LITERAL"),
++             ("error opening", "ERROR_OPENING"), ("failed to reallocate", "FAILED_REALLOC"))
++
++
++def defect(code, text):
++    """V10: every defect carries a stable ID: 'ID: text'."""
++    return "%s: %s" % (code, text)
++
++
++def defect_ids(defects):
++    """V10: the complete, sorted list of stable defect IDs (the comparison key of controls and tests)."""
++    return sorted(d.split(": ", 1)[0] for d in defects)
++
++
+ def checker_defects(name, cnf_expect, buf_sha, buf_bytes, drat_rec, drat_lines):
+-    """S4: per-checker P-STREAM qualification; every defect names the checker."""
++    """S4/V9/V10: per-checker P-STREAM qualification with canonical (unique) parser records; every defect ID is
++    prefixed with the checker name."""
+     bad = []
++    X = name + "."
+     feed = drat_rec.get("stdin_feed") or {}
+     filt = drat_rec.get("stdout_filter") or {}
+-    if drat_rec["returncode"] != 0 or drat_rec["stop"] != "self":
+-        bad.append("checker not self-exit rc0")
+-    if status_lines(drat_lines) != ["s VERIFIED"]:
+-        bad.append("checker status lines not exactly ['s VERIFIED']")
++    if drat_rec.get("returncode") != 0 or drat_rec.get("stop") != "self":
++        bad.append(defect(X + "EXIT", "checker not self-exit rc0"))
++    st = status_lines(drat_lines)
++    if st != ["s VERIFIED"]:
++        bad.append(defect(X + "STATUS", "status lines %r != ['s VERIFIED']" % (st,)))
+     v, c = cnf_expect[2].split()[2:4]
+-    if ("c parsing input formula with %s variables and %s clauses" % (v, c)) not in drat_lines:
+-        bad.append("checker parse header line missing/mismatched")
+-    if STDIN_LINE not in drat_lines:
+-        bad.append("checker did not report reading the proof from stdin")
++    hdr = [s[:200] for s in drat_lines if s.startswith("c parsing input formula")]
++    if hdr != ["c parsing input formula with %s variables and %s clauses" % (v, c)]:
++        bad.append(defect(X + "HEADER", "parser header records %r != the CNF pin header" % (hdr[:4],)))
++    rd = [s[:200] for s in drat_lines if s.startswith("c reading proof")]
++    if rd != [STDIN_LINE]:
++        bad.append(defect(X + "STDIN", "stdin records %r != [%r]" % (rd[:4], STDIN_LINE)))
+     if feed.get("mode") != "plain":
+-        bad.append("feed mode is not plain")
++        bad.append(defect(X + "FEED_MODE", "feed mode %r is not plain" % (feed.get("mode"),)))
+     if feed.get("fed_bytes") != buf_bytes or feed.get("fed_sha256") != buf_sha or feed.get("proof_bytes_fed") != buf_bytes:
+-        bad.append("fed bytes/SHA-256 != collected proof buffer")
++        bad.append(defect(X + "FEED_DIGEST", "fed bytes/SHA-256 != collected proof buffer"))
+     if feed.get("started") is not True or feed.get("delivery_error") is not None or feed.get("exception") is not None \
+             or feed.get("close_error") is not None or feed.get("thread_alive_after_join") is not False:
+-        bad.append("stdin feed incomplete, failed or unsettled")
++        bad.append(defect(X + "FEED_STATE", "stdin feed incomplete, failed or unsettled"))
+     fb = feed.get("fed_bytes")
+-    if not isinstance(fb, int) or ("c finished parsing, read %d bytes from proof file" % fb) not in drat_lines:
+-        bad.append("checker-consumed proof bytes != fed bytes")
+-    if filt.get("raw_eof") is not True or not isinstance(filt.get("dup_bytes_dropped"), int) \
+-            or filt.get("raw_bytes") != drat_rec["captured_bytes"] + filt["dup_bytes_dropped"]:
+-        bad.append("checker output filter accounting mismatch")
+-    for pat in ("early EOF", "clauses less than expected", "trivial UNSAT", "ERROR", "MEMOUT",
+-                "wrong binary prefix", "no empty clause detected", "NOT VERIFIED", "TIMEOUT",
+-                "illegal literal", "error opening", "failed to reallocate"):
++    fin = [s[:200] for s in drat_lines if s.startswith("c finished parsing")]
++    if not isinstance(fb, int) or isinstance(fb, bool) or fin != ["c finished parsing, read %d bytes from proof file" % fb]:
++        bad.append(defect(X + "CONSUMED", "consumed records %r != [read %r bytes]" % (fin[:4], fb)))
++    nd = drat_rec.get("nondropped_bytes")
++    if filt.get("raw_eof") is not True or not isinstance(filt.get("dup_bytes_dropped"), int) or not isinstance(nd, int) \
++            or isinstance(nd, bool) or filt.get("raw_bytes") != nd + filt["dup_bytes_dropped"]:
++        bad.append(defect(X + "FILTER", "checker output filter accounting mismatch"))
++    for pat, key in FORBIDDEN:
+         if any(pat in s for s in drat_lines):
+-            bad.append("checker output contains %r" % pat)
+-    if not drat_rec["settled"] or drat_rec["capture_over_cap"]:
+-        bad.append("settlement/capture defect seq %s" % drat_rec["seq"])
+-    return ["checker %s: %s" % (name, b) for b in bad]
++            bad.append(defect(X + "FORBIDDEN." + key, "checker output contains %r" % pat))
++    if not drat_rec.get("settled") or drat_rec.get("capture_over_cap") is not False:
++        bad.append(defect(X + "SETTLE", "settlement/capture defect seq %s" % drat_rec.get("seq")))
++    return bad
+ 
+ 
+ def qualify_stream(cnf_expect, solver_rec, kissat_lines, proof_cap, checks, cnf_post, buf_post):
+-    """S4: item-level qualification over the solver leg, the RAM buffer and every pinned checker in order;
+-    checks = [(name, drat_rec, drat_lines), ...].  UNSAT requires the empty list."""
++    """S4/V9/V10: item-level qualification over the solver leg (complete output exactly ['s UNSATISFIABLE']), the
++    RAM buffer and every pinned checker in order; checks = [(name, drat_rec, drat_lines), ...].  UNSAT requires []."""
+     bad = []
+-    if solver_rec["returncode"] != 20 or solver_rec["stop"] != "self":
+-        bad.append("solver not self-exit rc20")
+-    if status_lines(kissat_lines) != ["s UNSATISFIABLE"]:
+-        bad.append("solver status lines not exactly ['s UNSATISFIABLE']")
++    if solver_rec.get("returncode") != 20 or solver_rec.get("stop") != "self":
++        bad.append(defect("SOLVER_EXIT", "solver not self-exit rc20"))
++    if kissat_lines != ["s UNSATISFIABLE"]:
++        bad.append(defect("SOLVER_OUTPUT", "complete solver output %r != ['s UNSATISFIABLE']" % (kissat_lines[:4],)))
+     buf = solver_rec.get("proof_sink") or {}
+     if not sink_complete(solver_rec.get("proof_sink")):
+-        bad.append("proof buffer incomplete/over cap/error")
++        bad.append(defect("BUFFER_INCOMPLETE", "proof buffer incomplete/over cap/error"))
+     buf_sha, buf_bytes = buf.get("sha256_of_retained"), buf.get("retained")
+-    if not isinstance(buf_bytes, int) or buf_bytes <= 0 or buf_bytes > proof_cap:
+-        bad.append("proof size outside (0, cap]")
++    if not isinstance(buf_bytes, int) or isinstance(buf_bytes, bool) or buf_bytes <= 0 or buf_bytes > proof_cap:
++        bad.append(defect("BUFFER_SIZE", "proof size outside (0, cap]"))
+     if [c[0] for c in checks] != [c[0] for c in CHECKERS]:
+-        bad.append("not every pinned checker ran, in order")
++        bad.append(defect("CHECKER_SET", "not every pinned checker ran, in order"))
+     for name, rec, lines in checks:
+         bad += checker_defects(name, cnf_expect, buf_sha, buf_bytes, rec, lines)
+     if cnf_post != (cnf_expect[0], cnf_expect[1]):
+-        bad.append("CNF file digest/bytes != expected")
++        bad.append(defect("CNF_POST", "CNF file digest/bytes != expected"))
+     if buf_post != [buf_sha, buf_bytes]:
+-        bad.append("proof buffer re-hash after the checks != collector measurement")
+-    if not solver_rec["settled"] or solver_rec["capture_over_cap"]:
+-        bad.append("settlement/capture defect seq %s" % solver_rec["seq"])
++        bad.append(defect("BUFFER_POST", "proof buffer re-hash after the checks != collector measurement"))
++    if not solver_rec.get("settled") or solver_rec.get("capture_over_cap") is not False:
++        bad.append(defect("SOLVER_SETTLE", "settlement/capture defect seq %s" % solver_rec.get("seq")))
+     return bad
+ 
+ 
+@@ -1278,9 +1686,13 @@
+ 
+ 
+ def controls():
+-    """S6: same-binary positive and intended-reason controls through the RAM/stdin transport for BOTH pinned
+-    checkers; stops at the first refused, unhealthy or not-as-intended control (later controls are not started)."""
++    """S6/V11: same-binary positive and intended-reason controls through the RAM/stdin transport for BOTH pinned
++    checkers.  Each checker's intended predicate is evaluated before the next child is launched; C2/C3/C4 compare
++    complete defect-ID sets; C6/C7/C7b are bound to the pinned binaries' measured or source-stated diagnostics.
++    Stops at the first refused, unhealthy or not-as-intended control (later controls are not started).  V5: every
++    control buffer is released in the finally."""
+     recs = {}
++    bufs = []
+     d = os.path.join(STATE["out"], "controls")
+     os.mkdir(d)
+     per_child = LOG_CAP + 3 * RECORD_MAX
+@@ -1289,143 +1701,177 @@
+         recs[name] = dict(recs.get(name, {}), failed=why)
+         return False, recs
+ 
+-    def both(tag, cnf_path, pins, buf, mode):
++    def checked(tag, cnf_path, pins, buf, mode, predicate):
+         out = []
+         for chk in CHECKERS:
+             dr, dl, rf = run_check(cnf_path, buf, chk, tag, CONTROL_CHILD_WALL, per_child, pins, mode)
+             if dr is None:
+                 return out, "checker %s refused %r" % (chk[0], rf)
+             out.append((chk[0], dr, dl))
++            why = predicate(chk[0], dr, dl)
++            if why:
++                return out, "checker %s: %s" % (chk[0], why)   # V11: the next checker is never launched
+         return out, None
+ 
+     def view(checks):
+         return {n: {"drat": r, "checker_status_lines": status_lines(l)} for n, r, l in checks}
+ 
+-    raw = php_cnf(6, 5)
+-    cnf = os.path.join(d, "php6x5.cnf")
+-    h, n = write_bytes_x(cnf, raw)
+-    exp = (h, n, raw.split(b"\n", 1)[0].decode())
+-    ks, kl, rf, b1 = run_kissat(cnf, "C1", CONTROL_CHILD_WALL, CONTROL_PROOF_CAP, per_child, {"cnf_pin": [h, n]})
+-    if ks is None:
+-        return fail("C1_positive_php6x5", "refused %r" % rf)
+-    recs["C1_positive_php6x5"] = {"kissat": ks}
+-    if not (healthy(ks) and sink_complete(ks["proof_sink"])):
+-        return fail("C1_positive_php6x5", "solver leg unhealthy or proof buffer incomplete")
+-    ph, pn = ks["proof_sink"]["sha256_of_retained"], ks["proof_sink"]["retained"]
+-    pins = {"cnf_pin": [h, n], "proof_pin": [ph, pn]}
+-    c1k, why = both("C1", cnf, pins, b1, "plain")
+-    if why:
+-        return fail("C1_positive_php6x5", why)
+-    c1 = qualify_stream(exp, ks, kl, CONTROL_PROOF_CAP, c1k, sha_file(cnf), b1.digest())
+-    recs["C1_positive_php6x5"].update(intended="PASS through checker A and checker B", defects=c1, checkers=view(c1k))
+-    if c1 != [] or not all(completed_checker(r, l, "VERIFIED") for _, r, l in c1k):
+-        return fail("C1_positive_php6x5", "positive control did not pass")
+-    # C2 (deterministic): well-formed CNF, same header and clause count, first clause missing one literal.
+-    lines = raw.split(b"\n")
+-    first = lines[1].split()
+-    mutated = b"\n".join([lines[0], b" ".join(first[:-2] + first[-1:])] + lines[2:])
+-    cnf2 = os.path.join(d, "php6x5-one-literal-removed.cnf")
+-    h2, n2 = write_bytes_x(cnf2, mutated)
+-    c2k, why = both("C2", cnf2, {"cnf_pin": [h2, n2], "proof_pin": [ph, pn]}, b1, "plain")
+-    if why:
+-        return fail("C2_mutated_cnf_digest", why)
+-    c2 = qualify_stream(exp, ks, kl, CONTROL_PROOF_CAP, c2k, sha_file(cnf2), b1.digest())
+-    recs["C2_mutated_cnf_digest"] = {"intended": "REJECT with 'CNF file digest/bytes != expected'; both checkers "
+-                                                 "completed", "defects": c2, "checkers": view(c2k)}
+-    if not (all(completed_checker(r, l, "VERIFIED") or completed_checker(r, l, "NOT VERIFIED") for _, r, l in c2k)
+-            and "CNF file digest/bytes != expected" in c2):
+-        return fail("C2_mutated_cnf_digest", "intended reason or completed checker missing")
+-    # C3: the valid proof + one trailing byte appended IN TRANSIT: completed 's VERIFIED' yet rejected.
+-    c3k, why = both("C3", cnf, pins, b1, "suffix")
+-    if why:
+-        return fail("C3_trailing_proof_byte", why)
+-    c3 = qualify_stream(exp, ks, kl, CONTROL_PROOF_CAP, c3k, sha_file(cnf), b1.digest())
+-    recs["C3_trailing_proof_byte"] = {"intended": "per checker: completed 's VERIFIED' but REJECT: feed mode, fed != "
+-                                                  "buffer, consumed != fed and 'wrong binary prefix'",
+-                                      "defects": c3, "checkers": view(c3k)}
+-    for name, r, l in c3k:
+-        want = ["checker %s: %s" % (name, w) for w in ("feed mode is not plain",
+-                                                       "fed bytes/SHA-256 != collected proof buffer",
+-                                                       "checker-consumed proof bytes != fed bytes",
+-                                                       "checker output contains 'wrong binary prefix'")]
+-        if not (completed_checker(r, l, "VERIFIED") and all(w in c3 for w in want)
+-                and (r.get("stdin_feed") or {}).get("fed_bytes") == pn + len(SUFFIX)):
+-            return fail("C3_trailing_proof_byte", "intended reason or completed checker missing (%s)" % name)
+-    # C4: satisfiable PHP(5,5) with the PHP(6,5) proof: each checker completed 's NOT VERIFIED' rc1.
+-    raw4 = php_cnf(5, 5)
+-    cnf4 = os.path.join(d, "php5x5-sat.cnf")
+-    h4, n4 = write_bytes_x(cnf4, raw4)
+-    c4k, why = both("C4", cnf4, {"cnf_pin": [h4, n4], "proof_pin": [ph, pn]}, b1, "plain")
+-    if why:
+-        return fail("C4_sat_formula_foreign_proof", why)
+-    recs["C4_sat_formula_foreign_proof"] = {"intended": "each checker completed exactly ['s NOT VERIFIED'] rc1",
+-                                            "checkers": view(c4k)}
+-    if not all(completed_checker(r, l, "NOT VERIFIED") for _, r, l in c4k):
+-        return fail("C4_sat_formula_foreign_proof", "intended reason or completed checker missing")
+-    # C5: HARD RAM proof cap 4096 B on PHP(11,10): never retains beyond 4096, trip proof_cap, settled.
+-    raw5 = php_cnf(11, 10)
+-    cnf5 = os.path.join(d, "php11x10.cnf")
+-    h5, n5 = write_bytes_x(cnf5, raw5)
+-    ks5, kl5, rf, b5 = run_kissat(cnf5, "C5", CONTROL_CHILD_WALL, 4096, per_child, {"cnf_pin": [h5, n5]})
+-    if ks5 is None:
+-        return fail("C5_proof_hard_cap", "refused %r" % rf)
+-    b5.release()
+-    ps5 = ks5["proof_sink"] or {}
+-    recs["C5_proof_hard_cap"] = {"intended": "stop=proof_cap, buffer retained<=4096 B, settled, over_cap and joined",
+-                                 "kissat": ks5}
+-    if not (ks5["stop"] == "proof_cap" and ps5.get("retained", 4097) <= 4096 and ps5.get("over_cap")
+-            and ks5["settled"] and ps5.get("thread_alive_after_join") is False and not ks5["resource_diagnostics"]):
+-        return fail("C5_proof_hard_cap", "intended reason or settlement missing")
+-    # C6: kissat --time=1, no proof: clean self-exit without a verdict.
+-    raw6 = php_cnf(13, 12)
+-    cnf6 = os.path.join(d, "php13x12.cnf")
+-    h6, n6 = write_bytes_x(cnf6, raw6)
+-    ks6, kl6, rf, _ = run_kissat(cnf6, "C6", 1, None, per_child, {"cnf_pin": [h6, n6]})
+-    if ks6 is None:
+-        return fail("C6_native_time_limit", "refused %r" % rf)
+-    st6 = status_lines(kl6)
+-    recs["C6_native_time_limit"] = {"intended": "healthy self-exit, rc not 10/20, no SAT/UNSAT status line",
+-                                    "kissat": ks6, "status_lines": st6}
+-    if not (healthy(ks6) and ks6["returncode"] not in (10, 20)
+-            and not any(s in ("s SATISFIABLE", "s UNSATISFIABLE") for s in st6)):
+-        return fail("C6_native_time_limit", "intended reason or health missing")
+-    # C7: missing input with a RAM proof buffer: kissat self-exit rc>0 naming the path; the collector settles.
+-    absent = os.path.join(d, "absent.cnf")
+-    ks7, kl7, rf, b7 = run_kissat(absent, "C7", 10, CONTROL_PROOF_CAP, per_child, {"cnf_pin": None})
+-    if ks7 is None:
+-        return fail("C7_no_input_sink_liveness", "refused %r" % rf)
+-    b7.release()
+-    recs["C7_no_input_sink_liveness"] = {"intended": "healthy self-exit rc>0 not 10/20 mentioning absent.cnf; "
+-                                                     "collector joined", "kissat": ks7}
+-    if not (healthy(ks7) and ks7["returncode"] not in (0, 10, 20) and any("absent.cnf" in s for s in kl7)
+-            and ks7["proof_sink"]["thread_alive_after_join"] is False):
+-        return fail("C7_no_input_sink_liveness", "intended reason or settlement missing")
+-    # C7b: missing CNF for each checker with a HELD feed: the checker exits before reading stdin, the feeder
+-    # then meets a closed read end (EPIPE, 0 bytes fed), every thread settles, nothing hangs.
+-    absent2 = os.path.join(d, "absent-checker.cnf")
+-    c7k, why = both("C7b", absent2, {"cnf_pin": None, "proof_pin": [ph, pn]}, b1, "hold")
+-    b1.release()
+-    if why:
+-        return fail("C7b_checker_no_input_feed_liveness", why)
+-    recs["C7b_checker_no_input_feed_liveness"] = {"intended": "per checker: healthy self-exit rc not 0 naming "
+-                                                              "absent-checker.cnf; held feed EPIPE with 0 bytes fed; "
+-                                                              "feeder joined", "checkers": view(c7k)}
+-    for name, r, l in c7k:
+-        f7 = r.get("stdin_feed") or {}
+-        if not (healthy(r) and r["returncode"] != 0 and any("absent-checker.cnf" in s for s in l)
+-                and f7.get("fed_bytes") == 0 and str(f7.get("delivery_error")).startswith("EPIPE")
+-                and f7.get("hold_released_by_event") is True and f7.get("thread_alive_after_join") is False):
+-            return fail("C7b_checker_no_input_feed_liveness", "intended reason or settlement missing (%s)" % name)
+-    return True, recs
++    try:
++        raw = php_cnf(6, 5)
++        cnf = os.path.join(d, "php6x5.cnf")
++        h, n = write_bytes_x(cnf, raw)
++        exp = (h, n, raw.split(b"\n", 1)[0].decode())
++        ks, kl, rf, b1 = run_kissat(cnf, "C1", CONTROL_CHILD_WALL, CONTROL_PROOF_CAP, per_child, {"cnf_pin": [h, n]})
++        bufs.append(b1)
++        if ks is None:
++            return fail("C1_positive_php6x5", "refused %r" % rf)
++        recs["C1_positive_php6x5"] = {"kissat": ks, "kissat_lines": kl[:8]}
++        if not (healthy(ks) and ks["returncode"] == 20 and kl == ["s UNSATISFIABLE"] and sink_complete(ks["proof_sink"])):
++            return fail("C1_positive_php6x5", "solver leg not exactly rc20 ['s UNSATISFIABLE'], unhealthy or buffer incomplete")
++        ph, pn = ks["proof_sink"]["sha256_of_retained"], ks["proof_sink"]["retained"]
++        pins = {"cnf_pin": [h, n], "proof_pin": [ph, pn]}
++
++        def positive(name, r, l):
++            ids = defect_ids(checker_defects(name, exp, ph, pn, r, l))
++            return None if ids == [] and completed_checker(r, l, "VERIFIED") else "positive predicate failed %r" % ids
++
++        c1k, why = checked("C1", cnf, pins, b1, "plain", positive)
++        recs["C1_positive_php6x5"]["checkers"] = view(c1k)
++        if why:
++            return fail("C1_positive_php6x5", why)
++        c1 = qualify_stream(exp, ks, kl, CONTROL_PROOF_CAP, c1k, sha_file(cnf), b1.digest())
++        recs["C1_positive_php6x5"].update(intended="PASS: qualify_stream == [] through checker A then checker B", defects=c1)
++        if c1 != []:
++            return fail("C1_positive_php6x5", "positive control did not pass %r" % defect_ids(c1))
++        # C2 (deterministic): same header and clause count, first clause missing one literal; the deterministic
++        # PHP(6,5) proof stays VERIFIED (measured in every earlier run), so the ONLY item defect is CNF_POST.
++        lines = raw.split(b"\n")
++        first = lines[1].split()
++        mutated = b"\n".join([lines[0], b" ".join(first[:-2] + first[-1:])] + lines[2:])
++        cnf2 = os.path.join(d, "php6x5-one-literal-removed.cnf")
++        h2, n2 = write_bytes_x(cnf2, mutated)
++        c2k, why = checked("C2", cnf2, {"cnf_pin": [h2, n2], "proof_pin": [ph, pn]}, b1, "plain", positive)
++        recs["C2_mutated_cnf_digest"] = {"intended": "each checker completed 's VERIFIED' with no checker defect; item "
++                                                     "defect IDs exactly ['CNF_POST']", "checkers": view(c2k)}
++        if why:
++            return fail("C2_mutated_cnf_digest", why)
++        c2 = qualify_stream(exp, ks, kl, CONTROL_PROOF_CAP, c2k, sha_file(cnf2), b1.digest())
++        recs["C2_mutated_cnf_digest"]["defects"] = c2
++        if defect_ids(c2) != ["CNF_POST"]:
++            return fail("C2_mutated_cnf_digest", "item defect IDs %r != ['CNF_POST']" % defect_ids(c2))
++        # C3: the valid proof + one trailing byte appended IN TRANSIT.
++        def suffix_reject(name, r, l):
++            ids = defect_ids(checker_defects(name, exp, ph, pn, r, l))
++            want = sorted(name + "." + k for k in ("FEED_MODE", "FEED_DIGEST", "CONSUMED", "FORBIDDEN.WRONG_PREFIX"))
++            if ids != want or not completed_checker(r, l, "VERIFIED") \
++                    or (r.get("stdin_feed") or {}).get("fed_bytes") != pn + len(SUFFIX):
++                return "suffix predicate failed: IDs %r != %r or not completed/fed+1" % (ids, want)
++            return None
++
++        c3k, why = checked("C3", cnf, pins, b1, "suffix", suffix_reject)
++        recs["C3_trailing_proof_byte"] = {"intended": "per checker: completed 's VERIFIED', checker defect IDs exactly "
++                                                      "{FEED_MODE, FEED_DIGEST, CONSUMED, FORBIDDEN.WRONG_PREFIX}, fed == "
++                                                      "buffer + 1", "checkers": view(c3k)}
++        if why:
++            return fail("C3_trailing_proof_byte", why)
++        # C4: satisfiable PHP(5,5) with the PHP(6,5) proof.
++        raw4 = php_cnf(5, 5)
++        cnf4 = os.path.join(d, "php5x5-sat.cnf")
++        h4, n4 = write_bytes_x(cnf4, raw4)
++        exp4 = (h4, n4, raw4.split(b"\n", 1)[0].decode())
++
++        def foreign_reject(name, r, l):
++            ids = defect_ids(checker_defects(name, exp4, ph, pn, r, l))
++            want = sorted(name + "." + k for k in ("EXIT", "STATUS", "FORBIDDEN.NOT_VERIFIED"))
++            if ids != want or not completed_checker(r, l, "NOT VERIFIED"):
++                return "foreign-proof predicate failed: IDs %r != %r or not completed 's NOT VERIFIED' rc1" % (ids, want)
++            return None
++
++        c4k, why = checked("C4", cnf4, {"cnf_pin": [h4, n4], "proof_pin": [ph, pn]}, b1, "plain", foreign_reject)
++        recs["C4_sat_formula_foreign_proof"] = {"intended": "per checker: completed exactly ['s NOT VERIFIED'] rc1, "
++                                                            "checker defect IDs exactly {EXIT, STATUS, "
++                                                            "FORBIDDEN.NOT_VERIFIED}", "checkers": view(c4k)}
++        if why:
++            return fail("C4_sat_formula_foreign_proof", why)
++        # C5: HARD RAM proof cap 4096 B on PHP(11,10).
++        raw5 = php_cnf(11, 10)
++        cnf5 = os.path.join(d, "php11x10.cnf")
++        h5, n5 = write_bytes_x(cnf5, raw5)
++        ks5, kl5, rf, b5 = run_kissat(cnf5, "C5", CONTROL_CHILD_WALL, 4096, per_child, {"cnf_pin": [h5, n5]})
++        bufs.append(b5)
++        if ks5 is None:
++            return fail("C5_proof_hard_cap", "refused %r" % rf)
++        ps5 = ks5["proof_sink"] or {}
++        recs["C5_proof_hard_cap"] = {"intended": "stop=proof_cap, retained<=4096 B, received == retained + discarded > "
++                                                 "retained, settled, over_cap, collector joined", "kissat": ks5}
++        if not (ks5["stop"] == "proof_cap" and ps5.get("retained", 4097) <= 4096 and ps5.get("over_cap")
++                and ps5.get("discarded", 0) > 0 and ps5.get("received") == ps5.get("retained", 0) + ps5.get("discarded", 0)
++                and ks5["settled"] and ps5.get("thread_alive_after_join") is False and not ks5["resource_diagnostics"]):
++            return fail("C5_proof_hard_cap", "intended reason or settlement missing")
++        # C6: kissat --time=1, no proof: bound to the measured timer expiry (rc 0, exactly ['s UNKNOWN'], >= 1 s).
++        raw6 = php_cnf(13, 12)
++        cnf6 = os.path.join(d, "php13x12.cnf")
++        h6, n6 = write_bytes_x(cnf6, raw6)
++        ks6, kl6, rf, _ = run_kissat(cnf6, "C6", 1, None, per_child, {"cnf_pin": [h6, n6]})
++        if ks6 is None:
++            return fail("C6_native_time_limit", "refused %r" % rf)
++        recs["C6_native_time_limit"] = {"intended": "healthy self-exit rc 0, complete output exactly ['s UNKNOWN'], "
++                                                    "elapsed >= 1.0 s (timer expiry; runs 008/010/012: rc 0, "
++                                                    "1.10-1.12 s)", "kissat": ks6, "kissat_lines": kl6[:8]}
++        if not (healthy(ks6) and ks6["returncode"] == 0 and kl6 == ["s UNKNOWN"] and ks6["seconds"] >= 1.0):
++            return fail("C6_native_time_limit", "intended timer-expiry outcome missing")
++        # C7: missing input with a RAM proof buffer: kissat's missing-input diagnostic, collector unblocked and joined.
++        absent = os.path.join(d, "absent.cnf")
++        ks7, kl7, rf, b7 = run_kissat(absent, "C7", 10, CONTROL_PROOF_CAP, per_child, {"cnf_pin": None})
++        bufs.append(b7)
++        if ks7 is None:
++            return fail("C7_no_input_sink_liveness", "refused %r" % rf)
++        ps7 = ks7["proof_sink"] or {}
++        want7 = ["kissat: error: can not read '%s'" % absent]
++        recs["C7_no_input_sink_liveness"] = {"intended": "healthy self-exit rc 1, complete output exactly %r (runs "
++                                                         "008/010/012), collector unblocked by the runner, 0 bytes, "
++                                                         "joined" % want7, "kissat": ks7, "kissat_lines": kl7[:8]}
++        if not (healthy(ks7) and ks7["returncode"] == 1 and kl7 == want7 and ps7.get("unblocked_by_runner") is True
++                and ps7.get("retained") == 0 and ps7.get("thread_alive_after_join") is False):
++            return fail("C7_no_input_sink_liveness", "intended missing-input outcome or collector settlement missing")
++        # C7b: missing CNF for each checker with a HELD feed: drat-trim.c:1425-1427 prints exactly
++        # 'c error opening "<path>".' and returns ERROR (-1, exit status 255) before reading stdin; the feeder then
++        # meets a closed read end (EPIPE, 0 bytes fed); every thread settles.
++        absent2 = os.path.join(d, "absent-checker.cnf")
++        want7b = ['c error opening "%s".' % absent2]
++
++        def missing_input(name, r, l):
++            f7 = r.get("stdin_feed") or {}
++            if not (healthy(r) and r["returncode"] == 255 and l == want7b and f7.get("fed_bytes") == 0
++                    and str(f7.get("delivery_error")).startswith("EPIPE") and f7.get("hold_released_by_event") is True
++                    and f7.get("thread_alive_after_join") is False):
++                return "missing-input predicate failed (rc %r, lines %r, feed %r)" % (r.get("returncode"), l[:4],
++                                                                                    {k: f7.get(k) for k in ("fed_bytes", "delivery_error")})
++            return None
++
++        c7k, why = checked("C7b", absent2, {"cnf_pin": None, "proof_pin": [ph, pn]}, b1, "hold", missing_input)
++        recs["C7b_checker_no_input_feed_liveness"] = {"intended": "per checker: healthy self-exit rc 255, complete output "
++                                                                  "exactly %r, held feed EPIPE with 0 bytes fed, hold "
++                                                                  "released by the reap, feeder joined" % want7b,
++                                                      "checkers": view(c7k)}
++        if why:
++            return fail("C7b_checker_no_input_feed_liveness", why)
++        return True, recs
++    finally:
++        for b in bufs:
++            if b is not None:
++                b.release()
++        recs["buffer_accounting"] = [b.accounting() for b in bufs if b is not None]
+ 
+ 
+ def terminal_gate():
+-    """Registry and disk evidence collected BEFORE the commit boundary; any failure latches."""
++    """Registry, disk and V2 lane-ledger evidence collected BEFORE the commit boundary; any failure latches."""
+     why = []
+     try:
+         why += registry_refusals()
+         if free_bytes() < FREE_FLOOR:
+             why.append("free below in-flight floor at terminal gate")
++        why += ledger_refusals(STATE["remaining_reserve"])[0]
+     except Exception as exc:
+         why.append("terminal gate exception %r" % exc)
+     for w in why:
+@@ -1454,41 +1900,96 @@
+             "sha256": hashlib.sha256(chosen).hexdigest()}
+ 
+ 
++HEX64 = re.compile(r"[0-9a-f]{64}")
++HEADER_RE = re.compile(r"p cnf [1-9][0-9]* [1-9][0-9]*")
++
++
++def _nat(x):
++    return isinstance(x, int) and not isinstance(x, bool) and x >= 0
++
++
++def item_shape_refusals(it):
++    """V12: exact item types and shape for this runner's family.  ms09: exact non-bool ints with
++    0 <= lo <= hi < denominator, canonical id 'bBBBBB:LLLLL-HHHHH', pinned list (path, sha256); ms06: canonical id
++    'ms06:bBBBBB:direct' and no interval fields; both: pinned CNF triple (sha256, bytes > 0, header)."""
++    if not isinstance(it, dict) or not _nat(it.get("b")):
++        return ["item or b malformed"]
++    why = []
++    cnf = it.get("cnf")
++    if not (isinstance(cnf, tuple) and len(cnf) == 3 and isinstance(cnf[0], str) and HEX64.fullmatch(cnf[0])
++            and _nat(cnf[1]) and cnf[1] > 0 and isinstance(cnf[2], str) and HEADER_RE.fullmatch(cnf[2])):
++        why.append("cnf pin malformed")
++    interval_keys = {"lo", "hi", "denominator", "list"}
++    if FAMILY == "ms09":
++        lo, hi, den, lst = it.get("lo"), it.get("hi"), it.get("denominator"), it.get("list")
++        if not (_nat(lo) and _nat(hi) and _nat(den) and lo <= hi < den):
++            why.append("interval not exact ints with 0 <= lo <= hi < denominator")
++        elif it.get("id") != "b%05d:%05d-%05d" % (it["b"], lo, hi):
++            why.append("id not canonical")
++        if not (isinstance(lst, tuple) and len(lst) == 2 and isinstance(lst[0], str) and isinstance(lst[1], str)
++                and HEX64.fullmatch(lst[1])):
++            why.append("list pin malformed")
++    else:
++        if interval_keys & set(it):
++            why.append("interval fields on a whole-case item")
++        if it.get("id") != "ms06:b%05d:direct" % it["b"]:
++            why.append("id not canonical")
++    return why
++
++
+ def main():
+     signal.signal(signal.SIGTERM, on_term)
+     signal.signal(signal.SIGINT, on_term)
+     if len(sys.argv) != 4:
+-        print("usage: pilot_file_drat_v14.py GO.json GO_SHA256 OUT_DIR", flush=True)
++        print("usage: pilot_stream_drat_%s_v2.py GO.json GO_SHA256 OUT_DIR" % FAMILY, flush=True)
+         return EXIT_PRESTART_REFUSED
+     go_path, go_sha, out_dir = sys.argv[1], sys.argv[2], os.path.abspath(sys.argv[3])
+-    if not out_dir.startswith(LANE + "/evidence/pilot-v1/"):
+-        print("REFUSED: output outside LANE/evidence/pilot-v1/", flush=True)
++    why = out_dir_refusal(out_dir)                 # V4: direct child of a symlink-free pilot-v1, new
++    if why:
++        print("REFUSED: " + why, flush=True)
++        return EXIT_PRESTART_REFUSED
++    shape = [w for it in ITEMS for w in item_shape_refusals(it)]
++    if shape or len({it.get("id") for it in ITEMS if isinstance(it, dict)}) != len(ITEMS):
++        print("REFUSED: item shape %r" % ((shape or ["duplicate item ids"])[:4],), flush=True)   # V12
+         return EXIT_PRESTART_REFUSED
+     self_sha = sha_file(os.path.abspath(__file__))[0]
+     try:
+         go = json.loads(read_pinned(go_path, go_sha))
+         read_pinned(*BINARY_IMPORTS)
+         read_pinned(*KISSAT_SOURCE)
++        contract = json.loads(read_pinned(*CONTRACT))
++        ceiling_ok = contract["resources"]["per_lane_new_disk_bytes"] == LANE_CEILING
+     except Exception as exc:
+-        print("REFUSED: GO/evidence unreadable or pin mismatch %r" % exc, flush=True)
++        print("REFUSED: GO/evidence/contract unreadable or pin mismatch %r" % exc, flush=True)
++        return EXIT_PRESTART_REFUSED
++    if not ceiling_ok:
++        print("REFUSED: contract per_lane_new_disk_bytes != LANE_CEILING", flush=True)
+         return EXIT_PRESTART_REFUSED
+     if go.get("runner_sha256") != self_sha or go.get("decision") != "GO" \
+             or go.get("items") != [it["id"] for it in ITEMS]:
+         print("REFUSED: GO record does not name this runner/items", flush=True)
+         return EXIT_PRESTART_REFUSED
+-    t_start = time.time()
+-    abs_end = t_start + CONTROLS_WORST_SECONDS + len(ITEMS) * ITEM_WORST_SECONDS
+-    if abs_end + SETTLE + MARGIN > t_start + MAX_CHUNK or abs_end > OWNED_SETTLED_BY - 180:
++    t_start, mono0 = time.time(), time.monotonic()
++    span = RUN_HELPER_SECONDS + CONTROLS_WORST_SECONDS + len(ITEMS) * ITEM_WORST_SECONDS
++    abs_end = t_start + span
++    if span + SETTLE + MARGIN > MAX_CHUNK or abs_end > OWNED_SETTLED_BY - 180:
+         print("REFUSED: chunk-fit", flush=True)
+         return EXIT_PRESTART_REFUSED
++    full_reserve = RUN_RESERVE + CONTROL_RESERVE + len(ITEMS) * ITEM_RESERVE
++    led_why, led = ledger_refusals(full_reserve)  # V2: before any retained write of this run
++    if led_why:
++        print("REFUSED: lane ledger %r" % (led_why,), flush=True)
++        return EXIT_PRESTART_REFUSED
+     os.mkdir(out_dir)
++    st = os.lstat(out_dir)
+     os.mkdir(os.path.join(out_dir, "children"))
+     os.mkdir(os.path.join(out_dir, "cwd"))
+-    STATE.update(out=out_dir, abs_end=abs_end, chunk_end=t_start + MAX_CHUNK,
+-                 remaining_reserve=RUN_RESERVE + CONTROL_RESERVE + len(ITEMS) * ITEM_RESERVE,
++    STATE.update(out=out_dir, out_identity=[st.st_dev, st.st_ino], abs_end=abs_end, chunk_end=t_start + MAX_CHUNK,
++                 mono0=mono0, mono_end=mono0 + span, mono_chunk_end=mono0 + MAX_CHUNK, remaining_reserve=full_reserve,
++                 output_limit=full_reserve, written=0, last_ledger=led,
+                  go={"path": go_path, "sha256": go_sha}, runner_sha=self_sha)
+     launch = {
+-        "schema": "PA19-96H-PSTREAM-LAUNCH-v1", "host_clock": clock(), "owner": "ContinuePA19",
++        "schema": "PA19-96H-PSTREAM-LAUNCH-v2", "host_clock": clock(), "owner": "ContinuePA19b",
+         "go": STATE["go"], "runner": {"path": os.path.abspath(__file__), "sha256": self_sha},
+         "pid": os.getpid(), "ppid": os.getppid(), "pgid": os.getpgid(0), "cwd": os.getcwd(), "argv": sys.argv,
+         "python": sys.version, "binaries": {"kissat": KISSAT, "drat_trim_lane_copy": DRAT, "drat_trim_old": DRAT_OLD,
+@@ -1497,7 +1998,15 @@
+         "inputs": {"encoder": ENC, "skeleton": SKEL, "items": ITEMS, "registry": REGISTRY,
+                    "launch_contract": LAUNCH_CONTRACT, "binary_imports": BINARY_IMPORTS,
+                    "kissat_source_evidence": KISSAT_SOURCE, "monitor": MONITOR, "observer_source": OBSERVER_SOURCE_SHA},
+-        "absolute_end_epoch": abs_end, "max_chunk_end_epoch": t_start + MAX_CHUNK,
++        "absolute_end_epoch": abs_end, "max_chunk_end_epoch": t_start + MAX_CHUNK, "elapsed_span_s": span,
++        "timing": {"run_helper_s": RUN_HELPER_SECONDS, "controls_worst_s": CONTROLS_WORST_SECONDS,
++                   "item_worst_s": ITEM_WORST_SECONDS, "settle_plus_margin_s": SETTLE + MARGIN, "max_chunk_s": MAX_CHUNK,
++                   "claim": "holds only if every owned process settles within its tail; a quarantined process voids "
++                            "it (UNSETTLED, waited for without bound, parent disposition)"},
++        "metadata_helper": {"binary": DATE, "argv": DATE_ARGV, "wall_s": HELPER_WALL, "term_wait_s": HELPER_TERM_WAIT,
++                            "allow_s": HELPER_ALLOW, "per_item": HELPERS_PER_ITEM, "per_run": HELPERS_PER_RUN,
++                            "policy": "owned, bounded, never concurrent with a native child, none after a cancel"},
++        "lane_ceiling": {"ceiling_bytes": LANE_CEILING, "contract": CONTRACT, "ledger_at_prestart": led},
+         "retained_output_reservation_bytes": STATE["remaining_reserve"],
+         "reservation_breakdown": {"run_reserve": RUN_RESERVE, "control_reserve": CONTROL_RESERVE,
+                                   "item_reserve_each": ITEM_RESERVE, "record_max": RECORD_MAX},
+@@ -1516,7 +2025,7 @@
+     run_record = os.path.join(out_dir, "launch-record.json")
+     STATE["run_record"] = {"path": run_record, "sha256": write_x(run_record, launch)}
+     print("LAUNCH_RECORD", run_record, flush=True)
+-    summary = {"schema": "PA19-96H-PSTREAM-SUMMARY-v1", "items": {}, "controls_ok": None, "stopped": None,
++    summary = {"schema": "PA19-96H-PSTREAM-SUMMARY-v2", "items": {}, "controls_ok": None, "stopped": None,
+                "terminal_policy": "exit code reports runner execution only; per-item records carry the scientific "
+                                   "status; an item counts only if qualify_stream (both pinned checkers on the same "
+                                   "RAM buffer), the terminal gate and the commit boundary all pass; case closure is "
+@@ -1534,7 +2043,8 @@
+ 
+ 
+ def run_plan(summary, outcome):
+-    """The plan body; every early stop is a plain return with the outcome flags set."""
++    """The plan body; every early stop is a plain return with the outcome flags set.  V5: an item's proof buffer is
++    released in a finally on every path; V12: item shape re-checked immediately before generation."""
+     out_dir = STATE["out"]
+     if sha_file(DRAT_OLD[0])[0] != DRAT_OLD[1] or sha_file(KISSAT[0])[0] != KISSAT[1]:
+         raise RuntimeError("binary pin mismatch")
+@@ -1561,6 +2071,9 @@
+     D = json.loads(read_pinned(*SKEL))
+     special = [p for p in D["profiles"] if list(p) != P0]
+     for it in ITEMS:
++        why = item_shape_refusals(it)
++        if why:
++            raise RuntimeError("item shape %r" % (why,))
+         label = it["id"].replace(":", "_")
+         rec = {"id": it["id"], "status": "UNKNOWN", "count_for_scientific_coverage": False,
+                "host_clock_start": clock()}
+@@ -1579,72 +2092,90 @@
+             raise RuntimeError("CNF file re-hash mismatch")
+         inputs = {"item": it["id"], "cnf_pin": [it["cnf"][0], it["cnf"][1]], "case_b": it["b"],
+                   "skeleton_pin": SKEL[1], "encoder_pin": ENC[1]}
+-        ks, kl, refused, buf = run_kissat(cnf_path, label, SOLVER_SECONDS, PROOF_CAP, LOG_CAP + 3 * RECORD_MAX, inputs)
+-        if ks is None:
+-            rec.update(reason="solver admission refused", refusal=refused, host_clock_end=clock())
+-            write_x(rec_path, rec)
+-            summary["items"][it["id"]] = {"status": "UNKNOWN", "reason": "solver admission refused"}
+-            summary["stopped"] = {"phase": "solver_admission", "item": it["id"], "why": refused}
+-            outcome["refused"] = True
+-            return
+-        rec["solver"] = ks
+-        rec["solver_status_lines"] = status_lines(kl)
+-        if ks["returncode"] == 10 and rec["solver_status_lines"] == ["s SATISFIABLE"] and ks["stop"] == "self" \
+-                and ks["settled"]:
+-            rec["status"] = "SAT_CANDIDATE"
+-            rec["sat"] = verify_sat(cnf_path, kl, label)
+-            rec["host_clock_end"] = clock()
+-            write_x(rec_path, rec)
+-            summary["items"][it["id"]] = {"status": "SAT_CANDIDATE", "sat": rec["sat"]}
+-            summary["stopped"] = {"phase": "sat_candidate", "item": it["id"]}
+-            outcome["sat"] = True
+-            return
+-        sink_ok = sink_complete(ks["proof_sink"])
+-        if sink_ok:
+-            rec["proof"] = {"sha256": ks["proof_sink"]["sha256_of_retained"], "bytes": ks["proof_sink"]["retained"],
+-                            "storage": "RAM only (P-STREAM); never written to disk"}
+-        if ks["returncode"] == 20 and ks["stop"] == "self" and ks["settled"] and sink_ok and not LATCH \
+-                and not cancelled():
+-            checks = []
+-            rec["checkers"] = {}
+-            for name, path, pin in CHECKERS:
+-                dr, dl, refused = run_check(cnf_path, buf, (name, path, pin), label, CHECK_SECONDS,
+-                                            LOG_CAP + 3 * RECORD_MAX,
+-                                            dict(inputs, proof_pin=[rec["proof"]["sha256"], rec["proof"]["bytes"]]))
+-                if dr is None:
+-                    rec.update(reason="checker %s admission refused" % name, refusal=refused, host_clock_end=clock())
+-                    write_x(rec_path, rec)
+-                    summary["items"][it["id"]] = {"status": "UNKNOWN", "reason": "checker %s admission refused" % name}
+-                    summary["stopped"] = {"phase": "checker_admission", "item": it["id"], "checker": name,
+-                                          "why": refused}
+-                    outcome["refused"] = True
+-                    return
+-                checks.append((name, dr, dl))
+-                rec["checkers"][name] = {"record": dr, "status_lines": status_lines(dl),
+-                                         "parse_lines": [s[:200] for s in dl if s.startswith("c parsing")
+-                                                         or s.startswith("c finished parsing") or s == STDIN_LINE][:6]}
+-                if checker_defects(name, it["cnf"], rec["proof"]["sha256"], rec["proof"]["bytes"], dr, dl) \
+-                        or LATCH or cancelled():
+-                    break  # S4: a later checker cannot rescue the item
+-            post_cnf, post_buf = sha_file(cnf_path), buf.digest()
+-            buf.release()
+-            rec["post_check_hashes"] = {"cnf": list(post_cnf), "proof_buffer": post_buf}
+-            rec["defects"] = qualify_stream(it["cnf"], ks, kl, PROOF_CAP, checks, post_cnf, post_buf)
+-            rec["host_clock_end"] = clock()
+-            rec["terminal_gate"] = terminal_gate()
+-            unsat = None
+-            if not rec["defects"] and not rec["terminal_gate"] and not LATCH:
+-                unsat = dict(rec, status="UNSAT", count_for_scientific_coverage=True,
+-                             commit="UNSAT chosen at an explicit commit boundary with no earlier cancel stamp or latch")
+-            commit = commit_record(rec_path, dict(rec, commit="UNKNOWN record"), unsat)
+-            rec["status"] = "UNSAT" if commit["committed_unsat"] else "UNKNOWN"
+-            summary.setdefault("commits", {})[it["id"]] = commit
+-        else:
+-            rec["reason"] = "no settled self-exit rc20 verdict with a complete proof buffer (or latch/cancel)"
+-            rec["host_clock_end"] = clock()
+-            write_x(rec_path, rec)
+-        buf.release()
+-        summary["items"][it["id"]] = {k: rec.get(k) for k in ("status", "defects", "terminal_gate", "reason", "proof")}
++        buf = None
++        try:
++            ks, kl, refused, buf = run_kissat(cnf_path, label, SOLVER_SECONDS, PROOF_CAP, LOG_CAP + 3 * RECORD_MAX,
++                                              inputs)
++            if ks is None:
++                rec.update(reason="solver admission refused", refusal=refused, host_clock_end=clock())
++                write_x(rec_path, rec)
++                summary["items"][it["id"]] = {"status": "UNKNOWN", "reason": "solver admission refused"}
++                summary["stopped"] = {"phase": "solver_admission", "item": it["id"], "why": refused}
++                outcome["refused"] = True
++                return
++            rec["solver"] = ks
++            rec["solver_lines"] = kl[:8]
++            rec["solver_status_lines"] = status_lines(kl)
++            if ks["returncode"] == 10 and rec["solver_status_lines"] == ["s SATISFIABLE"] and ks["stop"] == "self" \
++                    and ks["settled"]:
++                rec["status"] = "SAT_CANDIDATE"
++                rec["sat"] = verify_sat(cnf_path, kl, label)
++                rec["host_clock_end"] = clock()
++                write_x(rec_path, rec)
++                summary["items"][it["id"]] = {"status": "SAT_CANDIDATE", "sat": rec["sat"]}
++                summary["stopped"] = {"phase": "sat_candidate", "item": it["id"]}
++                outcome["sat"] = True
++                return
++            sink_ok = sink_complete(ks["proof_sink"])
++            if sink_ok:
++                rec["proof"] = {"sha256": ks["proof_sink"]["sha256_of_retained"], "bytes": ks["proof_sink"]["retained"],
++                                "storage": "RAM only (P-STREAM); never written to disk"}
++            if ks["returncode"] == 20 and ks["stop"] == "self" and ks["settled"] and sink_ok and not LATCH \
++                    and not cancelled():
++                checks = []
++                rec["checkers"] = {}
++                for name, path, pin in CHECKERS:
++                    dr, dl, refused = run_check(cnf_path, buf, (name, path, pin), label, CHECK_SECONDS,
++                                                LOG_CAP + 3 * RECORD_MAX,
++                                                dict(inputs, proof_pin=[rec["proof"]["sha256"], rec["proof"]["bytes"]]))
++                    if dr is None:
++                        rec.update(reason="checker %s admission refused" % name, refusal=refused,
++                                   host_clock_end=clock())
++                        write_x(rec_path, rec)
++                        summary["items"][it["id"]] = {"status": "UNKNOWN",
++                                                      "reason": "checker %s admission refused" % name}
++                        summary["stopped"] = {"phase": "checker_admission", "item": it["id"], "checker": name,
++                                              "why": refused}
++                        outcome["refused"] = True
++                        return
++                    checks.append((name, dr, dl))
++                    filt = dr.get("stdout_filter") or {}
++                    rec["checkers"][name] = {
++                        "record": dr, "status_lines": status_lines(dl),
++                        "parse_lines": [s[:200] for s in dl if s.startswith("c parsing") or
++                                        s.startswith("c finished parsing") or s.startswith("c reading proof")][:6],
++                        "duplicate_literal_warnings": {   # V8/P3: both phases counted and disclosed, never gated
++                            "formula_phase_proof_line_le_header_clauses": filt.get("dup_lines_at_or_below_header_clauses"),
++                            "proof_phase_proof_line_gt_header_clauses": filt.get("dup_lines_above_header_clauses"),
++                            "basis": "drat-trim.c:1133/1153/1229: exact phase partition for any log without early EOF"}}
++                    if checker_defects(name, it["cnf"], rec["proof"]["sha256"], rec["proof"]["bytes"], dr, dl) \
++                            or LATCH or cancelled():
++                        break  # S4: a later checker cannot rescue the item
++                post_cnf, post_buf = sha_file(cnf_path), buf.digest()
++                buf.release()
++                rec["post_check_hashes"] = {"cnf": list(post_cnf), "proof_buffer": post_buf}
++                rec["defects"] = qualify_stream(it["cnf"], ks, kl, PROOF_CAP, checks, post_cnf, post_buf)
++                rec["defect_ids"] = defect_ids(rec["defects"])
++                rec["host_clock_end"] = clock()
++                rec["terminal_gate"] = terminal_gate()
++                unsat = None
++                if not rec["defects"] and not rec["terminal_gate"] and not LATCH:
++                    unsat = dict(rec, status="UNSAT", count_for_scientific_coverage=True,
++                                 commit="UNSAT chosen at an explicit commit boundary with no earlier cancel stamp or "
++                                        "latch")
++                commit = commit_record(rec_path, dict(rec, commit="UNKNOWN record"), unsat)
++                rec["status"] = "UNSAT" if commit["committed_unsat"] else "UNKNOWN"
++                summary.setdefault("commits", {})[it["id"]] = commit
++            else:
++                rec["reason"] = "no settled self-exit rc20 verdict with a complete proof buffer (or latch/cancel)"
++                rec["host_clock_end"] = clock()
++                write_x(rec_path, rec)
++        finally:
++            if buf is not None:
++                buf.release()
++        summary["items"][it["id"]] = {k: rec.get(k) for k in ("status", "defect_ids", "terminal_gate", "reason", "proof")}
++        summary["items"][it["id"]]["duplicate_literal_warnings"] = {
++            n: v.get("duplicate_literal_warnings") for n, v in (rec.get("checkers") or {}).items()}
+         STATE["remaining_reserve"] -= ITEM_RESERVE
+         if LATCH or cancelled():
+             summary["stopped"] = {"phase": "latch_or_cancel", "item": it["id"]}
+@@ -1653,18 +2184,54 @@
+ 
+ 
+ def final_code(summary, outcome):
+-    """r3#9: blocking metadata first, then an explicit closeout boundary, then the code."""
++    """r3#9: blocking metadata first, then an explicit closeout boundary, then the code.  V1/V3/V5: helper,
++    proof-RAM, output-guard, output-directory identity and elapsed accounting are evaluated before the boundary;
++    any closeout defect latches (exit 50)."""
+     out_dir = STATE["out"]
+-    try:
+-        host_end = clock()
+-    except BaseException as exc:
+-        host_end = "unavailable %r" % exc
++    host_end = clock()                             # V1: owned helper; None after a cancel or on failure
+     children = [c.settled_rec if c.settled_rec is not None else {"seq": c.seq, "label": c.label, "pid": c.pid,
+                                                                    "settled": False, "note": "never settled"}
+                 for c in OWNED if c.proc is not None]
+     all_settled = all(r.get("settled") for r in children)
++    helpers_settled = all(h.proc is None or h.proc.returncode is not None for h in HELPERS) \
++        and not any(h.quarantined for h in HELPERS)
++    try:
++        outstanding = buffer_charge()
++        buffers = [b.accounting() for b in LIVE_BUFFERS][:LIST_MAX]
++    except BaseException as exc:
++        outstanding, buffers = None, ["accounting failed %r" % (exc,)]
++    try:
++        st = os.lstat(out_dir)
++        out_identity_ok = stat.S_ISDIR(st.st_mode) and [st.st_dev, st.st_ino] == STATE["out_identity"]
++    except BaseException:
++        out_identity_ok = False
++    try:
++        tree = run_tree_census()
++        tree_bytes = sum(v[2] for v in tree.values() if v[0] != "dir")
++    except BaseException:
++        tree_bytes = None
++    elapsed = time.monotonic() - STATE["mono0"]
++    co = STATE["cancel_order"]
++    launch_after_cancel = [c.seq for c in OWNED if c.proc is not None and co is not None and c.launch_order is not None
++                           and co < c.launch_order] + \
++                          ["helper %s" % h.launch_order for h in HELPERS if h.proc is not None and co is not None
++                           and co < h.launch_order]
++    closeout_defects = []
++    if not helpers_settled:
++        closeout_defects.append("metadata helper unsettled or quarantined")
++    if outstanding != 0:
++        closeout_defects.append("proof RAM still held at closeout: %r" % (outstanding,))
++    if not out_identity_ok:
++        closeout_defects.append("output directory identity changed or unreadable")
++    if tree_bytes is None or tree_bytes > STATE["output_limit"]:
++        closeout_defects.append("run-tree bytes %r unreadable or above the reservation %d" % (tree_bytes,
++                                                                                             STATE["output_limit"]))
++    if launch_after_cancel:
++        closeout_defects.append("launch ordered after a cancel: %r" % launch_after_cancel)
++    for w in closeout_defects:
++        latch("closeout: " + w)
++    chunk_claim = "held" if (all_settled and helpers_settled and elapsed + SETTLE <= MAX_CHUNK) else "voided"
+     boundary = next(ORDER)
+-    co = STATE["cancel_order"]
+     cancel_before = co is not None and co < boundary
+     if outcome["sat"]:
+         code = EXIT_SAT_CANDIDATE
+@@ -1684,9 +2251,14 @@
+         code = EXIT_EXCEPTION
+     summary.update(exit_code=code, latch=list(LATCH), cancel_order=co, closeout_boundary=boundary,
+                    cancel_before_closeout=cancel_before, host_clock_end=host_end,
+-                   children=[{k: r.get(k) for k in ("seq", "label", "pid", "returncode", "stop", "settled")}
+-                             for r in children],
+-                   all_children_settled=all_settled)
++                   children=[{k: r.get(k) for k in ("seq", "label", "pid", "returncode", "stop", "settled",
++                                                    "launch_order")} for r in children],
++                   all_children_settled=all_settled, metadata_helpers=HELPER_LOG[:LIST_MAX],
++                   all_helpers_settled=helpers_settled, proof_ram_outstanding_bytes=outstanding,
++                   proof_buffers=buffers, output_dir_identity_ok=out_identity_ok, run_tree_bytes=tree_bytes,
++                   retained_bytes_charged=STATE["written"], output_limit_bytes=STATE["output_limit"],
++                   elapsed_mono_s=round(elapsed, 3), chunk_claim=chunk_claim, closeout_defects=closeout_defects,
++                   lane_ledger_last=STATE["last_ledger"])
+     try:
+         write_x(os.path.join(out_dir, "summary.json"), summary)
+     except BaseException as exc:

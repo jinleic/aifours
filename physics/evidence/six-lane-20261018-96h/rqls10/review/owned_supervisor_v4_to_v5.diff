@@ -1,0 +1,119 @@
+--- code/owned_supervisor_v4.py	2026-10-19 06:11:51
++++ code/owned_supervisor_v5.py	2026-10-19 06:14:43
+@@ -1,7 +1,8 @@
+ #!/usr/bin/env python3
+-"""owned_supervisor_v4: run ONE child process under a fail-closed guard; launch record and GO boundary; bounded
++"""owned_supervisor_v5: run ONE child process under a fail-closed guard; launch record and GO boundary; bounded
+ observation; full owned-descendant and lane accounting; settlement only with complete evidence. Standard library only
+-(ctypes for read-only macOS libproc/sysctl process metadata). code/owned_supervisor_v2.py is untouched. v4 supersedes
++(ctypes for read-only macOS libproc/sysctl process metadata). code/owned_supervisor_v2.py is untouched. v5 = v4 plus the
++unattributed-new-lane-process rule (see end of list); v4 and the v3 draft were never run. v4 supersedes
+ the never-run first draft code/owned_supervisor_v3.py (same design; corrections listed under "v4 corrections").
+ 
+ Design (parent HOLD 2026-10-19 on v2; review RUN/review/rqls10-fixedB-v4-source-codex-v1.prompt.stdout.txt):
+@@ -49,13 +50,19 @@
+ returned bytes; CPU baselines are kept across admission and launch; a failed spawn is NOT_LAUNCHED, never SETTLED; the
+ owned set extends only from LIVE identity-matched owned processes; DEADLINE is latched once; evidence directory chains
+ are rechecked at settlement.
++v5 addition (fast-escaping descendants): a descendant that leaves the child's group and outlives its parent before any
++sample sees it is reparented to launchd and cannot be attributed by ppid. Therefore the lane processes present at the
++second admission census form a baseline (pid + start time); any live non-zombie lane process of this uid that is not in
++the baseline, not owned and not this supervisor ("new_lane_live") blocks the clear condition and, if still alive at the
++final census, makes the run UNSETTLED (UNATTRIBUTED_NEW_LANE_PROCESSES). Unrelated work started in the lane during a
++supervised run therefore also blocks settlement (fail-closed).
+ Exit codes: 0 SETTLED, 10 NOT_LAUNCHED, 11 UNSETTLED, 12 receipt publication failed, 13 settlement record failed,
+ 2 unusable config (nothing written).
+ Config keys: CONFIG_KEYS, ADMISSION_KEYS, HELPER_KEYS below; example evidence/owned_supervisor_v4.config-example-v1.json.
+ """
+ import ctypes, datetime, errno, hashlib, json, os, re, signal, stat, struct, subprocess, sys, threading, time
+ 
+-VERSION = "owned_supervisor_v4"
++VERSION = "owned_supervisor_v5"
+ CANCEL = [None]
+ CONFIG_KEYS = {
+     "item": str, "owner": str, "purpose": str, "lane": str, "argv": list, "env": dict, "stdout": str, "stderr": str,
+@@ -327,6 +334,7 @@
+         self.streams = {}
+         self.lane_bytes = None
+         self.next_walk = 0.0
++        self.baseline = None
+ 
+     def fault(self, name):
+         return self.cfg.get("purpose") == "guard-qualification" and bool(self.cfg["fault_injection"].get(name))
+@@ -445,7 +453,7 @@
+                     changed = True
+         group_live = sorted(pid for pid, si in info.items() if child_pgid is not None and si["pgid"] == child_pgid)
+         roots = self.cfg["lane_roots"]
+-        lane, unresolved = {}, []
++        lane, unresolved, keys = {}, [], {}
+         now = time.monotonic()
+         for pid, si in info.items():
+             if si["uid"] != MY_UID and pid not in live:
+@@ -474,6 +482,7 @@
+                 raise RuntimeError("TASKINFO lane pid %d errno %d" % (pid, e))
+             sid, _ = start_ident(pid)
+             key = "%d:%s" % (pid, None if sid is None else sid["start"])
++            keys[pid] = key
+             prev = self.prev_cpu.get(key)
+             self.prev_cpu[key] = (now, ti["cpu_ticks"])
+             if prev is None or TIMEBASE is None or now <= prev[0]:
+@@ -484,10 +493,13 @@
+             lane[pid] = {"rss": ti["rss"], "busy": busy, "zombie": False, "comm": si["comm"], "owned": pid in live}
+         if unresolved:
+             raise RuntimeError("UNRESOLVED_LIVE_PROCESSES %s" % json.dumps(unresolved[:20]))
++        new_lane = sorted(p for p, v in lane.items() if not v["zombie"] and p not in live and p != MY_PID and
++                          self.baseline is not None and keys.get(p) not in self.baseline)
+         return {"pids": len(info), "owned_live": sorted(live), "group_live": group_live, "lane_pids": sorted(lane),
+                 "lane_rss": sum(v["rss"] for v in lane.values()),
+                 "lane_busy": sum(1 for v in lane.values() if v["busy"] and not v["zombie"]),
+-                "escaped_owned_live": sorted(p for p in live if child_pgid is None or info[p]["pgid"] != child_pgid)}
++                "escaped_owned_live": sorted(p for p in live if child_pgid is None or info[p]["pgid"] != child_pgid),
++                "new_lane_live": new_lane, "lane_keys": sorted(keys.values())}
+ 
+     def request_stop(self, reason):
+         if self.stop is not None:
+@@ -729,7 +741,8 @@
+         sup.census(None)
+         time.sleep(2.0)
+         c2 = sup.census(None)
+-        R["census"] = {k: c2[k] for k in ("pids", "lane_pids", "lane_rss", "lane_busy")}
++        R["census"] = {k: c2[k] for k in ("pids", "lane_pids", "lane_rss", "lane_busy", "lane_keys")}
++        sup.baseline = set(c2["lane_keys"])
+         if c2["lane_busy"] + 1 > cfg["busy_limit"]:
+             reasons.append("LANE_BUSY")
+         if c2["lane_rss"] + cfg["rss_projection_bytes"] > cfg["rss_trip_bytes"]:
+@@ -760,6 +773,8 @@
+         R["final_census"] = c
+         if c["owned_live"] or c["group_live"]:
+             reasons.append("OWNED_LIVE %s %s" % (c["owned_live"], c["group_live"]))
++        if c["new_lane_live"]:
++            reasons.append("UNATTRIBUTED_NEW_LANE_PROCESSES %s" % c["new_lane_live"])
+     except RuntimeError as ex:
+         reasons.append("FINAL_CENSUS_FAILED %s" % ex)
+     R["streams"] = sup.streams
+@@ -855,7 +870,7 @@
+     for s in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+         signal.signal(s, _cancel)
+     if len(sys.argv) != 2:
+-        sys.stderr.write("usage: owned_supervisor_v4.py CONFIG.json\n")
++        sys.stderr.write("usage: owned_supervisor_v5.py CONFIG.json\n")
+         return 2
+     cfg_path = os.path.abspath(sys.argv[1])
+     try:
+@@ -990,13 +1005,13 @@
+         sup.write_sample({"mono": now, "epoch": wnow, "rc": rc, "free": fr, "out": ob, "lane_bytes": sup.lane_bytes,
+                           "census": None if c is None else {k: c[k] for k in ("owned_live", "group_live", "lane_pids",
+                                                                               "lane_rss", "lane_busy",
+-                                                                              "escaped_owned_live")},
++                                                                              "escaped_owned_live", "new_lane_live")},
+                           "streams": {k: [v["bytes_seen"], v["bytes_written"], v["overflow"], v["closed"]]
+                                       for k, v in sup.streams.items()},
+                           "stop": None if sup.stop is None else sup.stop["reason"], "trips_n": len(sup.trips),
+                           "signal_sent": bool(sup.signal and sup.signal.get("sent"))})
+-        clear = c is not None and not c["owned_live"] and not c["group_live"] and len(sup.streams) == 2 and \
+-            all(st["closed"] for st in sup.streams.values())
++        clear = c is not None and not c["owned_live"] and not c["group_live"] and not c["new_lane_live"] and \
++            len(sup.streams) == 2 and all(st["closed"] for st in sup.streams.values())
+         if rc is not None and clear:
+             status = "EXITED"
+             break

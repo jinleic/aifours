@@ -1,0 +1,487 @@
+#!/usr/bin/env python3
+"""fixedb_q1_check_v5: standard-library checker for the bounded Q1 behaviour qualification of code/rqls_fixedb_lm_v7.py
+run under code/owned_supervisor_v7.py. Supersedes fixedb_q1_check_v1-v4 (never run) after the Codex HOLD on v4
+(RUN/review/rqls10-fixedB-v6-source-codex-v1.prompt.stdout.txt, findings 1-4, 8 and 10). Reads only the files named by a
+frozen manifest and the supervisor config; computes nothing numerical beyond re-checking recorded thresholds.
+Usage: fixedb_q1_check_v5.py MANIFEST.json OUT.json        exit 0 only for verdict PASS, 1 otherwise, 2 checker error.
+
+MANIFEST (strict JSON, frozen and reviewed by the parent BEFORE the run): {"manifest": "fixedb_q1_manifest_v1",
+ "checker_sha256", "assay": {"path", "sha256"}, "supervisor": {"path", "sha256"}, "config": {"path", "sha256"},
+ "python": {"realpath", "sha256"}, "numpy": {"version", "file", "multiarray_umath_sha256", "umath_linalg_sha256"},
+ "inputs": {"anchors", "parker"}, "budget_s", "counts": {"NN","NC","NKR","NKR10","N8","NW","NWD","NS"}}.
+Binding (FAIL_BINDING): own sha256, config sha256, exact assay argv [python realpath, -I, -B, assay path, JSONL, WITNESS,
+ STOP, budget, q1, counts], one output root holding every evidence and output path as a direct child with fixed names,
+ supervisor and assay sha256 in launch record, receipt and assay header, identity tuple (positive pid = pgid,
+ uniqueid, idversion) equal across launch record, receipt and assay header (header pgid = pid, ppid = supervisor pid),
+ runtime (interpreter, NumPy version/file/extension digests, Accelerate backend, single-thread API results) and input
+ digests from the S gates, receipt/settlement/staged-link digests, artifact digests against the checker's own reads,
+ output-root inventory (receipt and directory listing) equal to the expected names, common monotonic clock ordering and
+ plan arithmetic. Strict JSON everywhere: duplicate keys, NaN/Infinity and overflowing literals (e.g. 1e400) rejected.
+Safety (FAIL_SAFETY): SETTLED with an empty failure latch, loop EXITED, trips only DEADLINE (exactly one when the child
+ exited 5), identity-checked signal, GO delivered, clear final census, closed error-free non-overflowing streams, all
+ helper outcomes OK, timely deadline record, every sample strictly parsed with a census and within the config limits.
+Exit classification of the child: 7 -> CANDIDATE_STOP only with a valid witness, matching JSONL record and stop receipt
+ (else FAIL_EVIDENCE); 8 -> FAIL_MODEL_DEFECT (evidence validated likewise); 3 -> INCONCLUSIVE_GATE; 0 ->
+ UNEXERCISED_NO_TERM; any other code except 5 -> FAIL_CHILD_EXIT.
+Controls (FAIL_RECORDS / INCONCLUSIVE_GATE): every mandatory gate once, passed, before the earliest target activity, and
+ equal to the checker's reconstruction from run records: S detail thresholds and the three S anchor endpoint records;
+ N and C run records; KP exactly the prescribed seeds at amplitudes 1e-3 and 1e-2 (4 each per anchor), each verified with
+ 49/64 rays where prescribed; KR >= 1 run per B; no defect or candidate anywhere.
+W (UNEXERCISED_W / FAIL): exactly one DEADLINE run, the last W run; its halt_final DEADLINE at or after the effective
+ deadline min(plan end W, T0 + budget); finite residual and three finite nonnegative Gram deviations with md = max; one
+ skip record with count NW - runs > 0; order run < skip < summary < STAGE_END; STAGE_END (written after the summary
+ write) within 2 s of the W plan end.
+WD (UNEXERCISED_WD / FAIL): exactly one TERMINATED run, the final JSONL record; first_work_mono < supervisor signal
+ mono_sent <= assay term_mono <= halt_final.mono <= mono_lm_end, halt inside the LM (not entry / initial residual),
+ it >= 1; no WD summary, WS record or end record; stop receipt TERMINATED_UNKNOWN in WD with record/byte counts equal to
+ the closed JSONL; witness confirmed absent; receipt mono_end (after reaping, census and stream closure) within 7 s of
+ mono_sent and of the trip; settlement record birth time (after receipt persistence; wall clock) within 7 s of the
+ stop request epoch.
+A PASS establishes only the observed bounded scenarios; SETTLED is process settlement, not scientific success; no Phase 1
+or broader search is admitted.
+"""
+import hashlib, json, math, os, stat, sys
+
+VERSION = "fixedb_q1_check_v5"
+GATES = ("S_runtime", "S_single_thread", "S_input_pins", "S_jacobian", "S_anchors", "N_negative_controls",
+         "C_classical_only_v5", "KP_near_anchor", "KR_known_class_recovery")
+LM_POINTS = ("iteration_start", "after_normal", "before_solve", "after_solve", "after_trial", "before_polar",
+             "after_polar", "before_return")
+SLOTS = (("S", 60), ("N", 60), ("C", 30), ("KP", 300), ("KR", 150), ("W", 150), ("WD", 150), ("WS", 50))
+NAMES = {"stdout": "stdout.txt", "stderr": "stderr.txt", "launch": "launch.json", "samples": "samples.jsonl",
+         "receipt": "supervisor-receipt.json", "settlement": "settlement.json", "jsonl": "assay.jsonl",
+         "witness": "witness.json", "stop": "stop-receipt.json"}
+MAXB = {"jsonl": 8 << 20, "samples": 64 << 20, "receipt": 64 << 20, "default": 16 << 20}
+
+
+class Bad(Exception):
+    pass
+
+
+def _pairs(kv):
+    d = {}
+    for k, v in kv:
+        if k in d:
+            raise ValueError("duplicate key %r" % k)
+        d[k] = v
+    return d
+
+
+def _const(name):
+    raise ValueError("non-finite constant %s" % name)
+
+
+def _float(s):
+    x = float(s)
+    if not math.isfinite(x):
+        raise ValueError("overflowing numeric literal %s" % s)
+    return x
+
+
+def jload(raw):
+    return json.loads(raw.decode("utf-8"), object_pairs_hook=_pairs, parse_constant=_const, parse_float=_float)
+
+
+def probe(path, maxb):
+    """('ABSENT', None, None) | ('PRESENT', bytes, sha256, lstat) | ('ERROR', reason, None)."""
+    try:
+        st0 = os.lstat(path)
+    except FileNotFoundError:
+        return ("ABSENT", None, None, None)
+    except OSError as ex:
+        return ("ERROR", repr(ex), None, None)
+    if not stat.S_ISREG(st0.st_mode) or st0.st_size > maxb:
+        return ("ERROR", "not a bounded regular file", None, None)
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        try:
+            st1 = os.fstat(fd)
+            if (st1.st_dev, st1.st_ino, st1.st_size) != (st0.st_dev, st0.st_ino, st0.st_size):
+                return ("ERROR", "changed while opening", None, None)
+            parts, got = [], 0
+            while got < st0.st_size:
+                chunk = os.read(fd, st0.st_size - got)
+                if not chunk:
+                    return ("ERROR", "short read", None, None)
+                parts.append(chunk)
+                got += len(chunk)
+            if os.read(fd, 1):
+                return ("ERROR", "grew while read", None, None)
+        finally:
+            os.close(fd)
+    except OSError as ex:
+        return ("ERROR", repr(ex), None, None)
+    raw = b"".join(parts)
+    return ("PRESENT", raw, hashlib.sha256(raw).hexdigest(), st0)
+
+
+def need(path, maxb):
+    p = probe(path, maxb)
+    if p[0] != "PRESENT":
+        raise Bad("required file %s: %s %s" % (path, p[0], p[1]))
+    return p
+
+
+def jlines(raw):
+    return [jload(x.encode("utf-8")) for x in raw.decode("utf-8").split("\n") if x.strip()]
+
+
+def isfin(x):
+    return isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x)
+
+
+def isint(x, lo=None):
+    return isinstance(x, int) and not isinstance(x, bool) and (lo is None or x >= lo)
+
+
+def is_hex64(x):
+    return isinstance(x, str) and len(x) == 64 and all(c in "0123456789abcdef" for c in x)
+
+
+def check(manifest_path, outp):
+    res = {"checker": VERSION, "manifest": manifest_path, "criteria": {}, "notes": [],
+           "admission": "none: PASS qualifies only the observed bounded scenarios"}
+    C = res["criteria"]
+
+    def verdict(v, note=None):
+        res["verdict"] = v
+        if note:
+            res["notes"].append(note)
+        return res
+
+    # ------------------------------------------------------------ manifest, config, binding inputs
+    try:
+        mp = need(manifest_path, MAXB["default"])
+        M = jload(mp[1])
+        res["manifest_sha256"] = mp[2]
+        own = need(os.path.realpath(__file__), MAXB["default"])
+        if M.get("manifest") != "fixedb_q1_manifest_v1" or M.get("checker_sha256") != own[2]:
+            raise Bad("manifest kind or checker sha256 mismatch")
+        cp = need(M["config"]["path"], MAXB["default"])
+        if cp[2] != M["config"]["sha256"]:
+            raise Bad("config sha256 mismatch")
+        cfg = jload(cp[1])
+        roots = cfg["output_roots"]
+        if not (isinstance(roots, list) and len(roots) == 1 and isinstance(roots[0], str)):
+            raise Bad("exactly one output root required")
+        root = roots[0]
+        P = {k: os.path.join(root, n) for k, n in NAMES.items()}
+        cnt = M["counts"]
+        argv = [M["python"]["realpath"], "-I", "-B", M["assay"]["path"], P["jsonl"], P["witness"], P["stop"],
+                str(M["budget_s"]), "q1"] + [str(cnt[k]) for k in ("NN", "NC", "NKR", "NKR10", "N8", "NW", "NWD", "NS")]
+        C["config_argv_exact"] = cfg["argv"] == argv
+        C["config_paths_fixed"] = all(cfg[k] == P[v] for k, v in (("stdout", "stdout"), ("stderr", "stderr"),
+                                                                    ("launch_record", "launch"), ("samples", "samples"),
+                                                                    ("receipt", "receipt"),
+                                                                    ("settlement_record", "settlement"))) and \
+            sorted((o["path"], o["required"]) for o in cfg["outputs"]) == sorted(
+                [(P["jsonl"], True), (P["witness"], False), (P["stop"], False)])
+        C["config_pins_assay_python"] = {(p["path"], p["sha256"]) for p in cfg["pins"]} >= {
+            (M["assay"]["path"], M["assay"]["sha256"]), (M["python"]["realpath"], M["python"]["sha256"])}
+        limits = {k: cfg[k] for k in ("rss_trip_bytes", "free_trip_bytes", "output_trip_bytes", "busy_limit")}
+        if not all(isint(v, 1) for v in limits.values()):
+            raise Bad("config limits are not positive integers")
+        launch = jload(need(P["launch"], MAXB["default"])[1])
+        rp = need(P["receipt"], MAXB["receipt"])
+        rc_ = jload(rp[1])
+        sp = need(P["settlement"], MAXB["default"])
+        stg = need(P["settlement"] + ".staged", MAXB["default"])
+        st = jload(sp[1])
+        samples = jlines(need(P["samples"], MAXB["samples"])[1])
+        jp = need(P["jsonl"], MAXB["jsonl"])
+        recs = jlines(jp[1])
+        stop_p = probe(P["stop"], MAXB["default"])
+        wit_p = probe(P["witness"], MAXB["jsonl"])
+        if stop_p[0] == "ERROR" or wit_p[0] == "ERROR":
+            raise Bad("stop receipt or witness cannot be inspected: %s / %s" % (stop_p[1], wit_p[1]))
+        stop = jload(stop_p[1]) if stop_p[0] == "PRESENT" else None
+        wit = jload(wit_p[1]) if wit_p[0] == "PRESENT" else None
+    except (Bad, OSError, ValueError, KeyError, TypeError, AttributeError, UnicodeDecodeError) as ex:
+        return verdict("FAIL_BINDING", "unreadable, non-strict or mis-bound input: %r" % ex)
+    res["files"] = {"jsonl": [len(jp[1]), jp[2]], "receipt": rp[2], "settlement": sp[2],
+                    "stop": stop_p[0], "witness": wit_p[0]}
+    try:
+        ident = launch["identity"]
+        C["identity_tuple_valid"] = all(isint(ident.get(k), 1) for k in ("pid", "uniqueid", "pgid")) and \
+            isint(ident.get("idversion")) and ident["pgid"] == ident["pid"] and isint(ident.get("uid"), 0)
+        C["settlement_binding"] = st.get("receipt_sha256") == rp[2] and stg[2] == sp[2] and \
+            st.get("settlement") == rc_.get("settlement") and st.get("config_sha256") == cp[2]
+        C["supervisor_binding"] = rc_.get("supervisor_sha256") == M["supervisor"]["sha256"] == \
+            launch.get("supervisor_sha256") and rc_.get("config_sha256") == cp[2] == launch.get("config_sha256") and \
+            launch.get("argv") == argv and rc_.get("child_pid") == ident.get("pid") and \
+            isint(rc_.get("supervisor_pid"), 1) and launch.get("supervisor_pid") == rc_["supervisor_pid"] and \
+            is_hex64((launch.get("go") or {}).get("sha256"))
+        arts = rc_.get("artifacts")
+        okart = isinstance(arts, dict)
+        for k in ("stdout", "stderr", "launch", "samples", "jsonl", "witness", "stop"):
+            pk = probe(P[k], MAXB.get(k, MAXB["default"]))
+            a = arts.get(P[k], "MISSING") if okart else "MISSING"
+            if pk[0] == "PRESENT":
+                okart = okart and isinstance(a, dict) and a.get("sha256") == pk[2] and a.get("bytes") == len(pk[1])
+            elif pk[0] == "ABSENT":
+                okart = okart and a is None
+            else:
+                okart = False
+        C["artifact_digests_match_reads"] = okart
+        expected_names = {NAMES[k] for k in ("stdout", "stderr", "launch", "samples", "receipt", "settlement", "jsonl")}
+        expected_names.add(NAMES["settlement"] + ".staged")
+        if stop_p[0] == "PRESENT":
+            expected_names.add(NAMES["stop"])
+        if wit_p[0] == "PRESENT":
+            expected_names.add(NAMES["witness"])
+        inv = (rc_.get("output_root_inventory") or {}).get(root)
+        listing = sorted(os.listdir(root))
+        # the receipt inventory is taken before the receipt and settlement record are published
+        C["inventory_exact"] = isinstance(inv, list) and set(inv) | {NAMES["receipt"], NAMES["settlement"],
+                                                                     NAMES["settlement"] + ".staged"} == expected_names \
+            and set(listing) == expected_names
+        C["pins_at_end_true"] = isinstance(rc_.get("pins_at_end"), list) and len(rc_["pins_at_end"]) == len(cfg["pins"]) \
+            and all(x[1] is True for x in rc_["pins_at_end"])
+        head = recs[0]
+        C["assay_header_binding"] = head.get("assay") == "rqls_fixedb_lm_v7" and \
+            head.get("assay_sha256") == M["assay"]["sha256"] and head.get("argv") == argv[4:] and \
+            head.get("mode") == "q1" and head.get("budget_s") == float(M["budget_s"]) and head.get("counts") == cnt and \
+            head.get("pid") == ident.get("pid") and head.get("pgid") == ident.get("pgid") and \
+            head.get("ppid") == rc_.get("supervisor_pid") and \
+            head.get("outputs") == {"jsonl": P["jsonl"], "witness": P["witness"], "stop": P["stop"]}
+        g = {r["GATE"]: r for r in recs if isinstance(r, dict) and "GATE" in r}
+        rt = ((g.get("S_runtime") or {}).get("detail") or {})
+        rtr = rt.get("runtime") or {}
+        mods = rtr.get("extension_modules") or {}
+        C["runtime_binding"] = rtr.get("realpath") == M["python"]["realpath"] and \
+            rtr.get("realpath_sha256") == M["python"]["sha256"] and rtr.get("numpy") == M["numpy"]["version"] and \
+            rtr.get("numpy_file") == M["numpy"]["file"] and \
+            (mods.get("multiarray_umath") or {}).get("sha256") == M["numpy"]["multiarray_umath_sha256"] and \
+            (mods.get("umath_linalg") or {}).get("sha256") == M["numpy"]["umath_linalg_sha256"] and \
+            rtr.get("blas_name") == "accelerate" and rtr.get("lapack_name") == "accelerate" and \
+            bool(rtr.get("images_accelerate")) and rtr.get("errors") == [] and \
+            (rt.get("blas_threading") or {}).get("single_threaded") is True and \
+            (rt.get("blas_threading_requery") or {}).get("single_threaded") is True and \
+            head.get("blas_threading") == rt.get("blas_threading")
+        pins = ((g.get("S_input_pins") or {}).get("detail") or {}).get("digests_of_parsed_bytes")
+        C["input_digests_binding"] = pins == {"anchors": M["inputs"]["anchors"], "parker": M["inputs"]["parker"]}
+        T0, origin, ends = head.get("T0_go_mono"), head.get("plan_origin_mono"), head.get("plan_end_mono") or {}
+        acc, plan_ok = 0.0, isfin(T0) and isfin(origin) and head.get("plan_s") == [list(x) for x in SLOTS]
+        for name, sec in SLOTS:
+            acc += sec
+            plan_ok = plan_ok and isfin(ends.get(name)) and abs(ends[name] - (origin + acc)) <= 1e-6
+        plan_ok = plan_ok and isfin(head.get("budget_end_mono")) and \
+            abs(head["budget_end_mono"] - (T0 + float(M["budget_s"]))) <= 1e-6
+        C["plan_arithmetic"] = plan_ok
+        monos = [r.get(k) for r in recs for k in ("mono", "mono_record", "mono_end_actual", "mono_start", "mono_lm_end")
+                 if isfin(r.get(k))]
+        C["common_clock_order"] = isfin(rc_.get("go_written_mono")) and isfin(T0) and T0 >= rc_["go_written_mono"] and \
+            isfin(rc_.get("child_exit_mono")) and bool(monos) and max(monos) <= rc_["child_exit_mono"] and \
+            isfin(rc_.get("mono_spawn")) and rc_["mono_spawn"] <= rc_["go_written_mono"]
+    except (KeyError, TypeError, AttributeError, IndexError, OSError) as ex:
+        return verdict("FAIL_BINDING", "binding evaluation failed: %r" % ex)
+    if not all(C.values()):
+        return verdict("FAIL_BINDING")
+    # ------------------------------------------------------------ safety
+    try:
+        trips = rc_.get("trips")
+        tnames = [t.get("trip") for t in trips] if isinstance(trips, list) else None
+        crc = rc_.get("child_returncode")
+        sig = rc_.get("signal")
+        S = {"settled": rc_.get("settlement") == "SETTLED" and st.get("settlement") == "SETTLED",
+             "failure_latch_empty": rc_.get("failures_n") == 0 and rc_.get("failures") == [],
+             "loop_exited": rc_.get("loop_status") == "EXITED",
+             "trips_only_deadline": tnames is not None and set(tnames) <= {"DEADLINE"} and len(tnames) <= 1,
+             "go_delivered": rc_.get("go_delivered") is True and rc_.get("stdin_closed") is True,
+             "final_census_clear": isinstance(rc_.get("final_census"), dict) and
+             rc_["final_census"].get("blocking_live") == [] and rc_["final_census"].get("other_uid_blocking") == [],
+             "streams_clean": isinstance(rc_.get("streams"), dict) and sorted(rc_["streams"]) == ["stderr", "stdout"] and
+             all(s.get("closed") is True and s.get("error") is None and s.get("overflow") is False
+                 for s in rc_["streams"].values()),
+             "helpers_ok": isinstance(rc_.get("helper_log"), list) and bool(rc_["helper_log"]) and
+             all(h.get("outcome") == "OK" for h in rc_["helper_log"]) and rc_.get("helper_open") == [],
+             "child_rc_int": isint(crc)}
+        if tnames:
+            S["deadline_stop_and_signal"] = isinstance(rc_.get("stop_request"), dict) and \
+                rc_["stop_request"].get("reason") == "DEADLINE" and isinstance(sig, dict) and sig.get("sent") is True \
+                and sig.get("identity_ok") is True and isfin(sig.get("mono_sent"))
+            dt = rc_.get("deadline_timeliness") or {}
+            S["deadline_timely"] = isfin(dt.get("bound_epoch")) and isfin(trips[0].get("epoch")) and \
+                trips[0]["epoch"] <= dt["bound_epoch"]
+        else:
+            S["no_signal_without_trip"] = sig is None and rc_.get("stop_request") is None
+        mx, mf = rc_.get("max") or {}, rc_.get("min_free")
+        S["receipt_maxima_within"] = isint(mx.get("lane_rss"), 0) and mx["lane_rss"] <= limits["rss_trip_bytes"] and \
+            isint(mx.get("output_bytes"), 0) and mx["output_bytes"] <= limits["output_trip_bytes"] and \
+            isint(mx.get("lane_busy"), 0) and mx["lane_busy"] <= limits["busy_limit"] and isint(mf, 0) and \
+            mf >= limits["free_trip_bytes"]
+        ok_s, last = len(samples) == rc_.get("samples_written") and len(samples) > 0, None
+        for s in samples:
+            c = s.get("census")
+            ok_s = ok_s and isinstance(c, dict) and isint(c.get("lane_busy"), 0) and \
+                c["lane_busy"] <= limits["busy_limit"] and isint(c.get("lane_rss"), 0) and \
+                c["lane_rss"] <= limits["rss_trip_bytes"] and isint(s.get("free"), 0) and \
+                s["free"] >= limits["free_trip_bytes"] and isint(s.get("out"), 0) and \
+                s["out"] <= limits["output_trip_bytes"] and s.get("failures_n") == 0 and \
+                s.get("stop") in (None, "DEADLINE") and isfin(s.get("mono")) and (last is None or s["mono"] > last)
+            last = s.get("mono") if isfin(s.get("mono")) else last
+        S["samples_complete_within_limits"] = ok_s
+    except (KeyError, TypeError, AttributeError, IndexError) as ex:
+        return verdict("FAIL_SAFETY", "safety evaluation failed: %r" % ex)
+    C.update({"safety_" + k: v for k, v in S.items()})
+    if not all(S.values()):
+        return verdict("FAIL_SAFETY")
+    # ------------------------------------------------------------ child exit classification
+    res["child_returncode"] = crc
+    if crc in (7, 8):
+        flag = "maximal_candidate" if crc == 7 else "model_defect"
+        hit = [r for r in recs if r.get(flag) is True]
+        ok = wit is not None and wit.get(flag) is True and "U_re" in wit and "U_im" in wit and len(hit) == 1 and \
+            hit[0].get("tag") == wit.get("tag") and hit[0].get("seed") == wit.get("seed") and stop is not None and \
+            stop.get("status") == ("CANDIDATE_UNVERIFIED_STOP" if crc == 7 else "MODEL_DEFECT_STOP") and \
+            not tnames
+        if not ok:
+            return verdict("FAIL_EVIDENCE", "exit %d without a consistent witness, record and stop receipt" % crc)
+        return verdict("CANDIDATE_STOP" if crc == 7 else "FAIL_MODEL_DEFECT")
+    if crc == 3:
+        return verdict("INCONCLUSIVE_GATE" if stop is not None and stop.get("status") == "GATE_FAIL_STOP" else
+                       "FAIL_RECORDS")
+    if crc == 0:
+        return verdict("UNEXERCISED_NO_TERM")
+    if crc != 5:
+        return verdict("FAIL_CHILD_EXIT", "child exit code %r" % crc)
+    if tnames != ["DEADLINE"]:
+        return verdict("FAIL_SAFETY", "exit 5 without exactly one supervisor DEADLINE trip")
+    # ------------------------------------------------------------ controls reconstruction
+    try:
+        runs = [r for r in recs if "st" in r and "tag" in r]
+        R = {}
+        R["no_defect_or_candidate"] = not any(r.get("model_defect") or r.get("maximal_candidate") for r in recs)
+        R["gates_once_passed"] = all(sum(1 for r in recs if r.get("GATE") == n) == 1 for n in GATES) and \
+            all(g[n]["pass"] is True for n in GATES)
+        first_target = min(k for k, r in enumerate(recs) if str(r.get("tag", "")).startswith(
+            ("W_target", "WD_target", "WS_target")) or r.get("STAGE") in ("W", "WD", "WS"))
+        R["gates_before_targets"] = max(recs.index(g[n]) for n in GATES) < first_target
+        stt = g["S_single_thread"]["detail"]
+        R["S_single_thread"] = isfin(stt.get("cpu_s")) and isfin(stt.get("wall_s")) and stt["wall_s"] > 0 and \
+            stt["cpu_s"] / stt["wall_s"] <= 1.3
+        js = g["S_jacobian"]["detail"]["by_B"]
+        R["S_jacobian"] = sorted(js) == sorted(["cyc4", "cyc5", "cyc7", "xor8", "cyc10", "d5"]) and \
+            all(isfin(t.get("fd")) and t["fd"] < 1e-9 and isfin(t.get("retract_unitarity")) and
+                t["retract_unitarity"] < 1e-12 for t in js.values()) and \
+            all(isfin(js[k].get("normal_eq")) and js[k]["normal_eq"] < 1e-12 for k in ("cyc4", "cyc5", "cyc7"))
+        an = g["S_anchors"]["detail"]["anchors"]
+        arec = {r["tag"]: r for r in runs if r["tag"].startswith("S_anchor_")}
+        R["S_anchors"] = sorted(arec) == ["S_anchor_anchor7", "S_anchor_anchor8", "S_anchor_parker10"] and all(
+            isfin(arec["S_anchor_" + n].get("md")) and arec["S_anchor_" + n]["md"] < 1e-12 and
+            arec["S_anchor_" + n].get("rays") == w and isfin(arec["S_anchor_" + n].get("res_inf")) and
+            arec["S_anchor_" + n]["res_inf"] < 1e-12 and isfin(an[n].get("mut_res")) and an[n]["mut_res"] >= 0.01 and
+            isfin(an[n].get("U0_dev")) and an[n]["U0_dev"] < 1e-14
+            for n, w in (("anchor7", 49), ("anchor8", 64), ("parker10", 10))) and an["parker10"].get("orthogonal_mate") is True
+
+        def by(tag):
+            return [r for r in runs if r["tag"] == tag]
+        R["N"] = all(len(by(t)) >= 1 and not any(r["ok"] or r["model_defect"] for r in by(t))
+                     for t in ("N_negative_cyc4", "N_negative_cyc6"))
+        cr = by("C_classical_only_cyc5")
+        R["C"] = len(cr) >= 1 and not any(r["model_defect"] for r in cr) and all(r.get("rays") == 5 for r in cr if r["ok"])
+        kp_ok = True
+        for tag, seed0, want in (("KP_anchor7", 400000, 49), ("KP_anchor8", 410000, 64), ("KP_parker10", 420000, None)):
+            rr = by(tag)
+            for amp, base in ((1e-3, 0), (1e-2, 10)):
+                for j in range(4):
+                    sd = seed0 + base + j
+                    hits = [r for r in rr if r.get("seed") == sd]
+                    kp_ok = kp_ok and len(hits) == 1 and hits[0].get("amp") == amp and hits[0]["ok"] is True and \
+                        isfin(hits[0].get("md")) and hits[0]["md"] < 1e-8 and \
+                        (want is None or hits[0].get("rays") == want) and \
+                        not any(r.get("tag") == tag and r.get("seed") == sd and "status" in r for r in recs)
+            kp_ok = kp_ok and len({r.get("seed") for r in rr}) == len(rr)
+        R["KP_prescribed_small_amplitudes"] = kp_ok
+        R["KR"] = all(len(by(t)) >= 1 and not any(r["model_defect"] for r in by(t))
+                      for t in ("KR_random_cyc7", "KR_random_xor8", "KR_random_parker10"))
+    except (KeyError, TypeError, AttributeError, ValueError) as ex:
+        return verdict("FAIL_RECORDS", "control reconstruction failed: %r" % ex)
+    C.update({"controls_" + k: v for k, v in R.items()})
+    if not all(R.values()):
+        return verdict("FAIL_RECORDS")
+    # ------------------------------------------------------------ W: child-side deadline
+    try:
+        nw = cnt["NW"]
+        widx = [(k, r) for k, r in enumerate(recs) if r.get("tag") == "W_target_cyc10" and "st" in r]
+        wdead = [(k, r) for k, r in widx if r["st"] == "DEADLINE"]
+        if not wdead:
+            return verdict("UNEXERCISED_W", "no W run ended with DEADLINE")
+        kd, rd = wdead[0]
+        hf = rd.get("halt_final") or {}
+        eff = min(ends["W"], T0 + float(M["budget_s"]))
+        wskip = [(k, r) for k, r in enumerate(recs) if r.get("tag") == "W_target_cyc10" and r.get("status") == "SKIPPED_TIME"]
+        wsum = [(k, r) for k, r in enumerate(recs) if r.get("summary") == "W_target_cyc10"]
+        wend = [(k, r) for k, r in enumerate(recs) if r.get("STAGE_END") == "W"]
+        mdf = rd.get("mdf")
+        Wc = {"one_deadline_last": len(wdead) == 1 and widx[-1][0] == kd,
+              "halt_final_deadline": hf.get("reason") == "DEADLINE" and isfin(hf.get("mono")) and
+              isfin(rd.get("deadline_mono")) and abs(rd["deadline_mono"] - eff) <= 1e-6 and hf["mono"] >= eff,
+              "endpoint_finite": rd.get("res_finite") is True and isfin(rd.get("res")) and rd["res"] >= 0 and
+              rd.get("md_finite") is True and isinstance(mdf, list) and len(mdf) == 3 and
+              all(isfin(x) and x >= 0 for x in mdf) and rd.get("md") == max(mdf),
+              "skip_count": len(wskip) == 1 and wskip[0][1].get("count") == nw - len(widx) and wskip[0][1]["count"] > 0,
+              "order": len(wsum) == 1 and len(wend) == 1 and bool(wskip) and kd < wskip[0][0] < wsum[0][0] < wend[0][0],
+              "summary_consistent": len(wsum) == 1 and wsum[0][1].get("runs") == len(widx) and
+              wsum[0][1].get("skipped_time") == (wskip[0][1].get("count") if wskip else None),
+              "completed_within_2s": len(wend) == 1 and isfin(wend[0][1].get("mono_end_actual")) and
+              0 <= wend[0][1]["mono_end_actual"] - ends["W"] <= 2.0}
+    except (KeyError, TypeError, AttributeError, ValueError) as ex:
+        return verdict("FAIL", "W evaluation failed: %r" % ex)
+    C.update({"w_" + k: v for k, v in Wc.items()})
+    # ------------------------------------------------------------ WD: supervisor signal during WD iteration work
+    try:
+        sent = sig["mono_sent"]
+        wdr = [(k, r) for k, r in enumerate(recs) if r.get("tag") == "WD_target_d5" and "st" in r]
+        term = [(k, r) for k, r in wdr if r["st"] == "TERMINATED"]
+        if len(term) != 1:
+            return verdict("UNEXERCISED_WD", "no single TERMINATED WD run")
+        kt, rt_ = term[0]
+        hf = rt_.get("halt_final") or {}
+        fw, l0, l1 = rt_.get("first_work_mono"), rt_.get("mono_lm_start"), rt_.get("mono_lm_end")
+        if not (isfin(fw) and isfin(l0) and isfin(l1) and l0 <= fw < sent <= l1):
+            return verdict("UNEXERCISED_WD", "the signal did not land after iteration work inside one WD LM interval")
+        D = {"terminated_is_final_record": kt == len(recs) - 1,
+             "halt_in_lm_after_signal": hf.get("reason") == "TERMINATED" and hf.get("where") in LM_POINTS and
+             isint(hf.get("it"), 1) and isint(rt_.get("it"), 1) and isfin(hf.get("term_mono")) and
+             sent <= hf["term_mono"] <= hf.get("mono", -1) <= l1,
+             "no_summary_ws_end": not any(r.get("summary") == "WD_target_d5" or r.get("tag") == "WS_target_seeded" or
+                                          r.get("STAGE") == "WS" or r.get("end") for r in recs),
+             "stop_receipt": stop is not None and stop.get("status") == "TERMINATED_UNKNOWN" and
+             stop.get("stage") == "WD" and stop.get("terminated") is True and stop.get("jsonl_records") == len(recs)
+             and stop.get("jsonl_bytes") == len(jp[1]) and stop.get("jsonl_close_error") is None and
+             stop.get("assay") == "rqls_fixedb_lm_v7",
+             "witness_confirmed_absent": wit_p[0] == "ABSENT",
+             "latency_signal_le_7s": isfin(rc_.get("mono_end")) and 0 <= rc_["mono_end"] - sent <= 7.0,
+             "latency_trip_le_7s": isfin(rc_.get("mono_end")) and isfin(trips[0].get("mono")) and
+             0 <= rc_["mono_end"] - trips[0]["mono"] <= 7.0,
+             "persistence_le_7s_wallclock": isfin(rc_["stop_request"].get("epoch")) and
+             0 <= sp[3].st_birthtime - rc_["stop_request"]["epoch"] <= 7.0}
+        res["raw"] = {"signal_mono_sent": sent, "wd_lm": [l0, l1], "wd_first_work": fw, "wd_halt_final": hf,
+                      "receipt_mono_end": rc_.get("mono_end"), "settlement_birthtime": sp[3].st_birthtime,
+                      "stop_epoch": rc_["stop_request"].get("epoch"), "w_runs": len(widx), "wd_runs": len(wdr)}
+    except (KeyError, TypeError, AttributeError, ValueError) as ex:
+        return verdict("FAIL", "WD evaluation failed: %r" % ex)
+    C.update({"wd_" + k: v for k, v in D.items()})
+    return verdict("PASS" if all(C.values()) else "FAIL")
+
+
+def main():
+    if len(sys.argv) != 3:
+        sys.stderr.write("usage: fixedb_q1_check_v5.py MANIFEST.json OUT.json\n")
+        return 2
+    res = check(sys.argv[1], sys.argv[2])
+    data = (json.dumps(res, indent=1, sort_keys=True, allow_nan=False, default=repr) + "\n").encode("utf-8")
+    with open(sys.argv[2], "xb") as fh:
+        fh.write(data)
+    print(json.dumps({"verdict": res["verdict"], "failed": sorted(k for k, v in res["criteria"].items() if not v),
+                      "notes": res["notes"]}, allow_nan=False, default=repr))
+    return 0 if res["verdict"] == "PASS" else 1
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except Exception as ex:
+        sys.stderr.write("CHECKER_ERROR %r\n" % ex)
+        sys.exit(2)

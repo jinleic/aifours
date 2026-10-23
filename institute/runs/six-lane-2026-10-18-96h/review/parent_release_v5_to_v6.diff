@@ -1,0 +1,268 @@
+--- control/parent_release_v5.py
++++ control/parent_release_v6.py
+@@ -1,7 +1,7 @@
+-"""SOURCE ONLY, UNTESTED. Independent parent five-part release transaction v5.
++"""SOURCE ONLY, UNTESTED. Independent parent five-part release transaction v6.
+ 
+-Base contract 4d122872; repair scopes 2fdf13b4 (v2), 1f9befdb (v3), 32d161b0 (v4), ef0ab41a (v5);
+-checkpoints001-011 govern.
++Base contract 4d122872; repair scopes 2fdf13b4 (v2), 1f9befdb (v3), 32d161b0 (v4), ef0ab41a (v5),
++b08a12dd (v6); checkpoints001-014 govern (v5 is SELF_HOLD: never reviewed, never CP1-eligible).
+ Definitions only at import: no I/O, environment, clock, process or signal operations.
+ The parent supplies a qualified raw adapter, authentic authority/execution observations,
+ exclusive immutable publication freeze and COMPLETE historical identity-union binding.
+@@ -10,7 +10,7 @@
+ Caps bound bytes/memory, NOT synchronous syscall time. A detected original-deadline crossing
+ starts no further callback/I/O; only cleanup of already-owned descriptors/iterators remains.
+ Every native blocking operation is checked before the call and after success or Exception.
+-V1/V2/V3/V4 stay immutable/HOLD. No v1/v2/v3/v4 import, alias, compatibility path or shim.
++V1/V2/V3/V4/V5 stay immutable/HOLD. No v1/v2/v3/v4/v5 import, alias, compatibility path or shim.
+ """
+ import copy
+ import datetime
+@@ -25,6 +25,7 @@
+ V3_REPAIR_SCOPE_SHA256 = '1f9befdb4d012800a8e2160c0ce8e822d255e34c88496fd26cb8875aac894030'
+ V4_REPAIR_SCOPE_SHA256 = '32d161b0408bc297f0e95516980142d741eb219dc882e40bd93df9c79cd59f12'
+ V5_REPAIR_SCOPE_SHA256 = 'ef0ab41a6e6e5ec2357f2f5022a611e99f1e4d4a05ab2001699572232e6fb2f3'
++V6_REPAIR_SCOPE_SHA256 = 'b08a12dd36d52a020a3927e64d28d483886505b4d02df4407142aaae3393e27e'
+ AIFOURS_ROOT = '/Users/jinleic/repos/aifours'
+ RUN_ROOT = AIFOURS_ROOT + '/institute/runs/six-lane-2026-10-18-96h'
+ CAP = 16 << 20
+@@ -289,7 +290,8 @@
+         self.callback_digest = hashlib.sha256()
+         self.opened, self.closed, self.live, self.unresolved = 0, 0, {}, []
+         self.unresolved_total = 0
+-        self.base_exceptions = []  # original non-Exception objects, identity-unique, oldest encounter first
++        self.base_exceptions = []  # original non-Exception objects, identity-unique, first-retention order
++        self.latest_base, self.base_revision = None, 0  # newest ACTUAL origin; separate from retention order
+         self.streamed_bytes, self.hashed_files = 0, 0
+ 
+     def fire(self, cause, detail):
+@@ -302,12 +304,24 @@
+         else:
+             self.suppressed[cause] = self.suppressed.get(cause, 0) + 1
+ 
+-    def keep(self, exc):
+-        """Retain a non-Exception BaseException at encounter, before cleanup can replace it."""
+-        if _ordinary(exc) or any(item is exc for item in self.base_exceptions):
++    def keep(self, exc, origin=False):
++        """Retain a non-Exception BaseException at encounter, before cleanup can replace it.
++
++        Retention is identity-unique in first-retention order (the prior tuple). Selection is
++        separate: every raise caught at an ORIGIN handler (origin=True), including a repeated raise
++        of an already-retained object, and every first sighting anywhere make that object the
++        newest. A propagation-only catch of an already-retained object never reorders selection.
++        """
++        if _ordinary(exc):
+             return
+-        self.base_exceptions.append(exc)
+-        self.fire('P%d_BASE_EXCEPTION' % self.part, 'retained at encounter: ' + _type_name(exc))
++        seen = any(item is exc for item in self.base_exceptions)
++        if seen and not origin:
++            return
++        self.latest_base, self.base_revision = exc, self.base_revision + 1  # selection before append
++        if not seen:
++            self.base_exceptions.append(exc)
++        self.fire('P%d_BASE_EXCEPTION' % self.part,
++                  ('raised again at origin: ' if seen else 'retained at encounter: ') + _type_name(exc))
+ 
+     def why(self, exc):
+         """Bound description; failures in object code are retained, never silently swallowed."""
+@@ -315,7 +329,7 @@
+         try:
+             text = name + ': ' + str.__str__(str(exc))
+         except BaseException as failure:
+-            self.keep(failure)
++            self.keep(failure, True)  # origin: the description call raised
+             if _ordinary(failure):
+                 self.fire('P%d_INTERNAL_ERROR' % self.part, 'exception description failed: ' + _type_name(failure))
+             text = name + ': <description unavailable>'
+@@ -336,7 +350,7 @@
+         except BaseException as exc:
+             if not _ordinary(exc):
+                 self.unsafe.add(name)
+-            self.keep(exc)
++            self.keep(exc, True)  # origin: the callback raised
+             raise
+ 
+     def tick(self, stage, after_ack=False):
+@@ -413,7 +427,7 @@
+             self.failed(stage, primary, after_ack)
+             raise
+         except BaseException as primary:
+-            self.keep(primary)
++            self.keep(primary, True)  # origin: the native function raised
+             self.event(stage, 'NATIVE_BASE_EXCEPTION', self.why(primary))
+             raise
+         if retain is not None:
+@@ -471,7 +485,7 @@
+             else:
+                 handle.close()
+         except BaseException as exc:
+-            self.keep(exc)
++            self.keep(exc, True)  # origin: the destructive close raised
+             self.unresolved_total += 1
+             if len(self.unresolved) < 64:
+                 self.unresolved.append({'kind': record['kind'], 'fd': handle if record['kind'] == 'fd' else None,
+@@ -490,7 +504,8 @@
+         """One close attempt for EVERY owned handle (reverse order), even after a BaseException.
+ 
+         Returns True only when each close completed cleanly. The newest non-Exception
+-        BaseException propagates after all attempts; earlier objects remain retained. If none
++        BaseException among these attempts propagates locally after all attempts; every object
++        stays retained and final selection uses the transaction's newest actual origin. If none
+         occurred, the newest escaping ordinary Exception propagates. No close is retried.
+         """
+         clean, newest, newest_base = True, None, None
+@@ -848,7 +863,7 @@
+ 
+ 
+ def _held_for(row, item, allocation_sha):
+-    return (row.get('format') == 'parent-release-registry-v5' and row.get('state') == 'HELD'
++    return (row.get('format') == 'parent-release-registry-v6' and row.get('state') == 'HELD'
+             and _exact(row.get('item'), item) and row.get('allocation_line_sha256') == allocation_sha)
+ 
+ 
+@@ -880,7 +895,7 @@
+             txn.fire('P1_ALLOCATION_BINDING', 'allocation item/reservation/GO/launch mismatch')
+     for later in rows[index + 1:]:
+         if _exact(later.get('item'), record['item']) and not _held_for(later, record['item'], ref['line_sha256']):
+-            txn.fire('P1_ALLOCATION_NOT_CURRENT', 'later non-v5-HELD/same-allocation entry for item')
++            txn.fire('P1_ALLOCATION_NOT_CURRENT', 'later non-v6-HELD/same-allocation entry for item')
+ 
+ 
+ def _part1(txn, ctx):
+@@ -1405,9 +1420,10 @@
+ def _record(txn, ctx, decision, reduced=False):
+     causes = [cause for cause in CAUSES if cause in txn.fired]
+     evidence = {cause: values[:1] if reduced else values for cause, values in txn.evidence.items()}
+-    return {'format': 'parent-release-disposition-v5', 'module': 'parent_release_v5.py',
++    return {'format': 'parent-release-disposition-v6', 'module': 'parent_release_v6.py',
+             'scope_contract_sha256': CONTRACT_SHA256,
+-            'repair_scope_sha256s': [REPAIR_SCOPE_SHA256, V3_REPAIR_SCOPE_SHA256, V4_REPAIR_SCOPE_SHA256, V5_REPAIR_SCOPE_SHA256],
++            'repair_scope_sha256s': [REPAIR_SCOPE_SHA256, V3_REPAIR_SCOPE_SHA256, V4_REPAIR_SCOPE_SHA256,
++                                     V5_REPAIR_SCOPE_SHA256, V6_REPAIR_SCOPE_SHA256],
+             'item': ctx.f.get('item'), 'state': decision, 'causes': causes,
+             'evidence': evidence, 'suppressed_evidence_counts': txn.suppressed, 'parts': _statuses(txn),
+             'recorded_at': ctx.date_text, 'timestamp_source': 'owned bounded /bin/date only',
+@@ -1543,7 +1559,7 @@
+         return False
+     _mutation_parts(ctx.commit_dir)
+     digest = hashlib.sha256(data).hexdigest()
+-    name = 'prt-v5-' + _slug(ctx.f.get('item')) + '-' + digest + '.json'
++    name = 'prt-v6-' + _slug(ctx.f.get('item')) + '-' + digest + '.json'
+     retained = {'path': ctx.commit_dir + '/' + name, 'sha256': digest, 'bytes': len(data),
+                 'create_attempted': False, 'created': False, 'bytes_written': 0, 'line_complete': False,
+                 'identity': None, 'file_fsync': False, 'directory_fsync': False}
+@@ -1598,7 +1614,7 @@
+     allocation, owned = ctx.f['allocation'], []
+     _mutation_parts(allocation['registry_path'])
+     state = 'RELEASED' if releasable else 'HELD'
+-    row = {'format': 'parent-release-registry-v5', 'owner': 'parent_release_v5.py', 'item': ctx.f['item'],
++    row = {'format': 'parent-release-registry-v6', 'owner': 'parent_release_v6.py', 'item': ctx.f['item'],
+            'state': state, 'decision_in_disposition': result['decision'],
+            'disposition': result['disposition']['path'], 'disposition_sha256': result['disposition']['sha256'],
+            'allocation_line_sha256': allocation['line_sha256'], 'causes': [c for c in CAUSES if c in txn.fired],
+@@ -1638,7 +1654,7 @@
+ 
+ 
+ def _new_result():
+-    return {'format': 'parent-release-result-v5', 'state': 'HELD', 'decision': 'HELD',
++    return {'format': 'parent-release-result-v6', 'state': 'HELD', 'decision': 'HELD',
+             'release_effective': False, 'ack': 'ACK_NOT_ATTEMPTED', 'disposition': None,
+             'registry': {'status': 'NOT_ATTEMPTED', 'bytes_written': 0, 'line_complete': False,
+                          'fsync': False, 'closed': False, 'state': None, 'line_sha256': None},
+@@ -1701,19 +1717,23 @@
+                 return
+             node = _CONTEXT.__get__(node)
+     except BaseException as failure:
+-        txn.keep(failure)
++        txn.keep(failure, True)  # origin: the optional link raised
+         if _ordinary(failure):
+             txn.fire('P%d_INTERNAL_ERROR' % txn.part, 'optional exception context link failed: ' + _type_name(failure))
+ 
+ 
+ def _absorb(txn, exc, stage):
+-    """Retain at a phase boundary before describing/firing; bookkeeping must not replace it."""
++    """Retain at a phase boundary before describing/firing; bookkeeping must not replace it.
++
++    The arriving object is propagation: an already-retained object is never reordered and a
++    first sighting becomes newest. A bookkeeping failure raised here is a new origin.
++    """
+     txn.keep(exc)
+     try:
+         cause = 'P%d_INTERNAL_ERROR' % txn.part if _ordinary(exc) else 'P%d_BASE_EXCEPTION' % txn.part
+         txn.fire(cause, stage + ': ' + txn.why(exc))
+     except BaseException as failure:
+-        txn.keep(failure)
++        txn.keep(failure, True)  # origin: absorption bookkeeping raised
+         if _ordinary(failure):
+             txn.fire('P%d_INTERNAL_ERROR' % txn.part, 'exception absorption failed: ' + _type_name(failure))
+ 
+@@ -1723,15 +1743,18 @@
+ 
+ 
+ def _attach_and_raise(txn, ctx, result):
+-    """Raise newest original object; bounded guarded direct-dict attachment, no I/O.
++    """Raise the newest ACTUAL-ORIGIN object; bounded guarded direct-dict attachment, no I/O.
+ 
++    Selection is txn.latest_base, never retention order (A, B, then the same A again selects A).
++    Any origin event during a round, even a swallowed repeat of an already-retained object,
++    changes base_revision and forces reselection before raising.
+     The tuple is authoritative retention; __context__ is optional and interpreter-rewritable.
+     ctx=None is the observation-only baseline helper: attach priors only, never a release report.
+     Call outside except clauses. Persistent memory/async failure can prevent any attachment;
+-    after eight rounds the newest retained object still propagates, never a normal return.
++    after eight rounds the newest-origin object still propagates, never a normal return.
+     """
+     for _ in range(8):
+-        count, exc = len(txn.base_exceptions), txn.base_exceptions[-1]
++        revision, exc = txn.base_revision, txn.latest_base
+         try:
+             if ctx is not None:
+                 _final(txn, ctx, result)
+@@ -1742,13 +1765,13 @@
+             if ctx is not None:
+                 dict.__setitem__(namespace, 'parent_release_result', result)
+         except BaseException as failure:
+-            txn.keep(failure)
++            txn.keep(failure, True)  # origin: attachment bookkeeping raised
+             if _ordinary(failure):
+                 txn.fire('P5_INTERNAL_ERROR', 'exception report attachment failed: ' + _type_name(failure))
+             continue
+-        if len(txn.base_exceptions) == count:
++        if txn.base_revision == revision:
+             raise exc
+-    raise txn.base_exceptions[-1]
++    raise txn.latest_base
+ 
+ 
+ def decide_and_commit(spec, read_bytes, census, owned_date, commit_dir, deadline_check):
+@@ -1760,11 +1783,13 @@
+     ANY shaping failure makes commit unavailable, including caught ordinary field errors.
+     BaseException in evaluation attempts HELD only while the ORIGINAL deadline/reader/date
+     remain safe; a commit BaseException propagates after one-close cleanup with a HELD report.
+-    Every primary/cleanup non-Exception BaseException is retained at encounter; the newest
+-    retained object propagates, and every earlier object stays in parent_release_prior_exceptions.
++    Every primary/cleanup non-Exception BaseException is retained at encounter; the object of the
++    newest ACTUAL origin event propagates (a repeated raise of an already-retained object counts;
++    propagation-only catches never reorder), and every other retained object stays in
++    parent_release_prior_exceptions.
+     The COMPLETE assembled result receives a final ORIGINAL-deadline check before return.
+-    No new clock, process or signal. No v1/v2/v3/v4 compatibility. Schemas/controls: v2 notes as
+-    amended by v3, v4 and v5 design notes. Result contains only pure JSON data, never exceptions.
++    No new clock, process or signal. No v1/v2/v3/v4/v5 compatibility. Schemas/controls: v2 notes as
++    amended by v3, v4, v5 and v6 design notes. Result contains only pure JSON data, never exceptions.
+     """
+     txn, ctx, result = _Txn(read_bytes, census, owned_date, deadline_check), _Ctx(), _new_result()
+     try:
+@@ -1815,7 +1840,8 @@
+     Every generated path passes the SAME consumer path predicate before I/O or insertion.
+     The 200000-entry cap is a count predicate only: a complete baseline must ALSO fit the 16MiB
+     canonical cap below, so far fewer entries can actually be produced or loaded (T106 limit).
+-    A BaseException gets only prior-exception attachment, never a parent release report.
++    A BaseException (newest actual origin selected) gets only prior-exception attachment,
++    never a parent release report.
+     """
+     selected = _roots(roots)
+     txn = _Txn(None, None, None, deadline_check)

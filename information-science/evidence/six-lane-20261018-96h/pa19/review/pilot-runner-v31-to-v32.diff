@@ -1,0 +1,654 @@
+--- code/pilot_file_drat_v31.py
++++ code/pilot_file_drat_v32.py
+@@ -1,5 +1,23 @@
+ #!/usr/bin/env python3
+-"""PA19 96h D2 file-proof runner v31 = code/pilot_file_drat_v30.py (aea3a63e..., ms09 items b25 [100..373], b69
++"""PA19 96h D2 file-proof runner v32 = code/pilot_file_drat_v31.py (63218f5c...) + B1, the parent precheck fix
++(IRC 2026-10-19 ~07:2x) of the unbounded quarantine wait, with the identical shared code of P-STREAM v4
++(code/pilot_stream_drat_ms09_v4.py); every v31 fix is unchanged.  D2-specific: the UNSETTLED late obligations of
++a solver survivor include its proof FIFO and the partial proof FILE.
++  B1  No unbounded wait anywhere (owner contract resources.stop: SIGTERM + BOUNDED wait only).  Owned.reap_owned
++      is finite: after the single identity-verified group SIGTERM (or a refused stop) and at most the grace
++      (TERM_WAIT for children, HELPER_TERM_WAIT for helpers; a hard bound from entry covers a stop that could not be
++      requested), a survivor is recorded UNSETTLED irreversibly (latch + exclusive receipt with its exact
++      identities, a live census and the late-artifact obligations) and the reap returns None; nothing ever waits
++      for it again, signals it again or escalates.  settle_all makes one bounded pass (SETTLE_ALL_ATTEMPTS per
++      child).  With the latch held nothing new is admitted; the run closes out (bounded) and returns to the parent
++      with exit 50.  The summary publishes every UNSETTLED owner and states that the reservation stays held:
++      release_refusals releases an UNSETTLED (or summary-less) attempt only with a NEW parent disposition
++      (DISPOSITION_SCHEMA) confirming that every listed process ended, re-checked with libproc.  No synthetic
++      settlement; an unexpected survivor is a parent blocker, not a code path that waits.
++      Inherited notes below that describe waiting without bound for an unreaped owner (v14 r3#1, r4#1, r5#4,
++      r6#1-#2; v2 V1/V3; v3 N7 and its residual list) are SUPERSEDED by B1.
++PA19 96h D2 file-proof runner v31 notes follow.
++PA19 96h D2 file-proof runner v31 = code/pilot_file_drat_v30.py (aea3a63e..., ms09 items b25 [100..373], b69
+ [100..703], b59 [0..99]; never launched) + the guard and acceptance fixes of P-STREAM v3, REUSING the identical
+ P-STREAM v3 code (code/pilot_stream_drat_ms09_v3.py) for: clock/Helper/Owned (one identity-verified group SIGTERM,
+ bounded owned helper), libproc identity/census, file access (bounded, no-follow, non-blocking), anchored run tree,
+@@ -83,8 +101,9 @@
+ exclusive proof file, HARD cap); then, only on a settled self-exit rc20 's UNSATISFIABLE' with a
+ complete sink, drat-trim CNF PROOF_FILE -i -t 1200 (lane copy of the pinned binary); both re-hashed.
+ No deletion/overwrite, no SIGKILL, no subprocess timeout, no ulimit; lane FIFOs are new and never
+-removed.  The only signal ever sent is ONE SIGTERM to an UNREAPED owned Popen child, then a bounded
+-60 s wait; a survivor gets a quarantine receipt, no further signal, LATCH, and the runner keeps waiting.
++removed.  The only signal ever sent is ONE SIGTERM to the identity-verified process group of an UNREAPED owned
++Popen child (N1), then a bounded 60 s wait; a survivor is recorded UNSETTLED (receipt with identities, live census
++and late obligations), no further signal, LATCH, and the runner returns to the parent without waiting (B1).
+ """
+ import ctypes
+ import errno
+@@ -118,8 +137,9 @@
+ TREE_SUBDIRS = ("children", "cwd", "fifo", "controls")   # N8: created and anchored with the run tree
+ BUSY_SLOTS = 2                              # N3: contract resources.per_lane_busy_processes (runner + one child)
+ ALLOCATION_SCHEMA = "PA19-96H-PARENT-ALLOCATION-v1"       # N3: the parent's single-allocator record inside the GO
+-KNOWN_SUMMARY_SCHEMAS = {"PA19-96H-PILOT-SUMMARY-v14": "v14", "PA19-96H-PSTREAM-SUMMARY-v3": "v3",
+-                         "PA19-96H-PILOT-SUMMARY-v31": "v3"}   # N3: terminal schemas a release can verify
++KNOWN_SUMMARY_SCHEMAS = {"PA19-96H-PILOT-SUMMARY-v14": "v14", "PA19-96H-PSTREAM-SUMMARY-v4": "v4",
++                         "PA19-96H-PILOT-SUMMARY-v32": "v4"}   # N3/B1: terminal schemas a release can verify
++DISPOSITION_SCHEMA = "PA19-96H-PARENT-UNSETTLED-DISPOSITION-v1"   # B1: NEW parent disposition of UNSETTLED owners
+ ENC = (LANE + "/code/vendor/encode_skel_b.py", "d0002e60d11ef5cba568309fde5b15e29280ca127bc0e6bb1f4d22929a5628e5")
+ SKEL = (OLD + "/cycle2/skel-b/skeletons-b-ms09.json", "7c46ebbad3389476407e99807593287a8b3bb6c6a80f34574f0e9c00134293d0")
+ REGISTRY = (LANE + "/evidence/inherited-stop-registry-v1.json", "ee370929f20ffe514e71bce6961e31ed32faaf243e0433d9268179956a0e9873")
+@@ -195,6 +215,8 @@
+ CONTROL_TIMER_S = 2                   # N10: kissat --time of C6
+ C6_MIN_RUN_S = 1.5                    # N10: required monotonic runtime lower bound of C6
+ C6_MAX_RUN_S = 5.0                    # N10: allowed monotonic runtime upper bound of C6
++UNSETTLED_PUBLISH_ATTEMPTS = 3        # B1: immediate attempts to publish an UNSETTLED receipt
++SETTLE_ALL_ATTEMPTS = 3               # B1: settle() attempts per child in the bounded settle_all pass
+ ITEM_WORST_SECONDS = (30 + (SOLVER_SECONDS + GRACE + SETTLE_TAIL) + 30 + (CHECK_SECONDS + GRACE + SETTLE_TAIL) + 30
+                       + HELPERS_PER_ITEM * HELPER_ALLOW)
+ RUN_HELPER_SECONDS = HELPERS_PER_RUN * HELPER_ALLOW
+@@ -681,14 +703,77 @@
+     return isinstance(x, str) and HEX64.fullmatch(x) is not None
+ 
+ 
++def owner_identities_of_attempt(entry_dir, summary):
++    """B1: (pid, start) identities a parent disposition must cover: the summary's UNSETTLED owners when a summary
++    exists, otherwise every child launch record and every UNSETTLED receipt of the attempt (bounded reads)."""
++    ids = []
++    if isinstance(summary, dict):
++        for u in summary.get("unsettled_owners") or []:
++            u = u if isinstance(u, dict) else {}
++            s0 = u.get("identity_at_start") if isinstance(u.get("identity_at_start"), dict) else {}
++            ids.append((u.get("pid"), s0.get("start")))
++        return ids
++    cdir = os.path.join(entry_dir, "children")
++    for n in sorted(os.listdir(cdir)):
++        if n.endswith(".launch.json") or n.endswith(".QUARANTINE.json"):
++            d = json.loads(read_regular_bounded(os.path.join(cdir, n), RECORD_MAX))
++            d = d if isinstance(d, dict) else {}
++            ident = d.get("identity") if isinstance(d.get("identity"), dict) else d.get("identity_at_start")
++            ids.append((d.get("pid"), ident.get("start") if isinstance(ident, dict) else None))
++    return ids
++
++
++def disposition_refusals(entry_dir, release, idents, summary_sha):
++    """B1: a NEW parent disposition must confirm that every listed process of an UNSETTLED (or summary-less) attempt
++    ended.  The release entry names it by path and SHA-256; it must be a regular bounded file with that digest,
++    schema DISPOSITION_SCHEMA, the same attempt_dir and summary digest (None for a summary-less attempt),
++    all_processes_ended true and identities covering every (pid, start) the attempt lists.  The runner re-checks
++    with libproc that none of them is alive: a live pid with the same start (or any live pid when the start is
++    unknown) refuses; ESRCH or a zombie counts as ended; an unreadable pid refuses."""
++    name = os.path.basename(entry_dir)
++    disp = release.get("disposition")
++    if not (isinstance(disp, dict) and isinstance(disp.get("path"), str) and _hex64(disp.get("sha256"))):
++        return ["%s: UNSETTLED or summary-less attempt without a NEW parent disposition (reservation retained)" % name]
++    try:
++        d = json.loads(read_pinned(disp["path"], disp["sha256"], RECORD_MAX))
++    except BaseException as exc:
++        return ["%s: parent disposition unreadable or digest mismatch %r" % (name, exc)]
++    if not isinstance(d, dict) or d.get("schema") != DISPOSITION_SCHEMA or d.get("attempt_dir") != entry_dir \
++            or d.get("summary_sha256") != summary_sha or d.get("all_processes_ended") is not True \
++            or not isinstance(d.get("identities"), list):
++        return ["%s: parent disposition does not confirm the end of this attempt's processes" % name]
++    covered = set()
++    for x in d["identities"]:
++        if isinstance(x, dict):
++            covered.add((x.get("pid"), tuple(x["start"]) if isinstance(x.get("start"), list) else None))
++    why = []
++    for pid, start in idents:
++        key = (pid, tuple(start) if isinstance(start, list) else None)
++        if not (isinstance(pid, int) and not isinstance(pid, bool) and key in covered):
++            why.append("%s: identity %r not covered by the parent disposition" % (name, (pid, start)))
++            continue
++        try:
++            ident, err = bsd_identity(pid)
++        except BaseException as exc:
++            why.append("%s: pid %d unreadable %r" % (name, pid, exc))
++            continue
++        if ident is None:
++            if (err or {}).get("errno") != errno.ESRCH:
++                why.append("%s: pid %d unreadable %r" % (name, pid, err))
++        elif ident.get("status") != SZOMB and (start is None or ident.get("start") == start):
++            why.append("%s: pid %d still alive with the listed identity" % (name, pid))
++    return why
++
++
+ def release_refusals(entry_dir, release, go_sha):
+-    """N3: verified parent release of ONE prior attempt directory.  The parent allocation must list it with the
+-    SHA-256 of its launch record and of its summary; both must be regular, bounded files (no symlink, no FIFO)
+-    with exactly those digests; the summary must be a known terminal schema in which every owned process
+-    settled (all children settled; for v3/v31 summaries also every helper settled, no quarantine receipt and no
+-    proof RAM outstanding), and the attempt's children directory must hold no quarantine receipt.  The
+-    attempt's launch record must not name this GO (one-use admission).  A missing, stale, malformed, partial,
+-    symlinked or UNSETTLED summary releases nothing."""
++    """N3/B1: verified parent release of ONE prior attempt directory.  The parent allocation must list it with the
++    SHA-256 of its launch record and of its summary (None only for a summary-less attempt); the files must be
++    regular and bounded (no symlink, no FIFO) with exactly those digests; a summary must be a known terminal schema.
++    A CLEAN attempt (all children settled, no quarantine/UNSETTLED receipt; for v4/v32 summaries also all helpers
++    settled, no UNSETTLED owner and no proof RAM outstanding) is released by the plain entry.  An UNSETTLED or
++    summary-less attempt keeps its reservation until a NEW parent disposition confirms that every listed process
++    ended (disposition_refusals); a legacy v14 summary must be clean.  The attempt's launch record must not name
++    this GO (one-use admission).  A stale, malformed, partial or symlinked summary releases nothing."""
+     name = os.path.basename(entry_dir)
+     try:
+         st = os.lstat(entry_dir)
+@@ -701,49 +786,61 @@
+     why = []
+     try:
+         lr = read_regular_bounded(os.path.join(entry_dir, "launch-record.json"), RECORD_MAX)
+-        sm = read_regular_bounded(os.path.join(entry_dir, "summary.json"), RECORD_MAX)
+         quarantine = sorted(n for n in os.listdir(os.path.join(entry_dir, "children")) if n.endswith(".QUARANTINE.json"))
++        l = json.loads(lr)
+     except BaseException as exc:
+-        return ["%s: launch record, summary or children unreadable %r" % (name, exc)]
++        return ["%s: launch record or children unreadable %r" % (name, exc)]
+     if hashlib.sha256(lr).hexdigest() != release.get("launch_record_sha256"):
+         why.append("%s: launch record digest != parent release" % name)
+-    if hashlib.sha256(sm).hexdigest() != release.get("summary_sha256"):
++    go = l.get("go") if isinstance(l, dict) else None
++    if not isinstance(go, dict) or go.get("sha256") == go_sha:
++        why.append("%s: launch record missing a GO or already consumed this GO (one-use)" % name)
++    summary_sha = release.get("summary_sha256")
++    if summary_sha is None:
++        if os.path.lexists(os.path.join(entry_dir, "summary.json")):
++            why.append("%s: a summary exists but the release names none" % name)
++        try:
++            idents = owner_identities_of_attempt(entry_dir, None)
++        except BaseException as exc:
++            return why + ["%s: identities unreadable %r" % (name, exc)]
++        return why + disposition_refusals(entry_dir, release, idents, None)
++    try:
++        sm = read_regular_bounded(os.path.join(entry_dir, "summary.json"), RECORD_MAX)
++        s = json.loads(sm)
++    except BaseException as exc:
++        return why + ["%s: summary unreadable or malformed %r" % (name, exc)]
++    if hashlib.sha256(sm).hexdigest() != summary_sha:
+         why.append("%s: summary digest != parent release" % name)
+-    if quarantine:
+-        why.append("%s: quarantine receipts present %r" % (name, quarantine[:4]))
+-    try:
+-        s, l = json.loads(sm), json.loads(lr)
+-    except BaseException as exc:
+-        return why + ["%s: malformed JSON %r" % (name, exc)]
+-    if not isinstance(s, dict) or not isinstance(l, dict):
+-        return why + ["%s: summary or launch record is not an object" % name]
+-    if s.get("schema") not in KNOWN_SUMMARY_SCHEMAS:
+-        why.append("%s: unknown summary schema %r" % (name, s.get("schema")))
++    if not isinstance(s, dict) or s.get("schema") not in KNOWN_SUMMARY_SCHEMAS:
++        return why + ["%s: unknown summary schema" % name]
+     ec = s.get("exit_code")
+     if not (isinstance(ec, int) and not isinstance(ec, bool) and ec in EXIT_CODES):
+         why.append("%s: no terminal exit code" % name)
+-    if s.get("all_children_settled") is not True:
+-        why.append("%s: children not all settled (UNSETTLED)" % name)
+     ch = s.get("children")
+-    if not isinstance(ch, list) or any(not isinstance(c, dict) or c.get("settled") is not True for c in ch):
+-        why.append("%s: a child record is not settled" % name)
+-    if KNOWN_SUMMARY_SCHEMAS.get(s.get("schema")) == "v3" and not (
+-            s.get("all_helpers_settled") is True and s.get("quarantine_receipts") == []
+-            and s.get("proof_ram_outstanding_bytes") in (0, None)):
+-        why.append("%s: helpers, quarantine or proof RAM not released" % name)
+-    go = l.get("go")
+-    if not isinstance(go, dict) or go.get("sha256") == go_sha:
+-        why.append("%s: launch record missing a GO or already consumed this GO (one-use)" % name)
++    clean = (s.get("all_children_settled") is True and isinstance(ch, list) and not quarantine
++             and all(isinstance(c, dict) and c.get("settled") is True for c in ch))
++    if KNOWN_SUMMARY_SCHEMAS[s["schema"]] == "v4":
++        clean = clean and (s.get("all_helpers_settled") is True and s.get("quarantine_receipts") == []
++                           and s.get("unsettled_owners") == [] and s.get("proof_ram_outstanding_bytes") in (0, None))
++    if not clean:
++        if KNOWN_SUMMARY_SCHEMAS[s["schema"]] == "v14":
++            why.append("%s: legacy summary is not fully settled" % name)
++        else:
++            try:
++                idents = owner_identities_of_attempt(entry_dir, s)
++            except BaseException as exc:
++                return why + ["%s: identities unreadable %r" % (name, exc)]
++            why += disposition_refusals(entry_dir, release, idents, summary_sha)
+     return why
+ 
+ 
+ def allocation_refusals(go, go_sha, out_dir, full_reserve, root=PILOT_ROOT):
+-    """N3: the parent's explicit allocation inside the GO is the ONLY admission authority (no second scheduler).
++    """N3/B1: the parent's explicit allocation inside the GO is the ONLY admission authority (no second scheduler).
+     Required: schema ALLOCATION_SCHEMA; out_dir == OUT_DIR (with exclusive creation: one-use); reservation_bytes
+     >= this run's reservation; lane_ceiling_bytes == LANE_CEILING; busy_slots == BUSY_SLOTS; released_attempts
+-    covering EVERY existing entry of the pilot root with a verified release (release_refusals), so no other
+-    attempt holds a busy slot or an unreleased reservation; measured lane usage + reservation <= ceiling.
+-    Returns (refusals, ledger)."""
++    covering EVERY existing entry of the pilot root with a verified release (release_refusals; an UNSETTLED or
++    summary-less attempt additionally needs a NEW parent disposition), so no other attempt holds a busy slot or an
++    unreleased reservation; measured lane usage + reservation <= ceiling.  Returns (refusals, ledger)."""
+     a = go.get("allocation") if isinstance(go, dict) else None
+     if not isinstance(a, dict) or a.get("schema") != ALLOCATION_SCHEMA:
+         return ["GO lacks the parent allocation %r" % ALLOCATION_SCHEMA], None
+@@ -762,7 +859,8 @@
+         rel = []
+     for r in rel:
+         ok = (isinstance(r, dict) and isinstance(r.get("dir"), str) and os.path.dirname(r["dir"]) == root
+-              and _hex64(r.get("launch_record_sha256")) and _hex64(r.get("summary_sha256")) and r["dir"] not in by_dir)
++              and _hex64(r.get("launch_record_sha256"))
++              and (r.get("summary_sha256") is None or _hex64(r.get("summary_sha256"))) and r["dir"] not in by_dir)
+         if not ok:
+             why.append("malformed or duplicate release entry %r" % (r,))
+             continue
+@@ -789,6 +887,7 @@
+            "runner_reservation_bytes": full_reserve, "ceiling_bytes": LANE_CEILING, "pilot_entries": entries,
+            "released_attempts": len(by_dir)}
+     return why, led
++
+ 
+ 
+ def ledger_refusals():
+@@ -1045,13 +1144,16 @@
+ 
+ 
+ class Owned:
+-    """N1/N7: ownership, stop and reap state shared by native children and metadata helpers.
++    """N1/N7/B1: ownership, stop and reap state shared by native children and metadata helpers.
+     Stop: the ONLY signal ever sent is ONE SIGTERM to the owned process GROUP (KILLPG), and only after the retained,
+     unreaped leader has been re-verified against its start identity (verify_owned); an unverifiable identity
+     refuses the signal (no speculative signalling), latches, and the owner stays UNSETTLED.  No escalation.
+-    Reap: monotonic; after the term wait the owner is quarantined: an UNSETTLED receipt is published (continuing
+-    owner: this runner, which keeps waiting without bound and without any further signal; disposition: parent)
+-    and the latch is held; indefinite quarantine is outside every bounded-helper and chunk claim.
++    Reap (B1, contract resources.stop = SIGTERM + BOUNDED wait only): monotonic and FINITE.  If the owner is not
++    reaped within the grace (term_wait after the stop request or refusal), UNSETTLED is recorded irreversibly
++    (latch + exclusive receipt with the exact identities, a live census and the late-artifact obligations), the
++    reap RETURNS None and nothing waits for that owner again; the run then stops admitting work, closes out
++    (bounded) and returns to the parent with exit 50.  The reservation stays held until a NEW parent disposition
++    confirms that every listed process ended (release_refusals).  No synthetic settlement.
+     Exit evidence: the first monotonic/epoch observation of the exit, taken after the poll that saw it, is a
+     conservative upper bound of the exit time; last_alive_mono (taken before a poll that saw the process alive)
+     is a lower bound."""
+@@ -1066,6 +1168,7 @@
+         self.quarantined = False
+         self.quarantine_receipt_state = "none"
+         self.quarantine_path = None
++        self.unsettled = None
+         self.popen_call_mono = self.started_mono = self.started_epoch = None
+         self.last_alive_mono = None
+         self.exit_observed_mono = self.exit_observed_epoch = None
+@@ -1126,12 +1229,34 @@
+             self.term_delivery = {"delivered": False, "pgid": self.pgid, "error": repr(exc), "evidence": evidence}
+         self.term_sent_mono, self.term_sent_epoch = t_m, t_e
+ 
+-    def _quarantine_receipt(self):
+-        return {"pid": self.pid, "pgid": self.pgid, "argv": self.argv, "epoch": time.time(), "stop": self.stop,
+-                "term_delivery": self.term_delivery, "settlement": "UNSETTLED", "chunk_claim": "voided",
+-                "continuing_owner": {"runner_pid": os.getpid(),
+-                                     "action": "keeps waiting without bound; no further signal"},
+-                "disposition_owner": "parent", "note": "survived the bounded stop wait"}
++    def late_obligations(self):
++        """B1: what an unreaped owner can still touch after the runner returns (overridden by Child)."""
++        return [{"what": "stdout pipe", "note": "this runner's read end closes when it returns; the survivor may then "
++                                                "see EPIPE/SIGPIPE on its next write"}]
++
++    def live_census(self):
++        """B1: exact identities of the leader, its process group and its PPID-closure descendants, read now."""
++        out = {"leader_pid": self.pid, "pgid": self.pgid, "start_identity": self.identity_at_start}
++        try:
++            ident, err = bsd_identity(self.pid)
++            out["leader_now"] = ident if ident is not None else err
++            members = list_pids(PROC_PGRP_ONLY, self.pgid)
++            out["group_members"] = [{"pid": p, "identity": bsd_identity(p)[0], "rss": task_rss(p)}
++                                    for p in members[:LIST_MAX]]
++            out["descendants"] = descendants(self.pid, self.pgid)[:LIST_MAX]
++        except BaseException as exc:
++            out["census_error"] = repr(exc)
++        return out
++
++    def _unsettled_receipt(self):
++        return {"pid": self.pid, "pgid": self.pgid, "argv": self.argv, "identity_at_start": self.identity_at_start,
++                "epoch": time.time(), "stop": self.stop, "term_delivery": self.term_delivery,
++                "settlement": "UNSETTLED", "chunk_claim": "voided", "live_census": self.live_census(),
++                "late_obligations": self.late_obligations(),
++                "runner_action": "recorded at finite grace expiry; returns to the parent without any further wait, "
++                                 "signal or escalation",
++                "reservation": "retained until a NEW parent disposition confirms that every listed process ended",
++                "disposition_owner": "parent"}
+ 
+     def _receipt_valid(self):
+         try:
+@@ -1140,44 +1265,59 @@
+         except BaseException:
+             return False
+ 
+-    def _publish_quarantine(self, attempts):
++    def _record_unsettled(self):
++        """B1: irreversible UNSETTLED record: latch, exclusive receipt (at most UNSETTLED_PUBLISH_ATTEMPTS immediate
++        attempts; no loop beyond them) and the in-memory record the summary publishes."""
++        self.quarantined = True
++        try:
++            latch("UNSETTLED pid %s after the bounded stop grace; reservation retained; parent disposition" % self.pid)
++        except BaseException:
++            pass
++        receipt = self._unsettled_receipt()
++        self.unsettled = {k: receipt[k] for k in ("pid", "pgid", "identity_at_start", "stop", "term_delivery",
++                                                  "live_census", "late_obligations")}
+         if self.quarantine_path is None:
+             self.quarantine_receipt_state = "unpublishable: no run tree"
+             return
+-        try:
+-            write_x(self.quarantine_path, self._quarantine_receipt())
+-            self.quarantine_receipt_state = "written"
+-        except FileExistsError:                    # r5#3: validate, never assume
+-            self.quarantine_receipt_state = "written" if self._receipt_valid() else "failed"
+-        except BaseException:
+-            if attempts >= 20:                     # r5#4: bounded publication attempts
+-                self.quarantine_receipt_state = "failed"
++        for _attempt in range(UNSETTLED_PUBLISH_ATTEMPTS):
++            try:
++                write_x(self.quarantine_path, receipt)
++                self.quarantine_receipt_state = "written"
++                return
++            except FileExistsError:                # r5#3: validate, never assume
++                self.quarantine_receipt_state = "written" if self._receipt_valid() else "failed"
++                return
++            except BaseException as exc:
++                self.quarantine_receipt_state = "failed %r" % (exc,)
+ 
+     def reap_owned(self, term_wait):
+-        """N1/N7: exception-resistant reap (monotonic): requests the verified stop if a stop is set and none was
+-        attempted; quarantines after term_wait; returns only after the retained Popen is reaped."""
+-        attempts = 0
++        """N1/N7/B1: bounded, exception-resistant reap (monotonic).  Requests the verified stop for a live owner,
++        then waits at most term_wait after the stop request or refusal (a hard bound from entry covers a stop that
++        could not even be requested).  Returns the return code if reaped within the bound; otherwise records
++        UNSETTLED and returns None.  Never loops beyond the bound; never signals again."""
++        entry = time.monotonic()
+         while True:
+             try:
+                 if self.observe_exit() is not None:
+                     return self.proc.wait()
++                if self.quarantined:
++                    return None                    # already recorded UNSETTLED: never wait again
+                 if self.stop is None:
+                     self.stop = "reap_of_a_live_owner"     # a live owner is only reaped after a stop request
+                 if not self.stop_requested():
+                     self.term(self.stop)
+                 t0 = self.term_sent_mono if self.term_sent_mono is not None else self.term_refused_mono
+-                if t0 is not None and not self.quarantined and time.monotonic() >= t0 + term_wait:
+-                    self.quarantined = True
+-                    self.quarantine_receipt_state = "pending"
+-                    try:
+-                        latch("quarantine pid %s: UNSETTLED; runner keeps waiting; parent disposition" % self.pid)
+-                    except BaseException:
+-                        pass
+-                if self.quarantine_receipt_state == "pending":
+-                    attempts += 1
+-                    self._publish_quarantine(attempts)
++                if time.monotonic() >= (entry if t0 is None else t0) + term_wait:
++                    self._record_unsettled()
++                    return None
+                 time.sleep(SUPERVISE_SLICE)
+             except BaseException:
++                if time.monotonic() >= entry + term_wait + SUPERVISE_SLICE:
++                    try:
++                        self._record_unsettled()
++                    except BaseException:
++                        self.quarantined = True
++                    return None
+                 try:
+                     time.sleep(0.05)
+                 except BaseException:
+@@ -1195,8 +1335,8 @@
+     Popen; own session; start identity verified.  Supervision (monotonic, SUPERVISE_SLICE): cancel, HELPER_WALL,
+     capture bounded at HELPER_OUT_CAP bytes read incrementally (never more than HELPER_OUT_CAP + 1 retained),
+     descendant census, resident bytes of runner + helper within LANE_RSS_TRIP.  Stop: Owned.term (one verified
+-    group SIGTERM); reap bounded by HELPER_TERM_WAIT, then UNSETTLED quarantine.  Cleanup runs in a finally on
+-    every path.  Settlement and output validity are separate explicit predicates (_settle); only a settled helper
++    group SIGTERM); reap bounded by HELPER_TERM_WAIT, then (B1) an irreversible UNSETTLED record and no further wait.
++    Cleanup runs in a finally on every path.  Settlement and output validity are separate explicit predicates (_settle); only a settled helper
+     with valid output returns its line; closeout counts only settled helpers."""
+ 
+     def __init__(self, argv):
+@@ -1256,7 +1396,7 @@
+             if self.stop is None:
+                 self.stop = "helper_exception"
+         finally:
+-            rc = self.reap_owned(HELPER_TERM_WAIT)   # verified stop if one is set; bounded, then quarantine
++            rc = self.reap_owned(HELPER_TERM_WAIT)   # verified stop if one is set; bounded; None = UNSETTLED (B1)
+             try:
+                 self.proc.stdout.close()
+             except BaseException as exc:
+@@ -1366,13 +1506,16 @@
+ 
+ 
+ 
++
+ class Child(Owned):
+     """One owned native child: pre-allocated ownership, V7 launch/cancel boundary, own session, HARD capped capture
+     created through the anchored run tree (N8), V4/N8 complete run-tree census before admission and after
+     settlement, V6 independent descriptor cleanup, N1 identity-verified single group SIGTERM (Owned), N4 timing
+     evidence: settled only if the settlement completes within its frozen tail; qualifying only if the exit was
+-    observed by the child's deadline.  (= P-STREAM v3 Child without the stdin-feeder/filter branches: D2 children
+-    read files and take no feed; the solver child's proof FIFO and proof FILE are its expected census changes.)"""
++    observed by the child's deadline; B1: a survivor of the bounded stop grace is recorded UNSETTLED (identities,
++    live census, late obligations) and never waited for again.  (= P-STREAM v4 Child without the stdin-feeder/filter
++    branches: D2 children read files and take no feed; the solver child's proof FIFO and proof FILE are its expected
++    census changes.)"""
+ 
+     def __init__(self, argv, label, wall, reserve, inputs, sink, cwd, feeder=None):
+         self._owned_init()
+@@ -1490,6 +1633,23 @@
+                 except Exception as exc:
+                     self.reader_error = (self.reader_error or "") + " %s:%r" % (what, exc)
+ 
++    def late_obligations(self):
++        """B1: paths and pipes an unreaped child can still touch after the runner returns (published with UNSETTLED)."""
++        obl = [{"path": self.cwd, "kind": "dir", "note": "the child's cwd and TMPDIR: may gain entries"},
++               {"path": self.out_path, "kind": "file", "note": "capture: written only by this runner's reader thread, "
++                                                                "which ends when the runner returns"},
++               {"what": "stdout/stderr pipe", "note": "the runner's read end closes when it returns; EPIPE/SIGPIPE"}]
++        if self.feeder is not None:
++            obl.append({"what": "stdin pipe", "note": "the runner's write end closes when it returns (EOF)"})
++        if self.sink_obj is not None:
++            obl.append({"path": self.sink_obj.fifo_path, "kind": "fifo",
++                        "note": "proof FIFO: the child may still hold its write end"})
++            fp = getattr(self.sink_obj, "file_path", None)
++            if fp is not None:
++                obl.append({"path": fp, "kind": "file", "note": "partial proof file: written only by this runner's "
++                                                                "collector thread, which ends when the runner returns"})
++        return obl
++
+     def alive(self):
+         return self.observe_exit() is None
+ 
+@@ -1521,11 +1681,14 @@
+         if self.settled_rec is not None:
+             return self.settled_rec
+         problems = []
+-        rc = self.reap_owned(TERM_WAIT)
++        rc = self.reap_owned(TERM_WAIT)            # B1: bounded; None = survivor recorded UNSETTLED
++        if rc is None:
++            problems.append("not reaped within the bounded stop grace: UNSETTLED (reservation retained; parent "
++                            "disposition)")
+         if self.quarantined and self.quarantine_receipt_state != "written":
+-            problems.append("quarantine receipt not published (%s)" % self.quarantine_receipt_state)
++            problems.append("UNSETTLED receipt not published (%s)" % self.quarantine_receipt_state)
+         if self.quarantined:
+-            problems.append("quarantined: UNSETTLED, chunk claim voided, parent disposition")
++            problems.append("UNSETTLED: chunk claim voided, parent disposition")
+         if self.term_refused_mono is not None:
+             problems.append("stop refused: identity unverifiable (UNSETTLED)")
+         stream_alive = None
+@@ -1609,7 +1772,7 @@
+                       cleanup_s=None if self.exit_observed_mono is None else round(done_mono - self.exit_observed_mono, 4))
+         rec = {"seq": self.seq, "label": self.label, "pid": self.pid, "pgid": self.pgid,
+                "identity_at_start": self.identity_at_start, "argv": self.argv, "returncode": rc,
+-               "stop": self.stop or "self", "term_delivery": self.term_delivery,
++               "stop": self.stop or "self", "term_delivery": self.term_delivery, "unsettled": self.unsettled,
+                "stop_refused": self.term_refused_mono is not None,
+                "seconds": round(time.time() - self.started_epoch, 3), "timing": timing,
+                "exit_observed_by_deadline": exit_by_deadline,
+@@ -1632,6 +1795,7 @@
+             latch("child %d %s not settled" % (self.seq, self.label))
+         self.settled_rec = rec
+         return rec
++
+ 
+ 
+ 
+@@ -1730,12 +1894,20 @@
+ 
+ 
+ def settle_all():
+-    """r6#1/#2: index iteration entirely inside the retry guard; an unreaped child is retried forever
+-    (never abandoned); a reaped child whose settlement bookkeeping keeps failing is recorded UNSETTLED
+-    with the latch held after 20 attempts."""
+-    i = 0
+-    failures = 0
++    """r6#1/#2/B1: one BOUNDED pass over OWNED with the index iteration inside the retry guard.  Every owned child that
++    has no settlement record gets settle() (itself bounded: a survivor of the stop grace is recorded UNSETTLED and
++    returns); a child whose settle() keeps raising is recorded UNSETTLED (not reaped or bookkeeping failed) with
++    the latch held after SETTLE_ALL_ATTEMPTS attempts; the pass itself ends after a bounded number of guard
++    iterations.  Nothing is retried without bound and no settlement is synthesized."""
++    i = failures = guard = 0
+     while True:
++        guard += 1
++        if guard > SETTLE_ALL_ATTEMPTS * (len(OWNED) + 1) + SETTLE_ALL_ATTEMPTS:
++            try:
++                LATCH.append("settle_all exhausted its bounded attempts: UNSETTLED children remain")
++            except BaseException:
++                pass
++            return
+         try:
+             if i >= len(OWNED):
+                 return
+@@ -1747,12 +1919,13 @@
+                     c.settle()
+                 except BaseException:
+                     failures += 1
+-                    if c.proc.returncode is not None and failures >= 20:
+-                        c.settled_rec = {"seq": c.seq, "label": c.label, "pid": c.pid, "settled": False,
+-                                         "returncode": c.proc.returncode, "stop": c.stop,
+-                                         "note": "settlement bookkeeping failed after reap"}
+-                        LATCH.append("child settlement bookkeeping failed after reap")
+-                    continue
++                    if failures < SETTLE_ALL_ATTEMPTS:
++                        continue
++                    c.settled_rec = {"seq": c.seq, "label": c.label, "pid": c.pid, "settled": False,
++                                     "returncode": c.proc.returncode, "stop": c.stop, "unsettled": c.unsettled,
++                                     "note": "settlement failed %d times: UNSETTLED (reservation retained; parent "
++                                             "disposition)" % SETTLE_ALL_ATTEMPTS}
++                    LATCH.append("child settlement failed %d times: UNSETTLED" % SETTLE_ALL_ATTEMPTS)
+             i += 1
+             failures = 0
+         except BaseException:
+@@ -2191,7 +2364,7 @@
+     signal.signal(signal.SIGTERM, on_term)
+     signal.signal(signal.SIGINT, on_term)
+     if len(sys.argv) != 4:
+-        print("usage: pilot_file_drat_v31.py GO.json GO_SHA256 OUT_DIR", flush=True)
++        print("usage: pilot_file_drat_v32.py GO.json GO_SHA256 OUT_DIR", flush=True)
+         return EXIT_PRESTART_REFUSED
+     go_path, go_sha, out_dir = sys.argv[1], sys.argv[2], os.path.abspath(sys.argv[3])
+     why = out_dir_refusal(out_dir)                 # V4: direct child of a symlink-free pilot-v1, new
+@@ -2252,14 +2425,14 @@
+         print("REFUSED: run tree creation %r" % (exc,), flush=True)
+         return EXIT_PRESTART_REFUSED
+     STATE["out"] = out_dir
+-    summary = {"schema": "PA19-96H-PILOT-SUMMARY-v31", "items": {}, "controls_ok": None, "stopped": None,
++    summary = {"schema": "PA19-96H-PILOT-SUMMARY-v32", "items": {}, "controls_ok": None, "stopped": None,
+                "terminal_policy": "exit code reports runner execution only; per-item records carry the scientific "
+                                   "status; an item counts only if qualify_unsat, the terminal gate and the commit "
+                                   "boundary all pass; case closure is decided by the parent audit"}
+     outcome = {"sat": False, "controls_failed": False, "refused": False, "exception": False, "complete": False}
+     try:                                           # N4/N8: every post-tree failure still reaches closeout
+         launch = {
+-            "schema": "PA19-96H-PILOT-LAUNCH-v31", "host_clock": clock(), "owner": "ContinuePA19b",
++            "schema": "PA19-96H-PILOT-LAUNCH-v32", "host_clock": clock(), "owner": "ContinuePA19b",
+             "go": STATE["go"], "runner": {"path": os.path.abspath(__file__), "sha256": self_sha},
+             "pid": os.getpid(), "ppid": os.getppid(), "pgid": os.getpgid(0), "cwd": os.getcwd(), "argv": sys.argv,
+             "python": sys.version, "binaries": {"kissat": KISSAT, "drat_trim_lane_copy": DRAT, "drat_trim_old": DRAT_OLD},
+@@ -2270,7 +2443,8 @@
+             "timing": {"run_helper_s": RUN_HELPER_SECONDS, "controls_worst_s": CONTROLS_WORST_SECONDS,
+                        "item_worst_s": ITEM_WORST_SECONDS, "settle_plus_margin_s": SETTLE + MARGIN, "max_chunk_s": MAX_CHUNK,
+                        "claim": "holds only if every owned process settles within its tail; a quarantined process voids "
+-                                "it (UNSETTLED, waited for without bound, parent disposition)"},
++                                "it (UNSETTLED; never waited for again; reservation retained until a NEW parent "
++                                "disposition)"},
+             "metadata_helper": {"binary": DATE, "argv": DATE_ARGV, "wall_s": HELPER_WALL, "term_wait_s": HELPER_TERM_WAIT,
+                                 "allow_s": HELPER_ALLOW, "per_item": HELPERS_PER_ITEM, "per_run": HELPERS_PER_RUN,
+                                 "policy": "owned, bounded, never concurrent with a native child, none after a cancel"},
+@@ -2424,12 +2598,13 @@
+ 
+ 
+ def final_code(summary, outcome):
+-    """r3#9/N9: blocking closeout metadata first: host clock (owned helper), child and helper SETTLEMENT (N2: a
+-    helper counts only if its settlement predicate held, not merely its return code), N8 anchored confinement,
+-    run-tree bytes and digest preservation of every runner-written file (including the proof files), N4 closeout
+-    timing; then the explicit closeout boundary; the cancel stamp is read AFTER the boundary and compared with it
+-    (N9).  Any closeout defect latches (exit 50); exit 0 is impossible with a voided chunk claim.  (= P-STREAM v3
+-    final_code without the RAM proof-buffer accounting: D2 proofs are files.)"""
++    """r3#9/N9/B1: blocking closeout metadata first: host clock (owned helper), child and helper SETTLEMENT (N2: a
++    helper counts only if its settlement predicate held), N8 anchored confinement, run-tree bytes and digest
++    preservation of every runner-written file (including the proof files), N4 closeout timing, B1 the UNSETTLED
++    owners (exact identities, live census, late obligations) with the reservation retained until a NEW parent
++    disposition; then the explicit closeout boundary; the cancel stamp is read AFTER the boundary and compared with it
++    (N9).  Any closeout defect latches (exit 50); exit 0 is impossible with a voided chunk claim.  Nothing here waits
++    for an owner.  (= P-STREAM v4 final_code without the RAM proof-buffer accounting: D2 proofs are files.)"""
+     out_dir = STATE["out"]
+     host_end = clock()                             # V1: owned helper; None after a cancel, a latch or a failure
+     children = [c.settled_rec if c.settled_rec is not None else {"seq": c.seq, "label": c.label, "pid": c.pid,
+@@ -2437,6 +2612,12 @@
+                 for c in OWNED if c.proc is not None]
+     all_settled = all(r.get("settled") for r in children)
+     helpers_settled = all(h.settled for h in HELPERS)
++    unsettled_owners = [dict(c.unsettled, kind="child", seq=c.seq, label=c.label, receipt=c.quarantine_path,
++                             receipt_state=c.quarantine_receipt_state)
++                        for c in OWNED if c.proc is not None and c.unsettled is not None] + \
++                       [dict(h.unsettled, kind="helper", launch_order=h.launch_order, receipt=h.quarantine_path,
++                             receipt_state=h.quarantine_receipt_state)
++                        for h in HELPERS if h.unsettled is not None]
+     confinement = confinement_refusals()
+     try:
+         tree = run_tree_census()
+@@ -2458,6 +2639,9 @@
+     closeout_defects = []
+     if not helpers_settled:
+         closeout_defects.append("metadata helper unsettled or quarantined")
++    if unsettled_owners:
++        closeout_defects.append("UNSETTLED owners %r: reservation retained; parent disposition required"
++                                % ([u.get("pid") for u in unsettled_owners][:LIST_MAX],))
+     closeout_defects += confinement
+     closeout_defects += preservation
+     if tree_bytes is None or tree_bytes > STATE["output_limit"]:
+@@ -2469,7 +2653,7 @@
+         closeout_defects.append("closeout after the frozen cutoffs + SETTLE (N4)")
+     if launch_after_cancel:
+         closeout_defects.append("launch ordered after a cancel: %r" % launch_after_cancel)
+-    chunk_claim = "held" if (all_settled and helpers_settled and not quarantine and not late
++    chunk_claim = "held" if (all_settled and helpers_settled and not quarantine and not unsettled_owners and not late
+                              and elapsed + SETTLE <= MAX_CHUNK) else "voided"
+     if chunk_claim == "voided":
+         closeout_defects.append("chunk claim voided")
+@@ -2496,6 +2680,9 @@
+                    children=[{k: r.get(k) for k in ("seq", "label", "pid", "returncode", "stop", "settled",
+                                                     "launch_order", "exit_observed_by_deadline")} for r in children],
+                    all_children_settled=all_settled, metadata_helpers=HELPER_LOG[:LIST_MAX],
++                   unsettled_owners=unsettled_owners[:LIST_MAX], reservation_retained=bool(unsettled_owners),
++                   release_requires=("a NEW parent disposition confirming that every listed process ended"
++                                     if unsettled_owners else "verified parent release"),
+                    all_helpers_settled=helpers_settled, proof_ram_outstanding_bytes=None,
+                    quarantine_receipts=quarantine, run_tree_bytes=tree_bytes,
+                    retained_bytes_charged=STATE["written"], output_limit_bytes=STATE["output_limit"],
+@@ -2511,5 +2698,6 @@
+ 
+ 
+ 
++
+ if __name__ == "__main__":
+     sys.exit(main())

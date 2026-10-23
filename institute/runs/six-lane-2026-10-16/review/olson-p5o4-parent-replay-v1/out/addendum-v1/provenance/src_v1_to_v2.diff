@@ -1,0 +1,203 @@
+--- src/olson_p5o4_replay_v1.cpp	2026-10-18 08:40:25
++++ src/olson_p5o4_replay_v2.cpp	2026-10-18 08:42:58
+@@ -10,7 +10,8 @@
+ // Modes:
+ //   controls OUTDIR                               group self-test, PC-k2, DP-vs-naive samples, filter-vs-DP samples
+ //   enum OUTDIR none|untwisted|target8|parity     full enumeration: filter (d) per (H, multiset), DP on every survivor word
+-//   brute OUTDIR HMIN HMAX                        DP on EVERY word of layers HMIN..HMAX (no filter); filter consistency
++//   brute OUTDIR H SHARD NSHARDS                  DP on EVERY word of layer H (no filter) for distributions with
++//                                                 enumeration index = SHARD mod NSHARDS; filter (d) consistency check
+ //   check OUTDIR CLASSFILE                        DP + naive on every l-tuple of each class line in CLASSFILE
+ #include <array>
+ #include <cstdint>
+@@ -460,97 +461,102 @@
+   return fail ? 1 : 0;
+ }
+ 
+-// ======================================================================= brute (no filter) on layers hmin..hmax
+-static int run_brute(const std::string& out, int hmin, int hmax) {
++// ======================================================================= brute (no filter)
++// one layer H, distributions with (enumeration index mod nshards) == shard; every word of them decided by the DP
++static int run_brute(const std::string& out, int H, int shard, int nshards) {
++  if (H < 0 || H > 7 || nshards < 1 || shard < 0 || shard >= nshards) {
++    fprintf(stderr, "bad brute arguments\n");
++    return 2;
++  }
+   build_group();
+   xmkdir(out);
+   FILE* fav = xopen(out + "/avoider_classes.txt");
+   FILE* fmx = xopen(out + "/mixed_classes.txt");
+   FILE* fsm = xopen(out + "/summary.json");
+   double t0 = now_s();
+-  std::vector<int8_t> filt(CODES);
+-  int fail = 0;
+-  fprintf(fsm, "{\n  \"mode\": \"brute\",\n  \"per_H\": [\n");
+-  for (int H = hmin; H <= hmax; H++) {
+-    int R = 14 - 2 * H;
+-    std::vector<std::array<int, 4>> L;
+-    int nL = setup_ltuples(H, L);
+-    std::fill(filt.begin(), filt.end(), (int8_t)-1);
+-    auto fm = [&](const int* m) { filt[mcode(m)] = filter_d(H, m) ? 1 : 0; };
+-    for_multisets(R, fm);
+-    u64 d_total = 0, words = 0, solved_w = 0, avoid_w = 0, viol = 0, stride_checked = 0, stride_mism = 0, cls_all = 0,
+-        cls_mixed = 0, avoid_in_surv = 0;
+-    static u64 mask[NY][2];  // bit b = l-tuple index b (nL <= 120 < 128)
+-    auto leaf = [&](int c[4][P]) {
+-      int m[P];
+-      for (int x = 0; x < P; x++) m[x] = c[0][x] + c[1][x] + c[2][x] + c[3][x];
+-      int8_t fv = filt[mcode(m)];
+-      d_total++;
+-      bool any = false;
+-      auto cb = [&](int a1, int a2, int a3, int a4, int y1, int y2, int y3, int y4, bool solved) {
+-        if (words % 1009 == 0) {
+-          int a[4] = {a1, a2, a3, a4}, y[4] = {y1, y2, y3, y4}, w[WLEN + 8];
+-          int n = build_word(c, a, y, w);
+-          stride_checked++;
+-          if (n != WLEN || dp_scratch(w, n) != solved) stride_mism++;
+-        }
+-        words++;
+-        if (solved) solved_w++;
+-        else {
+-          avoid_w++;
+-          if (fv != 0) viol++;  // filter said solved but the DP found an avoider
+-          if (!any) {
+-            memset(mask, 0, sizeof mask);
+-            any = true;
+-          }
+-          int b = LID[a1][a2][a3];
+-          mask[((y1 * P + y2) * P + y3) * P + y4][b >> 6] |= 1ull << (b & 63);
+-        }
+-      };
+-      enum_ly(c, H, cb);
+-      if (!any) return;
+-      std::string rs = runs_str(c);
+-      if (fv == 0) avoid_in_surv++;
+-      for (int yc = 0; yc < NY; yc++) {
+-        int k = __builtin_popcountll(mask[yc][0]) + __builtin_popcountll(mask[yc][1]);
+-        if (k == 0) continue;
+-        char yb[8];
+-        yfmt(yc, yb);
+-        if (k == nL) {
+-          cls_all++;
+-          fprintf(fav, "H=%d|runs=%s|y=%s|lavoid=%d/%d\n", H, rs.c_str(), yb, k, nL);
+-        } else {
+-          cls_mixed++;
+-          fprintf(fmx, "H=%d|runs=%s|y=%s|lavoid=%d/%d|mask=%llx:%llx\n", H, rs.c_str(), yb, k, nL, mask[yc][1], mask[yc][0]);
+-        }
++  int R = 14 - 2 * H;
++  std::vector<std::array<int, 4>> L;
++  int nL = setup_ltuples(H, L);
++  std::vector<int8_t> filt(CODES, (int8_t)-1);
++  auto fm = [&](const int* m) { filt[mcode(m)] = filter_d(H, m) ? 1 : 0; };
++  for_multisets(R, fm);
++  u64 didx = 0, d_shard = 0, d_shard_fsolved = 0, words = 0, solved_w = 0, avoid_w = 0, viol = 0, stride_checked = 0,
++      stride_mism = 0, cls_all = 0, cls_mixed = 0;
++  int stride_ctr = 1;
++  static u64 mask[NY][2];  // bit b = l-tuple index b (nL <= 120 < 128)
++  auto leaf = [&](int c[4][P]) {
++    u64 my = didx++;
++    if ((int)(my % (u64)nshards) != shard) return;
++    d_shard++;
++    int m[P];
++    for (int x = 0; x < P; x++) m[x] = c[0][x] + c[1][x] + c[2][x] + c[3][x];
++    int8_t fv = filt[mcode(m)];
++    if (fv != 0) d_shard_fsolved++;
++    bool any = false;
++    auto cb = [&](int a1, int a2, int a3, int a4, int y1, int y2, int y3, int y4, bool solved) {
++      if (--stride_ctr == 0) {  // every 1009th word: recompute from scratch
++        stride_ctr = 1009;
++        int a[4] = {a1, a2, a3, a4}, y[4] = {y1, y2, y3, y4}, w[WLEN + 8];
++        int n = build_word(c, a, y, w);
++        stride_checked++;
++        if (n != WLEN || dp_scratch(w, n) != solved) stride_mism++;
+       }
++      words++;
++      if (solved) {
++        solved_w++;
++        return;
++      }
++      avoid_w++;
++      if (fv != 0) viol++;  // filter (d) said solved but the DP found an avoider
++      if (!any) {
++        memset(mask, 0, sizeof mask);
++        any = true;
++      }
++      int b = LID[a1][a2][a3];
++      mask[((y1 * P + y2) * P + y3) * P + y4][b >> 6] |= 1ull << (b & 63);
+     };
+-    int c[4][P];
+-    memset(c, 0, sizeof c);
+-    rec_dist(0, R, c, leaf);
+-    u64 dist_formula = binom(R + 19, 19);
+-    u64 words_formula = binom(H + 3, 3) * (u64)NY * dist_formula;
+-    bool ok = d_total == dist_formula && words == words_formula && viol == 0 && stride_mism == 0;
+-    if (!ok) fail = 1;
+-    fprintf(fsm,
+-            "    {\"H\": %d, \"R\": %d, \"dists_enumerated\": %llu, \"dists_formula\": %llu, \"words_dp_enumerated\": %llu,"
+-            " \"words_formula\": %llu, \"words_solved\": %llu, \"words_avoid\": %llu, \"filter_violations\": %llu,"
+-            " \"classes_all_l_avoid\": %llu, \"classes_mixed\": %llu, \"scratch_rechecked\": %llu,"
+-            " \"scratch_mismatches\": %llu, \"checks_ok\": %s, \"elapsed_cum_s\": %.3f}%s\n",
+-            H, R, d_total, dist_formula, words, words_formula, solved_w, avoid_w, viol, cls_all, cls_mixed,
+-            stride_checked, stride_mism, ok ? "true" : "false", now_s() - t0, H < hmax ? "," : "");
+-    fflush(fsm);
+-    fflush(fav);
+-    (void)avoid_in_surv;
+-  }
++    enum_ly(c, H, cb);
++    if (!any) return;
++    std::string rs = runs_str(c);
++    for (int yc = 0; yc < NY; yc++) {
++      int k = __builtin_popcountll(mask[yc][0]) + __builtin_popcountll(mask[yc][1]);
++      if (k == 0) continue;
++      char yb[8];
++      yfmt(yc, yb);
++      if (k == nL) {
++        cls_all++;
++        fprintf(fav, "H=%d|runs=%s|y=%s|lavoid=%d/%d\n", H, rs.c_str(), yb, k, nL);
++      } else {
++        cls_mixed++;
++        fprintf(fmx, "H=%d|runs=%s|y=%s|lavoid=%d/%d|mask=%llx:%llx\n", H, rs.c_str(), yb, k, nL, mask[yc][1], mask[yc][0]);
++      }
++    }
++  };
++  int c[4][P];
++  memset(c, 0, sizeof c);
++  rec_dist(0, R, c, leaf);
++  u64 dist_formula = binom(R + 19, 19);
++  u64 expect_shard = dist_formula / (u64)nshards + ((u64)shard < dist_formula % (u64)nshards ? 1 : 0);
++  u64 words_expect = d_shard * (u64)nL * NY;
++  bool ok = didx == dist_formula && d_shard == expect_shard && words == words_expect && solved_w + avoid_w == words &&
++            viol == 0 && stride_mism == 0 && stride_checked > 0;
+   double el = now_s() - t0;
+-  fprintf(fsm, "  ],\n  \"all_checks_ok\": %s,\n  \"elapsed_s\": %.3f,\n  \"maxrss_bytes\": %ld\n}\n", fail ? "false" : "true",
+-          el, maxrss_bytes());
++  fprintf(fsm,
++          "{\"mode\": \"brute\", \"H\": %d, \"R\": %d, \"shard\": %d, \"nshards\": %d, \"ltuples\": %d,"
++          " \"dists_enumerated_total\": %llu, \"dists_formula\": %llu, \"dists_in_shard\": %llu,"
++          " \"dists_in_shard_expected\": %llu, \"dists_in_shard_filter_solved\": %llu, \"words_dp_enumerated\": %llu,"
++          " \"words_expected\": %llu, \"words_solved\": %llu, \"words_avoid\": %llu, \"filter_violations\": %llu,"
++          " \"classes_all_l_avoid\": %llu, \"classes_mixed\": %llu, \"scratch_rechecked\": %llu,"
++          " \"scratch_mismatches\": %llu, \"checks_ok\": %s, \"elapsed_s\": %.3f, \"maxrss_bytes\": %ld}\n",
++          H, R, shard, nshards, nL, didx, dist_formula, d_shard, expect_shard, d_shard_fsolved, words, words_expect,
++          solved_w, avoid_w, viol, cls_all, cls_mixed, stride_checked, stride_mism, ok ? "true" : "false", el,
++          maxrss_bytes());
+   fclose(fav);
+   fclose(fmx);
+   fclose(fsm);
+-  printf("brute H=%d..%d done ok=%d elapsed=%.1fs\n", hmin, hmax, !fail, el);
+-  return fail ? 1 : 0;
++  printf("brute H=%d shard %d/%d done ok=%d words=%llu avoid=%llu viol=%llu elapsed=%.1fs\n", H, shard, nshards, ok,
++         words, avoid_w, viol, el);
++  return ok ? 0 : 1;
+ }
+ 
+ // ======================================================================= controls
+@@ -828,7 +834,7 @@
+   std::string mode = argv[1], out = argv[2];
+   if (mode == "controls") return run_controls(out);
+   if (mode == "enum" && argc == 4) return run_enum(out, argv[3]);
+-  if (mode == "brute" && argc == 5) return run_brute(out, atoi(argv[3]), atoi(argv[4]));
++  if (mode == "brute" && argc == 6) return run_brute(out, atoi(argv[3]), atoi(argv[4]), atoi(argv[5]));
+   if (mode == "check" && argc == 4) return run_check(out, argv[3]);
+   fprintf(stderr, "bad arguments\n");
+   return 2;

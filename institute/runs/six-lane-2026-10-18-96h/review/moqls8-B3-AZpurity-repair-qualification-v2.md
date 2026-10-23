@@ -1,0 +1,11 @@
+# A/Z-purity repair coverage — qualification v2
+
+Recorded 2026-10-21T06:39:48-0700 (`/bin/date`). Governs the earlier single-family qualification without overwriting it.
+
+The qualification published at06:16:58 was incomplete about CURRENT evidence. The later, independently completed Sigma review had actually received the literal A/Z parent erratum v2 and explicitly verified its new N1 derivation. See [moqls8-B3-Sigma-complete-claude-v1.prompt.note.md](/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/review/moqls8-B3-Sigma-complete-claude-v1.prompt.note.md) LF185–196, especially LF191–192: the reviewer re-derives the conjugated complement and confirms full support from exact rows2–7, H2 and column-0 orthonormality. This is mathematical verification of the same repair, not a filename/status inference. The review returned06:00:50. Its scope does not certify an exactness/exhaustiveness bridge from the JSON key.
+
+The original A/Z Claude review already supplied the correct own-coordinate contradiction, index restrictions, one-way excess repair and full-support argument as proposed repairs; the later Sigma review explicitly checks the N1 argument as pasted in the actual parent erratum. Together with the focused Codex repair review and parent hand check, the acceptance-critical repair has both configured families represented. This does NOT claim that a separate staged Claude repair-binding run occurred, nor backdate parent confirmation before the existing evidence was reconciled.
+
+Historical limit: the original A/Z acceptance headline at05:24:55 preceded the later literal-erratum verification/this explicit confirmation. Preserve that ordering. The statement that the repair was still single-family at06:16:58 is withdrawn; the earlier qualification remains a record of the mistaken integration, not governing current status. The unused staged repair prompt remains UNLAUNCHED, not NO_VERDICT. A duplicate standalone Claude invocation is not needed solely to obtain evidence already supplied literally in the Sigma review.
+
+No new mathematical scope: U/U-prime and Sigma-implies-L only under their exact hypotheses. Row6/column1, full-corner closure and global B3/n8 remain unproved. Sigma's separate later verdict excludes its hypothesis only under the explicitly stated H1/H2/H4(part), not via an unproved global template bridge.

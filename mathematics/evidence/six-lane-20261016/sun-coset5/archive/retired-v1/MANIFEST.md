@@ -1,0 +1,1 @@
+Retired 2026-10-18 10:24 PDT: lane-manifest-v1.sha256.tmpcheck was a draft manifest; it listed itself while it was still being written, so its self-hash is meaningless. Superseded by evidence/lane-manifest-v1.sha256.

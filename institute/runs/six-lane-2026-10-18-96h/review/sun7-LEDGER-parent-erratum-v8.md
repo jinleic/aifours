@@ -1,0 +1,13 @@
+# Closed ledger parent erratum v8 — DEFORDER second-family m-A/m-B and notes
+
+Recorded 2026-10-20T06:11:59-0700 (`/bin/date`). Disposes Claude DEFORDER review /Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/review/sun7-DEFORDER-claude-v1.prompt.note.md (3cc53cc28751b9fd59186944969fb4233dd778108983694a5ccd593616479c8f):0F/0M/2m. Codex DEFORDER (beb165cd9bf091caef544e36915461545620b3853bd1408ddb90e7133baeeeed) was0F/0M/0m. Read after candidate erratum v6. No proof or exported theorem changes.
+
+1. **m-A — N15 conditional case matrices re-exported.** Add to N15's export the following PREDICATES and conditional matrices, proved from P0/P1 only (no R1(7), Sun(t≥3) or exhaustiveness):
+   - (I)-2 := a≤1 and D⊆A_2∖A_3; (I)-3 := a≤1 and D⊆A_3∖A_2; (II) := a=2. (The |C|≥4 clause of R1(7)(I) is a CONSEQUENCE proved at N17, not part of these predicates.)
+   - Under (I)-2: C–C gcd6 (P1(iii)); for d∈D and any j≠d, the 5-part cannot be shared (a≤1), 3 is not shared (d∉A_3), and P_dj≠∅ (P1(i)); hence P_dj={2} and gcd is 2 or 4, 4 iff d,j∈E (P1(i)). Under (I)-3 symmetrically P_dj={3} and gcd3. Under (II), erratum v6's KII derivation gives the README LF67/LF96 matrix.
+   Thus README LF67's matrices are N15 exports read as these conditional statements; N18–N22, which cite "(I) type 2/3" vocabulary, receive them from N15. Their CASE HYPOTHESIS (that one is in (I) with |C|≥4) is supplied by N17/N23 consumers, as in the existing COVER tree. No new backward edge.
+   **Overlay A-1** (written verdict LF46; 73a25ba6b2848e5412de4c8fac667c7bbd899cf22b165f0fed5db29f3eea9f35) is retained in N15: the 5-valuation is h_i (README writes g_i), distinct from coset representatives g_i. Add explicitly "h_i := v_5(n_i)" to v6 LF11.
+2. **m-B — R16 and N16 body literal.** Rewrite R16's range as: RK7 LF70 (non-L5 quantities only), LF71–75, LF80 first sentence; ADD LF128–139, LF143–148, LF155; WV LF42; read with RWE m1 and m6 and CI62. v6 LF25 replaces ONLY the RK7/ADD entries of the N16 body cell: RKE W1–W2 and WV LF23, LF38–42, LF49–50 remain in N16's body; R12 = WV LF38/LF48 packing; R18 = ADD LF21–110 (W2 governs LF106), LF124 first sentence (not its second sentence, which points to the excluded LF80 clause; upward closure follows from τ≥τ_min alone, RWE m8).
+3. **Notes.** v6 LF13 "no Sun input" means "no Sun(t≥3) or Sun7 input"; P0(a) uses Sun(2)=L0.6 via the existing N02 edge. v6 LF8's "(e.g. N16)" means "via the consumer's own N16 import"; RK7 LF68 (profile pi_i) is inside RW LF10–23's restricted contract (RWE m1 LF70 vocabulary).
+
+AFIBRE MAJ-1 and MIN-1..4 are resolved by v6 as amended here; both families agree. Global graph/final join remain separate gates; full Sun7 UNACCEPTED.

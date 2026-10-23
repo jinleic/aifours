@@ -1,0 +1,168 @@
+--- control/beta_schema_audit_v1.py
++++ control/beta_schema_audit_v2.py
+@@ -1,4 +1,4 @@
+-"""beta_schema_audit_v1: X5 RESULT_SCHEMA predicate for MOLS39/CFR21 ext-search-plan-v5 (beta parent consumer slice).
++"""beta_schema_audit_v2: X5 RESULT_SCHEMA predicate for MOLS39/CFR21 ext-search-plan-v5 (beta parent consumer slice).
+ 
+ STATUS: SOURCE ONLY. Authored without execution, import, compile, syntax check or test. It stays untrusted until
+ parent source review and a separately admitted finite behavioral qualification; source readiness grants no launch,
+@@ -13,15 +13,14 @@
+   gate validator     MOLS/code/ext4_gate.py                                   8d04c5ce7b9fdf3f42c5537bdf32c892b6c1af09e3e31096e41b2506597624fa
+ 
+ Interface (frozen by the consumer contract):
+-  audit_schema(plan_bytes, item, files, prefix, original_dm21, deadline_check) -> [] or ['X5 RESULT_SCHEMA']
+-
+-Pure predicate: no file writes, no process calls, no verdicts, no module-level state. Importing this module performs
+-no imports and no reads. Each explicit call reads exactly one file, the approved gate source, through a
+-descriptor-anchored bounded reader, checks its SHA-256 against the pin, compiles and executes those verified
+-definitions in a fresh namespace whose __name__ is not '__main__', and reuses the gate's strict JSON parse,
+-canonical, exact, digest, hex64, finite_wall, rawrows, validate_result and verify_controls. The gate's main is never
+-referenced or called; only the per-item structure of its audited-prefix loop is transcribed here so that it runs on
+-caller-supplied bytes instead of directory reads.
++  audit_schema(plan_bytes, item, files, prefix, original_dm21, deadline_check, read_bytes) -> [] or ['X5 RESULT_SCHEMA']
++
++Pure predicate: no file writes, process calls or verdicts. Early rejection may read no source. A call reaching
++its explicit loader asks the parent-owned read_bytes callback for exactly the pinned gate bytes, verifies their
++SHA-256, compiles them and executes the definitions in a fresh non-main namespace. This module acquires no
++filesystem descriptor: all actual descriptor ownership, including exceptional close evidence, stays with the parent
++reader. The parent MUST inspect its retained report before any PASS. Stdlib imports may read runtime files; trusted
++Python/import state and -B/PYTHONDONTWRITEBYTECODE are external launch prerequisites. gate.main is never called.
+ 
+ Sole namespace substitution: anchored_read_bytes is replaced by an explicitly labelled OFFLINE SNAPSHOT reader that
+ serves only plan.dm21_path from the supplied original_dm21 bytes after checking their digest against
+@@ -45,7 +44,7 @@
+ AUDIT_CAP = 1 << 20  # gate: readat(audit, item + '.audit.json', 1<<20)
+ DM21_CAP = 1 << 20  # gate verify_controls: anchored_read_bytes(plan['dm21_path'], 1<<20)
+ PLAN_JOB_COUNT = 20
+-LOADED_GATE_NAME = 'ext4_gate_pinned_for_beta_schema_audit_v1'  # deliberately not '__main__'
++LOADED_GATE_NAME = 'ext4_gate_pinned_for_beta_schema_audit_v2'  # deliberately not '__main__'
+ GATE_CALLABLES = ('Failure', 'parse', 'canonical', 'exact', 'digest', 'hex64', 'finite_wall', 'rawrows',
+                   'validate_result', 'verify_controls', 'anchored_read_bytes')
+ GATE_CONSTANTS = ('KEYS', 'MFILES', 'GKEYS', 'AKEYS', 'CAP')
+@@ -61,7 +60,7 @@
+     """Internal fail-closed signal; audit_schema maps it, like every other Exception, to X5."""
+ 
+ 
+-def audit_schema(plan_bytes, item, files, prefix, original_dm21, deadline_check):
++def audit_schema(plan_bytes, item, files, prefix, original_dm21, deadline_check, read_bytes):
+     """Return [] only when the current item's declared outputs and its complete audited prefix satisfy the pinned
+     plan-v5 / successor4-contract-v3 schemas; otherwise return ['X5 RESULT_SCHEMA'].
+ 
+@@ -72,6 +71,7 @@
+                     dict with exactly {item, files, audit_bytes}: files as above for that item, audit_bytes the
+                     canonical ext-search-job-audit-v1 record bytes. DATA requires prefix == [].
+     original_dm21   bytes of plan.dm21_path whose SHA-256 equals plan.dm21_sha256 (offline snapshot binding).
++    read_bytes      parent-owned anchored bounded reader (path, cap) -> bytes; parent retains its resource ledger.
+     deadline_check  zero-argument callable: returns None while budget remains and raises on expiry. Any Exception it
+                     raises, or any non-None return value, is a deadline failure and yields X5.
+ 
+@@ -80,11 +80,11 @@
+     never yield [].
+     """
+     try:
+-        if not callable(deadline_check):
++        if not callable(deadline_check) or not callable(read_bytes):
+             raise _Reject('deadline_check must be callable')
+         tick = _deadline_tick(deadline_check)
+         tick()
+-        verdict = _audit(plan_bytes, item, files, prefix, original_dm21, tick)
++        verdict = _audit(plan_bytes, item, files, prefix, original_dm21, tick, read_bytes)
+         tick()  # late completion is never timely evidence
+     except Exception:
+         return [SCHEMA_CAUSE]
+@@ -101,7 +101,7 @@
+     return tick
+ 
+ 
+-def _audit(plan_bytes, item, files, prefix, original_dm21, tick):
++def _audit(plan_bytes, item, files, prefix, original_dm21, tick, read_bytes):
+     import hashlib
+     if type(plan_bytes) is not bytes or len(plan_bytes) > PLAN_CAP:
+         raise _Reject('plan bytes type/cap')
+@@ -114,17 +114,21 @@
+     files = dict(files)
+     prefix = list(prefix)
+     tick()
+-    gate = _load_pinned_gate(tick)
++    gate = _load_pinned_gate(tick, read_bytes)
+     plan, jobs, order, calibrations = _plan_tables(gate, plan_bytes, tick)
+     # Sole substitution in the verified namespace: verify_controls' original-DM21 read becomes the offline snapshot.
+     gate['anchored_read_bytes'] = _offline_snapshot_dm21_reader(plan, original_dm21, tick)
+     return _replay(gate, plan, jobs, order, calibrations, item, files, prefix, tick)
+ 
+ 
+-def _load_pinned_gate(tick):
++def _load_pinned_gate(tick, read_bytes):
+     """Explicit-call verified-source loader: anchored bounded read, SHA-256 pin, compile, exec as a non-main module."""
+     import hashlib
+-    source = _anchored_source_bytes(GATE_PATH, GATE_SOURCE_CAP, tick)
++    tick()
++    source = read_bytes(GATE_PATH, GATE_SOURCE_CAP)
++    if type(source) is not bytes or len(source) > GATE_SOURCE_CAP:
++        raise _Reject('parent gate read type/cap')
++    tick()
+     if hashlib.sha256(source).hexdigest() != GATE_SHA256:
+         raise _Reject('gate source differs from the approved pin')
+     tick()
+@@ -139,61 +143,6 @@
+         if name not in namespace:
+             raise _Reject('pinned gate constant missing: ' + name)
+     return namespace
+-
+-
+-def _anchored_source_bytes(path, cap, tick):
+-    """Bounded read of the approved gate source; the only file this module ever opens.
+-
+-    The absolute normalized path is walked from a retained '/' descriptor with O_DIRECTORY|O_NOFOLLOW on every parent;
+-    the leaf is opened O_RDONLY|O_NONBLOCK|O_NOFOLLOW relative to the retained parent; fstat must show a regular
+-    one-link file within cap BEFORE any read; the same descriptor is read in <=64 KiB blocks consuming at most cap+1
+-    bytes; afterwards device/inode, size, link count, mtime and ctime must be unchanged and the size must equal the
+-    bytes read; the descriptor is closed and the deadline is checked again after close.
+-    """
+-    import os
+-    import stat
+-    if type(path) is not str or type(cap) is not int or cap < 0 or not path.startswith('/') or '\x00' in path:
+-        raise _Reject('absolute source path and integer cap required')
+-    parts = path.split('/')[1:]
+-    if not parts or any(part in ('', '.', '..') for part in parts):
+-        raise _Reject('normalized source path required')
+-    tick()
+-    parent = os.open('/', os.O_RDONLY | os.O_DIRECTORY)
+-    try:
+-        for part in parts[:-1]:
+-            child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
+-            previous, parent = parent, child
+-            os.close(previous)
+-        fd = os.open(parts[-1], os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW, dir_fd=parent)
+-    finally:
+-        os.close(parent)
+-    try:
+-        before = os.fstat(fd)
+-        if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 or before.st_size > cap:
+-            raise _Reject('source must be a regular one-link file within cap')
+-        blocks = []
+-        total = 0
+-        while True:
+-            tick()
+-            block = os.read(fd, min(65536, cap + 1 - total))
+-            tick()
+-            if not block:
+-                break
+-            total += len(block)
+-            if total > cap:
+-                raise _Reject('source grew beyond cap')
+-            blocks.append(block)
+-        after = os.fstat(fd)
+-        if (not stat.S_ISREG(after.st_mode) or after.st_nlink != 1
+-                or (after.st_dev, after.st_ino) != (before.st_dev, before.st_ino)
+-                or after.st_size != before.st_size or after.st_size != total
+-                or after.st_mtime_ns != before.st_mtime_ns or after.st_ctime_ns != before.st_ctime_ns):
+-            raise _Reject('source identity, size or link count changed during read')
+-        data = b''.join(blocks)
+-    finally:
+-        os.close(fd)
+-    tick()
+-    return data
+ 
+ 
+ def _plan_tables(gate, plan_bytes, tick):

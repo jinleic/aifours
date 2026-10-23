@@ -1,0 +1,72 @@
+--- draft1/guard_matrix_io_v1.py
++++ draft2/guard_matrix_io_v2_draft2.py
+@@ -545,9 +545,9 @@
+                       ("launch_record", "launch.json"), ("receipt", "receipt.json"), ("settlement_record", "settlement.json")):
+         if cfg.get(key) != paths["out"] + "/" + name:
+             raise ValueError("fixed source output names")
+-    if cfg.get("outputs") != [{"path": paths["out"] + "/child-result.json", "required": True}] or \
+-            cfg.get("pins") != ([{"path": RUN + "/pinned-scratch.txt", "sha256": request["created_facts"]["pin"]["sha256"]}]
+-                              if case in MUTATION and "_pin_" in case else []):
++    if not typed_equal(cfg.get("outputs"), [{"path": paths["out"] + "/child-result.json", "required": True}]) or \
++            not typed_equal(cfg.get("pins"), [{"path": RUN + "/pinned-scratch.txt", "sha256": request["created_facts"]["pin"]["sha256"]}]
++                            if case in MUTATION and "_pin_" in case else []):  # Exact JSON types: required is literal true.
+         raise ValueError("fixed output/pin set")
+     if any(not integer(cfg.get(k)) or not 1 <= cfg[k] <= CAP for k in ("stdout_cap_bytes", "stderr_cap_bytes", "samples_cap_bytes")):
+         raise ValueError("bounded capture caps")
+@@ -1319,6 +1319,28 @@
+           injection_start=start, injection_end=time.monotonic(), original_go_deadline=dl.end)
+ 
+ 
++def spawn_refused(s, attempt, role, exc):
++    """Retain a pre-spawn source ledger record (source19 exports neither s.keep nor pid-less helper reports) and
++    natively observe, under FD_LOCK, that the original cleanup released every descriptor it allocated for the attempt."""
++    record = s.keep[attempt] if len(s.keep) > attempt else None
++    if record is None or record.get("pid") is not None:
++        return  # A registered PID is retained by source19 itself; only pid-less attempts need this record.
++    snapshot = {k: record.get(k) for k in ("pid", "role", "settled", "leader_reaped", "rc", "wait_lost", "term_attempted",
++                                         "identity", "spawn_error", "stdout_fd", "stdin_fd", "stderr_fd")}
++    snapshot["parent_close_fds"] = list(record.get("parent_close_fds") or [])
++    fds = sorted({snapshot[k] for k in ("stdout_fd", "stdin_fd", "stderr_fd") if snapshot[k] is not None} | set(snapshot["parent_close_fds"]))
++    descriptors = []
++    with FD_LOCK:
++        for fd in fds:
++            try:
++                value = os.fstat(fd)
++            except OSError as error:
++                descriptors.append({"fd": fd, "released": error.errno == errno.EBADF, "errno": error.errno, "inode": None})
++            else:
++                descriptors.append({"fd": fd, "released": False, "errno": None, "inode": [value.st_dev, value.st_ino]})
++    event("native_spawn_refused_before_pid", role=role, record=snapshot, descriptors=descriptors, error=exception(exc))
++
++
+ def install_hooks(env, proxy):
+     cls = env["Supervisor"]
+     init = cls.__init__
+@@ -1334,6 +1356,7 @@
+     def spawn(s, argv, e, role, dl, required_s):
+         proxy.spawn_role = role
+         before = time.monotonic()
++        attempt = len(s.keep)  # spawn_registered appends exactly one ledger record before any allocation.
+         try:
+             record = original_spawn(s, argv, e, role, dl, required_s)
+             pgid, error = None, None
+@@ -1346,6 +1369,9 @@
+                   argv=argv, child_external_sha_overlay=TRUSTED_SHA if role == "child" else None,
+                   mono_pid_registered=record.get("mono_pid_registered"))
+             return record
++        except BaseException as exc:
++            safe_hook("spawn_refused_before_pid", spawn_refused, s, attempt, role, exc)  # Retained evidence only.
++            raise
+         finally:
+             proxy.spawn_role = None
+     env["spawn_registered"] = spawn
+@@ -1543,7 +1569,8 @@
+         if not crossed:
+             PREREQUISITES.append("real approved GO expiry not crossed within max_flush_delay_s during ACK flush")
+             event("ack_flush_boundary_missed", expiry_epoch_raw=expiry, start_epoch_raw=start_epoch,
+-                  end_epoch_raw=time.time(), max_delay_s=maximum)
++                  end_epoch_raw=time.time(), max_delay_s=maximum, stream=self.name, native_flush_before=before,
++                  native_flush_after=after, injection_start=start, injection_end=time.monotonic())
+         else:
+             event("ack_flush_real_expiry_crossing", "NATIVE_CLOCK_DECLARED_RESPONSE_DELAY",
+                   native_flush_before=before, native_flush_after=after, injection_start=start,

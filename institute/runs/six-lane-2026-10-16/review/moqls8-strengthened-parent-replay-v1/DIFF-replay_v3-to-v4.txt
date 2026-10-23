@@ -1,0 +1,1498 @@
+DIFF replay_v3.py -> replay_v4.py for desk review/moqls8-strengthened-parent-replay-v1 (FROZEN for parent/Codex review)
+replay_v3.py sha256 baa4a675fc2634dc8dc96f53b9f6dd1b59af012b9fef23681af894904aa67565 (/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-16/review/moqls8-strengthened-parent-replay-v1/scripts/replay_v3.py)
+replay_v4.py sha256 44b4f293b4a0eeb86cafce1afa9314e7e54592d60d95791dee4d58539c9bdc9d (/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-16/review/moqls8-strengthened-parent-replay-v1/scripts/replay_v4.py)
+written_at 2026-10-18T07:10:01-07:00
+Basis: Codex source review of v3 (review/n8-replay-v3-source-codex-v1.note.md 7003fbda...7527), HOLD with findings 1-9,
+plus the parent resolution of the counter semantics. Run A under v3 (20261018T064552) is exploratory only and is not
+a qualifying control set. Every v4 file name has the 'v4-' prefix; no v2 or v3 artefact is touched.
+
+Finding -> fix:
+ 1 (the invalid-proof control accepted any non-VERIFIED result, e.g. a crash): evaluate() mode 'negative' now
+   requires checker rc == 1, the exact line 's NOT VERIFIED' (checker_line_s_NOT_VERIFIED_exact), no 's VERIFIED',
+   parsed header counts [3, 7] with no early-EOF marker, relay_complete_and_equal, and N == D. Anything else is
+   INVALID_CONTROL.
+ 2 (early-close could credit an incomplete drain; eof_at was set in finally): _relay sets fifo_eof_seen and
+   fifo_eof_at only when os.read() returns b''. Delivery errors (EPIPE or another write error), drain (read) errors,
+   close errors and exceptions are separate fields, and ok = EOF seen and none of them. The early-close control
+   requires EPIPE as a delivery error, 0 delivered, fifo_eof_seen, no drain/close error or exception, relay thread
+   finished, hold and CNF gate released by their events, checker rc 0, the exact line 'c ERROR: did not find p cnf
+   line in input file' (checker_header_error_line), no status line, and no parsed byte count.
+ 3 (close errors did not veto PASS): feed_ok() requires no write or close error and thread_finished for BOTH
+   writers. relay_clean() requires an empty close_errors list. Writers are joined with a bound (HOLD_SECONDS + 5 s)
+   and the relay with HOLD_SECONDS + 30 s, so an unfinished thread vetoes PASS instead of hanging the driver.
+ 4 (a pending SIGTERM could lose to a launch or to a completed pipeline): gate() checks the latched signal before
+   the streak/launch decision; pipeline() checks it immediately before the checker spawn and before the solver spawn
+   (stop_latched_before_spawn; no spawn, the checker is SIGTERMed if already started); every receipt records
+   stop_latched; a completed pipeline's verdict stands with stop_latched recorded, and cmd_run launches nothing more.
+ 5 (synchronous scan helpers could hang the watchdog; failed scans only counted): run_helper() starts ps and lsof
+   in their own session with a monotonic deadline (HELPER_DEADLINE 8 s) via a non-blocking selector. On overrun it
+   sends SIGTERM, waits at most HELPER_TERM_WAIT 5 s and never escalates. In flight, a Scanner thread publishes
+   (time, scan, error) readings and the 0.25 s watchdog loop never runs a helper itself. A failed reading, a reading
+   older than STALE_SECONDS 30 s, no reading within 30 s, an unreadable driver RSS or an own-child RSS unreadable
+   twice in a row are guard failures and therefore safety stops.
+ 6 (exceptional setup abandoned fds and children): one try/except BaseException/finally scope covers everything
+   from the first FIFO fd to the last reap. On an exception it SIGTERMs own live children (before any log write, so
+   a full disk cannot block cleanup), reaps with a 120 s bound, records exception and traceback, and returns UNKNOWN.
+   cmd_run wraps pipeline() as well and stops the desk on any exception.
+ 7 (controls were not an enforced admission prerequisite; existing self-test receipts were skipped unchecked;
+   assembly could duplicate): a PRE-EXEC holds only controls or only formulas. A formula PRE-EXEC is written only if
+   validate_controls() finds all five v4 control receipts for THIS script sha. Each receipt must have the receipt
+   schema, the pinned cadical and drat-trim sha256, its own PRE-EXEC file re-hashed equal, its preregistered verdict
+   and no latched stop. The identities and receipt sha256 are recorded in admission_controls and re-validated in
+   run before EVERY formula launch. An existing control receipt is re-validated (SKIPPED_VALIDATED or STOP), never
+   silently skipped. cmd_assemble refuses a label appearing in two PRE-EXECs and takes only receipts whose
+   pre_exec sha256 and script sha256 match; other desk receipts are listed under desk_receipts_not_assembled.
+ 8 (the legacy leaf dependency lookup was unprefixed): the legacy leaf and control item kinds are deleted
+   (item_label, item_parts, preexec, run, evaluate, assemble); v4 accepts selftest:NAME and formula:ID only.
+   LOW_MEMORY_IDS and FLOOR_LOW are removed.
+ 9 (ANOMALY_PASS unreachable): removed. A control whose observation is missing is INVALID_CONTROL.
+Counter semantics (parent resolution; cited in the docstring and ACCEPTANCE): pinned drat-trim.c d834b649...c2ee.
+ - L987 (read_lit) and L1115 (marker byte) count each consumed proof byte in -i binary mode.
+ - L1107-1108: the parse loop ends only on EOF at a marker position and does not stop at the empty clause.
+ - L1113: a wrong prefix stops reading early (N < D).
+ - L986-988: an EOF at the start of a literal adds 1 (N = D + 1).
+ So N == D is an exact 'consumed to EOF, well-formed' check, and the equality is kept.
+New control 'suffix' (relay mode 'suffix'): after the FIFO EOF the relay delivers SUFFIX = 'd' 0x02 0x04 0x06 0x00, a
+binary deletion of the existing clause '1 2 3' placed after the solver's empty clause. Preregistered
+AS_PREREGISTERED_FAIL_CLOSED: relay clean, suffix_delivered_bytes 5, D == R + 5, checker-parsed N == D (N counts the
+bytes after the empty clause), acceptance fails on relay_complete_and_equal, native verdict recorded as observed.
+Also: SELFTEST_WANT and RELAY_MODES cover the five controls; receipt, PRE-EXEC, run and result schemas move to /3;
+load_strengthened additionally pins replay_v3.py and DIFF-replay_v2-to-v3.txt; provenance records v3, v2 and v1 and
+their diffs; preexec requires 'replay_v4.py sha256 <own sha>' in this file.
+Unchanged from v3: load_inputs, the strengthened composition, limits 3600/7200 s, the gate rule (two passing checks
+60 s apart, lane busy and RSS, free >= 12.21e9), the 17:29 cutoff, the 17:57 deadline, per-tool TMPDIRs, formula
+PASS/UNKNOWN, the desk stop after SAT or a floor/safety stop, and the relay transport design.
+Pre-review checks (no native solver or checker started): py_compile; an AST undefined-name scan (only __file__);
+relay unit tests on os.pipe pairs over 2,097,929 random bytes (plain equal; truncate D = R - 2; suffix D = R + 5;
+EPIPE with the reader closed first: delivery_error EPIPE, 0 delivered, EOF seen, all bytes read, no close
+errors); run_helper overrun on /bin/sleep 30 with a 1 s deadline (SIGTERM, rc -15, error recorded); one lane_scan
+(0.15 s); the Scanner thread publishing readings and stopping; evaluate() on synthetic records for every formula
+and control branch, including an invalid-control crash, an incomplete early-close drain, a truncate without EOF and
+a suffix with N != D (all INVALID_CONTROL); validate_controls with no v4 receipts (five 'receipt missing').
+
+--- moqls8-strengthened-parent-replay-v1/scripts/replay_v3.py
++++ moqls8-strengthened-parent-replay-v1/scripts/replay_v4.py
+@@ -1,30 +1,41 @@
+ #!/usr/bin/env python3
+-"""Parent replay desk for the six MOQLS(8) P1 strengthened formulas (normal form r2, section 5), v3 transport.
++"""Parent replay desk for the six MOQLS(8) P1 strengthened formulas (normal form r2, section 5), v4 transport.
+ 
+ Desk: institute/runs/six-lane-2026-10-16/review/moqls8-strengthened-parent-replay-v1 (parent-owned). Derived by
+-copying scripts/replay_v2.py (sha256 dcedbe45...ac82, itself replay_v1.py 16cba374...486d plus
+-DIFF-replay_v1-to-v2.txt). The v3 changes are recorded in DIFF-replay_v2-to-v3.txt. They add a parent
+-hashing/counting proof relay (solver -> named FIFO -> parent relay thread -> anonymous pipe -> drat-trim stdin) and
+-the relay controls the parent requested: complete valid, invalid, truncation and early-close. They also give every
+-v3 file a 'v3-' label prefix, so no v2 receipt, log, FIFO or TMPDIR name is reused. Everything else is v2: the
+-strengthened composition, limits, gates, stops, per-tool TMPDIRs and the PASS/UNKNOWN verdicts.
++copying scripts/replay_v3.py (sha256 baa4a675...7565; v3 = v2 dcedbe45...ac82 + DIFF-replay_v2-to-v3.txt) and fixing
++the Codex source-review findings 1-9 (review/n8-replay-v3-source-codex-v1.note.md 7003fbda...7527) as resolved by the
++parent; the changes are in DIFF-replay_v3-to-v4.txt. Every v4 file name has the 'v4-' prefix.
+ 
+ Transport: CNF bytes exist only in this process's memory and reach each child through its own anonymous pipe passed
+ as /dev/fd/N. Each writer thread hashes exactly the bytes it writes (measured feed). The DRAT proof goes solver ->
+ named FIFO -> parent relay thread -> anonymous pipe -> drat-trim stdin (-i). The relay hashes and counts the bytes
+-it reads from the FIFO (the proof-stream sha256 and byte count) and, separately, the bytes it actually delivers to
+-the checker. At most one CHUNK (1 MiB) is in flight. If the checker closes its proof input early (EPIPE), the relay
+-records it, stops delivering, and keeps reading and hashing the FIFO to EOF so the solver never blocks.
+-No CNF or proof bytes are written to disk.
++it reads from the FIFO (the proof stream) and, separately, the bytes os.write() delivered to the checker. At most
++one CHUNK (1 MiB) is in flight. FIFO EOF is recorded only when read() returns b''. Delivery errors (e.g. EPIPE when
++the checker closed its proof input), drain (read) errors and close errors are kept apart; after a delivery error
++the relay keeps reading and hashing the FIFO to EOF so the solver never blocks. No CNF or proof bytes touch disk.
++
++Proof-byte counter semantics (pinned parent drat-trim source d834b649...c2ee, review/moqls7-parent-proofcheck-tools-v1/
++drat-trim.c): with -i (binary mode) S->nReads is incremented once per consumed proof byte (L987 in read_lit, L1115
++for the 'a'/'d' marker byte); the parse loop reads until EOF and does not stop at the empty clause (L1107-1108 break
++only on EOF at a marker position); a wrong binary prefix stops reading early (L1113, N < D); an EOF met at the start
++of a literal adds one (L986-988, N = D + 1). So 'c finished parsing, read N bytes from proof file' with N == D (the
++relay-delivered byte count) is an exact "consumed to EOF, well-formed" check. The suffix control shows that N counts
++bytes delivered after the empty clause.
++
+ Process control: native limits (cadical -t 3600, drat-trim -t 7200) plus cooperative SIGTERM safety stops with a
+-bounded 120 s wait; never SIGKILL, never Popen.kill, never subprocess timeouts. A timeout, guard stop or deferral
+-is never success.
+-
++bounded 120 s wait; never SIGKILL, never Popen.kill, never subprocess timeouts. The ps/lsof lane-scan helpers run in
++their own session under monotonic deadlines (SIGTERM-only cleanup); in flight a scanner thread publishes readings and
++a failed or stale lane reading, an unreadable own-child RSS, or any exception after a spawn is a safety stop
++(SIGTERM own children, bounded reap, UNKNOWN, no further launch). A SIGTERM to the driver is latched and checked
++before gate success and immediately before each spawn. A timeout, guard stop or deferral is never success.
++
++Runs: a PRE-EXEC holds either only controls (selftest:NAME) or only formulas (formula:ID). A formula PRE-EXEC is
++admitted only if all five v4 control receipts exist for THIS script sha and the pinned binaries with their
++preregistered verdicts; this is validated at preexec and again in run before each launch.
+ Usage (/usr/bin/python3 -I -B, environment TMPDIR=<desk>/tmp/):
+-  replay_v3.py preexec OUT [--worker-prefix N SHA] ITEM...    ITEM = selftest:NAME | formula:ID
+-  (the v1 item kinds leaf:ID and control:ID are kept unchanged but are not used by this desk)
+-  replay_v3.py run PREEXEC
+-  replay_v3.py assemble OUT PREEXEC...
++  replay_v4.py preexec OUT [--worker-prefix N SHA] ITEM...    ITEM = selftest:NAME | formula:ID
++  replay_v4.py run PREEXEC
++  replay_v4.py assemble OUT PREEXEC...
+ """
+ import ctypes
+ import datetime
+@@ -34,12 +45,14 @@
+ import json
+ import os
+ import re
++import selectors
+ import signal
+ import struct
+ import subprocess
+ import sys
+ import threading
+ import time
++import traceback
+ 
+ ROOT = "/Users/jinleic/repos/aifours"
+ RUN = ROOT + "/institute/runs/six-lane-2026-10-16"
+@@ -47,8 +60,8 @@
+ LANE = ROOT + "/physics/evidence/six-lane-20261016/moqls8-problem16"
+ DESK = REVIEW + "/moqls8-strengthened-parent-replay-v1"
+ SCRIPT = os.path.realpath(__file__)
+-SCRIPT_REL = "scripts/replay_v3.py"
+-LABEL_PREFIX = "v3-"  # every v3 receipt/log/FIFO/TMPDIR name; v2 names stay untouched
++SCRIPT_REL = "scripts/replay_v4.py"
++LABEL_PREFIX = "v4-"  # every v4 receipt/log/FIFO/TMPDIR name; v2 and v3 names stay untouched
+ TMP = DESK + "/tmp"
+ 
+ CADICAL = "/opt/homebrew/Cellar/cadical/3.0.1/bin/cadical"
+@@ -91,7 +104,11 @@
+ V2_SCRIPT_SHA = "dcedbe45c6a354c03b400539eda588c2dca65a40d1f7009a3c42faceb97aac82"
+ DIFF_V1_V2 = DESK + "/DIFF-replay_v1-to-v2.txt"
+ DIFF_V1_V2_SHA = "44b12b90c1ebcfb173cb502f7cff1e6f64f5217cdddad91e9cc59e48789de0ba"
+-DIFF = DESK + "/DIFF-replay_v2-to-v3.txt"
++V3_SCRIPT = DESK + "/scripts/replay_v3.py"
++V3_SCRIPT_SHA = "baa4a675fc2634dc8dc96f53b9f6dd1b59af012b9fef23681af894904aa67565"
++DIFF_V2_V3 = DESK + "/DIFF-replay_v2-to-v3.txt"
++DIFF_V2_V3_SHA = "dc2a67ecf0aa5a9e7f19de0a145f04a60c3fd70325cbb61f7703d2d596aba8c8"
++DIFF = DESK + "/DIFF-replay_v3-to-v4.txt"
+ NF_R2 = LANE + "/review/P1_COLUMN0_BOOLEAN_NORMAL_FORM.r2.md"
+ NF_R2_SHA = "8ae0ac01de7ea5883111e8dcc4f84246813d8599b1e8af782e0498104a449e8f"
+ NF_CHECK = REVIEW + "/moqls8-p1-normalform-parent-v1/check_local_boolean_v1.py"
+@@ -129,8 +146,7 @@
+ GATE_RSS = 76 * GIB // 10               # launch: lane RSS + projected <= 7.6 GiB
+ STOP_LANE_RSS = 785 * GIB // 100        # in flight: lane RSS > 7.85 GiB -> SIGTERM
+ DESK_MARGIN = GIB // 2                  # in flight: desk aggregate > projected + 0.5 GiB -> SIGTERM
+-LOW_MEMORY_IDS = ("P0-B4", "P0-B5")
+-FLOOR_LOW, FLOOR_HIGH = 13 * GIB // 10, 46 * GIB // 10
++FLOOR_HIGH = 46 * GIB // 10
+ SELFTEST_PROJECTED = 512 * MIB
+ WAIT_POLL, WAIT_BUDGET, GATE_STREAK = 60, 6 * 3600, 2
+ SAMPLE, LANE_SCAN_PERIOD, SIGTERM_GRACE = 0.25, 1.0, 120
+@@ -148,16 +164,24 @@
+           b"-1 -2 -3 0\n")
+ SAT3 = b"p cnf 3 7\n1 2 3 0\n1 2 -3 0\n1 -2 3 0\n1 -2 -3 0\n-1 2 3 0\n-1 2 -3 0\n-1 -2 3 0\n"
+ NOHEADER = b"c header-less control input: the parent drat-trim exits before it reads any proof byte\n"
+-SELFTESTS = {  # name -> (solver CNF, checker CNF, mode); the last two are the v3 relay controls
++SELFTESTS = {  # name -> (solver CNF, checker CNF, mode): the five v4 relay controls
+     "unsat": (UNSAT3, UNSAT3, "refutation"),            # complete valid relay path
+     "sat-checker": (UNSAT3, SAT3, "negative"),         # invalid: relay complete and equal, proof rejected
+     "truncate": (UNSAT3, UNSAT3, "relay-truncate"),    # relay withholds the last TRUNCATE_BYTES proof bytes
+     "early-close": (UNSAT3, NOHEADER, "early-close"),  # checker exits before reading the proof; relay gets EPIPE
++    "suffix": (UNSAT3, UNSAT3, "relay-suffix"),        # relay appends SUFFIX after the solver's EOF
+ }
+ TRUNCATE_BYTES = 2      # truncation control: bytes the relay reads but never delivers (bounded tail buffer)
++SUFFIX = b"d\x02\x04\x06\x00"  # suffix control: binary DRAT deletion of clause '1 2 3' ('d', lits 1 2 3, 0)
+ HOLD_SECONDS = 60       # early-close control only: bounded waits that make the event order deterministic
+ SELFTEST_WANT = {"refutation": "PASS", "negative": "AS_PREREGISTERED_NOT_VERIFIED",
+-                 "relay-truncate": "AS_PREREGISTERED_FAIL_CLOSED", "early-close": "AS_PREREGISTERED_FAIL_CLOSED"}
++                 "relay-truncate": "AS_PREREGISTERED_FAIL_CLOSED", "early-close": "AS_PREREGISTERED_FAIL_CLOSED",
++                 "relay-suffix": "AS_PREREGISTERED_FAIL_CLOSED"}
++RELAY_MODES = {"refutation": "plain", "negative": "plain", "relay-truncate": "truncate", "early-close": "plain",
++               "relay-suffix": "suffix"}
++DRAT_NO_HEADER_LINE = b"c ERROR: did not find p cnf line in input file"
++HELPER_DEADLINE, HELPER_TERM_WAIT, STALE_SECONDS = 8.0, 5.0, 30.0
++RECEIPT_SCHEMA = "moqls8-strengthened-parent-replay-receipt/3"
+ 
+ SCOPE = ("Parent replay of the six exact strengthened P1 formulas only (source P1 leaf + 126-clause M_s tail; "
+          "CaDiCaL 3.0.1 -> named FIFO -> parent hashing/counting relay -> parent drat-trim, measured parent feeds). "
+@@ -167,11 +191,13 @@
+ ACCEPTANCE = ("PASS iff all of: solver rc 20; solver status lines (log with only '\\r' removed, lines starting "
+               "with 's') exactly ['s UNSATISFIABLE']; checker rc 0; checker log with only '\\r' removed has a line "
+               "exactly 's VERIFIED' and contains neither 's NOT VERIFIED' nor 's TIMEOUT'; no safety stop; solver "
+-              "and checker writer threads ok, written == formula length, and sha256 of the bytes each actually wrote "
+-              "== the bound strengthened hash; the parent relay read R > 0 proof bytes from the solver's FIFO and "
+-              "delivered D bytes to the checker with R == D, equal sha256 of the bytes read and the bytes delivered, "
+-              "no relay error and nothing withheld; the checker's own 'c finished parsing, read N bytes from proof "
+-              "file' line is present with N == D (absent line: fail-closed); stricter than the brief: drat-trim's "
++              "and checker writer threads ok with no close error and finished, written == formula length, and "
++              "sha256 of the bytes each actually wrote == the bound strengthened hash; the parent relay saw the FIFO "
++              "EOF, read R > 0 proof bytes and delivered D bytes to the checker with R == D, equal sha256 of the "
++              "bytes read and the bytes delivered, no delivery, drain or close error, nothing withheld, and its thread "
++              "finished; the checker's own 'c finished parsing, read N bytes from proof file' line is present with "
++              "N == D (absent line: fail-closed; drat-trim.c L986-988, L1107-1115: N == D means the delivered stream "
++              "was consumed to EOF and well-formed); stricter than the brief: drat-trim's "
+               "'c parsing input formula' line reports the header's variable and clause counts and the checker log "
+               "has no 'early EOF' or 'clauses less than expected' warning. The proof-stream sha256 and byte count "
+               "(relay read side) are recorded as provenance; they do not make a proof correct, only drat-trim's "
+@@ -191,12 +217,14 @@
+              "the 17:30 cutoff). Projected peak = "
+              "max(1.5 x worker aggregate peak of the formula's source template leaf (the worker's 900 s attempt; "
+              "no worker run of a strengthened formula exists), 4.6 GiB); self-tests 512 MiB.")
+-STOPS = ("In flight, every 0.25 s: desk aggregate RSS (driver + live children, libproc) and free space; lane scan "
+-         "every >= 1 s. SIGTERM own children if lane RSS (other lane processes + desk) > 7.85 GiB, desk aggregate > "
+-         "projected + 0.5 GiB, free < 12,000,000,000, wall > %d + %d + 120 s, the host clock reaches 2026-10-18 "
+-         "17:57:00 PDT, the checker exits while the solver still runs, or the driver receives SIGTERM; then wait at "
+-         "most 120 s, never escalate; result UNKNOWN and the desk launches nothing more."
+-         % (SOLVER_SECONDS, CHECKER_SECONDS))
++STOPS = ("In flight, every 0.25 s: desk aggregate RSS (driver + live children, libproc; a live child unreadable twice "
++         "in a row is a guard failure) and free space; a scanner thread publishes lane scans every >= 1 s (helpers "
++         "under %.0f s deadlines). SIGTERM own children if a lane reading failed or is older than %.0f s, lane RSS "
++         "(other lane processes + desk) > 7.85 GiB, desk aggregate > projected + 0.5 GiB, free < 12,000,000,000, "
++         "wall > %d + %d + 120 s, the host clock reaches 2026-10-18 17:57:00 PDT, the checker exits while the solver "
++         "still runs, any exception after the first fd, or the driver receives SIGTERM (also checked immediately "
++         "before each spawn and before gate success); then wait at most 120 s, never escalate; result UNKNOWN and "
++         "the desk launches nothing more." % (HELPER_DEADLINE, STALE_SECONDS, SOLVER_SECONDS, CHECKER_SECONDS))
+ 
+ 
+ def die(msg):
+@@ -278,16 +306,66 @@
+ 
+ 
+ # --- phys-1 lane scan
++def run_helper(argv):
++    """Run one short ps/lsof helper in its own session (never in the driver's process group) under a monotonic
++    deadline. On overrun: SIGTERM, wait at most HELPER_TERM_WAIT, never escalate. -> (rc or None, stdout, error)."""
++    try:
++        p = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
++                             env=ENV, start_new_session=True)
++    except OSError as e:
++        return None, b"", "spawn %s: %r" % (argv[0], e)
++    deadline = time.monotonic() + HELPER_DEADLINE
++    fd = p.stdout.fileno()
++    os.set_blocking(fd, False)
++    chunks, err = [], None
++    sel = selectors.DefaultSelector()
++    sel.register(fd, selectors.EVENT_READ)
++    try:
++        eof = False
++        while not eof and err is None:
++            left = deadline - time.monotonic()
++            if left <= 0:
++                err = "%s exceeded the %.0f s deadline" % (argv[0], HELPER_DEADLINE)
++                break
++            for _key, _ev in sel.select(min(left, 0.5)):
++                try:
++                    b = os.read(fd, 65536)
++                except BlockingIOError:
++                    continue
++                if b:
++                    chunks.append(b)
++                else:
++                    eof = True
++        while err is None and p.poll() is None:
++            if time.monotonic() > deadline:
++                err = "%s did not exit within the %.0f s deadline" % (argv[0], HELPER_DEADLINE)
++                break
++            time.sleep(0.01)
++        if err is not None and p.poll() is None:
++            try:
++                os.kill(p.pid, signal.SIGTERM)
++            except ProcessLookupError:
++                pass
++            t_end = time.monotonic() + HELPER_TERM_WAIT
++            while p.poll() is None and time.monotonic() < t_end:
++                time.sleep(0.05)
++            if p.poll() is None:
++                err += "; still alive %.0f s after SIGTERM (no escalation)" % HELPER_TERM_WAIT
++    finally:
++        sel.close()
++        p.stdout.close()
++    return p.returncode, b"".join(chunks), err
++
++
+ def lane_scan():
+-    """Other lane processes; None if ps failed. Excludes this process and its children. The ps/lsof helpers run in
+-    their own session (start_new_session), so no setuid helper ever joins the driver's process group."""
++    """Other lane processes -> (list, None), or (None, error) if a helper failed or overran its deadline.
++    Excludes this process and its children."""
+     me = os.getpid()
+-    p = subprocess.run(["/bin/ps", "-axww", "-o", "pid=,ppid=,rss=,state=,comm="], capture_output=True, env=ENV,
+-                       start_new_session=True)
+-    if p.returncode != 0:
+-        return None
++    rc, out, err = run_helper(["/bin/ps", "-axww", "-o", "pid=,ppid=,rss=,state=,comm="])
++    if err is not None or rc != 0:
++        return None, err or "ps rc %s" % rc
+     cand = {}
+-    for line in p.stdout.decode("utf-8", "replace").splitlines():
++    for line in out.decode("utf-8", "replace").splitlines():
+         parts = line.split(None, 4)
+         if len(parts) < 5:
+             continue
+@@ -303,12 +381,13 @@
+             cand[pid] = {"pid": pid, "ppid": ppid, "ps_rss_kb": rss_kb, "state": parts[3], "comm": base,
+                          "native": native}
+     if not cand:
+-        return []
++        return [], None
+     pids = ",".join(str(x) for x in cand)
+-    lo = subprocess.run(["/usr/sbin/lsof", "-a", "-d", "cwd", "-p", pids, "-Fpn"], capture_output=True, env=ENV,
+-                        start_new_session=True)
++    _rc, out, err = run_helper(["/usr/sbin/lsof", "-a", "-d", "cwd", "-p", pids, "-Fpn"])
++    if err is not None:  # lsof exits 1 when a listed pid has gone; only a failed or overrun helper fails the scan
++        return None, err
+     cwd, cur = {}, None
+-    for line in lo.stdout.decode("utf-8", "replace").splitlines():
++    for line in out.decode("utf-8", "replace").splitlines():
+         if line.startswith("p"):
+             try:
+                 cur = int(line[1:])
+@@ -316,10 +395,11 @@
+                 cur = None
+         elif line.startswith("n") and cur is not None:
+             cwd[cur] = line[1:]
+-    a = subprocess.run(["/bin/ps", "-ww", "-o", "pid=,args=", "-p", pids], capture_output=True, env=ENV,
+-                       start_new_session=True)
++    _rc, out, err = run_helper(["/bin/ps", "-ww", "-o", "pid=,args=", "-p", pids])
++    if err is not None:
++        return None, err
+     args = {}
+-    for line in a.stdout.decode("utf-8", "replace").splitlines():
++    for line in out.decode("utf-8", "replace").splitlines():
+         parts = line.strip().split(None, 1)
+         if len(parts) == 2:
+             try:
+@@ -336,7 +416,35 @@
+             c["cpu_ns"] = t[1] if t else None
+             c["args"] = full_args[:240]
+             lane.append(c)
+-    return lane
++    return lane, None
++
++
++class Scanner(threading.Thread):
++    """In-flight lane scanner: publishes (monotonic time, scan or None, error) after every scan, so the watchdog
++    loop never blocks on a helper. A failed or stale published reading is a safety stop in pipeline()."""
++
++    def __init__(self):
++        threading.Thread.__init__(self, daemon=True)
++        self.halt = threading.Event()
++        self.lock = threading.Lock()
++        self.latest = None
++        self.scans = self.failures = 0
++
++    def run(self):
++        while not self.halt.is_set():
++            try:
++                scan, err = lane_scan()
++            except Exception as e:  # recorded, never hidden
++                scan, err = None, "lane scan raised %r" % e
++            with self.lock:
++                self.latest = (time.monotonic(), scan, err)
++                self.scans += 1
++                self.failures += 1 if scan is None else 0
++            self.halt.wait(LANE_SCAN_PERIOD)
++
++    def reading(self):
++        with self.lock:
++            return self.latest
+ 
+ 
+ def compact(c):
+@@ -349,9 +457,9 @@
+ 
+ 
+ def gate_scan():
+-    scan = lane_scan()
++    scan, err = lane_scan()
+     if scan is None:
+-        return None, None, None
++        return None, None, None, err
+     c0 = {c["pid"]: c["cpu_ns"] for c in scan}
+     t0 = time.monotonic()
+     time.sleep(HOT_WINDOW)
+@@ -371,7 +479,7 @@
+             c["busy"] = frac is not None and frac >= HOT_CPU_FRACTION
+         busy += 1 if c["busy"] else 0
+         total += c["rss_bytes"]
+-    return busy, total, scan
++    return busy, total, scan, None
+ 
+ 
+ def gate(label, projected, budget, log, stop):
+@@ -379,20 +487,25 @@
+     samples, streak = [], 0
+     while True:
+         fb = free_bytes()
+-        busy, other, scan = gate_scan()
++        busy, other, scan, scan_err = gate_scan()
+         ok_disk = fb >= LAUNCH_FLOOR
+         ok_busy = scan is not None and busy + MINE <= LANE_BUSY_CAP
+         ok_rss = scan is not None and other + projected <= GATE_RSS
+         ok = ok_disk and ok_busy and ok_rss
+         streak = streak + 1 if ok else 0
+         samples.append({"at": now(), "free_bytes": fb, "lane_other_busy": busy, "lane_other_rss_bytes": other,
+-                        "scan_failed": scan is None, "ok_disk": ok_disk, "ok_busy": ok_busy, "ok_rss": ok_rss,
+-                        "streak": streak})
+-        log("gate %s: free=%d other_busy=%s other_rss=%s projected=%d disk/busy/rss=%s/%s/%s streak=%d"
+-            % (label, fb, busy, other, projected, ok_disk, ok_busy, ok_rss, streak))
++                        "scan_failed": scan is None, "scan_error": scan_err, "ok_disk": ok_disk, "ok_busy": ok_busy,
++                        "ok_rss": ok_rss, "streak": streak})
++        log("gate %s: free=%d other_busy=%s other_rss=%s projected=%d disk/busy/rss=%s/%s/%s streak=%d%s"
++            % (label, fb, busy, other, projected, ok_disk, ok_busy, ok_rss, streak,
++               "" if scan_err is None else " scan_error=" + scan_err))
+         waited = time.monotonic() - t_start
+         res = {"label": label, "projected_peak_bytes": projected, "rule": GATE_RULE, "samples": samples,
+                "waited_seconds": round(waited, 1)}
++        if stop.get("signal"):  # latched SIGTERM wins over a passing streak
++            budget["used"] += waited
++            res.update({"launch": False, "stopped": "driver received " + stop["signal"], "stopped_at": now()})
++            return res
+         if time.time() >= NO_LAUNCH_AT:
+             budget["used"] += waited
+             res.update({"launch": False, "cutoff": True, "stopped": "launch cutoff 2026-10-18 17:29:00 PDT reached",
+@@ -403,10 +516,6 @@
+             res.update({"launch": True, "decided_at": now(), "free_bytes_at_launch": fb,
+                         "lane_other_busy_at_launch": busy, "lane_other_rss_at_launch": other,
+                         "launch_scan": [compact(c) for c in scan]})
+-            return res
+-        if stop.get("signal"):
+-            budget["used"] += waited
+-            res.update({"launch": False, "stopped": "driver received " + stop["signal"], "stopped_at": now()})
+             return res
+         if budget["used"] + waited + WAIT_POLL > WAIT_BUDGET:
+             budget["used"] += waited
+@@ -606,7 +715,8 @@
+     raw, pins = {}, {}
+     for path, exp in ((BINDING, BINDING_SHA), (BIND_SCRIPT, BIND_SCRIPT_SHA), (V1_SCRIPT, V1_SCRIPT_SHA),
+                       (NF_R2, NF_R2_SHA), (NF_CHECK, NF_CHECK_SHA), (NF_RESULT, NF_RESULT_SHA),
+-                      (WORKER_HASHES, WORKER_HASHES_SHA), (V2_SCRIPT, V2_SCRIPT_SHA), (DIFF_V1_V2, DIFF_V1_V2_SHA)):
++                      (WORKER_HASHES, WORKER_HASHES_SHA), (V2_SCRIPT, V2_SCRIPT_SHA), (DIFF_V1_V2, DIFF_V1_V2_SHA),
++                      (V3_SCRIPT, V3_SCRIPT_SHA), (DIFF_V2_V3, DIFF_V2_V3_SHA)):
+         raw[path] = read_bytes(path)
+         if sha_bytes(raw[path]) != exp:
+             die("pin mismatch " + path)
+@@ -710,9 +820,9 @@
+ def item_label(item):
+     if item["kind"] == "selftest":
+         return LABEL_PREFIX + "selftest-" + item["name"]
+-    if item["kind"] in ("leaf", "formula"):
++    if item["kind"] == "formula":
+         return LABEL_PREFIX + item["id"]
+-    return LABEL_PREFIX + "control-" + item["id"]
++    die("unknown item kind %r (v4 runs selftest and formula items only)" % item["kind"])
+ 
+ 
+ def header_counts(b):
+@@ -729,11 +839,7 @@
+         f = ctx["strong"][item["id"]]
+         parts = [STRONG_HEADER, ctx["body_view"], f["unit_bytes"], f["tail_bytes"]]
+         return parts, parts
+-    case = ctx["cases"][item["id"]]
+-    leaf = [LEAF_HEADER, ctx["body_view"], case["unit_bytes"]]
+-    if item["kind"] == "leaf":
+-        return leaf, leaf
+-    return leaf, [LEAF_HEADER, ctx["body_view"], case["mutant_unit_bytes"]]
++    die("unknown item kind %r (v4 runs selftest and formula items only)" % item["kind"])
+ 
+ 
+ # --- the solver -> FIFO -> parent relay -> drat-trim pipeline with measured feeds
+@@ -772,56 +878,74 @@
+ 
+ def _relay(src, dst, res, mode, hold):
+     """Parent proof relay: solver FIFO (src) -> sha256/count -> checker stdin pipe (dst). One CHUNK in flight.
+-    'read' = bytes the relay read from the FIFO (the proof stream); 'delivered' = bytes os.write() accepted into the
+-    checker's pipe. mode 'plain' delivers everything; 'truncate' (control) never delivers the last TRUNCATE_BYTES.
+-    hold (early-close control only) delays the first delivery until the checker was reaped. After EPIPE the relay
+-    stops delivering but keeps reading and hashing to EOF, so the solver never blocks on a full FIFO."""
++    'read' = bytes read from the FIFO (the proof stream); 'delivered' = bytes os.write() accepted into the checker's
++    pipe. Modes: 'plain' delivers everything; 'truncate' (control) never delivers the last TRUNCATE_BYTES; 'suffix'
++    (control) delivers SUFFIX after the FIFO EOF. hold (early-close control only) delays the first delivery until the
++    checker was reaped. fifo_eof_seen is set only when read() returns b''. A delivery error (EPIPE or another write
++    error) stops delivery, but the FIFO is still read and hashed to EOF so the solver never blocks; drain (read)
++    errors, close errors and exceptions are recorded separately. ok = EOF seen and no error of any kind."""
+     hin, hout = hashlib.sha256(), hashlib.sha256()
+-    nin = nout = 0
++    st = {"nin": 0, "nout": 0, "open_out": True}
+     keep = TRUNCATE_BYTES if mode == "truncate" else 0
+-    tail, open_out = b"", True
++    tail = b""
++
++    def deliver(data):
++        if hold is not None and "hold_released_by_event" not in res:
++            res["hold_released_by_event"] = hold.wait(HOLD_SECONDS)
++        mv, off = memoryview(data), 0
++        while off < len(mv):
++            try:
++                n = os.write(dst, mv[off:off + CHUNK])
++            except OSError as e:
++                res["delivery_error"] = ("%s: the checker's proof input refused bytes after %d delivered of %d read"
++                                         % ("EPIPE" if isinstance(e, BrokenPipeError) else repr(e), st["nout"],
++                                            st["nin"]))
++                res["delivery_error_at"] = now()
++                st["open_out"] = False
++                return
++            hout.update(mv[off:off + n])
++            off += n
++            st["nout"] += n
++
+     try:
+         while True:
+-            data = os.read(src, CHUNK)
++            try:
++                data = os.read(src, CHUNK)
++            except OSError as e:
++                res["drain_error"] = "read: %r after %d read bytes" % (e, st["nin"])
++                break
+             if not data:
++                res["fifo_eof_seen"] = True
++                res["fifo_eof_at"] = now()
+                 break
+-            if nin == 0:
++            if st["nin"] == 0:
+                 res["first_read_at"] = now()
+             hin.update(data)
+-            nin += len(data)
+-            if not open_out:
+-                continue
+-            if keep:
+-                data = tail + data
+-                tail, data = data[-keep:], data[:-keep]
+-            if hold is not None and "hold_released_by_event" not in res:
+-                res["hold_released_by_event"] = hold.wait(HOLD_SECONDS)
+-            mv, off = memoryview(data), 0
+-            while off < len(mv):
+-                try:
+-                    n = os.write(dst, mv[off:off + CHUNK])
+-                except BrokenPipeError:
+-                    res["error"] = ("EPIPE: the checker closed its proof input after %d delivered of %d read bytes"
+-                                    % (nout, nin))
+-                    res["epipe_at"] = now()
+-                    open_out = False
+-                    break
+-                hout.update(mv[off:off + n])
+-                off += n
+-                nout += n
+-        res["ok"] = "error" not in res
++            st["nin"] += len(data)
++            if st["open_out"]:
++                if keep:
++                    data = tail + data
++                    tail, data = data[-keep:], data[:-keep]
++                if data:
++                    deliver(data)
++        if mode == "suffix" and res.get("fifo_eof_seen") and st["open_out"]:
++            before = st["nout"]
++            deliver(SUFFIX)
++            res["suffix_delivered_bytes"] = st["nout"] - before
+     except Exception as e:  # recorded, never hidden
+-        res["ok"] = False
+-        res["error"] = "%s | %r" % (res.get("error"), e)
++        res["relay_exception"] = repr(e)
+     finally:
++        close_errors = []
+         for name, fd in (("dst", dst), ("src", src)):
+             try:
+                 os.close(fd)
+             except OSError as e:
+-                res["close_error_" + name] = repr(e)
+-        res.update({"read_bytes": nin, "read_sha256": hin.hexdigest(), "delivered_bytes": nout,
+-                    "delivered_sha256": hout.hexdigest(), "withheld_bytes": len(tail), "eof_at": now(),
+-                    "eof_mono": time.monotonic()})
++                close_errors.append("%s: %r" % (name, e))
++        res.update({"read_bytes": st["nin"], "read_sha256": hin.hexdigest(), "delivered_bytes": st["nout"],
++                    "delivered_sha256": hout.hexdigest(), "withheld_bytes": len(tail), "close_errors": close_errors,
++                    "finished_at": now(), "finished_mono": time.monotonic()})
++        res["ok"] = (res.get("fifo_eof_seen") is True and not close_errors
++                     and not any(k in res for k in ("delivery_error", "drain_error", "relay_exception")))
+ 
+ 
+ def _start_relay(src, dst, mode, hold):
+@@ -860,39 +984,70 @@
+            "cwd": {"solver": rel(stmp), "checker": rel(ctmp)}, "env": {"solver": senv, "checker": cenv},
+            "projected_peak_bytes": projected, "desk_stop_bytes": projected + DESK_MARGIN,
+            "lane_stop_bytes": STOP_LANE_RSS, "free_floor_bytes": FLOOR, "wall_backstop_seconds": BACKSTOP,
+-           "stops": STOPS}
+-    fds = {}
++           "stale_lane_reading_seconds": STALE_SECONDS, "stops": STOPS}
++    fds, procs, done, writers, events, rss_fail = {}, {}, {}, {}, [], {}
++    ev_solver, ev_checker = threading.Event(), threading.Event()
++    relay, scanner = None, Scanner()
++    peak_desk = peak_lane = peak_other = other_rss = 0
++    max_other_busy = 0
++    min_free = None
++    reason, term_at, grace_exceeded = None, None, False
++    last_mono, prev_cpu, prev_mono, scan_started = None, None, None, None
+ 
+     def close_fd(name):
+         fd = fds.pop(name, None)
+         if fd is not None:
+             os.close(fd)
+ 
+-    os.mkfifo(fifo)
+-    fds["fifo_read"] = os.open(fifo, os.O_RDONLY | os.O_NONBLOCK)
+-    fcntl.fcntl(fds["fifo_read"], fcntl.F_SETFL, fcntl.fcntl(fds["fifo_read"], fcntl.F_GETFL) & ~os.O_NONBLOCK)
+-    fds["keepalive"] = os.open(fifo, os.O_WRONLY)
+-    fds["ccr"], fds["ccw"] = os.pipe()
+-    fds["cpr"], fds["cpw"] = os.pipe()
+-    ev_solver, ev_checker = threading.Event(), threading.Event()
+-    procs, done, writers, events = {}, {}, {}, []
+-    relay = None
+-    peak_desk = peak_lane = peak_other = 0
+-    max_other_busy = lane_scans = lane_scan_failures = 0
+-    min_free = None
+-    reason, term_at, grace_exceeded = None, None, False
+-    other_rss, last_scan_t, prev_cpu, prev_t = 0, None, None, None
++    def reap():
++        for name, p in procs.items():
++            if name in done:
++                continue
++            pid, status, ru = os.wait4(p.pid, os.WNOHANG)
++            if pid:
++                rc = os.waitstatus_to_exitcode(status)
++                p.returncode = rc
++                done[name] = {"rc": rc, "maxrss_bytes": ru.ru_maxrss,
++                              "wall_seconds": round(time.monotonic() - t0, 3),
++                              "user_seconds": round(ru.ru_utime, 3), "sys_seconds": round(ru.ru_stime, 3),
++                              "reaped_at": now(), "reaped_mono": time.monotonic()}
++                if name == "solver":
++                    close_fd("keepalive")
++                    ev_solver.set()
++                else:
++                    ev_checker.set()
++
++    def term_live(why):
++        for n, p in procs.items():
++            if n not in done:
++                try:
++                    os.kill(p.pid, signal.SIGTERM)
++                    events.append({"at": now(), "event": "SIGTERM", "target": n, "pid": p.pid, "reason": why})
++                except ProcessLookupError:
++                    pass
++
+     rec["started_at"] = now()
+     t0 = time.monotonic()
++    os.mkfifo(fifo)
+     with open(clog, "xb") as cl, open(slog, "xb") as sl:
+-        try:
+-            try:
+-                check = subprocess.Popen([DRAT, "/dev/fd/%d" % fds["ccr"], "-i", "-t", str(CHECKER_SECONDS)],
+-                                         stdin=fds["cpr"], stdout=cl, stderr=subprocess.STDOUT,
+-                                         pass_fds=(fds["ccr"],), cwd=ctmp, env=cenv)
+-            except OSError as e:
+-                rec["checker_spawn_error"] = repr(e)
+-                check = None
++        try:  # one cleanup scope for everything from the first fd to the last reap
++            fds["fifo_read"] = os.open(fifo, os.O_RDONLY | os.O_NONBLOCK)
++            fcntl.fcntl(fds["fifo_read"], fcntl.F_SETFL,
++                        fcntl.fcntl(fds["fifo_read"], fcntl.F_GETFL) & ~os.O_NONBLOCK)
++            fds["keepalive"] = os.open(fifo, os.O_WRONLY)
++            fds["ccr"], fds["ccw"] = os.pipe()
++            fds["cpr"], fds["cpw"] = os.pipe()
++            check = None
++            if stop.get("signal"):  # latched SIGTERM: no spawn
++                rec["stop_latched_before_spawn"] = "checker"
++                reason = "driver received %s before the checker spawn" % stop["signal"]
++            else:
++                try:
++                    check = subprocess.Popen([DRAT, "/dev/fd/%d" % fds["ccr"], "-i", "-t", str(CHECKER_SECONDS)],
++                                             stdin=fds["cpr"], stdout=cl, stderr=subprocess.STDOUT,
++                                             pass_fds=(fds["ccr"],), cwd=ctmp, env=cenv)
++                except OSError as e:
++                    rec["checker_spawn_error"] = repr(e)
+             if check is not None:
+                 procs["checker"] = check
+                 rec["checker_pid"] = check.pid
+@@ -903,51 +1058,68 @@
+                 writers["checker_feed"] = _start_writer(fds.pop("ccw"), checker_parts,
+                                                         ev_solver if early_close else None)
+                 fds["scr"], fds["scw"] = os.pipe()
+-                try:
+-                    solve = subprocess.Popen(solver_argv + ["/dev/fd/%d" % fds["scr"], fifo],
+-                                             stdin=subprocess.DEVNULL, stdout=sl, stderr=subprocess.STDOUT,
+-                                             pass_fds=(fds["scr"],), cwd=stmp, env=senv)
+-                except OSError as e:
+-                    rec["solver_spawn_error"] = repr(e)
+-                    solve = None
+-                    close_fd("scw")
+-                    close_fd("keepalive")
++                solve = None
++                if stop.get("signal"):  # latched SIGTERM: no solver spawn; the checker is stopped below
++                    rec["stop_latched_before_spawn"] = "solver"
++                    reason = "driver received %s before the solver spawn" % stop["signal"]
++                else:
++                    try:
++                        solve = subprocess.Popen(solver_argv + ["/dev/fd/%d" % fds["scr"], fifo],
++                                                 stdin=subprocess.DEVNULL, stdout=sl, stderr=subprocess.STDOUT,
++                                                 pass_fds=(fds["scr"],), cwd=stmp, env=senv)
++                    except OSError as e:
++                        rec["solver_spawn_error"] = repr(e)
+                 close_fd("scr")
+                 if solve is not None:
+                     procs["solver"] = solve
+                     rec["solver_pid"] = solve.pid
+                     writers["solver_feed"] = _start_writer(fds.pop("scw"), solver_parts)
++                else:
++                    close_fd("scw")
++                    close_fd("keepalive")
+                 log("launched %s: checker pid %s, solver pid %s" % (label, rec.get("checker_pid"),
+                                                                      rec.get("solver_pid")))
++            if reason is not None and procs:
++                term_at = time.monotonic()
++                term_live(reason)
++                log("SAFETY STOP %s: %s" % (label, reason))
++            if procs:
++                scanner.start()
++                scan_started = time.monotonic()
+             while procs:
+-                for name, p in procs.items():
+-                    if name in done:
+-                        continue
+-                    pid, status, ru = os.wait4(p.pid, os.WNOHANG)
+-                    if pid:
+-                        rc = os.waitstatus_to_exitcode(status)
+-                        p.returncode = rc
+-                        done[name] = {"rc": rc, "maxrss_bytes": ru.ru_maxrss,
+-                                      "wall_seconds": round(time.monotonic() - t0, 3),
+-                                      "user_seconds": round(ru.ru_utime, 3), "sys_seconds": round(ru.ru_stime, 3),
+-                                      "reaped_at": now(), "reaped_mono": time.monotonic()}
+-                        if name == "solver":
+-                            close_fd("keepalive")
+-                            ev_solver.set()
+-                        else:
+-                            ev_checker.set()
++                reap()
+                 if len(done) == len(procs):
+                     break
+                 tnow = time.monotonic()
+-                desk = rss(os.getpid()) + sum(rss(p.pid) for n, p in procs.items() if n not in done)
++                guard_fail = None
++                own = taskinfo(os.getpid())
++                desk = own[0] if own else 0
++                if own is None:
++                    guard_fail = "driver RSS unreadable"
++                for n, p in procs.items():
++                    if n in done:
++                        continue
++                    t = taskinfo(p.pid)
++                    if t is None:  # one miss can be an exit between wait4 and the read; two in a row cannot
++                        rss_fail[n] = rss_fail.get(n, 0) + 1
++                        if rss_fail[n] >= 2 and guard_fail is None:
++                            guard_fail = "own child %s (pid %d) RSS unreadable twice in a row" % (n, p.pid)
++                    else:
++                        rss_fail[n] = 0
++                        desk += t[0]
+                 peak_desk = max(peak_desk, desk)
+-                if last_scan_t is None or tnow - last_scan_t >= LANE_SCAN_PERIOD:
+-                    scan = lane_scan()
+-                    last_scan_t = tnow
++                reading = scanner.reading()
++                if reading is None:
++                    if tnow - scan_started > STALE_SECONDS and guard_fail is None:
++                        guard_fail = "no lane scan reading within %.0f s" % STALE_SECONDS
++                else:
++                    mono, scan, err = reading
+                     if scan is None:
+-                        lane_scan_failures += 1
+-                    else:
+-                        lane_scans += 1
++                        guard_fail = guard_fail or "lane scan failed: %s" % err
++                    elif tnow - mono > STALE_SECONDS:
++                        guard_fail = guard_fail or "lane scan reading stale (%.1f s old)" % (tnow - mono)
++                    elif mono != last_mono:
++                        last_mono = mono
+                         other_rss = sum(c["rss_bytes"] for c in scan)
+                         busy, cpu = 0, {}
+                         for c in scan:
+@@ -955,10 +1127,10 @@
+                             if c["native"]:
+                                 busy += 1
+                             elif (prev_cpu is not None and c["cpu_ns"] is not None
+-                                  and prev_cpu.get(c["pid"]) is not None and tnow > prev_t):
+-                                if (c["cpu_ns"] - prev_cpu[c["pid"]]) / ((tnow - prev_t) * 1e9) >= HOT_CPU_FRACTION:
++                                  and prev_cpu.get(c["pid"]) is not None and mono > prev_mono):
++                                if (c["cpu_ns"] - prev_cpu[c["pid"]]) / ((mono - prev_mono) * 1e9) >= HOT_CPU_FRACTION:
+                                     busy += 1
+-                        prev_cpu, prev_t = cpu, tnow
++                        prev_cpu, prev_mono = cpu, mono
+                         max_other_busy = max(max_other_busy, busy)
+                         peak_other = max(peak_other, other_rss)
+                 lane_total = other_rss + desk
+@@ -968,6 +1140,8 @@
+                 if reason is None:
+                     if stop.get("signal"):
+                         reason = "driver received %s" % stop["signal"]
++                    elif guard_fail is not None:
++                        reason = "guard reading failed: " + guard_fail
+                     elif lane_total > STOP_LANE_RSS:
+                         reason = ("lane RSS %d > 7.85 GiB (%d): other lane %d + desk %d"
+                                   % (lane_total, STOP_LANE_RSS, other_rss, desk))
+@@ -983,15 +1157,8 @@
+                         reason = "checker exited (rc %s) while the solver was still running" % done["checker"]["rc"]
+                     if reason is not None:
+                         term_at = time.monotonic()
++                        term_live(reason)
+                         log("SAFETY STOP %s: %s" % (label, reason))
+-                        for n, p in procs.items():
+-                            if n not in done:
+-                                try:
+-                                    os.kill(p.pid, signal.SIGTERM)
+-                                    events.append({"at": now(), "event": "SIGTERM", "target": n, "pid": p.pid,
+-                                                   "reason": reason})
+-                                except ProcessLookupError:
+-                                    pass
+                 elif time.monotonic() - term_at > SIGTERM_GRACE:
+                     grace_exceeded = True
+                     events.append({"at": now(), "event": "SIGTERM grace of 120 s exceeded; no escalation",
+@@ -999,19 +1166,48 @@
+                     log("SIGTERM grace exceeded for %s; no escalation" % label)
+                     break
+                 time.sleep(SAMPLE)
++        except BaseException as e:  # SIGTERM own children, bounded reap, UNKNOWN; cmd_run launches nothing more
++            rec["exception"] = "%s: %s" % (type(e).__name__, e)
++            rec["exception_traceback"] = traceback.format_exc()[-4000:]
++            if reason is None:
++                reason = "exception in pipeline: " + rec["exception"]
++            term_live(reason)
++            try:
++                log("EXCEPTION in pipeline %s: %s" % (label, rec["exception"]))
++            except Exception as e3:  # recorded, never hidden (e.g. a full disk refusing the log line)
++                events.append({"at": now(), "event": "driver log write failed", "error": repr(e3)})
++            t_end = time.monotonic() + SIGTERM_GRACE
++            while any(n not in done for n in procs) and time.monotonic() < t_end:
++                try:
++                    reap()
++                except Exception as e2:  # recorded, never hidden
++                    events.append({"at": now(), "event": "reap failed during exception cleanup", "error": repr(e2)})
++                    break
++                time.sleep(SAMPLE)
++            if any(n not in done for n in procs):
++                grace_exceeded = True
++                events.append({"at": now(), "event": "children alive after exception cleanup; no escalation",
++                               "alive": [n for n in procs if n not in done]})
+         finally:
++            scanner.halt.set()
+             for name in list(fds):
+-                close_fd(name)
++                try:
++                    close_fd(name)
++                except OSError as e:
++                    events.append({"at": now(), "event": "fd close failed", "fd": name, "error": repr(e)})
++    if scanner.is_alive():
++        scanner.join(3 * (HELPER_DEADLINE + HELPER_TERM_WAIT) + 2)
++    rec["lane_scanner"] = {"scans": scanner.scans, "failures": scanner.failures, "alive_after_join": scanner.is_alive()}
+     for name, (t, res) in writers.items():
+-        t.join(5.0 if grace_exceeded else None)
++        t.join(5.0 if grace_exceeded else HOLD_SECONDS + 5.0)
+         res["thread_finished"] = not t.is_alive()
+     if relay is not None:
+-        relay[0].join(5.0 if grace_exceeded else None)
++        relay[0].join(5.0 if grace_exceeded else HOLD_SECONDS + 30.0)
+         relay[1]["thread_finished"] = not relay[0].is_alive()
+-    rel_res = dict(relay[1]) if relay is not None else {"ok": False, "error": "relay not started"}
++    rel_res = dict(relay[1]) if relay is not None else {"ok": False, "relay_exception": "relay not started"}
+     c_mono = done.get("checker", {}).get("reaped_mono")
+-    rel_res["checker_exited_before_relay_eof"] = (None if c_mono is None or "eof_mono" not in rel_res
+-                                                  else c_mono < rel_res["eof_mono"])
++    rel_res["checker_exited_before_relay_finished"] = (None if c_mono is None or "finished_mono" not in rel_res
++                                                       else c_mono < rel_res["finished_mono"])
+     rec["relay"] = rel_res
+     rec["proof_stream_sha256"] = rel_res.get("read_sha256")
+     rec["proof_stream_bytes"] = rel_res.get("read_bytes")
+@@ -1023,8 +1219,6 @@
+     rec["peak_lane_other_rss_bytes"] = peak_other
+     rec["peak_lane_total_rss_bytes"] = peak_lane
+     rec["max_lane_other_busy_in_flight"] = max_other_busy
+-    rec["lane_scans_in_flight"] = lane_scans
+-    rec["lane_scan_failures_in_flight"] = lane_scan_failures
+     rec["min_free_bytes_in_flight"] = min_free
+     rec["safety_stop_reason"] = reason
+     rec["sigterm_grace_exceeded"] = grace_exceeded
+@@ -1050,6 +1244,8 @@
+     rec["checker_has_verified_line"] = b"s VERIFIED" in clines
+     rec["checker_has_not_verified"] = b"s NOT VERIFIED" in clines or b"s NOT VERIFIED" in ctext
+     rec["checker_has_timeout"] = b"s TIMEOUT" in clines or b"s TIMEOUT" in ctext
++    rec["checker_line_s_NOT_VERIFIED_exact"] = b"s NOT VERIFIED" in clines
++    rec["checker_header_error_line"] = DRAT_NO_HEADER_LINE in clines
+     rec["checker_info_lines"] = [ln.decode("ascii", "replace").strip() for ln in clines
+                                  if ln.startswith(b"c") and any(k in ln for k in INFO_KEYS)][:40]
+     return rec
+@@ -1060,10 +1256,23 @@
+     return s.get("rc") == 10 or "s SATISFIABLE" in (rec.get("solver_status_lines") or [])
+ 
+ 
++def feed_ok(w, n, e):
++    """A measured CNF feed: no write or close error, thread finished, all n bytes written, sha256 == e."""
++    return (w.get("ok") is True and "error" not in w and "close_error" not in w and w.get("thread_finished") is True
++            and w.get("written") == n and w.get("sha256") == e)
++
++
++def relay_clean(r):
++    """FIFO EOF seen via read() == b'', no delivery/drain/close error or exception, relay thread finished."""
++    return (r.get("ok") is True and r.get("fifo_eof_seen") is True and r.get("thread_finished") is True
++            and not r.get("close_errors")
++            and not any(k in r for k in ("delivery_error", "drain_error", "relay_exception")))
++
++
+ def relay_complete_and_equal(rec):
+     r = rec.get("relay") or {}
+-    return (r.get("ok") is True and "error" not in r and r.get("thread_finished") is True and r.get("mode") == "plain"
+-            and r.get("withheld_bytes") == 0 and isinstance(r.get("read_bytes"), int) and r["read_bytes"] > 0
++    return (relay_clean(r) and r.get("mode") == "plain" and r.get("withheld_bytes") == 0
++            and isinstance(r.get("read_bytes"), int) and r["read_bytes"] > 0
+             and r["read_bytes"] == r.get("delivered_bytes") and r.get("read_sha256") == r.get("delivered_sha256"))
+ 
+ 
+@@ -1074,8 +1283,9 @@
+     c = rec.get("children", {}).get("checker", {})
+     sw = rec.get("writers", {}).get("solver_feed", {})
+     cw = rec.get("writers", {}).get("checker_feed", {})
++    r = rec.get("relay") or {}
+     complete = (rec.get("safety_stop_reason") is None and not rec.get("sigterm_grace_exceeded")
+-                and "solver_spawn_error" not in rec and "checker_spawn_error" not in rec)
++                and "exception" not in rec and "solver_spawn_error" not in rec and "checker_spawn_error" not in rec)
+     crit = {
+         "solver_rc_20": s.get("rc") == 20,
+         "solver_status_lines_exact": rec.get("solver_status_lines") == ["s UNSATISFIABLE"],
+@@ -1084,15 +1294,15 @@
+         "checker_no_s_NOT_VERIFIED": not rec.get("checker_has_not_verified", True),
+         "checker_no_s_TIMEOUT": not rec.get("checker_has_timeout", True),
+         "no_safety_stop": complete,
+-        "solver_feed_measured_ok": sw.get("ok") is True and sw.get("written") == len_s and sw.get("sha256") == exp_s,
+-        "checker_feed_measured_ok": cw.get("ok") is True and cw.get("written") == len_c and cw.get("sha256") == exp_c,
++        "solver_feed_measured_ok": feed_ok(sw, len_s, exp_s),
++        "checker_feed_measured_ok": feed_ok(cw, len_c, exp_c),
+         "checker_parsed_header_counts_no_early_eof": (rec.get("checker_parsed_header_counts")
+                                                       == item.get("expected_checker_header_counts")
+                                                       and rec.get("checker_early_eof_marker") is False),
+         "relay_complete_and_equal": relay_complete_and_equal(rec),
+         "checker_parsed_proof_bytes_equal_delivered": (rec.get("checker_parsed_proof_bytes") is not None
+                                                        and rec.get("checker_parsed_proof_bytes")
+-                                                       == (rec.get("relay") or {}).get("delivered_bytes")),
++                                                       == r.get("delivered_bytes")),
+     }
+     failed = [k for k, v in crit.items() if not v]
+     if item["kind"] == "formula":  # brief: PASS iff every criterion holds; anything else is UNKNOWN, with reasons
+@@ -1104,62 +1314,57 @@
+                          "solver log; the desk launches nothing more" % s.get("rc"))
+         if rec.get("checker_has_not_verified"):
+             notes.append("checker printed s NOT VERIFIED")
+-        if any(w.get("ok") is True and w.get("written") == n and w.get("sha256") != e
+-               for w, n, e in ((sw, len_s, exp_s), (cw, len_c, exp_c))):
++        if any(w.get("written") == n and w.get("sha256") != e for w, n, e in ((sw, len_s, exp_s), (cw, len_c, exp_c))):
+             notes.append("a measured feed sha256 differs from the bound strengthened hash")
+         if rec.get("safety_stop_reason"):
+             notes.append("safety stop: " + rec["safety_stop_reason"])
+-        r = rec.get("relay") or {}
+         if not crit["relay_complete_and_equal"]:
+-            notes.append("relay: error %s, read %s B, delivered %s B, withheld %s B, thread finished %s"
+-                         % (r.get("error"), r.get("read_bytes"), r.get("delivered_bytes"), r.get("withheld_bytes"),
+-                            r.get("thread_finished")))
++            notes.append("relay: eof %s, delivery %s, drain %s, close %s, exception %s, read %s B, delivered %s B, "
++                         "withheld %s B, thread finished %s"
++                         % (r.get("fifo_eof_seen"), r.get("delivery_error"), r.get("drain_error"),
++                            r.get("close_errors"), r.get("relay_exception"), r.get("read_bytes"),
++                            r.get("delivered_bytes"), r.get("withheld_bytes"), r.get("thread_finished")))
+         if not crit["checker_parsed_proof_bytes_equal_delivered"]:
+             notes.append("checker parsed proof bytes %s vs relay delivered %s"
+                          % (rec.get("checker_parsed_proof_bytes"), r.get("delivered_bytes")))
+         return "UNKNOWN", notes + failed, crit
+-    mode = item.get("mode")
+-    if item["kind"] == "selftest" and mode in ("relay-truncate", "early-close"):
+-        r = rec.get("relay") or {}
+-        base = ("no_safety_stop", "solver_feed_measured_ok", "checker_feed_measured_ok", "solver_rc_20",
+-                "solver_status_lines_exact")
+-        bad = [k for k in base if not crit[k]]
+-        if mode == "relay-truncate":
+-            seen = (r.get("ok") is True and "error" not in r and r.get("thread_finished") is True
+-                    and r.get("withheld_bytes") == TRUNCATE_BYTES and (r.get("read_bytes") or 0) > TRUNCATE_BYTES
+-                    and r.get("delivered_bytes") == r["read_bytes"] - TRUNCATE_BYTES
+-                    and r.get("read_sha256") != r.get("delivered_sha256"))
+-        else:
+-            seen = (str(r.get("error", "")).startswith("EPIPE") and r.get("delivered_bytes") == 0
+-                    and (r.get("read_bytes") or 0) > 0 and r.get("thread_finished") is True
+-                    and r.get("hold_released_by_event") is True and rec.get("checker_parsed_proof_bytes") is None)
+-        if bad or not seen:
+-            return "INVALID_CONTROL", bad + ([] if seen else ["preregistered relay observation missing"]), crit
+-        if not failed:
+-            return "ANOMALY_PASS", ["the full acceptance predicate held on a deliberately broken relay path"], crit
+-        return "AS_PREREGISTERED_FAIL_CLOSED", failed, crit
+-    negative = item["kind"] == "control" or item.get("mode") == "negative"
+-    if not negative:
+-        if not failed:
+-            return "PASS", [], crit
+-        feeds_ok = crit["solver_feed_measured_ok"] and crit["checker_feed_measured_ok"]
+-        if complete and (s.get("rc") == 10 or "s SATISFIABLE" in (rec.get("solver_status_lines") or [])):
+-            return "FAIL", ["solver reported SATISFIABLE"] + failed, crit
+-        if (complete and feeds_ok and crit["solver_rc_20"] and crit["solver_status_lines_exact"]
+-                and rec.get("checker_has_not_verified")):
+-            return "FAIL", ["checker printed s NOT VERIFIED for the solver's proof"] + failed, crit
+-        if complete and any(w.get("ok") is True and w.get("written") == n and w.get("sha256") != e
+-                            for w, n, e in ((sw, len_s, exp_s), (cw, len_c, exp_c))):
+-            return "FAIL", ["a measured feed sha256 differs from the expected hash"] + failed, crit
+-        return "UNKNOWN", failed, crit
+-    need = ("no_safety_stop", "solver_feed_measured_ok", "checker_feed_measured_ok", "solver_rc_20",
+-            "solver_status_lines_exact", "relay_complete_and_equal", "checker_parsed_proof_bytes_equal_delivered")
+-    if not all(crit[k] for k in need):
+-        return "INVALID_CONTROL", [k for k in need if not crit[k]], crit
+-    if crit["checker_line_s_VERIFIED"]:
+-        return "ANOMALY_VERIFIED", ["checker printed s VERIFIED for a checker-side formula that differs from the "
+-                                    "solver's (pre-registered expectation: not s VERIFIED)"], crit
+-    return "AS_PREREGISTERED_NOT_VERIFIED", [], crit
++    mode = item["mode"]  # selftest: the five relay controls; any deviation is INVALID_CONTROL and stops the run
++    if mode == "refutation":
++        return ("PASS", [], crit) if not failed else ("INVALID_CONTROL", failed, crit)
++    base = ("no_safety_stop", "solver_feed_measured_ok", "checker_feed_measured_ok", "solver_rc_20",
++            "solver_status_lines_exact")
++    bad = [k for k in base if not crit[k]]
++    if mode == "negative":
++        seen = (crit["relay_complete_and_equal"] and crit["checker_parsed_proof_bytes_equal_delivered"]
++                and c.get("rc") == 1 and rec.get("checker_line_s_NOT_VERIFIED_exact") is True
++                and not rec.get("checker_has_verified_line")
++                and rec.get("checker_parsed_header_counts") == item.get("expected_checker_header_counts")
++                and rec.get("checker_early_eof_marker") is False)
++    elif mode == "relay-truncate":
++        seen = (relay_clean(r) and r.get("mode") == "truncate" and r.get("withheld_bytes") == TRUNCATE_BYTES
++                and (r.get("read_bytes") or 0) > TRUNCATE_BYTES
++                and r.get("delivered_bytes") == r["read_bytes"] - TRUNCATE_BYTES
++                and r.get("read_sha256") != r.get("delivered_sha256") and not crit["relay_complete_and_equal"])
++    elif mode == "relay-suffix":
++        seen = (relay_clean(r) and r.get("mode") == "suffix" and r.get("suffix_delivered_bytes") == len(SUFFIX)
++                and (r.get("read_bytes") or 0) > 0 and r.get("delivered_bytes") == r["read_bytes"] + len(SUFFIX)
++                and rec.get("checker_parsed_proof_bytes") == r.get("delivered_bytes")
++                and not crit["relay_complete_and_equal"])
++    elif mode == "early-close":
++        seen = (str(r.get("delivery_error", "")).startswith("EPIPE") and r.get("delivered_bytes") == 0
++                and r.get("fifo_eof_seen") is True and not r.get("close_errors")
++                and "drain_error" not in r and "relay_exception" not in r and r.get("thread_finished") is True
++                and (r.get("read_bytes") or 0) > 0 and r.get("hold_released_by_event") is True
++                and cw.get("gate_released_by_event") is True and c.get("rc") == 0
++                and rec.get("checker_header_error_line") is True and not rec.get("checker_status_lines")
++                and rec.get("checker_parsed_proof_bytes") is None)
++    else:
++        die("unknown control mode " + str(mode))
++    if bad or not seen:
++        return "INVALID_CONTROL", bad + ([] if seen else ["preregistered control observation missing"]), crit
++    if mode == "negative":
++        return "AS_PREREGISTERED_NOT_VERIFIED", [], crit
++    return "AS_PREREGISTERED_FAIL_CLOSED", failed, crit
+ 
+ 
+ # --- subcommands
+@@ -1167,6 +1372,41 @@
+     if os.environ.get("TMPDIR") != TMP + "/":
+         die("TMPDIR must be %s/" % TMP)
+     os.chdir(TMP)
++
++
++def validate_controls(script_sha):
++    """Admission prerequisite for formulas: the five v4 control receipts exist for THIS script sha, the pinned
++    binaries and their own PRE-EXEC (sha re-hashed), each with its preregistered verdict and no latched stop.
++    -> (identities, problems)."""
++    out, problems = [], []
++    for name, (_s, _c, mode) in SELFTESTS.items():
++        label = LABEL_PREFIX + "selftest-" + name
++        path = os.path.join(DESK, "receipts", label + ".json")
++        if not os.path.isfile(path):
++            problems.append("%s: receipt missing" % label)
++            continue
++        raw = read_bytes(path)
++        r = json.loads(raw)
++        pe = r.get("pre_exec") or {}
++        pre_path = os.path.join(DESK, pe.get("path", ""))
++        bins = r.get("binaries") or {}
++        bad = [k for k, ok in (
++            ("schema", r.get("schema") == RECEIPT_SCHEMA),
++            ("script sha256", (r.get("script") or {}).get("sha256") == script_sha),
++            ("item", r.get("kind") == "selftest" and r.get("name") == name
++             and (r.get("item") or {}).get("mode") == mode),
++            ("verdict %s" % r.get("verdict"), r.get("verdict") == SELFTEST_WANT[mode]),
++            ("binaries", (bins.get("cadical") or {}).get("sha256") == CADICAL_SHA
++             and (bins.get("drat-trim") or {}).get("sha256") == DRAT_SHA),
++            ("pre-exec binding", os.path.isfile(pre_path) and sha_file(pre_path) == pe.get("sha256")),
++            ("stop latched", not r.get("stop_latched")),
++        ) if not ok]
++        if bad:
++            problems.append("%s: %s" % (label, ", ".join(bad)))
++            continue
++        out.append({"label": label, "receipt": rel(path), "receipt_sha256": sha_bytes(raw), "verdict": r["verdict"],
++                    "pre_exec": pe, "run_tag": r.get("run_tag")})
++    return out, problems
+ 
+ 
+ def cmd_preexec(argv):
+@@ -1184,7 +1424,7 @@
+     started = now()
+     ctx = load_strengthened(load_inputs(print), print)
+     dtext = read_bytes(DIFF)
+-    if ("replay_v3.py sha256 %s" % sha_file(SCRIPT)).encode() not in dtext:
++    if ("replay_v4.py sha256 %s" % sha_file(SCRIPT)).encode() not in dtext:
+         die("the recorded diff does not name this script's sha256")
+     worker = worker_prefix(prefix_n, prefix_sha)
+     binaries = check_binaries()
+@@ -1202,24 +1442,30 @@
+                           "expected_solver_feed_sha256": sha_bytes(s), "expected_solver_feed_bytes": len(s),
+                           "expected_checker_feed_sha256": sha_bytes(c), "expected_checker_feed_bytes": len(c),
+                           "projected_peak_bytes": SELFTEST_PROJECTED,
+-                          "relay_mode": "truncate" if mode == "relay-truncate" else "plain",
+-                          "early_close_control": mode == "early-close",
++                          "relay_mode": RELAY_MODES[mode], "early_close_control": mode == "early-close",
+                           "preregistered_verdict": SELFTEST_WANT[mode],
+                           "preregistered_expectation": {
+-                              "refutation": "PASS under the formula acceptance rules, including relay read == "
+-                                            "delivered == checker-parsed proof bytes",
+-                              "negative": "relay complete and equal and checker-parsed bytes == delivered, but not "
+-                                          "s VERIFIED (checker formula satisfiable): an equal digest does not make a "
+-                                          "proof correct",
+-                              "relay-truncate": "fail-closed: the relay reads R bytes but delivers R - %d, read and "
+-                                                "delivered sha256 differ, and the acceptance predicate fails on "
+-                                                "relay_complete_and_equal whatever drat-trim prints (native outcome "
+-                                                "recorded as observed)" % TRUNCATE_BYTES,
++                              "refutation": "PASS under the formula acceptance rules: relay read R == delivered D "
++                                            "(equal sha256, EOF seen, no error) == checker-parsed N",
++                              "negative": "relay complete and equal and N == D, checker rc 1 with the exact line "
++                                          "'s NOT VERIFIED' and the parse line for 3 variables and 7 clauses: an "
++                                          "equal digest does not make a proof correct",
++                              "relay-truncate": "fail-closed: the relay reads R bytes to EOF but delivers R - %d, read "
++                                                "and delivered sha256 differ, no relay error; the acceptance predicate "
++                                                "fails on relay_complete_and_equal whatever drat-trim prints (native "
++                                                "outcome recorded as observed)" % TRUNCATE_BYTES,
+                               "early-close": "fail-closed: the header-less checker input is written only after the "
+-                                             "solver was reaped; drat-trim finds no 'p cnf' line and exits before "
+-                                             "reading any proof byte; the relay's first delivery, held until the "
+-                                             "checker was reaped, gets EPIPE with 0 bytes delivered; no 'finished "
+-                                             "parsing' byte count; the relay drains the FIFO to EOF"}[mode],
++                                             "solver was reaped; drat-trim exits rc 0 after the exact line 'c ERROR: "
++                                             "did not find p cnf line in input file' without a status line or a proof "
++                                             "byte count; the relay's first delivery, held until the checker was "
++                                             "reaped, gets EPIPE with 0 bytes delivered, and the relay still drains "
++                                             "the FIFO to EOF without other errors",
++                              "relay-suffix": "fail-closed: after the FIFO EOF the relay delivers the %d-byte "
++                                              "deletion suffix 'd 1 2 3 0', so D == R + %d; the checker's parsed "
++                                              "proof byte count N == D shows that drat-trim consumed the bytes after "
++                                              "the empty clause; the acceptance predicate fails on "
++                                              "relay_complete_and_equal (native verdict recorded as observed)"
++                                              % (len(SUFFIX), len(SUFFIX))}[mode],
+                           "purpose": "relay/pipeline control on a synthetic 3-variable formula; not part of the "
+                                      "replay"})
+             continue
+@@ -1243,53 +1489,34 @@
+                                             % (peak, f["template"], FLOOR_HIGH),
+                           "acceptance": ACCEPTANCE})
+             continue
+-        if kind not in ("leaf", "control") or name not in ctx["cases"]:
+-            die("bad item " + spec)
+-        case = ctx["cases"][name]
+-        w = worker["records"].get(name)
+-        peak = w.get("aggregate_peak_rss_bytes") if w else None
+-        floor = FLOOR_LOW if name in LOW_MEMORY_IDS else FLOOR_HIGH
+-        projected = max(3 * peak // 2 if peak else 0, floor)
+-        it = {"item": spec, "kind": kind, "id": name, "supports_row2to7": case["supports"], "units": case["units"],
+-              "unit_lines_sha256": sha_bytes(case["unit_bytes"]),
+-              "parent_binding_result_cnf_sha256": case["binding_cnf_sha256"],
+-              "manifest_cnf_sha256": case["manifest_cnf_sha256"],
+-              "expected_solver_feed_sha256": case["cnf_sha256"], "expected_solver_feed_bytes": case["cnf_bytes"],
+-              "worker_record": w, "projected_peak_bytes": projected,
+-              "projected_rule": "max(1.5 x worker aggregate peak %s, floor %d)" % (peak, floor)}
+-        if kind == "leaf":
+-            it.update({"expected_checker_feed_sha256": case["cnf_sha256"],
+-                       "expected_checker_feed_bytes": case["cnf_bytes"], "acceptance": ACCEPTANCE})
+-        else:
+-            if name not in LOW_MEMORY_IDS:
+-                die("controls are for the low-memory leaves only")
+-            if "leaf:" + name not in seen:
+-                die("control listed before its leaf")
+-            it.update({"expected_checker_feed_sha256": case["mutant_cnf_sha256"],
+-                       "expected_checker_feed_bytes": case["mutant_cnf_bytes"],
+-                       "mutation": {"description": "checker feed only: the FIRST template unit line sign-flipped; "
+-                                                   "the solver gets the correct leaf",
+-                                    "unit_index": 0, "from": case["units"][0], "to": case["mutant_units"][0],
+-                                    "mutant_unit_lines_sha256": sha_bytes(case["mutant_unit_bytes"])},
+-                       "preregistered_expectation": "not s VERIFIED",
+-                       "runs_only_if": "receipts/%s.json exists with verdict PASS" % name})
+-        items.append(it)
++        die("bad item %s (v4 takes selftest:NAME and formula:ID only)" % spec)
++    kinds = {it["kind"] for it in items}
++    if not items or len(kinds) != 1:
++        die("a v4 PRE-EXEC holds either only controls or only formulas, and at least one item")
++    admission = None
++    if kinds == {"formula"}:
++        admission, problems = validate_controls(sha_file(SCRIPT))
++        if problems:
++            die("formula admission refused: " + "; ".join(problems))
+     for it in items:
+         it["expected_checker_header_counts"] = header_counts(item_parts(it, ctx)[1][0])
+         if it["expected_checker_header_counts"] is None and it.get("mode") != "early-close":
+             die("no p cnf header in the checker feed of " + it["item"])
+     fb = free_bytes()
+-    busy, other, scan = gate_scan()
+-    pre = {"schema": "moqls8-strengthened-parent-replay-preexec/2", "at": now(), "started_at": started, "desk": DESK,
++    busy, other, scan, scan_err = gate_scan()
++    pre = {"schema": "moqls8-strengthened-parent-replay-preexec/3", "at": now(), "started_at": started, "desk": DESK,
+            "scope": SCOPE,
+            "script": {"path": SCRIPT_REL, "sha256": sha_file(SCRIPT)},
+            "python": {"executable": sys.executable, "version": sys.version.split()[0], "flags": "-I -B"},
+            "binaries": binaries, "inputs": ctx["info"], "inputs_strengthened": ctx["strong_info"],
+-           "provenance": {"derived_from": V2_SCRIPT, "derived_from_sha256": V2_SCRIPT_SHA, "diff": rel(DIFF),
+-                          "diff_sha256": sha_bytes(dtext), "v1_script": V1_SCRIPT, "v1_script_sha256": V1_SCRIPT_SHA,
++           "provenance": {"derived_from": V3_SCRIPT, "derived_from_sha256": V3_SCRIPT_SHA, "diff": rel(DIFF),
++                          "diff_sha256": sha_bytes(dtext), "v2_script": V2_SCRIPT, "v2_script_sha256": V2_SCRIPT_SHA,
++                          "v2_to_v3_diff": rel(DIFF_V2_V3), "v2_to_v3_diff_sha256": DIFF_V2_V3_SHA,
++                          "v1_script": V1_SCRIPT, "v1_script_sha256": V1_SCRIPT_SHA,
+                           "v1_to_v2_diff": rel(DIFF_V1_V2), "v1_to_v2_diff_sha256": DIFF_V1_V2_SHA,
+                           "bind_script": rel(BIND_SCRIPT), "bind_script_sha256": BIND_SCRIPT_SHA,
+                           "binding": rel(BINDING), "binding_sha256": BINDING_SHA},
++           "run_kind": "formulas" if admission is not None else "controls", "admission_controls": admission,
+            "worker_results": worker, "items": items,
+            "acceptance": ACCEPTANCE, "gate": GATE_RULE, "in_flight_stops": STOPS,
+            "limits": {"solver_seconds": SOLVER_SECONDS, "checker_seconds": CHECKER_SECONDS,
+@@ -1305,12 +1532,14 @@
+                         "count of the bytes read = proof stream; sha256 and count of the bytes delivered) -> "
+                         "anonymous pipe -> drat-trim stdin (-i). No CNF or proof file on disk. Each native tool gets "
+                         "its own new TMPDIR and cwd, tmp/<label>/solver/ and tmp/<label>/checker/.",
+-           "sequencing": "one pipeline at a time, items in the listed order; a self-test or relay control whose "
+-                         "verdict differs from its preregistered verdict aborts the run before any formula; after a "
+-                         "SAT report, a floor/safety stop, a driver SIGTERM or the 17:29 PDT launch cutoff nothing "
+-                         "more is launched; any other UNKNOWN continues with the next formula",
++           "sequencing": "one pipeline at a time, items in the listed order; a PRE-EXEC holds only controls or only "
++                         "formulas; formulas are admitted only with the five v4 control receipts of this script sha, "
++                         "re-validated before each launch; a control whose verdict differs from its preregistered "
++                         "verdict stops the run; after a SAT report, a floor/safety stop, an exception, a driver "
++                         "SIGTERM or the 17:29 PDT launch cutoff nothing more is launched; any other UNKNOWN "
++                         "continues with the next formula",
+            "fresh_check": {"free_bytes": fb, "lane_other_busy": busy, "lane_other_rss_bytes": other,
+-                           "lane_scan": [compact(c) for c in (scan or [])]}}
++                           "lane_scan_error": scan_err, "lane_scan": [compact(c) for c in (scan or [])]}}
+     digest = write_json_x(out, pre)
+     print("PRE-EXEC %s sha256 %s" % (out, digest))
+     for it in items:
+@@ -1343,7 +1572,7 @@
+         stop["signal"] = signal.Signals(signum).name
+ 
+     signal.signal(signal.SIGTERM, on_term)
+-    summary = {"schema": "moqls8-strengthened-parent-replay-run/2", "run_tag": runtag, "started_at": now(),
++    summary = {"schema": "moqls8-strengthened-parent-replay-run/3", "run_tag": runtag, "started_at": now(),
+                "pre_exec": {"path": rel(pre_path), "sha256": pre_sha}, "script_sha256": script_sha,
+                "driver_log": rel(log_path), "items": [], "events": [], "stopped_reason": None}
+     log("run %s start; pre-exec %s sha256 %s; driver pid %d" % (runtag, rel(pre_path), pre_sha, os.getpid()))
+@@ -1366,17 +1595,32 @@
+         entry = {"item": it["item"], "label": label}
+         summary["items"].append(entry)
+         if os.path.lexists(rpath):
+-            entry.update({"status": "SKIPPED", "reason": "receipt already exists; a re-run needs parent approval "
+-                                                         "and a new version name"})
+-            log("skip %s: receipt exists" % label)
++            if it["kind"] == "selftest":  # never skip a control without checking its receipt
++                _ids, probs = validate_controls(script_sha)
++                mine = [x for x in probs if x.startswith(label + ":")]
++                if mine:
++                    entry.update({"status": "STOPPED",
++                                  "reason": "existing control receipt invalid: " + "; ".join(mine)})
++                    summary["stopped_reason"] = entry["reason"]
++                    log("STOPPED %s: %s" % (label, entry["reason"]))
++                    break
++                entry.update({"status": "SKIPPED_VALIDATED", "reason": "receipt exists and validates for this script"})
++            else:
++                entry.update({"status": "SKIPPED", "reason": "receipt already exists; a re-run needs parent approval "
++                                                             "and a new version name"})
++            log("skip %s: %s" % (label, entry["reason"]))
+             continue
+-        if it["kind"] == "control":
+-            lpath = os.path.join(DESK, "receipts", it["id"] + ".json")
+-            lv = json.loads(read_bytes(lpath))["verdict"] if os.path.exists(lpath) else None
+-            if lv != "PASS":
+-                entry.update({"status": "SKIPPED", "reason": "real replay verdict %s, not PASS" % lv})
+-                log("skip %s: real replay verdict %s" % (label, lv))
+-                continue
++        if it["kind"] == "formula":  # admission prerequisite, re-validated before every formula launch
++            adm, probs = validate_controls(script_sha)
++            same = ([(a["label"], a["receipt_sha256"]) for a in adm]
++                    == [(a["label"], a["receipt_sha256"]) for a in (pre.get("admission_controls") or [])])
++            if probs or not same:
++                entry.update({"status": "STOPPED", "reason": "formula admission re-validation failed: %s"
++                              % ("; ".join(probs) or "control receipts differ from the PRE-EXEC record")})
++                summary["stopped_reason"] = entry["reason"]
++                log("STOPPED %s: %s" % (label, entry["reason"]))
++                break
++            entry["admission_revalidated_at"] = now()
+         s_parts, c_parts = item_parts(it, ctx)
+         hs, ns = sha_parts(s_parts)
+         hc, nc = sha_parts(c_parts)
+@@ -1389,13 +1633,6 @@
+             pre_launch["solver_buffer_equals_binding_and_worker_hash"] = ok
+             if not ok:
+                 die("pre-launch formula hash for " + label)
+-        elif it["kind"] != "selftest":
+-            case = ctx["cases"][it["id"]]
+-            ok = (hs == it["expected_solver_feed_sha256"] == case["binding_cnf_sha256"] == case["manifest_cnf_sha256"]
+-                  and ns == it["expected_solver_feed_bytes"])
+-            pre_launch["solver_buffer_equals_binding_and_manifest"] = ok
+-            if not ok:
+-                die("pre-launch leaf hash for " + label)
+         if (hs, ns, hc, nc) != (it["expected_solver_feed_sha256"], it["expected_solver_feed_bytes"],
+                                 it["expected_checker_feed_sha256"], it["expected_checker_feed_bytes"]):
+             die("pre-launch buffer hash for " + label)
+@@ -1415,44 +1652,55 @@
+                                          if g.get("deferred") else g.get("stopped"))
+             log("%s %s" % (entry["status"], label))
+             break
+-        rec = pipeline(label, s_parts, c_parts, projected, log, stop, relay_mode=it.get("relay_mode", "plain"),
+-                       early_close=bool(it.get("early_close_control")))
++        try:
++            rec = pipeline(label, s_parts, c_parts, projected, log, stop, relay_mode=it.get("relay_mode", "plain"),
++                           early_close=bool(it.get("early_close_control")))
++        except BaseException as e:  # pipeline() reaps its own children; this records what escaped its scope
++            rec = {"label": label, "exception": "%s: %s" % (type(e).__name__, e),
++                   "exception_traceback": traceback.format_exc()[-4000:],
++                   "safety_stop_reason": "exception outside the pipeline cleanup scope: %s: %s" % (type(e).__name__, e),
++                   "sigterm_grace_exceeded": False, "children": {}, "writers": {}, "relay": {}, "events": []}
++            log("EXCEPTION at %s: %s" % (label, rec["exception"]))
+         verdict, reasons, crit = evaluate(rec, it)
+-        receipt = {"schema": "moqls8-strengthened-parent-replay-receipt/2", "label": label, "kind": it["kind"],
++        receipt = {"schema": RECEIPT_SCHEMA, "label": label, "kind": it["kind"],
+                    "id": it.get("id"), "name": it.get("name"),
+                    "scope": SCOPE if it["kind"] != "selftest" else it["purpose"],
+                    "desk": DESK, "script": {"path": SCRIPT_REL, "sha256": script_sha},
+                    "pre_exec": {"path": rel(pre_path), "sha256": pre_sha}, "run_tag": runtag,
+                    "binaries": bins, "item": it, "pre_launch_buffer_check": pre_launch, "gate": g, "pipeline": rec,
+                    "criteria": crit, "verdict": verdict, "reasons": reasons,
+-                   "solver_reported_sat": solver_reported_sat(rec), "written_at": now()}
++                   "solver_reported_sat": solver_reported_sat(rec), "stop_latched": stop.get("signal"),
++                   "written_at": now()}
+         rsha = write_json_x(rpath, receipt)
+         entry.update({"status": "RECEIPT", "verdict": verdict, "reasons": reasons, "receipt": rel(rpath),
+-                      "receipt_sha256": rsha, "pipeline_seconds": rec["pipeline_seconds"],
++                      "receipt_sha256": rsha, "pipeline_seconds": rec.get("pipeline_seconds"),
+                       "gate_waited_seconds": g["waited_seconds"],
+-                      "peak_desk_aggregate_rss_bytes": rec["peak_desk_aggregate_rss_bytes"],
+-                      "safety_stop_reason": rec["safety_stop_reason"]})
+-        for ev in rec["events"]:
++                      "peak_desk_aggregate_rss_bytes": rec.get("peak_desk_aggregate_rss_bytes"),
++                      "safety_stop_reason": rec.get("safety_stop_reason"), "stop_latched": stop.get("signal")})
++        for ev in rec.get("events", []):
+             summary["events"].append(dict(ev, item=it["item"]))
+         log("%s verdict %s reasons %s receipt sha256 %s" % (label, verdict, reasons, rsha))
+-        if rec["sigterm_grace_exceeded"]:
++        if rec.get("sigterm_grace_exceeded"):
+             summary["stopped_reason"] = "SIGTERM grace exceeded at %s; children may still be alive" % label
+             break
+         if stop.get("signal"):
+-            summary["stopped_reason"] = "driver received %s" % stop["signal"]
++            summary["stopped_reason"] = "driver received %s (latched; receipt records stop_latched)" % stop["signal"]
++            break
++        if rec.get("exception"):
++            summary["stopped_reason"] = "exception at %s: %s; desk launches nothing more" % (label, rec["exception"])
+             break
+         if it["kind"] == "selftest":
+             want = SELFTEST_WANT[it["mode"]]
+             if verdict != want:
+-                summary["stopped_reason"] = "self-test %s gave %s, expected %s" % (label, verdict, want)
++                summary["stopped_reason"] = "control %s gave %s, expected %s" % (label, verdict, want)
+                 break
+         if solver_reported_sat(rec):
+             summary["stopped_reason"] = ("solver reported SATISFIABLE at %s (rc %s); its output is kept in %s; desk "
+                                          "stopped, no further launch" % (label, rec["children"].get("solver", {})
+-                                                                         .get("rc"), rec["solver_log"]))
++                                                                         .get("rc"), rec.get("solver_log")))
+             log("SAT REPORTED %s: desk stops" % label)
+             break
+-        if rec["safety_stop_reason"] is not None:
++        if rec.get("safety_stop_reason") is not None:
+             summary["stopped_reason"] = ("floor/safety stop at %s: %s; desk launches nothing more"
+                                          % (label, rec["safety_stop_reason"]))
+             break
+@@ -1484,15 +1732,23 @@
+             "expected_solver_feed_sha256": it["expected_solver_feed_sha256"],
+             "expected_checker_feed_sha256": it["expected_checker_feed_sha256"],
+             "expected_feed_bytes": [it["expected_solver_feed_bytes"], it["expected_checker_feed_bytes"]],
+-            "measured_solver_feed": {k: sw.get(k) for k in ("ok", "written", "sha256", "error")},
+-            "measured_checker_feed": {k: cw.get(k) for k in ("ok", "written", "sha256", "error")},
++            "measured_solver_feed": {k: sw.get(k) for k in ("ok", "written", "sha256", "error", "close_error",
++                                                            "thread_finished")},
++            "measured_checker_feed": {k: cw.get(k) for k in ("ok", "written", "sha256", "error", "close_error",
++                                                             "thread_finished", "gate_released_by_event")},
+             "proof_stream": {"sha256": p.get("proof_stream_sha256"), "bytes": p.get("proof_stream_bytes"),
+                              "delivered_sha256": (p.get("relay") or {}).get("delivered_sha256"),
+                              "delivered_bytes": (p.get("relay") or {}).get("delivered_bytes"),
+                              "withheld_bytes": (p.get("relay") or {}).get("withheld_bytes"),
++                             "suffix_delivered_bytes": (p.get("relay") or {}).get("suffix_delivered_bytes"),
+                              "relay_mode": (p.get("relay") or {}).get("mode"),
+-                             "relay_error": (p.get("relay") or {}).get("error"),
++                             "fifo_eof_seen": (p.get("relay") or {}).get("fifo_eof_seen"),
++                             "delivery_error": (p.get("relay") or {}).get("delivery_error"),
++                             "drain_error": (p.get("relay") or {}).get("drain_error"),
++                             "close_errors": (p.get("relay") or {}).get("close_errors"),
++                             "relay_exception": (p.get("relay") or {}).get("relay_exception"),
+                              "checker_parsed_proof_bytes": p.get("checker_parsed_proof_bytes")},
++            "stop_latched": r.get("stop_latched"), "exception": p.get("exception"),
+             "solver": {"rc": s.get("rc"), "status_lines": p.get("solver_status_lines"),
+                        "status_lines_raw": p.get("solver_status_lines_raw"),
+                        "wall_seconds": s.get("wall_seconds"), "user_seconds": s.get("user_seconds"),
+@@ -1515,7 +1771,8 @@
+                      "lane_other_rss_at_launch": r["gate"].get("lane_other_rss_at_launch"),
+                      "free_bytes_at_launch": r["gate"].get("free_bytes_at_launch")},
+             "safety_stop_reason": p.get("safety_stop_reason"), "events": p.get("events"),
+-            "preregistered_expectation": it.get("preregistered_expectation"), "mutation": it.get("mutation")}
++            "preregistered_verdict": it.get("preregistered_verdict"),
++            "preregistered_expectation": it.get("preregistered_expectation")}
+ 
+ 
+ def cmd_assemble(argv):
+@@ -1524,18 +1781,35 @@
+     out = os.path.abspath(argv[0])
+     if not out.startswith(DESK + "/") or os.path.lexists(out):
+         die("result path must be new and inside the desk")
+-    pres = []
++    pres, labels = [], {}
+     for p in argv[1:]:
+         p = os.path.abspath(p)
+-        pres.append((p, sha_file(p), json.loads(read_bytes(p))))
++        raw = read_bytes(p)
++        pre = json.loads(raw)
++        if pre.get("script", {}).get("sha256") != sha_file(SCRIPT):
++            die("PRE-EXEC %s pins another script" % rel(p))
++        for it in pre["items"]:
++            lab = item_label(it)
++            if lab in labels:
++                die("label %s appears in two PRE-EXECs" % lab)
++            labels[lab] = (sha_bytes(raw), it)
++        pres.append((p, sha_bytes(raw), pre))
++    pre_shas = {h for _p, h, _pre in pres}
+     runs = []
+     for f in sorted(glob.glob(os.path.join(DESK, "runs", "*.json"))):
+-        runs.append((f, sha_file(f), json.loads(read_bytes(f))))
+-    receipts = {}
++        rn = json.loads(read_bytes(f))
++        if (rn.get("pre_exec") or {}).get("sha256") in pre_shas:
++            runs.append((f, sha_file(f), rn))
++    receipts, not_assembled = {}, []
+     for f in sorted(glob.glob(os.path.join(DESK, "receipts", "*.json"))):
+         r = json.loads(read_bytes(f))
+-        receipts[r["label"]] = (r, f)
+-    groups = {"selftest": [], "leaf": [], "control": [], "formula": []}
++        lab = r.get("label")
++        if (lab in labels and (r.get("pre_exec") or {}).get("sha256") == labels[lab][0]
++                and (r.get("script") or {}).get("sha256") == sha_file(SCRIPT)):
++            receipts[lab] = (r, f)
++        else:
++            not_assembled.append(rel(f))
++    groups = {"selftest": [], "formula": []}
+     not_run = []
+     for _p, _s, pre in pres:
+         for it in pre["items"]:
+@@ -1554,9 +1828,9 @@
+                  if e.get("event") in ("deferred", "stopped")]
+     guards = [dict(e, run=rn["run_tag"]) for _f, _h, rn in runs for e in rn["events"]
+               if e.get("event") not in ("deferred", "stopped")]
+-    allx = groups["selftest"] + groups["leaf"] + groups["control"] + groups["formula"]
++    allx = groups["selftest"] + groups["formula"]
+     first = pres[0][2]
+-    result = {"schema": "moqls8-strengthened-parent-replay-result/2", "assembled_at": now(), "desk": DESK,
++    result = {"schema": "moqls8-strengthened-parent-replay-result/3", "assembled_at": now(), "desk": DESK,
+               "scope": SCOPE,
+               "statement": "Parent replay of the six exact strengthened formulas only. Results are exact-formula "
+                            "facts; transfer to the four open P1 templates depends on separate parent acceptance of "
+@@ -1574,8 +1848,8 @@
+               "started_at": min([rn["started_at"] for _f, _h, rn in runs], default=None),
+               "finished_at": max([rn.get("finished_at") or "" for _f, _h, rn in runs], default=None),
+               "formula_verdict_counts": counts, "formulas": groups["formula"],
+-              "selftests": groups["selftest"], "not_run": not_run, "deferrals": deferrals,
+-              "guard_events": guards,
++              "controls": groups["selftest"], "not_run": not_run, "deferrals": deferrals,
++              "guard_events": guards, "desk_receipts_not_assembled": not_assembled,
+               "peak_rss": {"max_desk_aggregate_sampled_bytes": max([e["peak_desk_aggregate_rss_bytes"] or 0
+                                                                     for e in allx], default=None),
+                            "max_lane_total_sampled_bytes": max([e["peak_lane_total_rss_bytes"] or 0 for e in allx],

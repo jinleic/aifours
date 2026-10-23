@@ -1,0 +1,166 @@
+--- code/rqls_assay_v5.py
++++ code/rqls_assay_v7.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""rqls_assay_v5: float feasibility assay for maximal 1-RQLS(10) (NOT a certificate; numeric results are UNKNOWN).
++"""rqls_assay_v7: float feasibility assay for maximal 1-RQLS(10) (NOT a certificate; numeric results are UNKNOWN).
+ 
+ Representation: a Latin square B (resolution) and unit vectors q_p, p in [v]^2, with every row, column and B-class an
+ orthonormal basis. Problems are given by representatives z_r and line slots (r, k) meaning the vector U^k z_r with U
+@@ -46,7 +46,14 @@
+ Modes: smoke (gates + A5 + 8 calibration starts) | red1 (gates + A5 + calibration + random forced Z_7+3 targets +
+ Z_9+1 targets).
+ 
+-Usage: rqls_assay_v5.py OUT.jsonl GLOBAL_BUDGET_S CLASSICAL_JSON EX24_JSON EX24_SHA256 STOP_RECEIPT MODE(smoke|red1)
++v7 change (parent instruction after the v5 smoke K = 0/8): one bounded K-only calibration of the v5 reduced LM.
++Same gates (A, C1, C1p, C2, A5), same Reduced parametrisation, same LM, same full verifier. New stage KP: the known
++classical Parker-type forced-form point theta_c (A5 construction) perturbed by amp * N(0,1) in every parameter, for
++amp in {1e-3, 1e-2, 0.1, 0.5}, four fixed instances and four deterministic seeds each, then LM; stage KR: 256 random
++starts (as in v5 K). Every run records its raw final residual, LM status and the full-configuration verification.
++No target search, no basin hopping.
++
++Usage: rqls_assay_v7.py OUT.jsonl GLOBAL_BUDGET_S CLASSICAL_JSON EX24_JSON EX24_SHA256 STOP_RECEIPT MODE(kcal)
+ Exit codes: 0 completed (or ended by budget), 2 exception, 3 gate failure, 4 cap stop, 5 terminated by SIGTERM.
+ """
+ import hashlib, itertools, json, math, os, signal, sys, time
+@@ -55,7 +62,7 @@
+ SRC_SHA = hashlib.sha256(open(os.path.abspath(__file__), "rb").read()).hexdigest()
+ OUT, GLOBAL_BUDGET, CLASSICAL_JSON, EX24_JSON, EX24_SHA, STOP_RECEIPT, MODE = (sys.argv[1], float(sys.argv[2]), sys.argv[3],
+                                                                               sys.argv[4], sys.argv[5], sys.argv[6], sys.argv[7])
+-if MODE not in ("smoke", "red1"):
++if MODE not in ("kcal",):
+     sys.exit(7)
+ TERM = [False]
+ STAGE = ["init"]
+@@ -949,9 +956,23 @@
+     return R, th, lab, M
+ 
+ 
++def run_perturbed(R, thc, amp, seed, iters, end, extra):
++    rng = np.random.default_rng(seed)
++    th0 = thc + amp * rng.standard_normal(len(thc))
++    r_start = float(np.linalg.norm(R.resid(th0)))
++    t0 = time.monotonic()
++    th, res, it, status = lm(R, th0, iters, end)
++    Z = R.Z_full(th)
++    maxdev, rays, minsep = R.P.verify(Z)
++    rec = {"tag": "KP_perturbed_classical", "amp": amp, "seed": seed, "start_resid": r_start, "status": status, "iters": it,
++           "resid": res, "maxdev": maxdev, "rays": rays, "minsep": minsep, "verified": bool(maxdev < 1e-8),
++           "secs": round(time.monotonic() - t0, 3), "config": extra}
++    W.write(rec)
++    return rec
++
++
+ def main():
+-    W.write({"assay": "rqls_assay_v5", "mode": MODE, "polish_err": POLISH_ERR, "polish_iters": POLISH_ITERS,
+-             "src_sha256": SRC_SHA, "numpy": np.__version__, "python": sys.version,
++    W.write({"assay": "rqls_assay_v7", "mode": MODE, "src_sha256": SRC_SHA, "numpy": np.__version__, "python": sys.version,
+              "flags": {"optimize": sys.flags.optimize, "isolated": sys.flags.isolated, "dont_write_bytecode": sys.flags.dont_write_bytecode},
+              "budget_s": GLOBAL_BUDGET, "argv": sys.argv[1:],
+              "env": {k: os.environ.get(k) for k in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "MKL_NUM_THREADS", "TMPDIR")}})
+@@ -959,12 +980,7 @@
+         W.write({"GATE": "python_optimize_flag", "pass": False})
+         raise GateFail("optimize flag set")
+     classical = json.load(open(CLASSICAL_JSON))
+-    gates = [("A", 30), ("C1", 25), ("C1p", 40), ("C2", 30), ("A5", 20)]
+-    if MODE == "smoke":
+-        plan = gates + [("K", 90)]
+-    else:
+-        rest = GLOBAL_BUDGET - 145 - 30
+-        plan = gates + [("K", 0.25 * rest), ("R7", 0.5 * rest), ("R9", 0.25 * rest)]
++    plan = [("A", 30), ("C1", 25), ("C1p", 40), ("C2", 30), ("A5", 10), ("KP", 60), ("KR", GLOBAL_BUDGET - 195 - 15)]
+     ends, acc, t0 = {}, 0, time.monotonic()
+     for tag, b in plan:
+         acc += b
+@@ -1000,59 +1016,45 @@
+     r0 = float(np.linalg.norm(R0_.resid(th0)))
+     md, ry, ms = R0_.P.verify(R0_.Z_full(th0))
+     gate("A5_reduced_classical_anchor", r0 < 1e-12 and md < 1e-12 and ry == 10,
+-         {"reduced_resid": r0, "maxdev": md, "rays": ry, "npar": R0_.npar, "rule": "reduced residual < 1e-12 at the classical Parker point; full verify maxdev < 1e-12, 10 rays"})
+-    STAGE[0] = "K"
++         {"reduced_resid": r0, "maxdev": md, "rays": ry, "npar": R0_.npar})
++    STAGE[0] = "KP"
++    instances = [(0, "B", (0, 1, 3)), (1, "A", (0, 2, 5)), (2, "B", (0, 3, 6)), (3, "A", (0, 4, 1))]
++    amps = [1e-3, 1e-2, 0.1, 0.5]
++    kp = []
++    for ii, (hi, res, mlab) in enumerate(instances):
++        R, thc, lab, M = parker_reduced(classical["pairs"][hi], res, mlab)
++        rc = float(np.linalg.norm(R.resid(thc)))
++        W.write({"tag": "KP_anchor", "instance": ii, "hit": hi, "resolution": res, "mlab": list(mlab), "anchor_resid": rc})
++        for amp in amps:
++            for sd in range(4):
++                if over(ends["KP"]):
++                    break
++                kp.append(run_perturbed(R, thc, amp, 40000 + 1000 * ii + 100 * amps.index(amp) + sd, 200, ends["KP"],
++                                        {"instance": ii, "hit": hi, "resolution": res, "mlab": list(mlab)}))
++    by_amp = {}
++    for r in kp:
++        a = str(r["amp"])
++        by_amp.setdefault(a, {"runs": 0, "verified": 0, "rays": {}, "resid_max_verified": 0.0, "resid_min_unverified": None})
++        b = by_amp[a]
++        b["runs"] += 1
++        if r["verified"]:
++            b["verified"] += 1
++            b["rays"][str(r["rays"])] = b["rays"].get(str(r["rays"]), 0) + 1
++            b["resid_max_verified"] = max(b["resid_max_verified"], r["resid"])
++        else:
++            b["resid_min_unverified"] = r["resid"] if b["resid_min_unverified"] is None else min(b["resid_min_unverified"], r["resid"])
++    W.write({"summary": "KP_perturbed_classical", "by_amp": by_amp, "elapsed_s": round(elapsed(), 2)})
++    STAGE[0] = "KR"
+     rk = np.random.default_rng(31337)
+     recs, k = [], 0
+-    nK = 8 if MODE == "smoke" else 10 ** 6
+-    while k < nK and not over(ends["K"]):
++    while k < 256 and not over(ends["KR"]):
+         hi = int(rk.integers(len(classical["pairs"])))
+         res = "B" if rk.integers(2) == 0 else "A"
+         a_, b_ = [int(x) for x in rk.choice(np.arange(1, 7), 2, replace=False)]
+         R, thc, lab, M = parker_reduced(classical["pairs"][hi], res, (0, a_, b_))
+-        recs += run_reduced(R, "K_cal_parker_forced", [7000 + k], 200, ends["K"], extra={"hit": hi, "resolution": res, "mlab": [0, a_, b_]})
++        recs += run_reduced(R, "KR_random_start", [7000 + k], 200, ends["KR"], extra={"hit": hi, "resolution": res, "mlab": [0, a_, b_]})
+         k += 1
+-    rays = summary_red("K_cal_parker_forced", recs)
+-    if MODE == "smoke":
+-        W.write({"end": True, "mode": "smoke", "gates": "PASS", "elapsed_s": round(elapsed(), 2), "records": W.records, "bytes": W.n})
+-        return 0
+-    STAGE[0] = "R7"
+-    L3 = latin3_all()
+-    rcfg = np.random.default_rng(4242)
+-    recs, cfg = [], 0
+-    while not over(ends["R7"]):
+-        Dinf, beta, gam, dlt, Lc, D2, M = T1_config(rcfg, L3)
+-        conf = {"Dinf": Dinf, "beta": {str(kk): vv for kk, vv in beta.items()}, "gamma": gam, "delta": dlt, "L": Lc, "D2": D2, "M": M, "cfg": cfg}
+-        try:
+-            R = Reduced(7, 3, Dinf, beta, gam, dlt, Lc, list(range(7)) + D2, M)
+-        except AssertionError as ex:
+-            W.write({"tag": "R7_forced_reduced", "config": conf, "status": "BAD_CONFIG", "why": repr(ex)})
+-            cfg += 1
+-            continue
+-        recs += run_reduced(R, "R7_forced_reduced", [8000 + 4 * cfg + j for j in range(4)], 200, ends["R7"], extra=conf)
+-        cfg += 1
+-    summary_red("R7_forced_reduced", recs)
+-    STAGE[0] = "R9"
+-    recs, cfg = [], 0
+-    while not over(ends["R9"]):
+-        Dfin = list(range(1, 9))
+-        bl = valid_betas(9, Dfin, rcfg, 1)
+-        if not bl:
+-            continue
+-        beta = bl[0]
+-        gam = sorted(set(range(9)) - {(beta[d] - d) % 9 for d in Dfin})
+-        dlt = sorted(set(range(9)) - set(beta.values()))
+-        mstar = int(rcfg.integers(9))
+-        conf = {"Dinf": [0], "beta": {str(kk): vv for kk, vv in beta.items()}, "gamma": gam, "delta": dlt, "mstar": mstar, "cfg": cfg}
+-        try:
+-            R = Reduced(9, 1, [0], beta, gam, dlt, [[0]], list(range(9)) + [mstar], [[mstar]])
+-        except AssertionError as ex:
+-            W.write({"tag": "R9_9p1_reduced", "config": conf, "status": "BAD_CONFIG", "why": repr(ex)})
+-            cfg += 1
+-            continue
+-        recs += run_reduced(R, "R9_9p1_reduced", [9000 + 4 * cfg + j for j in range(4)], 200, ends["R9"], extra=conf)
+-        cfg += 1
+-    summary_red("R9_9p1_reduced", recs)
++    summary_red("KR_random_start", recs)
+     W.write({"end": True, "mode": MODE, "terminated": TERM[0], "elapsed_s": round(elapsed(), 2), "records": W.records, "bytes": W.n})
+     return 0
+ 

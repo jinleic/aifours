@@ -1,0 +1,257 @@
+--- scripts/launch_B_v2.py
++++ scripts/launch_B_v3.py
+@@ -1,23 +1,22 @@
+ #!/usr/bin/env python3
+-"""Capacity-gated launcher of the parent B-side K3 cube replay desk (review/moqls7-k3-B-cube-parent-replay-v1), v2.
+-
+-v2 = launch_B_v1.py plus: (1) attempt labels: 'run ITEM --label LABEL' derives the gate receipt, outcome receipt,
+-supervisor record, quarantine path, supervisor stdout log and launcher log from LABEL, runs replay_B_v2.py with the
+-same LABEL, and refuses while any receipts/*.QUARANTINE.json exists; (2) Main's attempt-2 launch rule: in addition to
+-bklib_v1.admission, the slot must have been freed by the end of PhysEpQutrit's B/C411 r7 (slot 2) or of route B
+-C311 (slot 1); (3) a 'wait-start LABEL' watcher of this desk's own receipts, so the parent can be told when the
+-natives start. Pins, limits, supervisor arguments and the RSS-cap rule are unchanged. The v1 'selfcheck' mode is
+-dropped: attempt 2 reuses the attempt-1 self-check summary (same binaries, same bklib_v1 transport code).
+-
+-Usage: launch_B_v2.py run ITEM --label ITEM-<suffix>
+-       launch_B_v2.py wait-start LABEL
++"""Capacity-gated launcher of the parent B-side K3 cube replay desk (review/moqls7-k3-B-cube-parent-replay-v1), v3.
++
++v3 = launch_B_v2.py with two changes. (1) The slot rule (Main's scheduling correction received about 05:10 PDT):
++attempt 2 owns lane SLOT 2 ONLY, after PhysEpQutrit's B/C411 r7 is fully reaped and end-recorded. That means no live
++lane process of B/C411 r7 (driver or natives) in a fresh scan AND its end record evidence/k3cubes/cert_B_r7/B_C411.json
++exists as a regular file. The v2 'or route B in slot 1 ends first' option is withdrawn; a low busy count alone never
++admits. (2) A SIGTERM/SIGINT received before the launch always prevents the launch; in v2 the last scan taken after
++the signal could still admit. Everything else is unchanged from v2: attempt labels, refusal while any
++receipts/*.QUARANTINE.json exists, the wait-start watcher, pins, limits, supervisor arguments and the RSS-cap rule.
++
++Usage: launch_B_v3.py run ITEM --label ITEM-<suffix>
++       launch_B_v3.py wait-start LABEL
+ 
+ run waits, with bounded sleeps of 90 s (never spinning), until a fresh lane scan and a fresh free-space reading admit a
+-native launch: <= 2 busy lane natives, lane RSS headroom for the projected peak, a computable RSS cap >= 2.5 GiB, free
+-bytes >= 12.2e9 + projected growth, before 15:30 PDT, and the slot condition above ('ended' = no live process of that
+-run now, and either seen live by this launcher or a new end record that appeared after this launcher started). If no
+-slot opens by 15:30 PDT, nothing is launched and the gate receipt records it. Then it requires receipts/regen-ITEM.json
+-= MATCH and receipts/selfcheck-summary.json all_ok, takes this desk's RSS cap from the fresh scan, writes the gate
+-receipt exclusively, runs the pinned supervise_r3.py (own session) around
++native launch: the slot-2 condition above AND <= 2 busy lane natives, lane RSS headroom for the projected peak, a
++computable RSS cap >= 2.5 GiB, free bytes >= 12.2e9 + projected growth, before 15:30 PDT. If no slot opens by then,
++nothing is launched and the gate receipt records it. Then it requires receipts/regen-ITEM.json = MATCH and
++receipts/selfcheck-summary.json all_ok, takes this desk's RSS cap from the fresh scan, writes the gate receipt
++exclusively, runs the pinned supervise_r3.py (own session) around
+ 'replay_B_v2.py run ITEM --label LABEL --rss-stop CAP', reaps it and writes an outcome receipt. A SIGTERM to this
+ launcher is forwarded to its supervisor child, which stops the group.
+@@ -44,14 +43,13 @@
+ SUP_WALL = 10200
+ SUP_GRACE = 180
+-ATTEMPT_RULE = ("Main message received about 05:00 PDT 2026-10-18: B/C321 attempt 1 UNKNOWN (external floor stop) "
+-                "accepted; prepare attempt 2 with new exclusive receipt/log/supervisor names and the same scripts, pins "
+-                "and limits (script changes as new versioned files). Slot 2 goes to PhysEpQutrit's B/C411 r7. Launch "
+-                "when a fresh lane scan shows <= 2 busy and that run has ended, or earlier if route B in slot 1 ends "
+-                "first and the lane shows <= 2 busy, with a fresh >= 12.2e9 gate plus growth. Unchanged: lane total RSS "
+-                "<= 8 GiB, <= 4 busy lane natives, floor 12e9, 15:30/17:00 PDT, a stop is UNKNOWN.")
++ATTEMPT_RULE = ("Main messages about 05:00 and 05:10 PDT 2026-10-18: B/C321 attempt 1 UNKNOWN (external floor stop) "
++                "accepted; attempt 2 uses new exclusive names and the same scripts, pins and limits. Scheduling "
++                "correction: slot 1 remains PhysEpQutrit's (route B r6, then route A r7); attempt 2 owns SLOT 2 ONLY, "
++                "after B/C411 r7 is fully reaped/end-recorded; the 'or route B ends first' permission is withdrawn; do "
++                "not act on a merely low busy count. Fresh >= 12.2e9 gate plus growth. Unchanged: lane total RSS <= "
++                "8 GiB, <= 4 busy lane natives, floor 12e9, 15:30/17:00 PDT, a stop is UNKNOWN.")
+ B411_R7 = re.compile(r"B_C411|k3_direct_B_r\d+\.py C411")
+-END_FILES = {"b411_r7": os.path.join(K.K3DIR, "cert_B_r7", "B_C411.json"),
+-             "routeB": os.path.join(K.K3DIR, "C311cuts_B_r*.supervisor.json")}
+-STATE = {"child": None, "forwarded": [], "seen_live": {"b411_r7": False, "routeB": False}, "initial_end_files": None}
++B411_R7_END_RECORD = os.path.join(K.K3DIR, "cert_B_r7", "B_C411.json")
++STATE = {"child": None, "forwarded": [], "seen_live": False}
+ 
+ 
+@@ -73,22 +71,13 @@
+ 
+ 
+-def end_files():
+-    return {k: sorted(p for p in glob.glob(g) if os.path.isfile(p)) for k, g in END_FILES.items()}
+-
+-
+ def slot_condition(scan):
+-    """Main's attempt-2 rule: B/C411 r7 (slot 2) has ended, or route B C311 (slot 1) has ended."""
++    """Main's corrected rule: slot 2 is free only when B/C411 r7 is fully reaped AND end-recorded."""
+     procs = scan.get("lane_natives", []) + scan.get("lane_processes", [])
+-    live = {"b411_r7": any(B411_R7.search(p.get("args", "")) for p in procs),
+-            "routeB": bool(scan.get("route_B_pids"))}
+-    files = end_files()
+-    if STATE["initial_end_files"] is None:
+-        STATE["initial_end_files"] = files
+-    new = {k: sorted(set(files[k]) - set(STATE["initial_end_files"][k])) for k in files}
+-    for k in live:
+-        STATE["seen_live"][k] = STATE["seen_live"][k] or live[k]
+-    ended = {k: (not live[k]) and (STATE["seen_live"][k] or bool(new[k])) for k in live}
+-    return {"live": live, "seen_live": dict(STATE["seen_live"]), "initial_end_files": STATE["initial_end_files"],
+-            "new_end_files": new, "ended": ended, "ok": ended["b411_r7"] or ended["routeB"]}
++    live = any(B411_R7.search(p.get("args", "")) for p in procs) or "error" in scan
++    STATE["seen_live"] = STATE["seen_live"] or (live and "error" not in scan)
++    st = os.lstat(B411_R7_END_RECORD) if os.path.lexists(B411_R7_END_RECORD) else None
++    recorded = st is not None and (st.st_mode & 0o170000) == 0o100000
++    return {"b411_r7_live": live, "b411_r7_seen_live": STATE["seen_live"], "end_record": B411_R7_END_RECORD,
++            "end_record_exists": recorded, "ok": (not live) and recorded}
+ 
+ 
+@@ -98,5 +87,5 @@
+     if "conditions" not in adm:
+         return {"ok": False, "why": adm["why"], "slot": slot}
+-    cond = dict(adm["conditions"], slot_freed_by_b411_r7_or_routeB_end=slot["ok"])
++    cond = dict(adm["conditions"], slot2_b411_r7_reaped_and_end_recorded=slot["ok"])
+     return {"ok": all(cond.values()), "conditions": cond, "why": [k for k, v in cond.items() if not v], "slot": slot}
+ 
+@@ -111,6 +100,6 @@
+                 "natives": [[n["pid"], os.path.basename(n["comm"])] for n in scan.get("lane_natives", [])],
+                 "lane_rss": scan.get("lane_rss_bytes"), "reserved": scan.get("reserved_bytes"),
+-                "cap": scan.get("computable_cap"), "live": adm["slot"]["live"], "ended": adm["slot"]["ended"],
+-                "new_end_files": adm["slot"]["new_end_files"]}
++                "cap": scan.get("computable_cap"), "b411_r7_live": adm["slot"]["b411_r7_live"],
++                "b411_r7_end_record_exists": adm["slot"]["end_record_exists"]}
+         os.write(logfd, (json.dumps(line) + "\n").encode())
+         if adm["ok"] or not deadline_ok() or STATE["forwarded"]:
+@@ -173,6 +162,7 @@
+            "argv": argv, "cwd": K.TMP, "env": K.ENV, "scripts_sha256": K.script_hashes(),
+            "regen_receipt_sha256": K.sha_file(regen_path), "selfcheck_summary_sha256": K.sha_file(summary_path)}
+-    if not adm["ok"] or sup_sha != K.SUPERVISOR_SHA256:
+-        rec["not_launched"] = "admission failed: %s / supervisor pin %s" % (adm["why"], sup_sha == K.SUPERVISOR_SHA256)
++    if not adm["ok"] or sup_sha != K.SUPERVISOR_SHA256 or STATE["forwarded"]:
++        rec["not_launched"] = "admission failed: %s / supervisor pin %s / launcher signals %s" % (
++            adm["why"], sup_sha == K.SUPERVISOR_SHA256, STATE["forwarded"])
+         print(json.dumps({"gate_sha256": K.write_json_x(gate_path, rec), "launched": False,
+                           "why": rec["not_launched"]}), flush=True)
+@@ -241,5 +231,5 @@
+                                            for n in (d.get("scan") or {}).get("lane_natives", [])],
+                                "rss_cap": (d.get("rss_cap") or {}).get("value"),
+-                               "ended": ((d.get("admission") or {}).get("slot") or {}).get("ended")})
++                               "slot": (d.get("admission") or {}).get("slot")})
+             if k == "launch":
+                 out[k].update({"cnf_sha256": (d.get("regen") or {}).get("cnf_sha256"),
+@@ -256,5 +246,5 @@
+         if (len(a) != 4 or a[1] not in K.ITEMS or a[2] != "--label"
+                 or not (re.fullmatch(r"[A-Za-z0-9_.-]+", a[3]) and a[3].startswith(a[1] + "-"))):
+-            raise SystemExit("usage: launch_B_v2.py run ITEM --label ITEM-<suffix>")
++            raise SystemExit("usage: launch_B_v3.py run ITEM --label ITEM-<suffix>")
+         signal.signal(signal.SIGTERM, on_term)
+         signal.signal(signal.SIGINT, on_term)
+--- scripts/assemble_B_v2.py
++++ scripts/assemble_B_v3.py
+@@ -1,11 +1,13 @@
+ #!/usr/bin/env python3
+ """Assemble the attempt receipt, deviations, RESULT.v2.json and REPORT.v2.md of a labelled replay attempt of the
+-parent B-side K3 cube replay desk (review/moqls7-k3-B-cube-parent-replay-v1), v2.
+-
+-v2 = assemble_B_v1.py with attempt labels: it reads the LABEL receipts and logs written by launch_B_v2.py and
+-replay_B_v2.py, and writes receipts/LABEL.json, deviations-v2.json, RESULT.v2.json and REPORT.v2.md, each created
+-exclusively. Attempt 1 (label ITEM, files from v1) is summarised by its existing receipts, never rewritten.
+-
+-Usage: assemble_B_v2.py ITEM LABEL          (e.g. B_C321 B_C321-a2)
++parent B-side K3 cube replay desk (review/moqls7-k3-B-cube-parent-replay-v1), v3.
++
++v3 = assemble_B_v2.py with the attempt-2 deviation set rewritten for the v3 launcher (slot-2-only rule) and the
++disarmed v2 launcher, plus both script diffs in the result. It reads the LABEL receipts and logs written by
++launch_B_v3.py and replay_B_v2.py, and writes receipts/LABEL.json, deviations-v2.json, RESULT.v2.json and
++REPORT.v2.md, each created exclusively. Attempt 1 (label ITEM, files from v1) is summarised by its existing receipts,
++never rewritten.
++
++Usage: assemble_B_v3.py ITEM LABEL          (e.g. B_C321 B_C321-a2b)
+ 
+ Reads the desk's receipts and logs (never modifies them), re-hashes every referenced file, checks the hash bindings
+@@ -22,10 +24,11 @@
+ 
+ DEVIATIONS = [
+-    {"id": "D16-v2-scripts",
+-     "what": "New versioned scripts, diff in scripts-v1-to-v2.r2.diff. replay_B_v2.py adds only the attempt label, from "
+-             "which every run receipt, log, FIFO and the expected supervisor record are named. launch_B_v2.py adds "
+-             "the label, Main's attempt-2 launch rule, a refusal while any receipts/*.QUARANTINE.json exists, and "
+-             "the wait-start watcher; it drops the selfcheck mode. assemble_B_v2.py adds label-based inputs and "
+-             "outputs. bklib_v1.py and compose_B_v1.py are unchanged. Pins, native limits (kissat --time=5400, "
++    {"id": "D16-versioned-scripts",
++     "what": "New versioned scripts. replay_B_v2.py (diff scripts-v1-to-v2.r2.diff) adds only the attempt label, "
++             "from which every run receipt, log, FIFO and the expected supervisor record are named. launch_B_v3.py "
++             "is launch_B_v2.py (labels, refusal while any receipts/*.QUARANTINE.json exists, wait-start watcher, "
++             "no selfcheck mode) plus Main's corrected slot-2-only rule and a pre-launch signal guard (diff "
++             "scripts-v2-to-v3.diff). assemble_B_v3.py is assemble_B_v2.py with this deviation set. bklib_v1.py, "
++             "compose_B_v1.py and supervise_r3.py are unchanged. Pins, native limits (kissat --time=5400, "
+              "drat-trim -t 9000), supervisor arguments (wall 10200 s, grace 180 s, floor 12e9) and the RSS-cap rule "
+              "are unchanged."},
+@@ -33,13 +36,12 @@
+      "what": "Attempt 2 reran neither the self-checks nor the regeneration-only precheck. It reuses "
+              "receipts/selfcheck-summary.json (ec246769...739b, all_ok) and receipts/regen-B_C321.json "
+-             "(12a07694...66f8, MATCH): same binaries, same bklib_v1 transport code. The attempt-2 run regenerated "
+-             "the CNF again and checked its SHA-256 before any native launch."},
+-    {"id": "D18-attempt-2-launch-rule",
+-     "what": "Admission = bklib_v1.admission (<= 2 busy lane natives, lane RSS + 2 GiB <= 8 GiB, cap >= 2.5 GiB, "
+-             "free >= 12,201,048,576 B, before 15:30 PDT) AND the slot was freed by the end of B/C411 r7 or of "
+-             "route B C311. A run counts as ended when it has no live lane process now and either this launcher saw "
+-             "it live or a new end record appeared after the launcher started. B/C411 r7 processes match "
+-             "'B_C411|k3_direct_B_r\\d+\\.py C411'; route B is bklib_v1.lane_scan's route-B match. End records: "
+-             "cert_B_r7/B_C411.json and C311cuts_B_r*.supervisor.json. Scans run every 90 s."},
++             "(12a07694...66f8, MATCH): same binaries, same bklib_v1 transport code (Main: do not rerun passed "
++             "checks). The attempt-2 run regenerated the CNF again and checked its SHA-256 before any native launch."},
++    {"id": "D18-slot-2-only-launch-rule",
++     "what": "launch_B_v3.py admission = bklib_v1.admission (<= 2 busy lane natives, lane RSS + 2 GiB <= 8 GiB, cap "
++             ">= 2.5 GiB, free >= 12,201,048,576 B, before 15:30 PDT) AND slot 2 freed: no live lane process "
++             "matching 'B_C411|k3_direct_B_r\\d+\\.py C411' (B/C411 r7 driver and natives fully reaped) AND its end "
++             "record evidence/k3cubes/cert_B_r7/B_C411.json exists as a regular file. A low busy count alone never "
++             "admits; the withdrawn route-B option is gone. Scans run every 90 s."},
+     {"id": "D19-v1-deviations-carried",
+      "what": "D1-D12 and D14 of deviations-v1.json (1ec0309c...4afb) apply unchanged to attempt 2. D13 (the attempt-1 "
+@@ -51,6 +53,6 @@
+              "are not causal attributions."},
+     {"id": "D21-assembler-before-run",
+-     "what": "assemble_B_v2.py was created before attempt 2 started; its SHA-256 is part of every attempt-2 script "
+-             "recording."},
++     "what": "assemble_B_v3.py was created before the attempt-2 launch; its SHA-256 is part of every recording "
++             "made by that run."},
+     {"id": "D23-launcher-guard-fix-and-noop-start",
+      "what": "The first scripts-v1-to-v2.diff (db6d375b...61df) captured launch_B_v2.py without its "
+@@ -58,6 +60,16 @@
+              "'launch_B_v2.py run B_C321 --label B_C321-a2' and 'wait-start B_C321-a2' were started once against "
+              "that file. Both exited rc 0 at once, executing nothing: no file written, no scan, no process spawned. "
+-             "The guard was restored before any recorded use, and scripts-v1-to-v2.r2.diff is the complete diff of "
+-             "the scripts actually used. Both diff files are kept."},
++             "The guard was restored, and scripts-v1-to-v2.r2.diff is the complete v1-to-v2 diff. Both diff files "
++             "are kept."},
++    {"id": "D24-v2-launcher-disarmed",
++     "what": "launch_B_v2.py (label B_C321-a2, withdrawn 'B/C411 r7 or route B ended' rule) was armed at 05:09:18 "
++             "PDT. On Main's HOLD and scheduling correction it was disarmed by a cooperative SIGTERM at 05:10:34. Its "
++             "last scan, at 05:10:48, was not admitted: 4 busy natives, both runs live. It exited rc 2 without "
++             "starting any child. Deferral evidence: receipts/B_C321-a2.gate.json (c28b2e63...61e0, not_launched) "
++             "and logs/launch-run-B_C321-a2.log. Its wait-start watcher exited on that record. The B_C321-a2 names "
++             "are spent, so the v3 launch uses label B_C321-a2b."},
++    {"id": "D25-armed-after-go",
++     "what": "launch_B_v3.py was armed only after Main's GO following its source read of v2/v3 (HOLD received about "
++             "05:10 PDT). The arming time is the first line of logs/launch-run-<LABEL>.log."},
+ ]
+ 
+@@ -257,5 +269,5 @@
+         "# Parent replay of the phys-2 K3 cube certificate B/C321 (MOQLS(7), encoder B), attempt %s" % r["label"], "",
+         "Desk: `review/moqls7-k3-B-cube-parent-replay-v1/`, 2026-10-18 PDT. RESULT.v2.json sha256 `%s`." % result_sha,
+-        "Generated by `scripts/assemble_B_v2.py` from the same data as RESULT.v2.json. Attempt 1 (label B_C321): "
++        "Generated by `scripts/assemble_B_v3.py` from the same data as RESULT.v2.json. Attempt 1 (label B_C321): "
+         "%s, item receipt `%s`, RESULT.json `%s`." % (result["attempt_1"]["status"],
+                                                        result["attempt_1"]["item_receipt_sha256"],
+@@ -355,6 +367,7 @@
+     lines += ["", "## Integrity", "",
+               "Receipts, logs, RESULT.v2.json, REPORT.v2.md and deviations-v2.json were created exclusively (mode "
+-              "'x' / O_EXCL). The v2 scripts were copied with cp -n from v1 and edited before their first use; their "
+-              "diff is scripts-v1-to-v2.r2.diff. Nothing from attempt 1 was modified, deleted or renamed. No lane file "
++              "'x' / O_EXCL). The versioned scripts were copied with cp -n and edited before their first recorded use; "
++              "diffs scripts-v1-to-v2.r2.diff and scripts-v2-to-v3.diff. Nothing from attempt 1 or from the disarmed "
++              "B_C321-a2 launcher was modified, deleted or renamed. No lane file "
+               "was written. There were no /tmp writes and no Git, network or model CLI. __pycache__ present: %s. "
+               "Desk regular files before RESULT.v2.json: %d, %s bytes in total. FIFO nodes, never opened outside the "
+@@ -426,6 +439,11 @@
+                       "result_json_sha256": file_entry("RESULT.json")["sha256"],
+                       "deviations_v1_sha256": file_entry("deviations-v1.json")["sha256"]},
+-        "scripts_diff": file_entry("scripts-v1-to-v2.r2.diff"),
++        "scripts_diff_v1_to_v2": file_entry("scripts-v1-to-v2.r2.diff"),
++        "scripts_diff_v2_to_v3": file_entry("scripts-v2-to-v3.diff"),
+         "superseded_scripts_diff": file_entry("scripts-v1-to-v2.diff"),
++        "disarmed_v2_launcher": {"gate_receipt": file_entry("receipts/B_C321-a2.gate.json"),
++                                 "log": file_entry("logs/launch-run-B_C321-a2.log")},
++        "arming_line": json.loads(K.read_regular(os.path.join(
++            K.LOGS, "launch-run-%s.log" % label)).decode().splitlines()[0]),
+         "items": {label: {"receipt": "receipts/%s.json" % label, "receipt_sha256": item_sha, "status": row["status"],
+                           "failed_conditions": row["failed_conditions"], "observed_outcome": row["observed_outcome"],

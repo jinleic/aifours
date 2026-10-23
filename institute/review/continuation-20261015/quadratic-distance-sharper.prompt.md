@@ -1,0 +1,9 @@
+Independent hostile read-only review. Read ONLY /Users/jinleic/repos/aifours/institute/review/continuation-20261015/quadratic-distance-snapshot-v3/. No writes, tests that write output, model delegation, Git mutations, external contact or credential reads. Read-only arithmetic is allowed.
+
+Pinned candidate proposed/SHARPER.md SHA256 01760780017c38f6aaf24116a20fd427048b19c448f7c82bb803f450ec155f39; manifest.json pins all files. proposed/PROOF.md is the earlier distance>=96 theorem already accepted by two independent reviews (accepted-distance96-review.md); its Section6 correspondence and s=0 exclusion are reused. proof.md contains canonical-sign/residue lemmas.
+
+Claim: if g,h are odd-weight eight-variable Boolean functions with |G|+|H|<=28 pointwise, D=J_g+J_h quadratic has 40*wt(D) >= 6656-512*2^r where polar rank is 2r; hence wt(D)>=112 and only nine rank/weight pairs survive; for balanced9-variable targets with s!=0, Q=W/8 mod2 on s-perp has Q(0)=0, so eight residue types remain.
+
+Audit from scratch: congruences S=4+8D mod16, R=8D mod16, T=(-1)^D S in {-28,-12,4,20}, T²+8T<=560, R²<=256+320D, parallelogram energy, correlation identity C=(1/256)sum Shat*Walsh_D, |Shat|<=512, quadratic Walsh-L1=2^(8+r) for every rank incl. affine/radical-linear, weight lists per rank, and corollary type list. Try to construct counterexamples or find a hidden sign/convention error. sharper-audit.json is exhaustive only for the finite pointwise domain and real cap-32 identity controls, not a proof of the universal statement.
+
+Return Markdown: ACCEPT / ACCEPT-WITH-FIXES / REJECT, real findings with file:line and exact required fix, strongest surviving statement, imported ingredients. Do not overclaim: necessary condition only; no NL242 existence/nonexistence, no novelty, no formal verification.

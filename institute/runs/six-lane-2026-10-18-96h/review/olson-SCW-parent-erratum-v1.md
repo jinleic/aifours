@@ -1,0 +1,8 @@
+# Olson SCW — parent erratum v1 (Claude MINOR-1 and editorial notes)
+
+Recorded 2026-10-20T04:40:41-0700 (`/bin/date`). Governs proof-SCW-v1.md (6a1965aecf599e00b512ca1df36127d21e5bac21bea7ac0da5804092245f3650), its scope and package. No proof step, statement or range changes.
+
+1. **MINOR-1 — (SR) provenance.** Replace the attribution "PL Secs. 2–7 accepted relative to their inputs" (proof LF26, LF375; scope LF31–36) by: (SR) follows from the GRX if-direction and NF, instantiated as in PL LF48–50, with m(P) = half the number of sign transitions (LOWER parent erratum LF7). The K1 verdict (LF5 accepts Theorem K1, the range R, Theorem S structure relative to stated inputs and CR conditionally) is context, not a premise. IF(a) is Lemma 2(a), the gamma-normalisation is LF84–87, the SS bijection is Lemma 4(c) through the new density lemma, and the light side is LF88–94 — all written out here.
+2. **Notation (editorial).** H (extra-pair count) vs calligraphic H(P); F (reflection count) vs calligraphic F (family); W (label sum) vs Win_m (windows); sigma(Y′) vs sigma(P). "Exact m=kappa sub-windows" (LF21) means containments, not sharp windows.
+3. **Remark M3 direction (non-claim).** At LF344–345 read: the minimal-representation bound |J|≤R−2 exceeds the top R−2e of W_kappa when e≥2, so Lemma 7(a) does not place every such J inside W_kappa.
+4. **Process.** Parent process note (/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/review/olson-SCW-parent-process-note-v1.md, fa0a040f35f40da7ac51463857e492324c08bb4fa3cdb9693122db52cab7c2b5) governs: proof LF4–6 "before derivation" means before WRITTEN derivation; strict pre-derivation preregistration is not certified. Text drafting checks and hashing were not scientific assertions or enumeration.

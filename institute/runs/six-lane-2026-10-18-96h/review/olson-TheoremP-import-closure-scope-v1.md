@@ -1,0 +1,7 @@
+# Theorem P inherited-import closure — scope v1
+
+Recorded 2026-10-21T04:14:28-0700 (`/bin/date`). Target is ONLY Theorem P, proof-theoremP.md LF8–93 (58a85ebeba8208e2f89b39a691235d2d1374656d8888ea905fe96aa75e1dafc2), an immutable pre-window written theorem. K0T cites it as an accepted import with one historical Codex review; neither K0T family re-proved P. The report review correctly requested that boundary be explicit. Parent has now read the proof for scope; no new theorem/parameter change or research discovery is claimed.
+
+Obtain fresh independent written reviews of the complete six-step proof in both families, plus parent derivation. Exact statement: p odd prime, word length N≤4p−1, F≥1 reflections, cyclic rotation gaps n_t; if F+sum floor(n_t/2)≥3p−1, an identity2p-subword exists in ORIGINAL index order. Verify cyclic uncutting, Boolean selection/injectivity, even size, linear rotation coordinate, quadratic size, strict degree bound and signed-box cancellation, nonzero solution and exact size2p. This does not prove ordered Olson for arbitrary words.
+
+No new native/science/control run. Do not run or rely on the header's historical brute-force scripts, composite sharpness claims, prime-power extension or remarks outside the stated theorem. Neither computation nor an unverified prime-power theorem is a premise. The Boolean-box cancellation lemma is proved in the text; Fermat's little theorem/elementary field arithmetic are the only classical ingredients needed. Correctness review is not novelty, Lean or human verification.

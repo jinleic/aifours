@@ -1,0 +1,71 @@
+{
+  "verdict": "needs-rework",
+  "linesChecked": 1075,
+  "summary": "R1#1 UNRESOLVED; R1#2 UNRESOLVED; R1#3 RESOLVED: bounded stream joins and persistent launch blocking (src/pilot_file_drat_v8.py:394-401,503-529,591-593); R1#4 UNRESOLVED; R1#5 UNRESOLVED; R1#6 RESOLVED: explicit control caps and reservation for retained proof copies, mutation byte, captures and metadata (src/pilot_file_drat_v8.py:101-109,751,785,813,836); R1#7 UNRESOLVED; R1#8 UNRESOLVED; R1#9 RESOLVED: observer event and sample fields now receive strict validation matching the supplied observer (src/pilot_file_drat_v8.py:267-279). Checker rejection exit code 1 is correctly allowed by healthy() (src/pilot_file_drat_v8.py:728-731; checker/drat-trim.c:1500). Acceptable fail-closed kissat assumptions include quiet-mode status output, FIFO acceptance, binary proof format, sufficient C5 proof production, and C6/C7 expected outcomes. The unverified descendant assumption can fail open and is reported separately. Verification used source inspection and in-memory stubs; no native jobs or file writes were performed.",
+  "findings": [
+    {
+      "severity": "blocker",
+      "category": "correctness",
+      "location": "src/pilot_file_drat_v8.py:173-178; src/pilot_file_drat_v8.py:1014-1020",
+      "problem": "R1#1 UNRESOLVED: Cancellation can still latch before publication while the runner publishes UNSAT/count=true.",
+      "evidence": "After the last cancellation check, write_x serializes the counted record, opens its destination, writes and fsyncs it without consulting CANCEL. A cancellation during serialization or open, before any record bytes are written, preserves the counted verdict and is subsequently labeled post_commit_cancel. An in-memory cancellation injected during destination opening reproduced this outcome.",
+      "suggestedFix": "Prepare serialization and destination handling before the final gate, and implement an explicit commit boundary coordinated with cancellation. Cancellation latched before that boundary must preserve UNKNOWN/count=false; do not classify every cancellation observed after write_x returns as post-commit."
+    },
+    {
+      "severity": "blocker",
+      "category": "safety",
+      "location": "src/pilot_file_drat_v8.py:423-433; src/pilot_file_drat_v8.py:594-604",
+      "problem": "R1#2 UNRESOLVED: Post-Popen ownership bookkeeping can still escape cleanup and abandon an unregistered live child.",
+      "evidence": "OWNED.append and PID/start/deadline initialization execute after successful Popen but before the constructor's cleanup guard. Child construction also precedes run_child's try/finally. A MemoryError during the list append therefore reaches neither TERM nor wait, and the child is absent from the final ownership census. An in-memory allocation-failure injection reproduced zero cleanup calls and an empty OWNED list.",
+      "suggestedFix": "Put all bookkeeping after successful Popen inside an unconditional ownership cleanup guard using the local Popen object. Failure to allocate or register ownership must still reach owned termination, quarantine and reaping."
+    },
+    {
+      "severity": "blocker",
+      "category": "safety",
+      "location": "src/pilot_file_drat_v8.py:518-537; src/pilot_file_drat_v8.py:624-626; src/pilot_file_drat_v8.py:1054-1063",
+      "problem": "Settlement can remain true when required artifact hashes, receipts or proof-stream settlement are missing.",
+      "evidence": "Child.settle computes settled before hashing and writing its receipt. Either operation can fail and latch the runner without clearing rec['settled']; final_code consequently reports all_children_settled=true. The child receipt also precedes ProofSink.finish, whose alive/error result never updates the child's settled flag. Thus an unfinished proof stream can coexist with a recorded settled child. Receipt-failure injection reproduced settled=true with a settle_receipt_error.",
+      "suggestedFix": "Finalize settlement only after capture and proof streams close, required artifacts are pinned, and receipts succeed. Clear settlement on every failed condition, and compute the summary from this complete state."
+    },
+    {
+      "severity": "blocker",
+      "category": "control",
+      "location": "src/pilot_file_drat_v8.py:400-406; src/pilot_file_drat_v8.py:847-856; src/pilot_file_drat_v8.py:1027-1031",
+      "problem": "R1#4 UNRESOLVED: Safety failures discovered outside active-child supervision do not reliably latch or force a safety-stop exit.",
+      "evidence": "terminal_gate returns disk-floor failures and guard exceptions without setting LATCH. After recording UNKNOWN, run_plan can launch another item if conditions recover, or mark the final plan complete and exit 0. Likewise, a proof-sink flush/fsync or rehash failure discovered after child exit can return an incomplete sink without latching. In-memory checks reproduced both a terminal disk refusal followed by exit 0 and an errored sink with an empty LATCH.",
+      "suggestedFix": "Latch disk, guard, sink-I/O and settlement failures wherever they are discovered, including terminal checks and post-exit sink finalization. Block subsequent launches and select EXIT_SAFETY_STOP."
+    },
+    {
+      "severity": "blocker",
+      "category": "control",
+      "location": "src/pilot_file_drat_v8.py:309-330; src/pilot_file_drat_v8.py:421-432; src/pilot_file_drat_v8.py:591-599",
+      "problem": "R1#5 UNRESOLVED: Admission can become cancelled or stale before Popen, and the child deadline is still established after spawning.",
+      "evidence": "admit checks CANCEL before potentially blocking registry, monitor and filesystem operations, without rechecking it afterward. Child then opens its capture file before Popen; cancellation is next checked only after construction. Cancellation injected during registry checking returned an empty refusal list. A delayed capture open or sleep/resume can similarly cross the admitted absolute cutoff before spawning; the deadline is calculated afterward.",
+      "suggestedFix": "Finish output preparation first, then perform final cancellation/latch and admission checks at the spawn boundary. Freeze the absolute child cutoff before Popen and pass it unchanged into ownership registration and supervision."
+    },
+    {
+      "severity": "blocker",
+      "category": "evidence",
+      "location": "src/pilot_file_drat_v8.py:202-208; src/pilot_file_drat_v8.py:435-440; control/launch-contract-tightening-v1.json:23",
+      "problem": "R1#7 UNRESOLVED: Per-child registration still lacks required job bindings and can accept an unavailable start identity.",
+      "evidence": "Child records contain binary constants and input/output paths, but no GO/source binding, actual CNF/proof input hashes, or immutable reference to the run-level launch record. The run-level record contains some shared bindings, but not the newly generated control inputs' hashes. identity() also converts ps failures into an 'unavailable' string, and empty or unavailable identities do not fail registration. This falls short of the ownership contract's required launch/start identity and source/input/GO pins.",
+      "suggestedFix": "Bind each child record to an immutable run manifest and its exact verified inputs, including control CNFs and checker proof files. Validate start identity; unavailable identity must enter owned cleanup rather than successful registration."
+    },
+    {
+      "severity": "blocker",
+      "category": "assumption",
+      "location": "src/pilot_file_drat_v8.py:512-519; src/pilot_file_drat_v8.py:569-574; control/launch-contract-tightening-v1.json:21-24",
+      "problem": "Settlement and resource enforcement rely on an unverified assumption that kissat has no descendants escaping its original process group.",
+      "evidence": "The only descendant check is killpg(original_pgid, 0), and RSS sampling includes only the runner and direct child. A kissat descendant that changes process group/session and closes inherited streams can remain running while the original group appears empty, allowing settled=true and another launch. Kissat is absent from the snapshot, so this behavior invariant cannot be established here. This is a conditional fail-open assumption, not a claim that the pinned binary actually forks.",
+      "suggestedFix": "Provide parent-reviewed evidence establishing the pinned binary's process behavior, or track owned descendants and their identities across process-group changes and include them in settlement and whole-lane RSS accounting."
+    },
+    {
+      "severity": "major",
+      "category": "control",
+      "location": "src/pilot_file_drat_v8.py:765-779",
+      "problem": "R1#8 UNRESOLVED: C2 can still pass when its checker crashes.",
+      "evidence": "C2 requires the independently computed CNF hash defect, settled=true and stop='self', but does not require healthy(dr2). A reaped SIGSEGV has returncode=-11 and can satisfy both settlement and stop='self'; missing diagnostics are informational only. The final C2 predicate therefore accepts that crash despite R1's requirement to reject unrelated checker crashes.",
+      "suggestedFix": "Require healthy checker termination independently of the hash-mutation rejection. If the truncated-input fixture triggers nondeterministic checker behavior, report that control as failed or replace it with a deterministic intended-reason fixture."
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+# Parent kernel recovery import qualification v1
+
+Recorded 2026-10-20T09:01:38-0700 (`/bin/date`). Corrects/qualifies checkpoint076's recovery description (/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/checkpoints/076-kernel-recovery-3-CI62-first-family-K0T-corollary-v1.json, 3783c7d8ec5b399e78f06eb6412fc56d6bb2da690165fe59eeaff9b636f5f4bf), which recorded 133 successfully executed historical import statements. A metadata parse of those 135 transcript import statements shows they included numpy and mpmath imports; sympy and run_parallel failed. These imports were part of restoring previously defined helper globals after the third parent kernel loss.
+
+No function was called on mathematical objects, no scientific/native/control run, enumeration, numerical calculation, solver, test or process launch occurred as part of that recovery. The recovery executed module import statements and function DEFINITIONS only, plus literal path constants. Nevertheless, under the strict global runtime HOLD, executing historical numerical-library imports is a process deviation: future recoveries should restore only helpers actually needed for metadata, hash and file operations.
+
+All subsequent mathematical acceptances in this segment remain written proofs reviewed by two model families plus parent hand checks; none used numpy/mpmath output. This record does not modify any earlier file and does not authorise runtime.

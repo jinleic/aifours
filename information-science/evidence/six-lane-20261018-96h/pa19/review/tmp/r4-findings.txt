@@ -1,0 +1,37 @@
+STATUS REVIEW_RETURNED_UNVERIFIED needs-rework ['blocker', 'blocker', 'blocker', 'minor', 'minor'] {'model': 'gpt-6.1-sol', 'provider': 'openai', 'reasoning effort': 'max', 'sandbox': 'read-only'} 799.8
+SUMMARY R3#1 UNRESOLVED: pre-allocated ownership helps, but cleanup still has exception and retry holes (src/pilot_file_drat_v11.py:543-547,582-605,780-783).
+R3#2 RESOLVED: the signal handler only stamps a scalar; no Event lock remains (src/pilot_file_drat_v11.py:147-150).
+R3#3 UNRESOLVED: native memory diagnostics are classified, but the checker's unit-stack allocation-failure message is missed (src/pilot_file_drat_v11.py:138,674-682).
+R3#4 RESOLVED at pilot scope: inspected suffix-dependent process behavior and static imports adequately support the no-helper premise for these arguments; descendant checks remain observational (src/pilot_file_drat_v11.py:607-612,730-737,789-796; kissat-src-rel-4.0.4/file.c:227-287).
+R3#5 RESOLVED at pilot scope: source establishes in-place opening for these paths and optional additional output; FIFO inode/type, cwd and file-change checks add corroboration (src/pilot_file_drat_v11.py:469-487,655-671,789-796; kissat-src-rel-4.0.4/file.c:262-295; kissat-src-rel-4.0.4/application.c:845-861).
+R3#6 RESOLVED for the prior serial-tail arithmetic defect: 220 seconds are reserved and admission checks include that tail (src/pilot_file_drat_v11.py:100,390-392,510-518).
+R3#7 RESOLVED: serialization refuses records exceeding 512 KiB before opening their destination; record-count reservations cover retained JSON. Total reservation is 4,092,208,905 bytes (src/pilot_file_drat_v11.py:104-116,182-195,1047-1049).
+R3#8 RESOLVED: C2 requires a completed checker status/exit pair; MEMOUT/TIMEOUT aborts cannot pass that predicate (src/pilot_file_drat_v11.py:905-913,960-962).
+R3#9 RESOLVED: blocking closeout metadata precedes the explicit boundary; cancellation during clock() produces a nonzero outcome (src/pilot_file_drat_v11.py:1252-1284).
+Remaining fail-open assumptions: the pinned binaries implement the reviewed source semantics and remain unchanged between pin checks and execution; drat-trim's verifier and consumed-byte accounting are trusted. Binary/source correspondence remains explicitly inferred (evidence/kissat-source-evidence-v2.json:30; src/pilot_file_drat_v11.py:1141-1144; checker/drat-trim.c:985-994,1478-1500). If kissat violates the no-helper premise, a reparented helper in another process group can evade census and settlement. File checks are retrospective and cover only the output tree and LANE/tmp, so they do not enforce filesystem confinement (src/pilot_file_drat_v11.py:266-275,607-612). These residual trust assumptions do not independently reopen R3#4/#5 at pilot scope. Verification used snapshot source and in-memory stubs; no pinned solver/checker binaries were launched.
+LINES 1293
+
+#1 [blocker/safety] src/pilot_file_drat_v11.py:543-547; src/pilot_file_drat_v11.py:582-605; src/pilot_file_drat_v11.py:780-785
+PROBLEM: R3#1 UNRESOLVED: Cleanup can still wait without termination/quarantine or escape before reaping.
+EVIDENCE: Registration cleanup calls fallible latch() before setting stop. An in-memory identity-query failure followed by one latch MemoryError made the settle-all finally call wait() with stop=None, term_sent_at=None and quarantined=False. Separately, the retry sleep at line 604 is outside protection; injected wait/backoff failures escaped both settlement attempts unreaped. Retry flags also precede their operations: a failed signal is not retried, and a transient quarantine-write failure is swallowed permanently because quarantined is already true.
+FIX: Establish emergency-stop state before fallible logging, protect the complete retry path, and prevent cleanup from unwinding while a retained Popen remains unreaped. Track signal-delivery failure explicitly and keep quarantine publication pending until recorded or visibly reported while capacity remains held.
+
+#2 [blocker/control] src/pilot_file_drat_v11.py:138; src/pilot_file_drat_v11.py:674-682; src/pilot_file_drat_v11.py:1241-1245; checker/drat-trim.c:105-111
+PROBLEM: R3#3 UNRESOLVED: A documented native allocation failure still permits subsequent scientific launches.
+EVIDENCE: drat-trim prints 'c failed to reallocate unit stack' and exits 0 when realloc fails. RESOURCE_DIAG does not match that message, so settlement does not latch the memory stop. Qualification rejects the missing verification, but run_plan continues. An in-memory plan probe with this checker outcome launched all three items, retained an empty LATCH and reached complete=True.
+FIX: Include every explicit allocation-failure diagnostic in the resource classifier, including the unit-stack message, and latch before allowing another launch.
+
+#3 [blocker/control] src/pilot_file_drat_v11.py:510-527; control/resource-stability-addendum-v1.json:18
+PROBLEM: NEW: The recursive census runs after the final launch checks, allowing a spawn after cancellation or expiration of the frozen deadline.
+EVIDENCE: Cancellation and deadline are checked at lines 515-518, followed by blocking lane_files() at line 524 and then Popen without another check. A census stub that stamped cancellation and advanced time beyond the frozen deadline still reached Popen. A slow traversal also separates the required final monitor/statvfs decision from launch.
+FIX: Collect the census before final admission, then recheck cancellation, latch and the frozen deadline immediately before Popen, with no intervening blocking work.
+
+#4 [minor/resource] src/pilot_file_drat_v11.py:760-763; src/pilot_file_drat_v11.py:784-785; src/pilot_file_drat_v11.py:794-796
+PROBLEM: NEW: Cwd preparation failure bypasses cleanup of an already-created proof sink.
+EVIDENCE: run_kissat starts ProofSink before calling run_child, but run_child's os.makedirs(cwd) executes before its try/finally. If directory creation fails, sink.finish() is never called. An in-memory mkdir-failure probe confirmed this. No native child launches, but the blocked FIFO reader and open proof file are abandoned without sink settlement evidence.
+FIX: Put cwd preparation inside the cleanup guard so every failure after ProofSink creation reaches its finalizer.
+
+#5 [minor/control] src/pilot_file_drat_v11.py:127-128; src/pilot_file_drat_v11.py:266-275; src/pilot_file_drat_v11.py:660-671
+PROBLEM: NEW: Unrelated shared-temp writes can still fail a healthy control.
+EVIDENCE: The census covers all of shared LANE/tmp and attributes every unexpected new file or inode/size change to the current kissat child. A benign concurrent writer there therefore adds a settlement problem, latches the runner and fails a control despite healthy pinned tools. The private cwd does not isolate TMPDIR.
+FIX: Give each child a private TMPDIR and census its owned trees. Shared-temp changes need ownership attribution before being treated as child misbehavior.

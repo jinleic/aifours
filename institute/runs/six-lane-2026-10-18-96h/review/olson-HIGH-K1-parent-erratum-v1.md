@@ -1,0 +1,7 @@
+# HIGH-K1 — block-label occurrence precision erratum v1
+
+Recorded 2026-10-21T15:54:05-0700 after `/bin/date`. Applies after workererratum1 to [proof-HIGH-K1-and-core-v1.md](/Users/jinleic/repos/aifours/mathematics/evidence/six-lane-20261018-96h/olson/continuations/terminal-k-ge-p2-followon/proof-HIGH-K1-and-core-v1.md), SHA256 `f5b9357294f0e2cacd02e8f5494277df75b172414820821c9bf3ef8a1ecefe2a`, unchanged.
+
+At LF97 read “a value occurred at least three times among the block labels y1,…,yk”, not “a reflection value occurred at least three times”. At LF101 read “every value occurs at most twice among the block labels y1,…,yk”. These are occurrences in the NF representative-block-label sequence, NOT all reflectionlettermultiplicities (arbitraryodd-blockpairsremain). The COLOR/padding argument already uses exactly that sequence; no case, inequality or generalitychanges.
+
+[Codex complete-source review](/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/review/olson-HIGH-K1-codex-v1.prompt.stdout.txt) SHA256 `57d9a949ba7a1ea306344c2ab4f32e09ecb0f6362215d15731a885355f3dae54`:0F/0M/1MINORwording; allHK1branches,separatep5secondaryS(p)statement,topCT/Phi≥4nearpairconstraintsandentireHIGH-K-RES pass at declaredimportboundaries. SourcegatePASS: no omittedbodyidentifiedasload-bearing; thisfamilydoesNOTtriggerRE-REVIEW_REQUIRED. The secondfamilyisstillpending and could independentlytriggerthatbindingcondition. Parenthandcheckdirectlyusesblocklabels, notrawreflectionoccurrences. Noacceptancebeforethatgate; allprocessdeparturespermanent.

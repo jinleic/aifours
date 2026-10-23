@@ -1,0 +1,9 @@
+# Addendum 1 to 00-plan-v1.md (frozen before any prompt file is written)
+
+- Written: 2026-10-19T18:02:36-0700 (host /bin/date). `00-plan-v1.md` (cb9100ea61411937a03d85056daece91c14ac7ed507eb0e28e55a8fedb1321ac) stays unchanged; this addendum only refines it.
+
+1. **S6B optional CONTEXT order (replaces the S6B optional list of plan section 3).** (1) rules-k6-erratum-v3.md complete; (2) CERT-FORMAT-k6-v3.md lines 231-260 (section 6, fail-closed clauses cited by the record/pipeline controls); (3) CERT-FORMAT-k6-v3.md lines 29-77 (sections 1-2, types/stabilisers/edge order cited by unit controls); (4) INPUT-PINS alias; (5) Sun6 packet lines 1-46 alias; (6) rules-k6-v1.md complete. Reason: the complete CERT-FORMAT (15.4 kB) cannot fit beside the mandatory 185 kB of S6B blocks and the framing; the two excerpts are the clauses the controls cite. S6A still carries all nine sources complete.
+2. **Optional-block rule interpretation.** Greedy in priority order: each optional block is added if the whole prompt then stays <= 216000 B, otherwise it is omitted (declared) and the next block is tried. Hard limit remains < 220000 B.
+3. **Packet excerpt ranges.** Sun5 packet v2 OWNED excerpt = lines 1-14 (title, status lines, author checklist; line 15-16 are blank); Sun6 packet OWNED excerpt = lines 1-46 (unchanged).
+4. **Unit labels.** Code units: column-0 `def`/`class`/decorator starts and column-0 module statements outside triple-quoted strings (text scan, no AST), with directly preceding blank/comment lines attached; Markdown units: heading-delimited (Sun5 map addendum: numbered items); JSON units: top-level keys, with array entries (controls, interface_controls, fixtures, items) one unit each. All unit lists are verified contiguous and complete.
+5. **Wording.** Input line/entry counts that come only from author observation are attributed to the author in the prompt text.

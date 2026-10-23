@@ -1,0 +1,392 @@
+Hostile review of a proposed CNF-automorphism orbit reduction for a computer-assisted proof. First line DISPOSITION: ACCEPT / ACCEPT-WITH-FIXES / REJECT, then FATAL/MAJOR/MINOR findings with exact lines.
+Context: Ball–Simoens Problem 16 at n=8, branch K4 (one classical square L plus four quantum squares), reduced to a Boolean CNF F4 (GA3_K4w1.cnf, SHA 7bb806fc…01f7, 513,184 variables, 5,833,793 clauses) whose clause families were bound to a reviewed soundness note (r3). F4 must be shown UNSAT by cube-and-conquer: root cubes over 7 variables V1 (128 roots), refined by V2 lists. Proposal: the permutation group S3 acting on symbols {5,6,7} simultaneously on rows, columns and coordinates, with the induced relabelling of quantum squares Q2,Q3,Q4, is claimed to be a SYNTACTIC automorphism of F4 (variable permutation, polarity preserved, clause multiset preserved). Then F4∧c UNSAT iff F4∧π(c) UNSAT, and a DRAT proof for F4∧c renamed by π is a DRAT proof for F4∧π(c); so only orbit representatives need solving, with non-representatives certified by (representative proof, permutation word, pinned automorphism receipt).
+Audit: (1) the transfer lemma (including DRAT renaming, deletions, RAT pivot handling, and that unit-cube literals map to the other cube's literals exactly as sets); (2) whether the checker k4_automorphism_r2.py really establishes a TOTAL bijective polarity-preserving variable map on ALL 513,184 variables with exact clause-multiset equality (no hashing) and that the semantic-name construction cannot hide a non-bijection or collision; (3) group closure and generator checks; (4) the root-orbit table and stabiliser/child-orbit claims, and whether the V2 refinement under stabilisers is handled soundly (a child of a non-representative root must map to a child of the representative under the SAME π); (5) the ledger contract obligations (a)-(d), acyclicity, and that orbit-certified leaves are terminal; (6) whether soundness of K4 exclusion depends on construction details (it should depend only on the receipt). Do not trust worker statements; read the code. Negative controls in the receipt (σ=(4 5) fails; corrupted map fails) are controls, not proof.
+
+No tools: audit only the exact line-numbered packet below; do not claim executions.
+
+
+FILE review/K4_ORBIT_REDUCTION.r1.md sha256 89e8c52e351c02671663caab7d2989008ddbf4c1c26a0e065b9bfa06cd7d7286
+
+1: # K4 split: orbit reduction by verified CNF automorphisms — math/certification note and ledger contract, r1
+2: # (model-authored; NOT IN FORCE until the parent's both-CLI review and GO(b); no orbit certificate counts before that)
+3: 
+4: ## 0. Pinned objects
+5: - F4 = evidence/k4_w1_v1/GA3_K4w1.cnf, SHA-256 7bb806fc8f7793fa5088cc78caf3ebf5b49a72cad82c527f47cf6faced4301f7
+6:   (513184 variables, 5833793 clauses), README §9.
+7: - Name table (construction aid only, §2.3): review/moqls8-encoder-binding-v1/K4.names.json.gz (parent run directory),
+8:   SHA-256 ed0462bc4de7fdcbc34397e1b05304160e47b9ba4a1bd1c858c5f997df3f8e2d; its g-entries agree with the lane map
+9:   GA3_K4w1.map.json (0 mismatches).
+10: - Checker code/k4_automorphism_r2.py SHA-256 ae9bcbb421d134b0cb492571937f0808d94fcc5f90183d9304b3516c126c708f;
+11:   receipt evidence/k4_split_v1/AUTOMORPHISM_S3_567_r2.json SHA-256
+12:   d688277f10096cd652293c31b7dc8ae337bb647fa914382d09c2d9c11844357c (run 17:02:06–17:02:28 PDT, 21.5 s, max RSS
+13:   1.63 GiB, 1 CPU, alongside the K5 depth-2 pipeline as authorised).
+14: 
+15: ## 1. Transfer lemma (pure logic)
+16: Let F be a CNF on variables 1..V and π a permutation of {1..V}, extended to literals by π(−v) = −π(v) and to clauses
+17: and formulas literal-wise. Call π an automorphism of F if π(F) = F as multisets of clauses (a clause compared as the
+18: sorted vector of its literals). Then for every set c of literals: F ∧ c is satisfiable ⇔ F ∧ π(c) is satisfiable.
+19: Proof: if α ⊨ F ∧ c put β(π(v)) := α(v). Each clause D of F equals π(C) for a clause C of F; α makes some l ∈ C true,
+20: so β makes π(l) ∈ D true; each unit π(l) of π(c) has β(π(l)) = α(l) = ⊤. Conversely use π⁻¹, also an automorphism.
+21: Moreover a DRAT refutation P of F ∧ c renames to a DRAT refutation π(P) of F ∧ π(c) (RUP and RAT are invariant
+22: under variable renaming). Automorphisms of F form a group; for a word w = (h1, …, hm) of generators put
+23: π_w := π_{h1} ∘ … ∘ π_{hm} (rightmost applied first).
+24: Leaf CNFs are base + one unit per literal, so a leaf with literal set c is the formula F4 ∧ c (unit order irrelevant).
+25: 
+26: ## 2. What the receipt establishes (exact checks on the actual CNF bytes)
+27: 2.1 Generators: σ1 = (5 6), σ2 = (6 7) acting on {0..7} simultaneously as rows, columns and coordinates
+28: (cell (i,j) ↦ (σi, σj)), with ρ1 = (Q2 Q3), ρ2 = (Q3 Q4) (the squares whose (1,0) supports are {5},{6},{7}); Q1 and
+29: the weight-1 square (label 5) are fixed.
+30: 2.2 For each of identity, π1, π2: π is total on all 513184 variables and a bijection; π(F4) = F4 EXACTLY — for every
+31: clause length the lexicographically sorted matrices of ascending int32 literal rows of F4 and π(F4) are identical
+32: (no hashing). Group: π1² = π2² = id, π1π2 ≠ id, (π1π2)³ = id, closure has order 6, and all six elements are
+33: automorphisms (each checked exactly).
+34: 2.3 How π was built does not matter for soundness: any bijection passing 2.2 is an automorphism. The semantic name
+35: table (canonical identities g ↦ (s,{p,q}); b3 ↦ (s,{x,y},z); c4 ↦ (s,a,{p,q}); u5 ↦ (s,line,q,a); w3 ↦ (s,line,p);
+36: injective on all variables) is only the construction route; it also explains WHY π is an automorphism (the encoding is
+37: invariant under the moves (α)+(β) with σ, which preserve row-0 standard form, L(1,0) = 1, L(i,0) = i, the K4 SB2 units,
+38: all-frames P4 on Q1–Q4 and weight1 on L).
+39: 2.4 Cube variables: every group element maps each V1 root assignment (DIMACS 57,106,155,204,253,302,351) to a V1 root
+40: assignment, and (rows 2, 3 are fixed by σ) the stabiliser of each root representative maps V2 assignments to V2
+41: assignments. Orbits: 64 root orbits; non-singleton hard/moderate orbits {c016,c032,c064}, {c017,c033,c065},
+42: {c048,c080,c096}, {c049,c081,c097}, {c028,c044,c076}; singletons c001, c112, c012, c013. Stabiliser orders:
+43: 6 for c001, c012, c013, c112 (64 child orbits each), 2 for c016, c017, c028, c048, c049 (96 child orbits each).
+44: 2.5 Controls: identity PASS; σ = (4 5) with ρ = id FAIL (moves the SB2 units); π1 with the images of variables 57
+45: and 64 swapped FAIL (bijection kept, clause multiset differs).
+46: 
+47: ## 3. Ledger contract (K4 ledger, implementation to be reviewed before use)
+48: 3.1 New evidence kind "orbit" for state CERTIFIED: {kind: "orbit", source: leaf id R, word: [h1,…,hm] over
+49: {"g1","g2"}, automorphism_receipt: {path, sha256 = d688277f…357c}}. Validator obligations:
+50:  (a) the receipt is the pinned one, its verdict fields are all true and its base SHA equals the ledger base SHA;
+51:  (b) π_w is recomputed from the generator definitions (σ, ρ) and the pinned name table on the g-variables (leaf
+52:      literals are g-variables only), and π_w(lits(R)) = lits(L) must hold as literal SETS; images outside the chain
+53:      simply fail this test (V4–V6 are permuted among themselves and V7/V8 move to square-3/4 variables, so orbit
+54:      certificates are available only for leaves whose literals lie in V1–V3; rows 2–4 are fixed by σ);
+55:  (c) R is SETTLED: CERTIFIED by a strict receipt, or REFINED with every child SETTLED (closed subtree), or CERTIFIED by
+56:      orbit from a settled source; the orbit-evidence graph must be acyclic (topological check);
+57:  (d) L is a terminal leaf (never refined) — an orbit-certified leaf has no children.
+58: 3.2 Use at depth 1 (roots): the strict pipeline runs every root EXCEPT the non-representative members of the five
+59: non-singleton hard/moderate orbits (c032, c064, c033, c065, c080, c096, c081, c097, c044, c076); those ten are
+60: certified by orbit from their representatives (c016, c017, c048, c049, c028) once each representative is settled.
+61: All other roots (including the other non-representatives, which are trivial) are run strictly.
+62: 3.3 Use at depth 2 (stabiliser reduction): an UNKNOWN representative root R is refined into its 128 V2 children as
+63: usual; one child per orbit of the stabiliser H_R is run strictly, every other child is certified by orbit from a
+64: sibling via a word with π_w ∈ H_R (so π_w(lits(R)) = lits(R) and π_w maps the sibling's literals to the child's).
+65: 3.4 Completeness is unchanged: complete ⇔ every terminal leaf CERTIFIED (strict or orbit) with all obligations; the
+66: 128-root partition and every 128-child family remain explicit in the ledger.
+67: 
+68: ## 4. Parent replay
+69: (1) Re-run code/k4_automorphism_r2.py (≈ 22 s, ≤ 1.75 GiB) or an independent automorphism check; (2) re-solve the
+70: representatives' strict leaves; (3) validate the ledger with the orbit rule. Orbit certificates add no solver trust
+71: beyond the representatives' DRAT checks.
+72: 
+
+FILE code/k4_automorphism_r2.py sha256 ae9bcbb421d134b0cb492571937f0808d94fcc5f90183d9304b3516c126c708f
+
+1: """K4 base-CNF automorphism check, revision r2 (supersedes the never-run draft code/k4_automorphism.py). CHECK ONLY.
+2: Inputs (all hash-pinned): the stored K4 base CNF (SHA-256 7bb806fc…01f7, streamed SHA verified), the parent's full
+3: semantic name table review/moqls8-encoder-binding-v1/K4.names.json.gz (SHA-256 ed0462bc…8e2d; g entries cross-checked
+4: with the lane map evidence/k4_w1_v1/GA3_K4w1.map.json).
+5: Permutation: σ on {0..7} acting simultaneously on rows, columns and coordinates (cell (i,j) ↦ (σi,σj)); square
+6: relabelling ρ. Variable map π from CANONICAL identities: g ↦ (s, {p,q}); b3 ↦ (s, {x,y}, z); c4 ↦ (s, a, {p,q});
+7: u5 ↦ (s, line, q, a); w3 ↦ (s, line, p) with line = ("row", i) or ("col", j); every canonical identity must belong to
+8: exactly one variable (injectivity), every image identity must exist (totality); π must be a bijection of 1..V.
+9: Equality test: EXACT — each clause is its int32 literal vector sorted ascending; clauses are grouped by length and the
+10: rows of each group sorted lexicographically; F and π(F) must be element-wise identical (no hashing).
+11: Group: generators (5 6) and (6 7) with ρ swapping the matching Q2/Q3/Q4; checks g1² = g2² = id, (g1g2)³ = id, closure
+12: of order 6, every element an automorphism; V1 roots and V2 children mapped to complete assignments; orbit tables.
+13: Controls: identity (must PASS), σ = (4 5) with ρ = id (must FAIL: moves the SB2 units), and π(5 6) with the images of
+14: variables 57 and 64 swapped (must FAIL). Guards: free ≥ 12e9 at start; own max RSS ≤ 1.75 GiB at every phase.
+15: python -B k4_automorphism_r2.py --out ../evidence/k4_split_v1/AUTOMORPHISM_S3_567_r2.json
+16: """
+17: from __future__ import annotations
+18: 
+19: import argparse
+20: import gzip
+21: import hashlib
+22: import json
+23: import os
+24: import resource
+25: import shutil
+26: import sys
+27: import time
+28: 
+29: import numpy as np
+30: 
+31: HERE = os.path.dirname(os.path.abspath(__file__))
+32: LANE = os.path.normpath(os.path.join(HERE, ".."))
+33: CNF = os.path.join(LANE, "evidence", "k4_w1_v1", "GA3_K4w1.cnf")
+34: MAP = os.path.join(LANE, "evidence", "k4_w1_v1", "GA3_K4w1.map.json")
+35: NAMES = "/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-16/review/moqls8-encoder-binding-v1/K4.names.json.gz"
+36: BASE_SHA = "7bb806fc8f7793fa5088cc78caf3ebf5b49a72cad82c527f47cf6faced4301f7"
+37: NAMES_SHA = "ed0462bc4de7fdcbc34397e1b05304160e47b9ba4a1bd1c858c5f997df3f8e2d"
+38: V1 = [57, 106, 155, 204, 253, 302, 351]
+39: V2 = [64, 113, 162, 211, 260, 309, 358]
+40: RSS_CAP = int(1.75 * 2 ** 30)
+41: LOG = []
+42: 
+43: 
+44: def guard(phase):
+45:     rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+46:     LOG.append([phase, round(time.time(), 1), rss])
+47:     if rss > RSS_CAP:
+48:         raise SystemExit("RSS guard tripped at %s: %d" % (phase, rss))
+49: 
+50: 
+51: def sha_file(p):
+52:     h = hashlib.sha256()
+53:     with open(p, "rb") as fh:
+54:         for chunk in iter(lambda: fh.read(1 << 24), b""):
+55:             h.update(chunk)
+56:     return h.hexdigest()
+57: 
+58: 
+59: def T(c):
+60:     return (int(c[0]), int(c[1]))
+61: 
+62: 
+63: def line_id(l0, l1):
+64:     return ("row", l0[0]) if l0[0] == l1[0] else ("col", l0[1])
+65: 
+66: 
+67: def canon(name):
+68:     t, s = name[0], int(name[1])
+69:     if t == "g":
+70:         return ("g", s, frozenset((T(name[2]), T(name[3]))))
+71:     if t == "b3":
+72:         return ("b3", s, frozenset((T(name[2]), T(name[3]))), T(name[4]))
+73:     if t == "c4":
+74:         return ("c4", s, T(name[2]), frozenset((T(name[3]), T(name[4]))))
+75:     if t == "u5":
+76:         return ("u5", s, line_id(T(name[2]), T(name[3])), T(name[4]), T(name[5]))
+77:     if t == "w3":
+78:         return ("w3", s, line_id(T(name[2]), T(name[3])), T(name[4]))
+79:     raise ValueError("unknown family %r" % t)
+80: 
+81: 
+82: def image(key, sigma, rho):
+83:     cell = lambda p: (sigma[p[0]], sigma[p[1]])
+84:     ln = lambda l: (l[0], sigma[l[1]])
+85:     t, s = key[0], rho[key[1]]
+86:     if t == "g":
+87:         return ("g", s, frozenset(cell(p) for p in key[2]))
+88:     if t == "b3":
+89:         return ("b3", s, frozenset(cell(p) for p in key[2]), cell(key[3]))
+90:     if t == "c4":
+91:         return ("c4", s, cell(key[2]), frozenset(cell(p) for p in key[3]))
+92:     if t == "u5":
+93:         return ("u5", s, ln(key[2]), cell(key[3]), cell(key[4]))
+94:     return ("w3", s, ln(key[2]), cell(key[3]))
+95: 
+96: 
+97: def build_perm(keys, index, sigma, rho, V):
+98:     perm = np.zeros(V + 1, dtype=np.int32)
+99:     missing = 0
+100:     for v in range(1, V + 1):
+101:         w = index.get(image(keys[v], sigma, rho))
+102:         if w is None:
+103:             missing += 1
+104:         else:
+105:             perm[v] = w
+106:     bij = missing == 0 and np.array_equal(np.sort(perm[1:]), np.arange(1, V + 1))
+107:     return perm, missing, bool(bij)
+108: 
+109: 
+110: def groups_of(flat, starts, lens):
+111:     out = {}
+112:     for L in np.unique(lens):
+113:         idx = np.flatnonzero(lens == L)
+114:         M = flat[starts[idx][:, None] + np.arange(L)[None, :]]
+115:         M.sort(axis=1)
+116:         order = np.lexsort(M.T[::-1])
+117:         out[int(L)] = M[order]
+118:     return out
+119: 
+120: 
+121: def apply(perm, arr):
+122:     out = perm[np.abs(arr)]
+123:     np.negative(out, where=arr < 0, out=out)
+124:     return out
+125: 
+126: 
+127: def is_auto(perm, arr, starts, lens, G0):
+128:     G1 = groups_of(apply(perm, arr), starts, lens)
+129:     return all(np.array_equal(G0[L], G1[L]) for L in G0) and set(G0) == set(G1)
+130: 
+131: 
+132: def cube_image(perm, lits):
+133:     return sorted(int(np.sign(l) * perm[abs(l)]) for l in lits)
+134: 
+135: 
+136: def assignment(Vs, b):
+137:     return sorted(v if (b >> k) & 1 else -v for k, v in enumerate(Vs))
+138: 
+139: 
+140: def main():
+141:     ap = argparse.ArgumentParser()
+142:     ap.add_argument("--out", required=True)
+143:     a = ap.parse_args()
+144:     t0 = time.time()
+145:     res = {"argv": sys.argv, "script_sha256": sha_file(__file__), "start": time.ctime()}
+146:     free = shutil.disk_usage(LANE).free
+147:     res["free_at_start"] = free
+148:     if free < 12_000_000_000:
+149:         raise SystemExit("disk floor")
+150:     res["names_sha256"] = sha_file(NAMES)
+151:     res["cnf_sha256"] = sha_file(CNF)
+152:     res["map_sha256"] = sha_file(MAP)
+153:     if res["names_sha256"] != NAMES_SHA or res["cnf_sha256"] != BASE_SHA:
+154:         raise SystemExit("pinned input hash mismatch")
+155:     table = json.load(gzip.open(NAMES))
+156:     V = len(table)
+157:     keys = [None] * (V + 1)
+158:     for v, name in table:
+159:         if keys[v] is not None:
+160:             raise SystemExit("duplicate id in names table")
+161:         keys[v] = canon(name)
+162:     del table
+163:     assert all(k is not None for k in keys[1:])
+164:     index = {}
+165:     for v in range(1, V + 1):
+166:         if keys[v] in index:
+167:             raise SystemExit("two variables share one canonical identity: %r" % (keys[v],))
+168:         index[keys[v]] = v
+169:     lane_g = json.load(open(MAP))["vars"]
+170:     gmis = sum(1 for k, v in lane_g.items() if json.loads(k)[0] == "g"
+171:                and index.get(canon(json.loads(k))) != v)
+172:     res["names"] = {"variables": V, "injective_canonical_identities": True, "lane_map_g_mismatches": gmis,
+173:                     "families": {f: sum(1 for k in keys[1:] if k[0] == f) for f in ("g", "b3", "c4", "u5", "w3")}}
+174:     guard("names")
+175:     raw = open(CNF, "rb").read()
+176:     nl = raw.index(b"\n")
+177:     hv, hc = int(raw[:nl].split()[2]), int(raw[:nl].split()[3])
+178:     arr = np.fromstring(raw[nl + 1:].decode(), dtype=np.int32, sep=" ")
+179:     del raw
+180:     zeros = np.flatnonzero(arr == 0)
+181:     starts = np.concatenate(([0], zeros[:-1] + 1))
+182:     lens = zeros - starts
+183:     res["cnf"] = {"header_vars": hv, "header_clauses": hc, "parsed_clauses": int(len(zeros)),
+184:                   "literals": int(len(arr) - len(zeros)), "max_var": int(np.abs(arr).max())}
+185:     if hv != V or hc != len(zeros):
+186:         raise SystemExit("CNF/names size mismatch")
+187:     G0 = groups_of(arr, starts, lens)
+188:     guard("parsed")
+189:     ident = list(range(8))
+190:     s56 = [0, 1, 2, 3, 4, 6, 5, 7]
+191:     s67 = [0, 1, 2, 3, 4, 5, 7, 6]
+192:     s45 = [0, 1, 2, 3, 5, 4, 6, 7]
+193:     rho_id = {1: 1, 2: 2, 3: 3, 4: 4, 5: 5}
+194:     rho56 = {1: 1, 2: 3, 3: 2, 4: 4, 5: 5}
+195:     rho67 = {1: 1, 2: 2, 3: 4, 4: 3, 5: 5}
+196:     checks = {}
+197:     P = {}
+198:     for nm, sg, rh in (("identity", ident, rho_id), ("g1=(5 6)", s56, rho56), ("g2=(6 7)", s67, rho67),
+199:                        ("NEG sigma=(4 5), rho=id", s45, rho_id)):
+200:         perm, missing, bij = build_perm(keys, index, sg, rh, V)
+201:         auto = bool(bij and is_auto(perm, arr, starts, lens, G0))
+202:         checks[nm] = {"sigma": sg, "rho": rh, "unmapped": missing, "bijection": bij, "automorphism": auto}
+203:         P[nm] = perm
+204:         guard(nm)
+205:     bad = P["g1=(5 6)"].copy()
+206:     bad[57], bad[64] = bad[64], bad[57]
+207:     checks["NEG corrupted map (g1 with images of 57, 64 swapped)"] = {
+208:         "bijection": bool(np.array_equal(np.sort(bad[1:]), np.arange(1, V + 1))),
+209:         "automorphism": bool(is_auto(bad, arr, starts, lens, G0))}
+210:     guard("corrupt")
+211:     g1, g2 = P["g1=(5 6)"], P["g2=(6 7)"]
+212:     idp = np.arange(V + 1, dtype=np.int32)
+213:     comp = lambda p, q: p[q]
+214:     g12 = comp(g1, g2)
+215:     res["group"] = {"g1_squared_id": bool(np.array_equal(comp(g1, g1), idp)),
+216:                     "g2_squared_id": bool(np.array_equal(comp(g2, g2), idp)),
+217:                     "g1g2_ne_id": not np.array_equal(g12, idp),
+218:                     "g1g2_cubed_id": bool(np.array_equal(comp(g12, comp(g12, g12)), idp))}
+219:     elems = {idp.tobytes(): idp}
+220:     frontier = [idp]
+221:     while frontier:
+222:         nxt = []
+223:         for p in frontier:
+224:             for gen in (g1, g2):
+225:                 q = comp(gen, p)
+226:                 if q.tobytes() not in elems:
+227:                     elems[q.tobytes()] = q
+228:                     nxt.append(q)
+229:         frontier = nxt
+230:     group = list(elems.values())
+231:     res["group"]["order"] = len(group)
+232:     res["group"]["all_elements_automorphisms"] = all(is_auto(p, arr, starts, lens, G0) for p in group)
+233:     guard("group")
+234:     roots = {tuple(assignment(V1, b)): b for b in range(128)}
+235:     orb, rep = {}, {}
+236:     ok_cubes = True
+237:     for b in range(128):
+238:         imgs = set()
+239:         for p in group:
+240:             im = tuple(cube_image(p, assignment(V1, b)))
+241:             if im not in roots:
+242:                 ok_cubes = False
+243:             else:
+244:                 imgs.add(roots[im])
+245:         r = min(imgs) if imgs else b
+246:         rep[b] = r
+247:         orb.setdefault(r, sorted(imgs))
+248:     res["V1_roots"] = {"all_images_are_roots": ok_cubes, "orbits": len(orb),
+249:                        "orbit_table": {"c%03d" % r: ["c%03d" % x for x in v] for r, v in sorted(orb.items())}}
+250:     ch = {tuple(assignment(V2, b)): b for b in range(128)}
+251:     stab = {}
+252:     for r in sorted(orb):
+253:         st = [p for p in group if tuple(cube_image(p, assignment(V1, r))) == tuple(assignment(V1, r))]
+254:         corb, okc = {}, True
+255:         for b in range(128):
+256:             imgs = set()
+257:             for p in st:
+258:                 im = tuple(cube_image(p, assignment(V2, b)))
+259:                 if im not in ch:
+260:                     okc = False
+261:                 else:
+262:                     imgs.add(ch[im])
+263:             corb.setdefault(min(imgs) if imgs else b, sorted(imgs))
+264:         stab["c%03d" % r] = {"stabiliser_order": len(st), "V2_images_are_children": okc,
+265:                               "child_orbits": len(corb)}
+266:     res["V2_children_under_stabilisers"] = stab
+267:     res["checks"] = checks
+268:     res["verdict"] = {
+269:         "controls_as_intended": (checks["identity"]["automorphism"] is True
+270:                                  and checks["NEG sigma=(4 5), rho=id"]["automorphism"] is False
+271:                                  and checks["NEG corrupted map (g1 with images of 57, 64 swapped)"]["automorphism"]
+272:                                  is False),
+273:         "generators_automorphisms": checks["g1=(5 6)"]["automorphism"] and checks["g2=(6 7)"]["automorphism"],
+274:         "S3_of_order_6": res["group"]["order"] == 6 and all(res["group"][k] for k in (
+275:             "g1_squared_id", "g2_squared_id", "g1g2_ne_id", "g1g2_cubed_id", "all_elements_automorphisms"))}
+276:     res["guard_log"] = LOG
+277:     res["secs"] = round(time.time() - t0, 1)
+278:     with open(a.out, "x") as fh:
+279:         json.dump(res, fh, indent=1, default=str)
+280:     print(json.dumps({"names": res["names"], "cnf": res["cnf"], "checks": checks, "group": res["group"],
+281:                       "V1_orbits": res["V1_roots"]["orbits"], "verdict": res["verdict"], "secs": res["secs"],
+282:                       "max_rss": LOG[-1][2]}, default=str))
+283: 
+284: 
+285: if __name__ == "__main__":
+286:     main()
+287: 
+
+RECEIPT evidence/k4_split_v1/AUTOMORPHISM_S3_567_r2.json (pretty-printed, top-level keys only, values truncated to 4000 chars each):
+
+{
+ "argv": "[\"k4_automorphism_r2.py\", \"--out\", \"../evidence/k4_split_v1/AUTOMORPHISM_S3_567_r2.json\"]",
+ "script_sha256": "\"ae9bcbb421d134b0cb492571937f0808d94fcc5f90183d9304b3516c126c708f\"",
+ "start": "\"Sat Oct 17 17:02:07 2026\"",
+ "free_at_start": "17630310400",
+ "names_sha256": "\"ed0462bc4de7fdcbc34397e1b05304160e47b9ba4a1bd1c858c5f997df3f8e2d\"",
+ "cnf_sha256": "\"7bb806fc8f7793fa5088cc78caf3ebf5b49a72cad82c527f47cf6faced4301f7\"",
+ "map_sha256": "\"5bdd25670fde3f8ae8a1a2c178e02897009715295c1b8da81abb701d6a258e21\"",
+ "names": "{\"variables\": 513184, \"injective_canonical_identities\": true, \"lane_map_g_mismatches\": 0, \"families\": {\"g\": 7840, \"b3\": 94080, \"c4\": 376320, \"u5\": 31360, \"w3\": 3584}}",
+ "cnf": "{\"header_vars\": 513184, \"header_clauses\": 5833793, \"parsed_clauses\": 5833793, \"literals\": 20045017, \"max_var\": 513184}",
+ "group": "{\"g1_squared_id\": true, \"g2_squared_id\": true, \"g1g2_ne_id\": true, \"g1g2_cubed_id\": true, \"order\": 6, \"all_elements_automorphisms\": true}",
+ "V1_roots": "{\"all_images_are_roots\": true, \"orbits\": 64, \"orbit_table\": {\"c000\": [\"c000\"], \"c001\": [\"c001\"], \"c002\": [\"c002\"], \"c003\": [\"c003\"], \"c004\": [\"c004\"], \"c005\": [\"c005\"], \"c006\": [\"c006\"], \"c007\": [\"c007\"], \"c008\": [\"c008\"], \"c009\": [\"c009\"], \"c010\": [\"c010\"], \"c011\": [\"c011\"], \"c012\": [\"c012\"], \"c013\": [\"c013\"], \"c014\": [\"c014\"], \"c015\": [\"c015\"], \"c016\": [\"c016\", \"c032\", \"c064\"], \"c017\": [\"c017\", \"c033\", \"c065\"], \"c018\": [\"c018\", \"c034\", \"c066\"], \"c019\": [\"c019\", \"c035\", \"c067\"], \"c020\": [\"c020\", \"c036\", \"c068\"], \"c021\": [\"c021\", \"c037\", \"c069\"], \"c022\": [\"c022\", \"c038\", \"c070\"], \"c023\": [\"c023\", \"c039\", \"c071\"], \"c024\": [\"c024\", \"c040\", \"c072\"], \"c025\": [\"c025\", \"c041\", \"c073\"], \"c026\": [\"c026\", \"c042\", \"c074\"], \"c027\": [\"c027\", \"c043\", \"c075\"], \"c028\": [\"c028\", \"c044\", \"c076\"], \"c029\": [\"c029\", \"c045\", \"c077\"], \"c030\": [\"c030\", \"c046\", \"c078\"], \"c031\": [\"c031\", \"c047\", \"c079\"], \"c048\": [\"c048\", \"c080\", \"c096\"], \"c049\": [\"c049\", \"c081\", \"c097\"], \"c050\": [\"c050\", \"c082\", \"c098\"], \"c051\": [\"c051\", \"c083\", \"c099\"], \"c052\": [\"c052\", \"c084\", \"c100\"], \"c053\": [\"c053\", \"c085\", \"c101\"], \"c054\": [\"c054\", \"c086\", \"c102\"], \"c055\": [\"c055\", \"c087\", \"c103\"], \"c056\": [\"c056\", \"c088\", \"c104\"], \"c057\": [\"c057\", \"c089\", \"c105\"], \"c058\": [\"c058\", \"c090\", \"c106\"], \"c059\": [\"c059\", \"c091\", \"c107\"], \"c060\": [\"c060\", \"c092\", \"c108\"], \"c061\": [\"c061\", \"c093\", \"c109\"], \"c062\": [\"c062\", \"c094\", \"c110\"], \"c063\": [\"c063\", \"c095\", \"c111\"], \"c112\": [\"c112\"], \"c113\": [\"c113\"], \"c114\": [\"c114\"], \"c115\": [\"c115\"], \"c116\": [\"c116\"], \"c117\": [\"c117\"], \"c118\": [\"c118\"], \"c119\": [\"c119\"], \"c120\": [\"c120\"], \"c121\": [\"c121\"], \"c122\": [\"c122\"], \"c123\": [\"c123\"], \"c124\": [\"c124\"], \"c125\": [\"c125\"], \"c126\": [\"c126\"], \"c127\": [\"c127\"]}}",
+ "V2_children_under_stabilisers": "{\"c000\": {\"stabiliser_order\": 6, \"V2_images_are_children\": true, \"child_orbits\": 64}, \"c001\": {\"stabiliser_order\": 6, \"V2_images_are_children\": true, \"child_orbits\": 64}, \"c002\": {\"stabiliser_order\": 6, \"V2_images_are_children\": true, \"child_orbits\": 64}, \"c003\": {\"stabiliser_order\": 6, \"V2_images_are_children\": true, \"child_orbits\": 64}, \"c004\": {\"stabiliser_order\": 6, \"V2_images_are_children\": true, \"child_orbits\": 64}, \"c005\": {\"stabiliser_order\": 6, \"V2_images_are_children\": true, \"child_orbits\": 64}, \"c006\": {\"stabiliser_order\": 6, \"V2_images_are_children\": true, \"child_orbits\": 64}, \"c007\": {\"stabiliser_order\": 6, \"V2_images_are_children\": true, \"child_orbits\": 64}, \"c008\": {\"stabiliser_order\": 6, \"V2_images_are_children\": true, \"child_orbits\": 64}, \"c009\": {\"stabiliser_order\": 6, \"V2_images_are_children\": true, \"child_orbits\": 64}, \"c010\": {\"stabiliser_order\": 6, \"V2_images_are_children\": true, \"child_orbits\": 64}, \"c011\": {\"stabiliser_order\": 6, \"V2_images_are_children\": true, \"child_orbits\": 64}, \"c012\": {\"stabiliser_order\": 6, \"V2_images_are_children\": true, \"child_orbits\": 64}, \"c013\": {\"stabiliser_order\": 6, \"V2_images_are_children\": true, \"child_orbits\": 64}, \"c014\": {\"stabiliser_order\": 6, \"V2_images_are_children\": true, \"child_orbits\": 64}, \"c015\": {\"stabiliser_order\": 6, \"V2_images_are_children\": true, \"child_orbits\": 64}, \"c016\": {\"stabiliser_order\": 2, \"V2_images_are_children\": true, \"child_orbits\": 96}, \"c017\": {\"stabiliser_order\": 2, \"V2_images_are_children\": true, \"child_orbits\": 96}, \"c018\": {\"stabiliser_order\": 2, \"V2_images_are_children\": true, \"child_orbits\": 96}, \"c019\": {\"stabiliser_order\": 2, \"V2_images_are_children\": true, \"child_orbits\": 96}, \"c020\": {\"stabiliser_order\": 2, \"V2_images_are_children\": true, \"child_orbits\": 96}, \"c021\": {\"stabiliser_order\": 2, \"V2_images_are_children\": true, \"child_orbits\": 96}, \"c022\": {\"stabiliser_order\": 2, \"V2_images_are_children\": true, \"child_orbits\": 96}, \"c023\": {\"stabiliser_order\": 2, \"V2_images_are_children\": true, \"child_orbits\": 96}, \"c024\": {\"stabiliser_order\": 2, \"V2_images_are_children\": true, \"child_orbits\": 96}, \"c025\": {\"stabiliser_order\": 2, \"V2_images_are_children\": true, \"child_orbits\": 96}, \"c026\": {\"stabiliser_order\": 2, \"V2_images_are_children\": true, \"child_orbits\": 96}, \"c027\": {\"stabiliser_order\": 2, \"V2_images_are_children\": true, \"child_orbits\": 96}, \"c028\": {\"stabiliser_order\": 2, \"V2_images_are_children\": true, \"child_orbits\": 96}, \"c029\": {\"stabiliser_order\": 2, \"V2_images_are_children\": true, \"child_orbits\": 96}, \"c030\": {\"stabiliser_order\": 2, \"V2_images_are_children\": true, \"child_orbits\": 96}, \"c031\": {\"stabiliser_order\": 2, \"V2_images_are_children\": true, \"child_orbits\": 96}, \"c048\": {\"stabiliser_order\": 2, \"V2_images_are_children\": true, \"child_orbits\": 96}, \"c049\": {\"stabiliser_order\": 2, \"V2_images_are_children\": true, \"child_orbits\": 96}, \"c050\": {\"stabiliser_order\": 2, \"V2_images_are_children\": true, \"child_orbits\": 96}, \"c051\": {\"stabiliser_order\": 2, \"V2_images_are_children\": true, \"child_orbits\": 96}, \"c052\": {\"stabiliser_order\": 2, \"V2_images_are_children\": true, \"child_orbits\": 96}, \"c053\": {\"stabiliser_order\": 2, \"V2_images_are_children\": true, \"child_orbits\": 96}, \"c054\": {\"stabiliser_order\": 2, \"V2_images_are_children\": true, \"child_orbits\": 96}, \"c055\": {\"stabiliser_order\": 2, \"V2_images_are_children\": true, \"child_orbits\": 96}, \"c056\": {\"stabiliser_order\": 2, \"V2_images_are_children\": true, \"child_orbits\": 96}, \"c057\": {\"stabiliser_order\": 2, \"V2_images_are_children\": true, \"child_orbits\": 96}, \"c058\": {\"stabiliser_order\": 2, \"V2_images_are_children\": true, \"child_orbits\": 96}, \"c059\": {\"stabiliser_order\": 2, \"V2_images_are_children\": true, \"child_orbits\": 96}, \"c060\": {\"stabiliser_order\": 2, \"V2_images_are_children\": true, \"child_orbits\": 96}, \"c061\": {\"stabiliser_order\": 2, \"V2_images_are_children\": true, \"child_orbits\": 96}, \"c062\": {\"stabiliser_order\": 2, \"V2_images_are_children\": true, \"child_orbits\": 96}, \"c06",
+ "checks": "{\"identity\": {\"sigma\": [0, 1, 2, 3, 4, 5, 6, 7], \"rho\": {\"1\": 1, \"2\": 2, \"3\": 3, \"4\": 4, \"5\": 5}, \"unmapped\": 0, \"bijection\": true, \"automorphism\": true}, \"g1=(5 6)\": {\"sigma\": [0, 1, 2, 3, 4, 6, 5, 7], \"rho\": {\"1\": 1, \"2\": 3, \"3\": 2, \"4\": 4, \"5\": 5}, \"unmapped\": 0, \"bijection\": true, \"automorphism\": true}, \"g2=(6 7)\": {\"sigma\": [0, 1, 2, 3, 4, 5, 7, 6], \"rho\": {\"1\": 1, \"2\": 2, \"3\": 4, \"4\": 3, \"5\": 5}, \"unmapped\": 0, \"bijection\": true, \"automorphism\": true}, \"NEG sigma=(4 5), rho=id\": {\"sigma\": [0, 1, 2, 3, 5, 4, 6, 7], \"rho\": {\"1\": 1, \"2\": 2, \"3\": 3, \"4\": 4, \"5\": 5}, \"unmapped\": 0, \"bijection\": true, \"automorphism\": false}, \"NEG corrupted map (g1 with images of 57, 64 swapped)\": {\"bijection\": true, \"automorphism\": false}}",
+ "verdict": "{\"controls_as_intended\": true, \"generators_automorphisms\": true, \"S3_of_order_6\": true}",
+ "guard_log": "[[\"names\", 1792281730.1, 695566336], [\"parsed\", 1792281732.2, 1367523328], [\"identity\", 1792281733.9, 1482768384], [\"g1=(5 6)\", 1792281735.7, 1506164736], [\"g2=(6 7)\", 1792281737.4, 1533460480], [\"NEG sigma=(4 5), rho=id\", 1792281739.2, 1553874944], [\"corrupt\", 1792281740.5, 1574420480], [\"group\", 1792281748.4, 1753612288]]",
+ "secs": "21.5"
+}

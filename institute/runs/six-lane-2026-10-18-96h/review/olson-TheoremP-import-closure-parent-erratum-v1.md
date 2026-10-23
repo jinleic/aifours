@@ -1,0 +1,5 @@
+# Theorem P import closure — parent erratum v1
+
+Recorded 2026-10-21T04:20:25-0700 (`/bin/date`). Applies to the immutable pre-window proof /Users/jinleic/repos/aifours/mathematics/evidence/six-lane-20261016/olson/proof-theoremP.md (58a85ebeba8208e2f89b39a691235d2d1374656d8888ea905fe96aa75e1dafc2). Fresh Codex review /Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/review/olson-TheoremP-import-closure-codex-v1.prompt.stdout.txt (0b22cf78e5d35e6c9a7f3880010dd611d3cc977d971c076067afed50cb3706c1) returned0F/0M/1m.
+
+At proof LF72, read "V is a polynomial of degree AT MOST1, possibly zero", not exact degree1. If all3p−1 reflections equal(0,−1), every beta coefficient and V vanish; the load-bearing degree bound degQ≤3(p−1)<M is unchanged. No theorem statement or proof method changes. Historical computer checks remain separate, not a premise and not re-run. Claude full-proof review is already running on the original immutable proof; its findings must be disposed before the import receives a new two-family verdict.

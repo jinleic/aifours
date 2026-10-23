@@ -1,0 +1,10 @@
+# Frontier v6 — audit erratum v1 (open-cell corrections)
+
+Recorded 2026-10-21T10:38:41-0700 after `/bin/date`. Applies to [olson-terminal-frontier-v6-UPAR3.md](/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/review/olson-terminal-frontier-v6-UPAR3.md) SHA256 `be949dc53dd727e52c0ccb9901ead8f22d3e1dfaf889fce3980769de65341d13` without modifying it. Audit source: [olson-terminal-frontier-v6-audit-codex-v1.prompt.stdout.txt](/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/review/olson-terminal-frontier-v6-audit-codex-v1.prompt.stdout.txt) SHA256 `78371a7b9207f997fce737446b8db592a617174adcdc898b98ca3182b02d8f73` — 0F/1M/3m. Parent hand-verified each correction against the T3 bound κ≤8d+6 (equivalently 9κ≤4p+10).
+
+1. **MAJOR — LF14–16 open cells.** (19,41): d=2, 8d+6=22≥19 and 9·19=171≤174; (20,43): 180≤182; (22,47): 198≤198. All three are T3 uniform instances excluded by the accepted UPAR3 verdict. Rows read: p=41/42 **none** open; p=43/44 **none**; p=47/48 **none**. The v5-carried cells were superseded, not retained.
+2. **m1 — LF23 absorption clause.** Delete “ — absorbed by the same inequalities where they differ”. The T3 restriction is a genuine additional constraint: it removes cells the older parity cutoffs alone admitted (e.g. (24,53)); the conjunction is stated explicitly.
+3. **m2 — LF17 provenance.** κ=25 at p=53 already survived the v5 general parity cutoff (225≥219 odd threshold) and lies outside T3 (d=2, 25>22). Read “25 already survives the v5 general cutoff”; T3 newly removes its companion 24 (216≤222).
+4. **m3 — LF21 support precision.** Read “coarse necessary R3 supports”; completeness belongs to the literal necessary R3 residual, and the named supports are supersets (UPAR3 verdict LF11).
+
+After these fixes the current open terminal-middle display is: **none** through p=47; singletons {25}, {28}, {29} at p=53, 59, 61 respectively, each under the complete necessary R3 with F−e≥2. General p≥29 open strip: {κ∈T: (κ even and 9κ≥4p+4) or (κ odd and 9κ≥4p+7)} ∩ {κ>8d+6}, κ≤(p−3)/2. All other audit checks passed as recorded in the audit text.

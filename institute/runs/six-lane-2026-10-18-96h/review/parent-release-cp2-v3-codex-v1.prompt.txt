@@ -1,0 +1,3005 @@
+Independent hostile SOURCE review of CP2 v3 control/parent_release_identity_v3.py (source-only candidate: never executed, imported, compiled or tested; global runtime HOLD). Purpose: build a parent identity union from parent-captured supervisor19 histories (main + oracle runs) and evaluate whether every member process has ENDED, using fresh in-process libproc censuses; any doubt must yield HELD, never ENDED. No tools/execution/edits/delegation. Review only the supplied text; treat hashes as premises. Check at least: (1) SF1 repair — union module/design_freeze_sha256/scheme/producer_sha256 equality is enforced before ANY status/digest/cause use in _v_union, spec_identities_match and evaluate_endedness; v1/v2-built and forged-field unions cannot reach ENDED; (2) v2's sticky U_UNKNOWN_INCARNATION for pid-only unknowns cannot be cleared by any census or ENDED path; (3) closed-history rule: last census complete with exactly the baseline identities and nothing later, every spawn before it; complete:true flags, empty trees/groups or digests alone never suffice; (4) endedness: any live member, reused pid (same pid, different fingerprint), occupied historical process group or child of a historical pid gives HELD; (5) original-deadline checks before/after every read and native step and after result assembly; (6) no ordinary Exception escapes; BaseException/KeyboardInterrupt/SystemExit paths keep evidence and never produce ENDED; (7) the v1->v2 and v2->v3 diffs are the complete effects claimed; (8) controls v3 frozen expectations match the source exactly (cause names and order). Return a first line 'VERDICT: HOLD|READY_WITH_FIXES|READY | FATAL=n MAJOR=n MINOR=n', then findings with exact source lines, consequence and minimal repair. No runtime qualification may be inferred.
+
+### parent_release_identity_v3.py
+Path: /Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/control/parent_release_identity_v3.py
+Full-file SHA256: f21b4296ae52778fe31677f749a871d8982c31c6d5133609dc1d0b0e0fe58b38
+Physical LF lines: 1-1617
+1: #!/usr/bin/env python3
+2: """parent_release_identity_v3: CP2 historical identity-union consumer and fresh independent census callback.
+3: 
+4: NOEXEC SOURCE CANDIDATE: not accepted, not qualified, no runtime/release/signal/scheduling/science authority.
+5: CP2 scope RUN/control/parent-release-cp1-cp2-implementation-scope-v1.json
+6: 1f717bf944e6d5a524aa0a65776d39726cd251bcd006971ba322f328de6bd314; exact design frozen before code in
+7: RUN/control/parent-release-cp2-design-freeze-v1.json 3d6f48ced0d07293a81f44936c3559571e4d4f98919c024a257f32761a7af027.
+8: 
+9: V2 MINIMAL REPAIR (scope RUN/control/parent-release-cp2-v2-repair-scope-v1.json
+10: afe35832c808cf3d6a482fb6549dc8957d57ae982b7e48e76dba5b5374bcfa98; exact delta frozen in
+11: RUN/control/parent-release-cp2-design-freeze-v2.json; v1 d07548e2dbff4ef6b64a3a902d3b59ed7c4abbf8dc2115e8b08ed37ee2ec14d5
+12: stays immutable HOLD): every pid-only unknown enumerable from a reconciliation (pending raw acquisition, overflow
+13: observation, sv19 coverage-gap pid, identity-less helper or main spawn record) fires sticky U_UNKNOWN_INCARNATION,
+14: and an unenumerable source fires it too. H7, a complete current census or ENDED never waive it. API/formats unchanged.
+15: 
+16: V3 VERSION BINDING (scope RUN/control/parent-release-cp2-v3-repair-scope-v1.json
+17: 0b7b3b7c8ebb3b8ae88ad04472cc7e16a4d2ea8ee718706a6408d714303d2421; finding SF1 b52ab85f; exact delta frozen in
+18: RUN/control/parent-release-cp2-design-freeze-v3.json; v2 7b2bc4021744aa6fa55677fa4953c9efc1088f53d341fb0ba339621abdddc3ec
+19: stays immutable): _v_union, used by evaluate_endedness and spec_identities_match, first requires exact equality of the
+20: union module, design_freeze_sha256, scheme and producer_sha256 with this module's own constants, before any status use;
+21: absence or mismatch is HELD with E_UNION_VERSION (endedness) or False (spec match). Unions built by v1, v2 or any other
+22: module are refused. These self-reported fields stop cross-version use, not forgery.
+23: 
+24: CONVENTION. The owned_supervisor_v19 cb828a78367dc2023bfc6e330696745f186f186811752361472747e5fe547e93 native identity
+25: is reused unchanged: proc_listallpids; proc_pidinfo flavor 17 (uniqueid, idversion) and flavor 13 (pid, ppid, pgid,
+26: status, euid, ruid, traced, comm) in the same unique/short/unique/short/unique bracket. start_fingerprint is
+27: 'sv19-incarnation-v1:<pid>:<uniqueid>:<idversion>' in census rows, PRT identity rows, launch.driver and parent wait
+28: records alike. Mutable ppid/pgid/uid/comm are variant history, never part of the start fingerprint. The same pid with
+29: another fingerprint is AMBIGUOUS, never proof of endedness.
+30: 
+31: UNION. build_identity_union consumes parent-captured supervisor19 histories (exact ACK or refusal stdout line, exact
+32: receipt/settlement bytes, parent wait and launch records) for exactly one main and at least one oracle run. It binds
+33: bytes to parent-supplied digests and to the exact producer serialization, re-checks the identity event tape, variants,
+34: references, owned registry roots and edge proofs, unproved history and baseline, and unions every driver/oracle,
+35: child, helper, descendant, reparented variant and unproved incarnation. Pid-only unknown incarnations are retained,
+36: never given a fabricated fingerprint, and are sticky HELD. A history is CLOSED only by rule H7 with no sticky unknown:
+37: its LAST census is complete, its raw event
+38: window holds exactly L.pids distinct baseline identities and nothing later, and every supervisor spawn precedes it.
+39: A JSON complete:true, an empty current tree/group or a digest alone is never completeness; otherwise HELD with a
+40: named prerequisite.
+41: 
+42: CENSUS. make_census returns a fresh in-process libproc census callback (no helper process, no signal, no cache) and
+43: a parent-retained CensusLog of every attempt and served snapshot. evaluate_endedness joins the union with every served
+44: snapshot: a live member uniqueid, a reused member pid, an occupied historical variant pgid or a child of a historical
+45: pid is HELD.
+46: 
+47: DEADLINE. deadline_check is the caller's ORIGINAL nonrenewing deadline, checked before and after every read_bytes
+48: callback, around every native census step and after result assembly. Late success is HELD (union/endedness) or raises
+49: (census). BaseException always propagates. This module opens no descriptor, writes nothing, spawns nothing and sends
+50: no signal. Parent observation authenticity, direct launch, supervisor19 qualification, non-descendant creation
+51: channels, publication freeze and the CP1 join remain external conditions listed in every report.
+52: """
+53: import ctypes
+54: import errno
+55: import hashlib
+56: import json
+57: import math
+58: import os
+59: import struct
+60: import time
+61: 
+62: SCOPE_SHA256 = '1f717bf944e6d5a524aa0a65776d39726cd251bcd006971ba322f328de6bd314'
+63: DESIGN_FREEZE_SHA256 = '033cb30dcde31ec94acbb0f8576f436e14bfaae980c8bff34e76932dd894cb5a'
+64: V1_DESIGN_FREEZE_SHA256 = '3d6f48ced0d07293a81f44936c3559571e4d4f98919c024a257f32761a7af027'
+65: V1_SOURCE_SHA256 = 'd07548e2dbff4ef6b64a3a902d3b59ed7c4abbf8dc2115e8b08ed37ee2ec14d5'
+66: REPAIR_SCOPE_SHA256 = 'afe35832c808cf3d6a482fb6549dc8957d57ae982b7e48e76dba5b5374bcfa98'
+67: SUPERVISOR19_SHA256 = 'cb828a78367dc2023bfc6e330696745f186f186811752361472747e5fe547e93'
+68: SUPERVISOR19_VERSION = 'owned_supervisor_v19'
+69: MODULE = 'parent_release_identity_v3.py'
+70: SCHEME = 'sv19-incarnation-v1'
+71: REQUEST_FORMAT = 'parent-release-identity-request-v1'
+72: UNION_FORMAT = 'parent-release-identity-union-v1'
+73: ENDEDNESS_FORMAT = 'parent-release-identity-endedness-v1'
+74: WAIT_FORMAT = 'parent-release-wait-v1'
+75: CLOSED = 'CLOSED_CONDITIONAL'
+76: ENDED = 'ENDED_CONDITIONAL'
+77: HELD = 'HELD'
+78: LIBPROC = '/usr/lib/libproc.dylib'
+79: DOC_CAP = 1 << 20
+80: RECEIPT_CAP = 4 << 20
+81: CAPTURE_CAP = 16 << 20
+82: REQUEST_CAP = 64 << 10
+83: REQUEST_NODES = 4096
+84: MAX_HISTORIES = 16
+85: MAX_EVENTS = 1 << 20
+86: MAX_LIST = 65536
+87: MAX_MEMBERS = 65536
+88: MAX_UNKNOWN = 65536
+89: MAX_ROWS = 200000
+90: MAX_VARIANTS = 64
+91: MAX_EVIDENCE = 16
+92: MAX_TEXT = 512
+93: MAX_CALLBACK_LOG = 128
+94: MAX_MISSING_SAMPLE = 64
+95: ATTEMPTS_PER_CALL = 3
+96: MAX_LOG_ATTEMPTS = 64
+97: MAX_SERVED = 16
+98: RETRY_PAUSE_S = 0.05
+99: UINT32 = (1 << 32) - 1
+100: UINT64 = (1 << 64) - 1
+101: ACK_EXITS = (0, 10, 11)
+102: REFUSAL_EXITS = (2, 12, 13, 14)
+103: ROLE_PRIORITY = ('driver', 'oracle', 'main_child', 'oracle_child', 'helper', 'oracle_helper', 'descendant',
+104:                  'unproved')
+105: FAMILY_ROLES = {'main': ('driver', 'main_child', 'helper'), 'oracle': ('oracle', 'oracle_child', 'oracle_helper')}
+106: IDENTITY_KEYS = frozenset(('pid', 'ppid', 'pgid', 'status', 'euid', 'ruid', 'traced', 'comm', 'uniqueid',
+107:                            'idversion'))
+108: SOURCES = frozenset(('pid_scan', 'measurement_bracket', 'measurement_final_bracket', 'edge_parent_before',
+109:                      'edge_child', 'edge_parent_after', 'main_initial', 'main_recovery', 'main_signal',
+110:                      'helper_initial', 'helper_cleanup_initial', 'helper_signal'))
+111: HISTORY_ENTRY_KEYS = frozenset(('first_identity', 'last_identity', 'mono_first_begin', 'mono_first_seen',
+112:                                 'mono_last_begin', 'mono_last_seen', 'first_event_ref', 'last_event_ref', 'source',
+113:                                 'observations', 'variants'))
+114: UNPROVED_KEYS = HISTORY_ENTRY_KEYS - {'source', 'observations', 'variants'}
+115: OWNED_KEYS = frozenset(('identity', 'identity_event_ref', 'via', 'root', 'first_seen_mono', 'proof'))
+116: PROOF_KEYS = frozenset(('parent_before_ref', 'child_ref', 'parent_after_ref'))
+117: CENSUS_REQUIRED = frozenset(('phase', 'inside_helper', 'complete', 'aborted', 'mono_start', 'mono_complete',
+118:                              'incomplete_n', 'incomplete', 'pids', 'owned_live', 'unproved_live', 'group_live',
+119:                              'owned_zombies', 'owned_event_refs', 'unproved_event_refs', 'lane_pids', 'lane_rss',
+120:                              'lane_busy_pids', 'lane_busy', 'measurements', 'mono_end'))
+121: CENSUS_ALLOWED = CENSUS_REQUIRED | {'raw_measurements', 'mono_last_observation', 'abort_error', 'mono_aborted',
+122:                                     'mono_aborted_error'}
+123: COVERAGE_KINDS = ('identify', 'parent_edge', 'real_or_effective_uid_measurement')
+124: HELPER_REPORT_KEYS = frozenset((
+125:     'pid', 'identity', 'identity_event_ref', 'leader_reaped', 'rc', 'wait_lost', 'term_attempted', 'settled',
+126:     'initial_identity_valid', 'stdout_closed', 'eof_proved', 'group_clear', 'descendants_clear',
+127:     'coverage_complete', 'clock_failed', 'date', 'signal', 'proof', 'spawn_error', 'launch_commit',
+128:     'mono_spawn', 'epoch_spawn', 'mono_pid_registered', 'call_deadline', 'cleanup_deadline',
+129:     'native_wait_result', 'raw_wait_status', 'epoch_reaped', 'raw_identity_ref', 'clockless_probe_done',
+130:     'clockless_probe_count', 'endpoint_errors', 'mono_call_start', 'mono_call_deadline', 'mono_cleanup_start',
+131:     'mono_cleanup_deadline', 'mono_proof_complete', 'mono_reaped', 'mono_injection_start', 'mono_injection_end',
+132:     'stability_expiry_before', 'stability_expiry_candidate', 'stability_expiry_effective', 'capture_hex'))
+133: MAIN_WAIT_KEYS = ('pid', 'native_wait_result', 'raw_wait_status', 'leader_reaped', 'rc', 'mono_reaped',
+134:                   'epoch_reaped')
+135: RECON_KEYS = frozenset((
+136:     'owned_identities', 'unproved_history', 'identity_history', 'coverage_history', 'identity_events',
+137:     'initial_fit', 'authorization', 'accounting_observations', 'min_free_witness', 'census_observations',
+138:     'observation_attempts', 'helpers', 'helper_log', 'failures', 'main_identity', 'main_signal', 'main_stop',
+139:     'baseline_uniqueids', 'stability_expiry_mono', 'history_charge_bytes', 'history_cap_bytes', 'history_halted',
+140:     'history_overflow', 'publication_resources', 'ack_resources', 'publication_payload_bytes',
+141:     'last_accounting_observation', 'maxima', 'min_free', 'streams', 'mono_snapshot', 'timing_failed',
+142:     'raw_acquisitions', 'last_native_free', 'main_wait'))
+143: ACK_KEYS = frozenset((
+144:     'supervisor', 'acknowledged', 'exit_code', 'settlement', 'config_sha256', 'receipt_sha256',
+145:     'settlement_record_sha256', 'receipt_bytes', 'settlement_bytes', 'post_publish_mono', 'ack_commit',
+146:     'publication_resources', 'ack_resources', 'publication_payload_bytes', 'child_returncode', 'failure_codes',
+147:     'owned_live', 'unproved_live', 'ack_census', 'contract_violations', 'unproved_history', 'coverage_history',
+148:     'census_observations', 'reconciliation'))
+149: REFUSAL_REQUIRED = frozenset(('supervisor', 'acknowledged', 'exit_code', 'reason', 'clock_note', 'reconciliation'))
+150: REFUSAL_EXTRA = frozenset(('config_sha256', 'error', 'error_code', 'diagnostic_error', 'payload_bytes', 'resources',
+151:                            'reservation_bytes', 'receipt_sha256', 'settlement_record_sha256', 'post_publish_mono',
+152:                            'publication_resources', 'ack_resources', 'publication_payload_bytes'))
+153: SETTLEMENT_KEYS = ('supervisor', 'config_sha256', 'settlement', 'receipt', 'receipt_sha256', 'child_returncode',
+154:                    'failure_codes', 'trips', 'authority')
+155: RECEIPT_REQUIRED = frozenset((
+156:     'supervisor', 'supervisor_sha256', 'config_sha256', 'supervisor_pid', 'baseline', 'settlement', 'child_pid',
+157:     'child_identity', 'identity_events', 'identity_history', 'owned_identities', 'unproved_history',
+158:     'coverage_history', 'census_observations', 'helpers', 'raw_acquisitions', 'history_overflow', 'timing_failed',
+159:     'main_wait'))
+160: HISTORY_REQUEST_KEYS = ('family', 'producer', 'wait_record', 'launch_record', 'stdout', 'receipt', 'settlement')
+161: U_CAUSES = (
+162:     'U_REQUEST_INVALID', 'U_CALLBACKS_INVALID', 'U_FAMILY_INVALID', 'U_PRODUCER_PIN', 'U_WAIT_INVALID',
+163:     'U_LAUNCH_INVALID', 'U_CAPTURE_INVALID', 'U_OUTPUT_LINE_INVALID', 'U_PRODUCER_UNSUPPORTED', 'U_EXIT_BINDING',
+164:     'U_RECEIPT_BINDING', 'U_HISTORY_SCHEMA', 'U_HISTORY_INCOMPLETE', 'U_EVENT_TAPE_INCONSISTENT',
+165:     'U_OWNED_REGISTRY_INCONSISTENT', 'U_UNPROVED_INCONSISTENT', 'U_BASELINE_INVALID', 'U_DRIVER_UNBOUND',
+166:     'U_CHILD_HELPER_UNBOUND', 'U_LAST_CENSUS_OPEN', 'U_LAST_CENSUS_TAPE_MISMATCH', 'U_SPAWN_CHRONOLOGY',
+167:     'U_UNKNOWN_INCARNATION', 'U_ROW_CONFLICT', 'U_CAP_EXCEEDED', 'U_DEADLINE', 'U_INTERNAL_ERROR')
+168: E_CAUSES = (
+169:     'E_UNION_VERSION', 'E_UNION_HELD', 'E_UNION_DIGEST', 'E_NO_SERVED_CENSUS', 'E_CENSUS_INCOMPLETE',
+170:     'E_OBSERVER_UNCOVERED',
+171:     'E_MEMBER_ALIVE', 'E_PID_REUSE_AMBIGUOUS', 'E_GROUP_NONEMPTY', 'E_PID_CHILD_PRESENT', 'E_DEADLINE',
+172:     'E_INTERNAL_ERROR')
+173: PREREQUISITES = {
+174:     'U_REQUEST_INVALID': 'exact parent-release-identity-request-v1 object',
+175:     'U_CALLBACKS_INVALID': 'pinned parent read_bytes and the ORIGINAL deadline_check callables',
+176:     'U_FAMILY_INVALID': 'exactly one main and >=1 oracle governed history; oracle launch_record null in v1',
+177:     'U_PRODUCER_PIN': 'producer bytes identical to owned_supervisor_v19 cb828a78',
+178:     'U_WAIT_INVALID': 'parent-observed parent-release-wait-v1 record using the sv19-incarnation-v1 fingerprint',
+179:     'U_LAUNCH_INVALID': 'parent launch record whose item and driver identity equal the parent wait identity',
+180:     'U_CAPTURE_INVALID': 'complete parent outer capture of supervisor stdout: eof, no overflow, exact bytes',
+181:     'U_OUTPUT_LINE_INVALID': 'exactly one exact sv19 ACK or refusal stdout line',
+182:     'U_PRODUCER_UNSUPPORTED': 'a governed owned_supervisor_v19 history per family; other drivers need a separately '
+183:                               'reviewed producer format',
+184:     'U_EXIT_BINDING': 'parent-observed exit equal to supervisor stdout exit_code (exit14 after ACK stays HELD)',
+185:     'U_RECEIPT_BINDING': 'exact published receipt/settlement bytes bound to the ACK and its reconciliation',
+186:     'U_HISTORY_SCHEMA': 'exact sv19 reconciliation, census, coverage and helper schemas',
+187:     'U_HISTORY_INCOMPLETE': 'history without timing failure, history halt/overflow or pending raw acquisitions',
+188:     'U_EVENT_TAPE_INCONSISTENT': 'consistent identity event tape, variants, counts, sources and references',
+189:     'U_OWNED_REGISTRY_INCONSISTENT': 'consistent owned registry, roots and bracketed current-parent edge proofs',
+190:     'U_UNPROVED_INCONSISTENT': 'unproved history equal to the unproved-flagged event set',
+191:     'U_BASELINE_INVALID': 'complete prespawn baseline bound to the tape and to the receipt baseline',
+192:     'U_DRIVER_UNBOUND': 'driver/oracle baseline self-observation equal to the parent wait identity, own group',
+193:     'U_CHILD_HELPER_UNBOUND': 'main child and helper identities bound to owned registry and spawn records',
+194:     'U_LAST_CENSUS_OPEN': 'last census complete with zero live owned/unproved/group/zombie incarnations, or a new '
+195:                           'governed continuation history in the same convention that closes; never a current '
+196:                           'empty tree/group',
+197:     'U_LAST_CENSUS_TAPE_MISMATCH': 'raw event window of the last census holding exactly L.pids baseline '
+198:                                    'identities and no later identification',
+199:     'U_SPAWN_CHRONOLOGY': 'every supervisor spawn provably before the last census',
+200:     'U_UNKNOWN_INCARNATION': 'a governed history with no pid-only unknown incarnation (coverage-gap pid, identity-less '
+201:                              'helper/main spawn, pending raw or overflow observation); sticky: never waived by H7, '
+202:                              'a complete current census or ENDED',
+203:     'U_ROW_CONFLICT': 'conflict-free PRT rows: one driver, >=1 oracle, positive pid/pgid',
+204:     'U_CAP_EXCEEDED': 'union within member/unknown/row caps; larger unions need a separately reviewed interface',
+205:     'U_DEADLINE': 'a new call within the ORIGINAL deadline; no new allowance',
+206:     'U_INTERNAL_ERROR': 'source defect review'}
+207: CONDITIONS = (
+208:     'PARENT_OBSERVATION_AUTHENTICITY: parent launch, wait and outer-capture records are authentic observations; '
+209:     'JSON plus SHA-256 bind only the selected bytes',
+210:     'PARENT_DIRECT_LAUNCH: driver and oracle supervisors were posix-spawned directly by the parent in their own new '
+211:     'process groups with no intermediate or additional parent-side process for the item',
+212:     'SUPERVISOR19_QUALIFICATION: owned_supervisor_v19 package v9, original22 and the full finite matrix remain '
+213:     'unqualified; its histories are producer observations, not OS guarantees',
+214:     'NON_DESCENDANT_CHANNELS: launchd/XPC/at/cron or other non-fork creation requested by run processes lies '
+215:     'outside process-tree history',
+216:     'PUBLICATION_FREEZE: every referenced file stays frozen against replacement during the call; fresh reads are '
+217:     'not an atomic snapshot',
+218:     'CP1_JOIN: effective release also requires the CP1 caller join of union, PRT result and endedness verdict')
+219: BOUNDARY = ('Identity union and endedness evidence only. No release, reservation, runtime, signal, scheduling, '
+220:             'publication or scientific authority; not source-qualified CP2.')
+221: 
+222: 
+223: class IdentityRefusal(ValueError):
+224:     """Typed bounded refusal inside the consumer; it can never certify completeness."""
+225: 
+226: 
+227: class CensusRefusal(ValueError):
+228:     """Census refusal: no partial, late or capped snapshot is ever returned as a positive."""
+229: 
+230: 
+231: class _NativeError(OSError):
+232:     """Native libproc acquisition failure; same failure class as sv19 GuardError(OSError)."""
+233: 
+234: 
+235: class _Crossed(Exception):
+236:     """Internal unwind after the original deadline became unavailable."""
+237: 
+238: 
+239: _FAILED = object()
+240: 
+241: 
+242: def _require(condition, message):
+243:     if not condition:
+244:         raise IdentityRefusal(message)
+245: 
+246: 
+247: def _short(text):
+248:     return text[:MAX_TEXT]
+249: 
+250: 
+251: def _why(exc):
+252:     try:
+253:         text = type(exc).__name__ + ': ' + str(exc)
+254:     except Exception:
+255:         text = type(exc).__name__ + ': <unprintable>'
+256:     return _short(text.replace('\x00', ' ').replace('\r', ' ').replace('\n', ' '))
+257: 
+258: 
+259: def _int(value, positive=False):
+260:     return type(value) is int and value >= (1 if positive else 0)
+261: 
+262: 
+263: def _u32(value):
+264:     return type(value) is int and 0 <= value <= UINT32
+265: 
+266: 
+267: def _u64(value):
+268:     return type(value) is int and 0 <= value <= UINT64
+269: 
+270: 
+271: def _i32(value):
+272:     return type(value) is int and -(1 << 31) <= value < (1 << 31)
+273: 
+274: 
+275: def _finite(value):
+276:     return type(value) is float and math.isfinite(value)
+277: 
+278: 
+279: def _hex(value):
+280:     return type(value) is str and len(value) == 64 and all(c in '0123456789abcdef' for c in value)
+281: 
+282: 
+283: def _text(value, maximum=MAX_TEXT):
+284:     _require(type(value) is str and 0 < len(value) <= maximum and '\x00' not in value
+285:              and '\n' not in value and '\r' not in value, 'text type/length')
+286:     return value
+287: 
+288: 
+289: def _path(value):
+290:     _require(type(value) is str and value.startswith('/') and 1 < len(value) <= 4096 and '\x00' not in value,
+291:              'normalized absolute path required')
+292:     _require(all(part not in ('', '.', '..') for part in value.split('/')[1:]), 'normalized absolute path required')
+293:     return value
+294: 
+295: 
+296: def _keys(value, wanted):
+297:     _require(type(value) is dict and all(type(k) is str for k in value) and set(value) == set(wanted),
+298:              'exact object keys required: ' + ','.join(sorted(wanted)))
+299: 
+300: 
+301: def _exact(left, right):
+302:     """Typed structural equality; bool never aliases int, float never aliases int."""
+303:     stack = [(left, right)]
+304:     while stack:
+305:         a, b = stack.pop()
+306:         if type(a) is not type(b):
+307:             return False
+308:         if type(a) is dict:
+309:             if set(a) != set(b):
+310:                 return False
+311:             stack.extend((a[k], b[k]) for k in a)
+312:         elif type(a) is list:
+313:             if len(a) != len(b):
+314:                 return False
+315:             stack.extend(zip(a, b))
+316:         elif a != b:
+317:             return False
+318:     return True
+319: 
+320: 
+321: def _canonical(value):
+322:     return (json.dumps(value, sort_keys=True, ensure_ascii=True, allow_nan=False,
+323:                        separators=(',', ':')) + '\n').encode('ascii')
+324: 
+325: 
+326: def _json(data):
+327:     def pairs(rows):
+328:         result = {}
+329:         for key, value in rows:
+330:             _require(key not in result, 'duplicate JSON key')
+331:             result[key] = value
+332:         return result
+333: 
+334:     def constant(_):
+335:         raise IdentityRefusal('nonfinite JSON constant')
+336: 
+337:     def floating(text):
+338:         value = float(text)
+339:         _require(math.isfinite(value), 'nonfinite JSON float')
+340:         return value
+341: 
+342:     _require(type(data) is bytes, 'JSON bytes required')
+343:     return json.loads(data.decode('ascii'), object_pairs_hook=pairs, parse_constant=constant,
+344:                       parse_float=floating)
+345: 
+346: 
+347: def _bytes_json(value):
+348:     """Exact sv19 bytes_json serialization (receipt and settlement record)."""
+349:     return (json.dumps(value, sort_keys=True, indent=1, allow_nan=False) + '\n').encode('ascii')
+350: 
+351: 
+352: def start_fingerprint(pid, uniqueid, idversion):
+353:     """The single frozen start-fingerprint text over exact sv19 native identity integers."""
+354:     _require(_u32(pid) and _u64(uniqueid) and _i32(idversion), 'fingerprint integers')
+355:     return '%s:%d:%d:%d' % (SCHEME, pid, uniqueid, idversion)
+356: 
+357: 
+358: def _parse_fingerprint(text):
+359:     _text(text)
+360:     parts = text.split(':')
+361:     _require(len(parts) == 4 and parts[0] == SCHEME, 'start_fingerprint scheme')
+362:     for index, part in enumerate(parts[1:]):
+363:         body = part[1:] if index == 2 and part.startswith('-') else part
+364:         _require(body != '' and all(c in '0123456789' for c in body), 'start_fingerprint digits')
+365:     pid, uniqueid, idversion = int(parts[1]), int(parts[2]), int(parts[3])
+366:     _require(start_fingerprint(pid, uniqueid, idversion) == text, 'start_fingerprint not canonical')
+367:     return pid, uniqueid, idversion
+368: 
+369: 
+370: def _form(p):
+371:     """sv19 identity_form: fingerprint plus comm."""
+372:     return (p['pid'], p['uniqueid'], p['idversion'], p['euid'], p['ruid'], p['ppid'], p['pgid'], p['traced'],
+373:             p['comm'])
+374: 
+375: 
+376: def _sv19_fingerprint(p):
+377:     return (p['pid'], p['uniqueid'], p['idversion'], p['euid'], p['ruid'], p['ppid'], p['pgid'], p['traced'])
+378: 
+379: 
+380: class _State:
+381:     def __init__(self, order):
+382:         self.order, self.fired, self.evidence, self.suppressed = order, set(), {}, {}
+383: 
+384:     def fire(self, cause, detail):
+385:         if cause not in self.order:
+386:             cause = self.order[-1]
+387:         self.fired.add(cause)
+388:         values = self.evidence.setdefault(cause, [])
+389:         if len(values) < MAX_EVIDENCE:
+390:             values.append(_short(detail))
+391:         else:
+392:             self.suppressed[cause] = self.suppressed.get(cause, 0) + 1
+393: 
+394:     def causes(self):
+395:         return [cause for cause in self.order if cause in self.fired]
+396: 
+397: 
+398: class _Io:
+399:     """Only read_bytes/deadline route: the SAME original deadline before and after every read."""
+400: 
+401:     def __init__(self, read_bytes, deadline_check):
+402:         self.read_bytes, self.deadline_check = read_bytes, deadline_check
+403:         self.crossed, self.reads = False, 0
+404:         self.count, self.log, self.digest = 0, [], hashlib.sha256()
+405: 
+406:     def event(self, name, state, detail):
+407:         row = {'callback': name, 'state': state, 'detail': _short(detail)}
+408:         self.count += 1
+409:         self.digest.update(_canonical(row))
+410:         if len(self.log) < MAX_CALLBACK_LOG:
+411:             self.log.append(row)
+412: 
+413:     def tick(self, stage):
+414:         if self.crossed:
+415:             return False
+416:         try:
+417:             value = self.deadline_check()
+418:         except Exception as exc:
+419:             self.crossed = True
+420:             self.event('deadline_check', 'EXCEPTION', stage + ': ' + _why(exc))
+421:             return False
+422:         except BaseException as exc:
+423:             self.event('deadline_check', 'BASE_EXCEPTION', stage + ': ' + type(exc).__name__)
+424:             raise
+425:         if value is not None:
+426:             self.crossed = True
+427:             self.event('deadline_check', 'BAD_RETURN', stage + ': ' + type(value).__name__)
+428:             return False
+429:         return True
+430: 
+431:     def read(self, path, cap):
+432:         if not self.tick('before read_bytes'):
+433:             raise _Crossed('no read_bytes after original deadline crossing')
+434:         try:
+435:             data = self.read_bytes(path, cap)
+436:         except Exception as primary:
+437:             self.event('read_bytes', 'EXCEPTION', path + ': ' + _why(primary))
+438:             self.tick('read_bytes Exception completion')
+439:             raise
+440:         except BaseException as primary:
+441:             self.event('read_bytes', 'BASE_EXCEPTION', path + ': ' + type(primary).__name__)
+442:             raise
+443:         self.reads += 1
+444:         good = type(data) is bytes and len(data) <= cap
+445:         self.event('read_bytes', 'RETURNED', path + (' bytes=%d sha256=%s' % (len(data), hashlib.sha256(data).hexdigest())
+446:                                                      if good else ' wrong type or over cap'))
+447:         if not self.tick('read_bytes completion'):
+448:             raise _Crossed('read_bytes returned after the original deadline; retained only in the bounded log')
+449:         _require(good, 'read_bytes wrong type or over cap')
+450:         return data
+451: 
+452: 
+453: def _guard(io, st, cause, label, bucket, function, *args):
+454:     try:
+455:         return function(*args)
+456:     except _Crossed:
+457:         raise
+458:     except Exception as exc:
+459:         st.fire(cause, label + ': ' + _why(exc))
+460:         if bucket is not None and cause not in bucket:
+461:             bucket.append(cause)
+462:         if io is not None and io.crossed:
+463:             raise _Crossed('primary failure retained; original deadline also unavailable') from exc
+464:         return _FAILED
+465: 
+466: 
+467: def _attach(exc, name, value):
+468:     try:
+469:         setattr(exc, name, value)
+470:     except Exception:
+471:         pass
+472: 
+473: 
+474: # ---------------------------------------------------------------- native sv19 identity backend (runtime only)
+475: def _bind_libproc():
+476:     """sv19 lines 169-173 ABI, bound lazily per census factory; nothing is loaded at import."""
+477:     lib = ctypes.CDLL(LIBPROC, use_errno=True)
+478:     lib.proc_pidinfo.argtypes = (ctypes.c_int, ctypes.c_int, ctypes.c_uint64, ctypes.c_void_p, ctypes.c_int)
+479:     lib.proc_pidinfo.restype = ctypes.c_int
+480:     lib.proc_listallpids.argtypes = (ctypes.c_void_p, ctypes.c_int)
+481:     lib.proc_listallpids.restype = ctypes.c_int
+482:     return lib
+483: 
+484: 
+485: def _pidinfo(lib, pid, flavor, size, zombies=False):
+486:     """sv19 pidinfo 202-208: exact-size return or failure."""
+487:     buf = ctypes.create_string_buffer(size)
+488:     ctypes.set_errno(0)
+489:     got = lib.proc_pidinfo(pid, flavor, 1 if zombies else 0, buf, size)
+490:     if got != size:
+491:         raise _NativeError(ctypes.get_errno() or errno.EIO, 'PIDINFO %d flavor %d bytes %d' % (pid, flavor, got))
+492:     return buf.raw
+493: 
+494: 
+495: def _unique(lib, pid):
+496:     """sv19 unique 211-213: flavor 17, uniqueid '=Q'@16, idversion '=i'@32."""
+497:     raw = _pidinfo(lib, pid, 17, 56, True)
+498:     return struct.unpack_from('=Q', raw, 16)[0], struct.unpack_from('=i', raw, 32)[0]
+499: 
+500: 
+501: def _short_info(lib, pid):
+502:     """sv19 short 216-222: flavor 13 proc_bsdshortinfo."""
+503:     raw = _pidinfo(lib, pid, 13, 64, True)
+504:     p, pp, pg, st = struct.unpack_from('=IIII', raw)
+505:     flags, uid = struct.unpack_from('=II', raw, 32)
+506:     return {'pid': p, 'ppid': pp, 'pgid': pg, 'status': st, 'euid': uid,
+507:             'ruid': struct.unpack_from('=I', raw, 44)[0], 'traced': bool(flags & 2),
+508:             'comm': raw[16:32].split(b'\0')[0].decode('utf-8', 'replace')}
+509: 
+510: 
+511: def _identify(lib, pid):
+512:     """sv19 identify 234-242: unique/short/unique/short/unique bracket."""
+513:     a, s1, b, s2, c = _unique(lib, pid), _short_info(lib, pid), _unique(lib, pid), _short_info(lib, pid), \
+514:         _unique(lib, pid)
+515:     if not (a == b == c):
+516:         raise _NativeError(errno.EIO, 'IDENTITY_CHANGED %d' % pid)
+517:     for s in (s1, s2):
+518:         s.update(uniqueid=a[0], idversion=a[1])
+519:     if _sv19_fingerprint(s1) != _sv19_fingerprint(s2):
+520:         raise _NativeError(errno.EIO, 'IDENTITY_METADATA_CHANGED %d' % pid)
+521:     return s2
+522: 
+523: 
+524: def _check(deadline_check, stage):
+525:     """Original deadline; Exception/BaseException from it propagate unchanged; non-None return refuses."""
+526:     if deadline_check() is not None:
+527:         raise CensusRefusal('original deadline_check returned non-None: ' + stage)
+528: 
+529: 
+530: def _all_pids(lib, deadline_check):
+531:     """sv19 all_pids 292-310 with the original deadline after every native list call."""
+532:     _check(deadline_check, 'before pid list')
+533:     count = lib.proc_listallpids(None, 0)
+534:     _check(deadline_check, 'after pid list sizing')
+535:     if count <= 0:
+536:         raise _NativeError(errno.EIO, 'PID_LIST_FAILED')
+537:     cap = count * 2 + 1024
+538:     for _ in range(4):
+539:         buf = (ctypes.c_int * cap)()
+540:         n = lib.proc_listallpids(buf, ctypes.sizeof(buf))
+541:         _check(deadline_check, 'after pid list')
+542:         if n <= 0:
+543:             raise _NativeError(errno.EIO, 'PID_LIST_FAILED')
+544:         if n < cap:
+545:             values = list(buf[:n])
+546:             if any(p < 0 for p in values) or len(set(values)) != len(values):
+547:                 raise _NativeError(errno.EIO, 'PID_LIST_MALFORMED')
+548:             return [p for p in values if p > 0]
+549:         cap *= 2
+550:     raise _NativeError(errno.EIO, 'PID_LIST_OVERFLOW')
+551: 
+552: 
+553: class CensusLog:
+554:     """Parent-retained evidence of every census attempt and served snapshot; never a cache or a positive source."""
+555: 
+556:     def __init__(self):
+557:         self.calls, self.attempts, self.served, self.refusals = 0, [], [], []
+558: 
+559:     def served_count(self):
+560:         return len(self.served)
+561: 
+562:     def summary(self):
+563:         keys = ('call', 'attempts', 'complete', 'observer_ok', 'process_count', 'served_sha256', 'rows_sha256',
+564:                 'observed_at_mono')
+565:         return {'calls': self.calls, 'attempts': [dict(a) for a in self.attempts],
+566:                 'served': [{k: s[k] for k in keys} for s in self.served], 'refusals': [dict(r) for r in self.refusals]}
+567: 
+568: 
+569: def _attempt(lib, deadline_check, call, attempt):
+570:     """One fresh full listing; per-pid identification failures are coverage gaps (complete False), not filtering."""
+571:     me = os.getpid()
+572:     before = _identify(lib, me)
+573:     _check(deadline_check, 'census %d.%d observer bracket start' % (call, attempt))
+574:     pids = _all_pids(lib, deadline_check)
+575:     if len(pids) > MAX_ROWS:
+576:         raise CensusRefusal('census process count above PRT cap')
+577:     rows, missing, missing_n = [], [], 0
+578:     for pid in pids:
+579:         try:
+580:             rows.append(_identify(lib, pid))
+581:         except _NativeError as exc:
+582:             missing_n += 1
+583:             if len(missing) < MAX_MISSING_SAMPLE:
+584:                 missing.append([pid, _why(exc)])
+585:         _check(deadline_check, 'census %d.%d after identification' % (call, attempt))
+586:     after = _identify(lib, me)
+587:     _check(deadline_check, 'census %d.%d observer bracket end' % (call, attempt))
+588:     mine = [p for p in rows if p['pid'] == me]
+589:     observer_ok = (len(mine) == 1 and _sv19_fingerprint(before) == _sv19_fingerprint(after)
+590:                    == _sv19_fingerprint(mine[0]))
+591:     complete = missing_n == 0 and observer_ok
+592:     summary = {'call': call, 'attempt': attempt, 'listed': len(pids), 'identified': len(rows),
+593:                'missing_n': missing_n, 'missing': missing, 'observer_ok': observer_ok, 'complete': complete,
+594:                'rows_sha256': hashlib.sha256(_canonical(rows)).hexdigest()}
+595:     return {'complete': complete, 'observer_ok': observer_ok, 'rows': rows, 'summary': summary}
+596: 
+597: 
+598: def make_census(deadline_check):
+599:     """Return (census, log). census() is the PRT census callback over a NEW independent full libproc snapshot.
+600: 
+601:     Up to three fresh full attempts (sv19 full_census reuse, no merging); first complete attempt else last attempt
+602:     with complete False. No helper process, no signal, no cache. Raises on deadline, native listing failure or log
+603:     cap; BaseException propagates. Every attempt summary and every served snapshot (full raw identities, digest of
+604:     the exact served dict) is retained in log for evaluate_endedness and the CP1 receipt.
+605:     """
+606:     _require(callable(deadline_check), 'deadline_check must be callable')
+607:     log = CensusLog()
+608:     bound = []
+609: 
+610:     def census():
+611:         log.calls += 1
+612:         call = log.calls
+613:         try:
+614:             _check(deadline_check, 'census %d start' % call)
+615:             if len(log.served) >= MAX_SERVED or len(log.attempts) + ATTEMPTS_PER_CALL > MAX_LOG_ATTEMPTS:
+616:                 raise CensusRefusal('census log cap reached: refuse rather than discard evidence')
+617:             if not bound:
+618:                 bound.append(_bind_libproc())
+619:             chosen, attempt = None, 0
+620:             while attempt < ATTEMPTS_PER_CALL:
+621:                 attempt += 1
+622:                 chosen = _attempt(bound[0], deadline_check, call, attempt)
+623:                 log.attempts.append(chosen['summary'])
+624:                 if chosen['complete']:
+625:                     break
+626:                 if attempt < ATTEMPTS_PER_CALL:
+627:                     _check(deadline_check, 'census %d before retry pause' % call)
+628:                     time.sleep(RETRY_PAUSE_S)
+629:                     _check(deadline_check, 'census %d after retry pause' % call)
+630:             observed = time.monotonic()
+631:             if type(observed) is not float or not math.isfinite(observed):
+632:                 raise CensusRefusal('monotonic clock unavailable; observed_at_mono is never fabricated')
+633:             served = {'complete': chosen['complete'],
+634:                       'processes': [{'pid': p['pid'], 'ppid': p['ppid'], 'pgid': p['pgid'], 'uid': p['euid'],
+635:                                      'start_fingerprint': start_fingerprint(p['pid'], p['uniqueid'], p['idversion'])}
+636:                                     for p in chosen['rows']],
+637:                       'observed_at_mono': observed}
+638:             record = {'call': call, 'attempts': attempt, 'complete': chosen['complete'],
+639:                       'observer_ok': chosen['observer_ok'], 'process_count': len(chosen['rows']),
+640:                       'rows': [dict(p) for p in chosen['rows']],
+641:                       'served_sha256': hashlib.sha256(_canonical(served)).hexdigest(),
+642:                       'rows_sha256': chosen['summary']['rows_sha256'], 'observed_at_mono': observed}
+643:             _check(deadline_check, 'census %d before return' % call)
+644:         except BaseException as exc:
+645:             try:
+646:                 if len(log.refusals) < MAX_LOG_ATTEMPTS:
+647:                     log.refusals.append({'call': call, 'error': _why(exc) if isinstance(exc, Exception)
+648:                                          else type(exc).__name__})
+649:             except Exception:
+650:                 pass
+651:             raise
+652:         log.served.append(record)
+653:         return served
+654: 
+655:     return census, log
+656: 
+657: 
+658: # ---------------------------------------------------------------- supervisor19 history consumer
+659: def _request(request):
+660:     """Bounded detach (no aliasing, no arbitrary objects/cycles) and exact request validation."""
+661:     stack, nodes = [(request, 0)], 0
+662:     while stack:
+663:         value, depth = stack.pop()
+664:         nodes += 1
+665:         _require(nodes <= REQUEST_NODES and depth <= 8, 'request node/depth cap')
+666:         if type(value) is dict:
+667:             _require(len(value) <= REQUEST_NODES, 'request object size')
+668:             for key, item in list(value.items()):
+669:                 _require(type(key) is str and len(key) <= 64, 'request key')
+670:                 stack.append((item, depth + 1))
+671:         elif type(value) is list:
+672:             _require(len(value) <= REQUEST_NODES, 'request list size')
+673:             stack.extend((item, depth + 1) for item in value)
+674:         elif type(value) is str:
+675:             _require(len(value) <= 4096, 'request string length')
+676:         else:
+677:             _require(value is None or type(value) is bool or (type(value) is int and abs(value) <= UINT64),
+678:                      'request scalar type')
+679:     data = _canonical(request)
+680:     _require(len(data) <= REQUEST_CAP, 'request byte cap')
+681:     request = _json(data)
+682:     _keys(request, ('format', 'item', 'histories'))
+683:     _require(request['format'] == REQUEST_FORMAT, 'request format')
+684:     _text(request['item'])
+685:     histories = request['histories']
+686:     _require(type(histories) is list and 0 < len(histories) <= MAX_HISTORIES, 'histories list 1..16')
+687:     for h in histories:
+688:         _keys(h, HISTORY_REQUEST_KEYS)
+689:         _require(h['family'] in ('main', 'oracle'), 'family main|oracle')
+690:         _ref(h['producer'])
+691:         _ref(h['wait_record'])
+692:         for key in ('launch_record', 'receipt', 'settlement'):
+693:             if h[key] is not None:
+694:                 _ref(h[key])
+695:         _capture_record(h['stdout'])
+696:     return request
+697: 
+698: 
+699: def _ref(value):
+700:     _keys(value, ('path', 'sha256'))
+701:     _path(value['path'])
+702:     _require(_hex(value['sha256']), 'lowercase 64-hex digest required')
+703:     return value
+704: 
+705: 
+706: def _capture_record(value):
+707:     _keys(value, ('path', 'sha256', 'bytes_seen', 'bytes_stored', 'eof', 'overflow', 'error'))
+708:     _path(value['path'])
+709:     _require(_hex(value['sha256']), 'capture digest')
+710:     _require(_int(value['bytes_seen']) and _int(value['bytes_stored'])
+711:              and value['bytes_seen'] == value['bytes_stored'] <= CAPTURE_CAP, 'capture byte counts')
+712:     _require(value['eof'] is True and value['overflow'] is False and value['error'] is None,
+713:              'capture must be complete: eof true, overflow false, error null')
+714:     return value
+715: 
+716: 
+717: def _v_families(request):
+718:     families = [h['family'] for h in request['histories']]
+719:     _require(families.count('main') == 1, 'exactly one main history required')
+720:     _require(families.count('oracle') >= 1, 'at least one oracle history required (PRT part4 oracle incarnation)')
+721:     for h in request['histories']:
+722:         if h['family'] == 'main':
+723:             _require(h['launch_record'] is not None, 'main launch_record required')
+724:         else:
+725:             _require(h['launch_record'] is None, 'oracle launch_record must be null in v1')
+726:     return True
+727: 
+728: 
+729: def _load(io, ref, cap):
+730:     data = io.read(ref['path'], cap)
+731:     _require(hashlib.sha256(data).hexdigest() == ref['sha256'], 'pinned byte digest mismatch: ' + ref['path'])
+732:     return data
+733: 
+734: 
+735: def _producer(io, ref):
+736:     _require(ref['sha256'] == SUPERVISOR19_SHA256, 'producer is not the pinned owned_supervisor_v19 source')
+737:     _load(io, ref, DOC_CAP)
+738:     return True
+739: 
+740: 
+741: def _wait(io, ref, role, item):
+742:     value = _json(_load(io, ref, DOC_CAP))
+743:     _keys(value, ('format', 'item', 'role', 'pid', 'pgid', 'start_fingerprint', 'raw_status', 'actual_exit',
+744:                   'observed_by'))
+745:     _require(value['format'] == WAIT_FORMAT and value['role'] == role and value['observed_by'] == 'parent',
+746:              'parent wait format/role/observer')
+747:     _require(type(value['item']) is str and value['item'] == item, 'wait item')
+748:     _require(_int(value['pid'], True) and _int(value['pgid'], True), 'wait pid/pgid')
+749:     pid, uniqueid, idversion = _parse_fingerprint(value['start_fingerprint'])
+750:     _require(pid == value['pid'], 'wait start_fingerprint pid != wait pid')
+751:     _require(_int(value['raw_status']) and type(value['actual_exit']) is int, 'wait status/exit types')
+752:     _require(os.waitstatus_to_exitcode(value['raw_status']) == value['actual_exit'],
+753:              'raw wait status does not decode to actual_exit')
+754:     return {'pid': value['pid'], 'pgid': value['pgid'], 'start_fingerprint': value['start_fingerprint'],
+755:             'uniqueid': uniqueid, 'idversion': idversion, 'actual_exit': value['actual_exit']}
+756: 
+757: 
+758: def _launch(io, ref, item, wait):
+759:     value = _json(_load(io, ref, DOC_CAP))
+760:     _require(type(value) is dict and type(value.get('item')) is str and value['item'] == item, 'launch item')
+761:     driver = value.get('driver')
+762:     _keys(driver, ('pid', 'pgid', 'start_fingerprint'))
+763:     _require(_exact(driver, {k: wait[k] for k in ('pid', 'pgid', 'start_fingerprint')}),
+764:              'launch.driver != parent wait identity')
+765:     return True
+766: 
+767: 
+768: def _stdout(io, record):
+769:     data = io.read(record['path'], record['bytes_stored'])
+770:     _require(len(data) == record['bytes_stored'] and hashlib.sha256(data).hexdigest() == record['sha256'],
+771:              'stdout capture actual bytes/hash/count mismatch')
+772:     return data
+773: 
+774: 
+775: def _line(data):
+776:     _require(len(data) > 1 and data.endswith(b'\n') and data.count(b'\n') == 1,
+777:              'supervisor stdout must be exactly one LF-terminated line')
+778:     value = _json(data)
+779:     _require(type(value) is dict, 'supervisor stdout line must be one JSON object')
+780:     if value.get('acknowledged') is True:
+781:         canonical = json.dumps(value, sort_keys=True, allow_nan=False, separators=(',', ':')) + '\n'
+782:     else:
+783:         canonical = json.dumps(value, allow_nan=False, separators=(',', ':')) + '\n'
+784:     _require(canonical.encode('ascii') == data, 'stdout line is not the exact sv19 serialization')
+785:     return value
+786: 
+787: 
+788: def _producer_line(value):
+789:     _require(value.get('supervisor') == SUPERVISOR19_VERSION, 'stdout line is not owned_supervisor_v19 output')
+790:     if value.get('acknowledged') is True:
+791:         _keys(value, ACK_KEYS)
+792:         _require(type(value['exit_code']) is int and value['exit_code'] in ACK_EXITS, 'ACK exit_code')
+793:         return 'ACK'
+794:     _require(value.get('acknowledged') is False, 'acknowledged must be an exact bool')
+795:     _require(REFUSAL_REQUIRED <= set(value) <= REFUSAL_REQUIRED | REFUSAL_EXTRA, 'refusal keys')
+796:     _require(type(value['exit_code']) is int and value['exit_code'] in REFUSAL_EXITS, 'refusal exit_code')
+797:     return 'REFUSAL'
+798: 
+799: 
+800: def _exit_binding(wait, value):
+801:     _require(wait['actual_exit'] == value['exit_code'], 'parent-observed exit != supervisor stdout exit_code')
+802:     return True
+803: 
+804: 
+805: def _ack_files(io, h, ack):
+806:     _require(h['receipt'] is not None and h['settlement'] is not None, 'ACK requires receipt and settlement refs')
+807:     _require(h['receipt']['sha256'] == ack['receipt_sha256']
+808:              and h['settlement']['sha256'] == ack['settlement_record_sha256'], 'ACK digests != supplied refs')
+809:     _require(_int(ack['receipt_bytes']) and _int(ack['settlement_bytes']), 'ACK byte counts')
+810:     receipt_bytes = _load(io, h['receipt'], RECEIPT_CAP)
+811:     settlement_bytes = _load(io, h['settlement'], DOC_CAP)
+812:     _require(len(receipt_bytes) == ack['receipt_bytes'] and len(settlement_bytes) == ack['settlement_bytes'],
+813:              'ACK receipt/settlement byte counts')
+814:     receipt, settlement = _json(receipt_bytes), _json(settlement_bytes)
+815:     _require(type(receipt) is dict and type(settlement) is dict, 'receipt/settlement objects')
+816:     _require(_bytes_json(receipt) == receipt_bytes and _bytes_json(settlement) == settlement_bytes,
+817:              'receipt/settlement are not the exact sv19 bytes_json serialization')
+818:     _keys(settlement, SETTLEMENT_KEYS)
+819:     _require(RECEIPT_REQUIRED <= set(receipt), 'receipt lacks required history fields')
+820:     _require(settlement['supervisor'] == SUPERVISOR19_VERSION and receipt['supervisor'] == SUPERVISOR19_VERSION,
+821:              'receipt/settlement producer version')
+822:     _require(receipt['supervisor_sha256'] == SUPERVISOR19_SHA256, 'receipt supervisor_sha256 != pinned source')
+823:     _require(settlement['receipt_sha256'] == ack['receipt_sha256'], 'settlement receipt digest')
+824:     _require(settlement['receipt'] == h['receipt']['path'], 'settlement receipt path != supplied receipt path')
+825:     _require(_hex(ack['config_sha256']) and receipt['config_sha256'] == ack['config_sha256']
+826:              and settlement['config_sha256'] == ack['config_sha256'], 'config digests')
+827:     _require(type(ack['settlement']) is str and receipt['settlement'] == ack['settlement']
+828:              and settlement['settlement'] == ack['settlement'], 'settlement state')
+829:     return receipt
+830: 
+831: 
+832: def _refusal_refs(h):
+833:     _require(h['receipt'] is None and h['settlement'] is None,
+834:              'refusal history: receipt and settlement must be null in v1')
+835:     return True
+836: 
+837: 
+838: def _recon(value, kind):
+839:     recon = value['reconciliation']
+840:     _require(type(recon) is dict and RECON_KEYS <= set(recon) <= RECON_KEYS | {'mono_snapshot_error'},
+841:              'reconciliation keys')
+842:     if kind == 'ACK':
+843:         for key in ('unproved_history', 'coverage_history', 'census_observations'):
+844:             _require(_exact(value[key], recon[key]), 'ACK ' + key + ' != reconciliation')
+845:         census = recon['census_observations']
+846:         _require(type(census) is list and census and type(value['ack_census']) is dict
+847:                  and _exact(value['ack_census'], census[-1]), 'ack_census != last census observation')
+848:         _require(_exact(value['owned_live'], value['ack_census'].get('owned_live'))
+849:                  and _exact(value['unproved_live'], value['ack_census'].get('unproved_live')),
+850:                  'ACK live lists != ack_census')
+851:     return recon
+852: 
+853: 
+854: def _complete_flags(recon):
+855:     _require(recon['timing_failed'] is False, 'timing_failed: missing clocks are incomplete evidence')
+856:     _require(recon['history_halted'] is False and recon['history_overflow'] is None,
+857:              'history halted/overflow: capped history is incomplete')
+858:     _require(type(recon['raw_acquisitions']) is list and not recon['raw_acquisitions'],
+859:              'pending raw acquisitions are not retained in the canonical tape')
+860:     return True
+861: 
+862: 
+863: def _pending(family, index, recon):
+864:     """Informational pid-only records for acquisitions outside the canonical tape (history is HELD anyway)."""
+865:     rows = []
+866:     raw = recon['raw_acquisitions'] if type(recon['raw_acquisitions']) is list else []
+867:     for item in raw[:MAX_UNKNOWN]:
+868:         ident = item.get('identity') if type(item) is dict else None
+869:         pid = ident.get('pid') if type(ident) is dict else None
+870:         rows.append({'family': family, 'history': index, 'pid': pid if _u32(pid) else None,
+871:                      'kind': 'raw_pending_acquisition'})
+872:     overflow = recon['history_overflow']
+873:     if type(overflow) is dict:
+874:         for key in ('completed_identity_observation', 'completed_measurement'):
+875:             observed = overflow.get(key)
+876:             ident = observed.get('identity') if type(observed) is dict else None
+877:             if type(ident) is dict:
+878:                 pid = ident.get('pid')
+879:                 rows.append({'family': family, 'history': index, 'pid': pid if _u32(pid) else None,
+880:                              'kind': 'history_overflow:' + key})
+881:     return rows
+882: 
+883: 
+884: def _identity(value):
+885:     _keys(value, IDENTITY_KEYS)
+886:     for key in ('pid', 'ppid', 'pgid', 'status', 'euid', 'ruid'):
+887:         _require(_u32(value[key]), 'identity ' + key)
+888:     _require(type(value['traced']) is bool, 'identity traced')
+889:     _require(type(value['comm']) is str and len(value['comm']) <= 16, 'identity comm')
+890:     _require(_u64(value['uniqueid']) and _i32(value['idversion']), 'identity uniqueid/idversion')
+891:     return value
+892: 
+893: 
+894: def _tape(recon):
+895:     events = recon['identity_events']
+896:     _require(type(events) is list and len(events) <= MAX_EVENTS, 'identity event tape')
+897:     for event in events:
+898:         _require(type(event) is list and len(event) == 6, 'identity event shape')
+899:         uid, index, status, begin, end, unproved = event
+900:         _require(_u64(uid) and _int(index) and index < MAX_VARIANTS and _u32(status) and _finite(begin)
+901:                  and _finite(end) and begin <= end and type(unproved) is bool, 'identity event fields')
+902:     return events, _history_entries(recon['identity_history'], events)
+903: 
+904: 
+905: def _history_entries(entries, events):
+906:     _require(type(entries) is list and len(entries) <= MAX_LIST, 'identity_history list')
+907:     hist = {}
+908:     for entry in entries:
+909:         _keys(entry, HISTORY_ENTRY_KEYS)
+910:         variants = entry['variants']
+911:         _require(type(variants) is list and 0 < len(variants) <= MAX_VARIANTS, 'identity variants')
+912:         forms = [_form(_identity(v)) for v in variants]
+913:         pid, uid = forms[0][0], forms[0][1]
+914:         _require(len(set(forms)) == len(forms) and all(f[0] == pid and f[1] == uid for f in forms),
+915:                  'variants must be distinct forms of one pid and uniqueid')
+916:         _require(uid not in hist, 'duplicate identity_history uniqueid')
+917:         for which in ('first', 'last'):
+918:             _require(_form(_identity(entry[which + '_identity'])) in forms, which + '_identity is not a variant')
+919:             _require(_int(entry[which + '_event_ref'], True) and entry[which + '_event_ref'] <= len(events),
+920:                      which + '_event_ref range')
+921:             _require(_finite(entry['mono_' + which + '_begin']) and _finite(entry['mono_' + which + '_seen']),
+922:                      which + ' interval')
+923:         _require(_int(entry['observations'], True), 'observations')
+924:         _require(entry['source'] in SOURCES, 'first observation source outside the sv19 native acquisition sites')
+925:         hist[uid] = {'entry': entry, 'forms': forms, 'refs': []}
+926:     for ref, event in enumerate(events, 1):
+927:         record = hist.get(event[0])
+928:         _require(record is not None and event[1] < len(record['forms']), 'event without matching history variant')
+929:         record['refs'].append(ref)
+930:     for uid, record in hist.items():
+931:         entry, refs = record['entry'], record['refs']
+932:         _require(len(refs) == entry['observations'], 'observations != event tape count for uniqueid %d' % uid)
+933:         ends = [events[r - 1][4] for r in refs]
+934:         for which, extreme in (('first', min(ends)), ('last', max(ends))):
+935:             event, ident = events[entry[which + '_event_ref'] - 1], entry[which + '_identity']
+936:             _require(event[0] == uid and event[4] == extreme
+937:                      and event[1] == record['forms'].index(_form(ident)) and event[2] == ident['status']
+938:                      and event[3] == entry['mono_' + which + '_begin']
+939:                      and event[4] == entry['mono_' + which + '_seen'],
+940:                      which + ' event reference inconsistent for uniqueid %d' % uid)
+941:     return hist
+942: 
+943: 
+944: def _ref_matches(events, hist, ref, p):
+945:     _require(_int(ref, True) and ref <= len(events), 'event reference range')
+946:     event, record = events[ref - 1], hist.get(p['uniqueid'])
+947:     _require(record is not None and event[0] == p['uniqueid'] and _form(p) in record['forms']
+948:              and event[1] == record['forms'].index(_form(p)) and event[2] == p['status'],
+949:              'event reference does not denote this identity observation')
+950:     return True
+951: 
+952: 
+953: def _baseline(recon, hist, events, receipt):
+954:     ids = recon['baseline_uniqueids']
+955:     _require(type(ids) is list and ids and all(_u64(u) for u in ids) and ids == sorted(set(ids)),
+956:              'baseline uniqueids must be a sorted unique nonempty list')
+957:     baseline = set(ids)
+958:     _require(baseline <= set(hist), 'baseline identity without history entry')
+959:     if receipt is not None:
+960:         record = receipt['baseline']
+961:         _keys(record, ('mono_complete', 'identities', 'event_refs'))
+962:         identities, refs = record['identities'], record['event_refs']
+963:         _require(type(identities) is list and type(refs) is list and len(identities) == len(refs)
+964:                  == len(baseline), 'receipt baseline list sizes')
+965:         for p, ref in zip(identities, refs):
+966:             _identity(p)
+967:             _ref_matches(events, hist, ref, p)
+968:         _require({p['uniqueid'] for p in identities} == baseline, 'receipt baseline identities != baseline uniqueids')
+969:         pids = [p['pid'] for p in identities]
+970:         _require(pids == sorted(pids) and _finite(record['mono_complete']), 'receipt baseline order/time')
+971:     return baseline
+972: 
+973: 
+974: def _helpers(recon, hist, events):
+975:     reports = recon['helpers']
+976:     _require(type(reports) is list and len(reports) <= MAX_LIST, 'helper reports')
+977:     seen = set()
+978:     for report in reports:
+979:         _keys(report, HELPER_REPORT_KEYS)
+980:         _require(_int(report['pid'], True), 'helper pid')
+981:         _require(report['mono_spawn'] is None or _finite(report['mono_spawn']), 'helper mono_spawn')
+982:         _require(type(report['initial_identity_valid']) is bool, 'helper initial_identity_valid')
+983:         ident = report['identity']
+984:         if ident is not None:
+985:             _identity(ident)
+986:             _require(ident['pid'] == report['pid'] and ident['uniqueid'] in hist
+987:                      and ident['uniqueid'] not in seen, 'helper identity pid/history/uniqueness')
+988:             seen.add(ident['uniqueid'])
+989:             if report['identity_event_ref'] is not None:
+990:                 _ref_matches(events, hist, report['identity_event_ref'], ident)
+991:     return reports
+992: 
+993: 
+994: def _via_parent(via):
+995:     _require(type(via) is str and via.startswith('current_parent:'), 'owned via')
+996:     digits = via[len('current_parent:'):]
+997:     _require(digits != '' and all(c in '0123456789' for c in digits) and str(int(digits)) == digits,
+998:              'current_parent uniqueid text')
+999:     return int(digits)
+1000: 
+1001: 
+1002: def _owned(recon, hist, events, helper_uids):
+1003:     entries = recon['owned_identities']
+1004:     _require(type(entries) is list and len(entries) <= MAX_LIST, 'owned identities list')
+1005:     owned = {}
+1006:     for entry in entries:
+1007:         _keys(entry, OWNED_KEYS)
+1008:         p = _identity(entry['identity'])
+1009:         uid, via = p['uniqueid'], entry['via']
+1010:         _require(uid not in owned and uid in hist, 'owned uniqueid duplicate or absent from history')
+1011:         _ref_matches(events, hist, entry['identity_event_ref'], p)
+1012:         _require(_u64(entry['root']) and _finite(entry['first_seen_mono']), 'owned root/time')
+1013:         parent = None
+1014:         if via in ('child', 'helper'):
+1015:             _require(entry['root'] == uid and entry['proof'] is None, 'direct owned root/proof')
+1016:         elif via == 'owned_group':
+1017:             _require(entry['proof'] is None, 'owned_group proof must be null')
+1018:         else:
+1019:             parent = _via_parent(via)
+1020:             proof = entry['proof']
+1021:             _keys(proof, PROOF_KEYS)
+1022:             for key, who in (('parent_before_ref', parent), ('child_ref', uid), ('parent_after_ref', parent)):
+1023:                 ref = proof[key]
+1024:                 _require(_int(ref, True) and ref <= len(events) and events[ref - 1][0] == who,
+1025:                          'current-parent edge proof reference ' + key)
+1026:         owned[uid] = {'entry': entry, 'via': via, 'parent': parent}
+1027:     for uid, record in owned.items():
+1028:         root = record['entry']['root']
+1029:         if record['via'] == 'owned_group':
+1030:             _require((root in owned and owned[root]['via'] in ('child', 'helper')) or root in helper_uids,
+1031:                      'owned_group root is not a direct child/helper incarnation')
+1032:         elif record['parent'] is not None:
+1033:             parent = owned.get(record['parent'])
+1034:             _require(parent is not None and parent['entry']['root'] == root, 'current-parent edge root')
+1035:     return owned
+1036: 
+1037: 
+1038: def _unproved(recon, hist, events, baseline):
+1039:     entries = recon['unproved_history']
+1040:     _require(type(entries) is list and len(entries) <= MAX_LIST, 'unproved history list')
+1041:     result = {}
+1042:     for entry in entries:
+1043:         _keys(entry, UNPROVED_KEYS)
+1044:         first, last = _identity(entry['first_identity']), _identity(entry['last_identity'])
+1045:         uid = first['uniqueid']
+1046:         _require(last['uniqueid'] == uid and uid in hist and uid not in baseline and uid not in result,
+1047:                  'unproved uniqueid')
+1048:         flagged = [r for r in hist[uid]['refs'] if events[r - 1][5]]
+1049:         _require(flagged, 'unproved entry without unproved-flagged event')
+1050:         ends = [events[r - 1][4] for r in flagged]
+1051:         for which, extreme, ident in (('first', min(ends), first), ('last', max(ends), last)):
+1052:             ref = entry[which + '_event_ref']
+1053:             _require(_int(ref, True) and ref in flagged, which + ' unproved event reference')
+1054:             event = events[ref - 1]
+1055:             _require(event[4] == extreme and event[3] == entry['mono_' + which + '_begin']
+1056:                      and event[4] == entry['mono_' + which + '_seen']
+1057:                      and event[1] == hist[uid]['forms'].index(_form(ident)) and event[2] == ident['status'],
+1058:                      which + ' unproved event inconsistent')
+1059:         result[uid] = entry
+1060:     _require({event[0] for event in events if event[5]} == set(result),
+1061:              'unproved-flagged events != unproved_history')
+1062:     return result
+1063: 
+1064: 
+1065: def _censuses(recon, hist, events):
+1066:     records = recon['census_observations']
+1067:     _require(type(records) is list and 0 < len(records) <= 4096, 'census observations')
+1068:     for record in records:
+1069:         _require(type(record) is dict and CENSUS_REQUIRED <= set(record) <= CENSUS_ALLOWED, 'census record keys')
+1070:         _require(type(record['complete']) is bool and type(record['aborted']) is bool
+1071:                  and _finite(record['mono_start'])
+1072:                  and (record['mono_complete'] is None or _finite(record['mono_complete']))
+1073:                  and _int(record['pids']) and _int(record['incomplete_n']) and type(record['incomplete']) is list,
+1074:                  'census record fields')
+1075:         for live, refs in (('owned_live', 'owned_event_refs'), ('unproved_live', 'unproved_event_refs')):
+1076:             ids, rows = record[live], record[refs]
+1077:             _require(type(ids) is list and type(rows) is list and len(ids) == len(rows), 'census ' + live)
+1078:             for p, ref in zip(ids, rows):
+1079:                 _identity(p)
+1080:                 _ref_matches(events, hist, ref, p)
+1081:         for key in ('group_live', 'owned_zombies'):
+1082:             _require(type(record[key]) is list and all(_u32(x) for x in record[key]), 'census ' + key)
+1083:     return records
+1084: 
+1085: 
+1086: def _coverage(recon):
+1087:     entries = recon['coverage_history']
+1088:     _require(type(entries) is list and len(entries) <= MAX_LIST, 'coverage history')
+1089:     gaps = []
+1090:     for entry in entries:
+1091:         _require(type(entry) is dict and set(entry) in ({'mono', 'observation'}, {'mono', 'observation', 'mono_error'}),
+1092:                  'coverage entry keys')
+1093:         observation = entry['observation']
+1094:         _require(type(observation) is list and len(observation) == 3 and _u32(observation[0])
+1095:                  and observation[1] in COVERAGE_KINDS and type(observation[2]) is str, 'coverage observation')
+1096:         gaps.append((observation[0], observation[1]))
+1097:     return gaps
+1098: 
+1099: 
+1100: def _receipt_prefix(receipt, recon):
+1101:     for key in ('identity_events', 'census_observations', 'coverage_history', 'owned_identities'):
+1102:         old, new = receipt[key], recon[key]
+1103:         _require(type(old) is list and type(new) is list and len(old) <= len(new) and _exact(old, new[:len(old)]),
+1104:                  'receipt ' + key + ' is not a prefix of the ACK reconciliation')
+1105:     for key in ('identity_history', 'unproved_history'):
+1106:         old, new = receipt[key], recon[key]
+1107:         _require(type(old) is list and type(new) is list and len(old) <= len(new), 'receipt ' + key + ' length')
+1108:         for a, b in zip(old, new):
+1109:             _require(type(a) is dict and type(b) is dict and type(a.get('first_identity')) is dict
+1110:                      and type(b.get('first_identity')) is dict
+1111:                      and _exact(a['first_identity'].get('uniqueid'), b['first_identity'].get('uniqueid')),
+1112:                      'receipt ' + key + ' uniqueid order')
+1113:             if key == 'identity_history':
+1114:                 va, vb = a.get('variants'), b.get('variants')
+1115:                 _require(type(va) is list and type(vb) is list and len(va) <= len(vb) and _exact(va, vb[:len(va)]),
+1116:                          'receipt variants are not a prefix')
+1117:     for key in ('helpers', 'main_wait', 'raw_acquisitions', 'history_overflow', 'timing_failed'):
+1118:         _require(_exact(receipt[key], recon[key]), 'receipt ' + key + ' != ACK reconciliation')
+1119:     _require(_exact(receipt['child_identity'], recon['main_identity']), 'receipt child_identity != main_identity')
+1120:     main = recon['main_wait']
+1121:     _require(_exact(receipt['child_pid'], None if main is None else main.get('pid')), 'receipt child_pid')
+1122:     return True
+1123: 
+1124: 
+1125: def _driver(wait, hist, baseline, receipt):
+1126:     _require(wait['pgid'] == wait['pid'], 'driver/oracle must lead its own process group (pgid == pid)')
+1127:     matches = [uid for uid, record in hist.items() if record['forms'][0][0] == wait['pid']]
+1128:     _require(len(matches) == 1, 'exactly one history incarnation must carry the waited pid')
+1129:     uid = matches[0]
+1130:     _require(uid in baseline, 'driver self-observation must be a baseline identity')
+1131:     _require(uid == wait['uniqueid'], 'wait fingerprint uniqueid != supervisor self-observation')
+1132:     _require(all(f[2] == wait['idversion'] and f[6] == wait['pgid'] for f in hist[uid]['forms']),
+1133:              'driver variants idversion/pgid != parent wait identity')
+1134:     if receipt is not None:
+1135:         _require(_exact(receipt['supervisor_pid'], wait['pid']), 'receipt supervisor_pid != waited pid')
+1136:     return uid
+1137: 
+1138: 
+1139: def _child_helper(recon, owned, helpers):
+1140:     main_wait, ident = recon['main_wait'], recon['main_identity']
+1141:     children = [uid for uid, record in owned.items() if record['via'] == 'child']
+1142:     if main_wait is not None:
+1143:         _keys(main_wait, MAIN_WAIT_KEYS)
+1144:         _require(_int(main_wait['pid'], True), 'main child pid')
+1145:     if ident is None:
+1146:         _require(not children, 'owned child without main identity')
+1147:     else:
+1148:         _identity(ident)
+1149:         _require(main_wait is not None and ident['pid'] == main_wait['pid'] and ident['pgid'] == ident['pid'],
+1150:                  'main identity pid/own group')
+1151:         _require(children == [ident['uniqueid']] and _exact(owned[ident['uniqueid']]['entry']['identity'], ident),
+1152:                  'main identity != owned child registration')
+1153:     helper_uids = set()
+1154:     for report in helpers:
+1155:         h = report['identity']
+1156:         if h is None:
+1157:             continue
+1158:         helper_uids.add(h['uniqueid'])
+1159:         if report['initial_identity_valid']:
+1160:             record = owned.get(h['uniqueid'])
+1161:             _require(h['pgid'] == h['pid'] and record is not None and record['via'] == 'helper',
+1162:                      'valid helper identity not registered owned via helper in its own group')
+1163:     for uid, record in owned.items():
+1164:         if record['via'] == 'helper':
+1165:             _require(uid in helper_uids, 'owned helper without a helper report')
+1166:     return True
+1167: 
+1168: 
+1169: def _last_census(records):
+1170:     last = records[-1]
+1171:     _require(last['complete'] is True and last['aborted'] is False and last['incomplete_n'] == 0
+1172:              and last['incomplete'] == [], 'last census incomplete or aborted')
+1173:     _require(last['owned_live'] == [] and last['unproved_live'] == [] and last['owned_event_refs'] == []
+1174:              and last['unproved_event_refs'] == [] and last['group_live'] == [] and last['owned_zombies'] == [],
+1175:              'last census shows live owned/unproved/group/zombie incarnations: history open after it')
+1176:     _require(_finite(last['mono_complete']) and last['mono_start'] <= last['mono_complete']
+1177:              and _int(last['pids'], True), 'last census window')
+1178:     return last
+1179: 
+1180: 
+1181: def _closure_tape(last, events, baseline):
+1182:     start, end, inside = last['mono_start'], last['mono_complete'], set()
+1183:     for uid, index, status, begin, finish, unproved in events:
+1184:         _require(begin <= end, 'identity observation after the last census')
+1185:         if finish < start:
+1186:             continue
+1187:         _require(start <= begin and finish <= end, 'identity observation straddles the last census window')
+1188:         _require(not unproved and uid in baseline, 'post-baseline or unproved identity inside the last census')
+1189:         inside.add(uid)
+1190:     _require(len(inside) == last['pids'], 'last census pid count != distinct identities in its raw event window')
+1191:     return True
+1192: 
+1193: 
+1194: def _chronology(last, recon, helpers, hist, events, receipt):
+1195:     start = last['mono_start']
+1196:     for report in helpers:
+1197:         _require(_finite(report['mono_spawn']) and report['mono_spawn'] < start,
+1198:                  'helper spawn not provably before the last census')
+1199:     if recon['main_wait'] is not None:
+1200:         if receipt is not None:
+1201:             _require(_finite(receipt.get('mono_spawn')) and receipt['mono_spawn'] < start,
+1202:                      'main spawn not provably before the last census')
+1203:         else:
+1204:             ident = recon['main_identity']
+1205:             _require(type(ident) is dict and ident.get('uniqueid') in hist
+1206:                      and any(events[r - 1][4] <= start for r in hist[ident['uniqueid']]['refs']),
+1207:                      'main spawn chronology unavailable without receipt mono_spawn')
+1208:     return True
+1209: 
+1210: 
+1211: def _members(family, index, hist, baseline, owned, unproved, helper_uids, driver):
+1212:     names, members = FAMILY_ROLES[family], []
+1213:     for uid, record in hist.items():
+1214:         entry, forms = record['entry'], record['forms']
+1215:         via = owned[uid]['via'] if uid in owned else None
+1216:         categories = []
+1217:         if uid == driver:
+1218:             categories.append('driver_self_observation')
+1219:         if via is not None:
+1220:             categories.append('owned:' + ('current_parent' if via.startswith('current_parent:') else via))
+1221:         if uid in helper_uids:
+1222:             categories.append('helper_report')
+1223:         if uid in unproved:
+1224:             categories.append('unproved_history')
+1225:         if uid not in baseline:
+1226:             categories.append('post_baseline')
+1227:         if not categories:
+1228:             continue
+1229:         if uid == driver:
+1230:             role = names[0]
+1231:         elif via == 'child':
+1232:             role = names[1]
+1233:         elif via == 'helper' or uid in helper_uids:
+1234:             role = names[2]
+1235:         elif via is not None:
+1236:             role = 'descendant'
+1237:         else:
+1238:             role = 'unproved'
+1239:         pid, last, rows = forms[0][0], entry['last_identity'], []
+1240:         versions = sorted({f[2] for f in forms})
+1241:         for version in versions:
+1242:             pgid = last['pgid'] if last['idversion'] == version else [f[6] for f in forms if f[2] == version][-1]
+1243:             rows.append({'role': role, 'pid': pid, 'pgid': pgid,
+1244:                          'start_fingerprint': start_fingerprint(pid, uid, version),
+1245:                          'source': 'sv19:%s#%d:%s:uid=%d' % (family, index, categories[0], uid)})
+1246:         members.append({'family': family, 'history': index, 'uniqueid': uid, 'pid': pid, 'role': role,
+1247:                         'categories': categories, 'idversions': versions,
+1248:                         'pgids': sorted({f[6] for f in forms}), 'ppids': sorted({f[5] for f in forms}),
+1249:                         'euids': sorted({f[3] for f in forms}), 'ruids': sorted({f[4] for f in forms}),
+1250:                         'comms': sorted({f[8] for f in forms}), 'observations': entry['observations'],
+1251:                         'first_event_ref': entry['first_event_ref'], 'last_event_ref': entry['last_event_ref'],
+1252:                         'first_source': entry['source'], 'rows': rows})
+1253:     _require(len(members) <= MAX_MEMBERS, 'member cap')
+1254:     return members
+1255: 
+1256: 
+1257: def _unknowns(family, index, gaps, helpers, recon):
+1258:     rows = [{'family': family, 'history': index, 'pid': pid, 'kind': 'coverage:' + kind} for pid, kind in gaps]
+1259:     rows.extend({'family': family, 'history': index, 'pid': r['pid'], 'kind': 'helper_without_identity'}
+1260:                 for r in helpers if r['identity'] is None)
+1261:     main = recon['main_wait']
+1262:     if main is not None and recon['main_identity'] is None:
+1263:         _require(type(main) is dict and _int(main.get('pid'), True), 'main child pid')
+1264:         rows.append({'family': family, 'history': index, 'pid': main['pid'], 'kind': 'main_child_without_identity'})
+1265:     _require(len(rows) <= MAX_UNKNOWN, 'unknown incarnation cap')
+1266:     return rows
+1267: 
+1268: 
+1269: def _sticky(recon, pending):
+1270:     """V2: every pid-only unknown, enumerated defensively from the raw reconciliation, independent of other checks."""
+1271:     details = ['%s pid=%r' % (row['kind'], row['pid']) for row in pending]
+1272:     coverage = recon['coverage_history']
+1273:     _require(type(coverage) is list, 'coverage history not enumerable: unknowns cannot be excluded')
+1274:     for entry in coverage:
+1275:         observation = entry.get('observation') if type(entry) is dict else None
+1276:         _require(type(observation) is list and len(observation) == 3,
+1277:                  'coverage entry not enumerable: unknowns cannot be excluded')
+1278:         details.append('coverage:%r pid=%r' % (observation[1], observation[0]))
+1279:     helpers = recon['helpers']
+1280:     _require(type(helpers) is list, 'helper reports not enumerable: unknowns cannot be excluded')
+1281:     for report in helpers:
+1282:         _require(type(report) is dict and 'identity' in report, 'helper report not enumerable')
+1283:         if report['identity'] is None:
+1284:             details.append('helper_without_identity pid=%r' % (report.get('pid'),))
+1285:     main = recon['main_wait']
+1286:     if main is not None and recon['main_identity'] is None:
+1287:         details.append('main_child_without_identity pid=%r' % (main.get('pid') if type(main) is dict else None,))
+1288:     return details
+1289: 
+1290: 
+1291: def _sticky_unknown(detail):
+1292:     raise IdentityRefusal('sticky pid-only unknown incarnation (never waived by H7, census or ENDED): ' + detail)
+1293: 
+1294: 
+1295: def _analyze(io, st, item, index, h):
+1296:     """One governed history: every check fires its own cause; dependent checks are skipped, never passed."""
+1297:     family = h['family']
+1298:     tag, bucket = '%s#%d' % (family, index), []
+1299:     out = {'family': family, 'index': index, 'causes': bucket, 'kind': None, 'exit_code': None, 'outcome': None,
+1300:            'driver_uniqueid': None, 'last_census': None, 'members': [], 'unknowns': []}
+1301: 
+1302:     def guard(cause, label, function, *args):
+1303:         return _guard(io, st, cause, tag + ' ' + label, bucket, function, *args)
+1304: 
+1305:     guard('U_PRODUCER_PIN', 'producer', _producer, io, h['producer'])
+1306:     wait = guard('U_WAIT_INVALID', 'wait', _wait, io, h['wait_record'], FAMILY_ROLES[family][0], item)
+1307:     if family == 'main' and h['launch_record'] is not None and wait is not _FAILED:
+1308:         guard('U_LAUNCH_INVALID', 'launch', _launch, io, h['launch_record'], item, wait)
+1309:     data = guard('U_CAPTURE_INVALID', 'stdout', _stdout, io, h['stdout'])
+1310:     if data is _FAILED:
+1311:         return out
+1312:     line = guard('U_OUTPUT_LINE_INVALID', 'stdout line', _line, data)
+1313:     if line is _FAILED:
+1314:         return out
+1315:     kind = guard('U_PRODUCER_UNSUPPORTED', 'producer line', _producer_line, line)
+1316:     if kind is _FAILED:
+1317:         return out
+1318:     out['kind'], out['exit_code'] = kind, line['exit_code']
+1319:     out['outcome'] = line.get('settlement') if kind == 'ACK' else line.get('reason')
+1320:     if wait is not _FAILED:
+1321:         guard('U_EXIT_BINDING', 'exit', _exit_binding, wait, line)
+1322:     receipt, receipt_blocked = None, False
+1323:     if kind == 'ACK':
+1324:         receipt = guard('U_RECEIPT_BINDING', 'receipt', _ack_files, io, h, line)
+1325:         if receipt is _FAILED:
+1326:             receipt, receipt_blocked = None, True
+1327:     else:
+1328:         guard('U_RECEIPT_BINDING', 'refusal refs', _refusal_refs, h)
+1329:     recon = guard('U_HISTORY_SCHEMA', 'reconciliation', _recon, line, kind)
+1330:     if recon is _FAILED:
+1331:         return out
+1332:     guard('U_HISTORY_INCOMPLETE', 'completeness', _complete_flags, recon)
+1333:     pending = guard('U_HISTORY_SCHEMA', 'pending', _pending, family, index, recon)
+1334:     if pending is not _FAILED:
+1335:         out['unknowns'].extend(pending)
+1336:     sticky = guard('U_UNKNOWN_INCARNATION', 'sticky enumeration', _sticky, recon,
+1337:                    [] if pending is _FAILED else pending)
+1338:     if sticky is not _FAILED:
+1339:         for detail in sticky:
+1340:             guard('U_UNKNOWN_INCARNATION', 'sticky unknown', _sticky_unknown, detail)
+1341:     tape = guard('U_EVENT_TAPE_INCONSISTENT', 'event tape', _tape, recon)
+1342:     if tape is _FAILED:
+1343:         return out
+1344:     events, hist = tape
+1345:     baseline = guard('U_BASELINE_INVALID', 'baseline', _baseline, recon, hist, events, receipt)
+1346:     helpers = guard('U_HISTORY_SCHEMA', 'helpers', _helpers, recon, hist, events)
+1347:     helper_uids = set() if helpers is _FAILED else {r['identity']['uniqueid'] for r in helpers
+1348:                                                      if r['identity'] is not None}
+1349:     owned = guard('U_OWNED_REGISTRY_INCONSISTENT', 'owned', _owned, recon, hist, events, helper_uids)
+1350:     unproved = _FAILED
+1351:     if baseline is not _FAILED:
+1352:         unproved = guard('U_UNPROVED_INCONSISTENT', 'unproved', _unproved, recon, hist, events, baseline)
+1353:     censuses = guard('U_HISTORY_SCHEMA', 'censuses', _censuses, recon, hist, events)
+1354:     gaps = guard('U_HISTORY_SCHEMA', 'coverage', _coverage, recon)
+1355:     if receipt is not None:
+1356:         guard('U_RECEIPT_BINDING', 'receipt prefix', _receipt_prefix, receipt, recon)
+1357:     driver = _FAILED
+1358:     if wait is not _FAILED and baseline is not _FAILED:
+1359:         driver = guard('U_DRIVER_UNBOUND', 'driver', _driver, wait, hist, baseline, receipt)
+1360:         if driver is not _FAILED:
+1361:             out['driver_uniqueid'] = driver
+1362:     if owned is not _FAILED and helpers is not _FAILED:
+1363:         guard('U_CHILD_HELPER_UNBOUND', 'child/helper', _child_helper, recon, owned, helpers)
+1364:     if censuses is not _FAILED:
+1365:         last = guard('U_LAST_CENSUS_OPEN', 'last census', _last_census, censuses)
+1366:         if last is not _FAILED:
+1367:             out['last_census'] = {'mono_start': last['mono_start'], 'mono_complete': last['mono_complete'],
+1368:                                   'pids': last['pids'], 'phase': last['phase']}
+1369:             if baseline is not _FAILED:
+1370:                 guard('U_LAST_CENSUS_TAPE_MISMATCH', 'last census window', _closure_tape, last, events, baseline)
+1371:             if helpers is not _FAILED and not receipt_blocked:
+1372:                 guard('U_SPAWN_CHRONOLOGY', 'spawn chronology', _chronology, last, recon, helpers, hist, events,
+1373:                       receipt)
+1374:     if not any(x is _FAILED for x in (baseline, owned, unproved, helpers)):
+1375:         members = guard('U_INTERNAL_ERROR', 'members', _members, family, index, hist, baseline, owned, unproved,
+1376:                         helper_uids, None if driver is _FAILED else driver)
+1377:         if members is not _FAILED:
+1378:             out['members'] = members
+1379:     if gaps is not _FAILED and helpers is not _FAILED:
+1380:         unknown = guard('U_HISTORY_SCHEMA', 'unknown incarnations', _unknowns, family, index, gaps, helpers, recon)
+1381:         if unknown is not _FAILED:
+1382:             out['unknowns'].extend(unknown)
+1383:     return out
+1384: 
+1385: 
+1386: def _caps(members, unknowns):
+1387:     _require(len(members) <= MAX_MEMBERS and len(unknowns) <= MAX_UNKNOWN, 'union member/unknown cap')
+1388:     return True
+1389: 
+1390: 
+1391: def _rows(members):
+1392:     chosen = {}
+1393:     for member in members:
+1394:         for row in member['rows']:
+1395:             key = (row['pid'], row['start_fingerprint'])
+1396:             old = chosen.get(key)
+1397:             if old is not None and {old['role'], row['role']} == {'driver', 'oracle'}:
+1398:                 raise IdentityRefusal('one incarnation is both main driver and oracle')
+1399:             if old is None or ROLE_PRIORITY.index(row['role']) < ROLE_PRIORITY.index(old['role']):
+1400:                 chosen[key] = row
+1401:     rows = sorted(chosen.values(), key=lambda r: (ROLE_PRIORITY.index(r['role']), r['pid'], r['start_fingerprint']))
+1402:     _require(len(rows) <= MAX_ROWS, 'PRT identity row cap')
+1403:     _require(sum(1 for r in rows if r['role'] == 'driver') == 1, 'exactly one driver row required')
+1404:     _require(any(r['role'] == 'oracle' for r in rows), 'at least one oracle row required')
+1405:     _require(all(r['pid'] >= 1 and r['pgid'] >= 1 for r in rows), 'PRT rows need positive pid/pgid')
+1406:     return [dict(r) for r in rows]
+1407: 
+1408: 
+1409: def _union_report(st, io, item, analyses, members, unknowns, rows):
+1410:     causes = st.causes()
+1411:     state = CLOSED if not causes else HELD
+1412:     histories = []
+1413:     for a in analyses:
+1414:         histories.append({'family': a['family'], 'index': a['index'], 'kind': a['kind'], 'exit_code': a['exit_code'],
+1415:                           'outcome': a['outcome'], 'driver_uniqueid': a['driver_uniqueid'],
+1416:                           'last_census': a['last_census'], 'causes': list(a['causes']),
+1417:                           'closure': 'H7_CLOSED' if not a['causes'] else 'OPEN_HELD'})
+1418:     closure = {(a['family'], a['index']): ('H7_CLOSED' if not a['causes'] else 'OPEN_HELD') for a in analyses}
+1419:     unknown_rows = [dict(u, closure=closure.get((u['family'], u['history']), 'OPEN_HELD')) for u in unknowns]
+1420:     report = {'format': UNION_FORMAT, 'module': MODULE, 'scheme': SCHEME, 'scope_sha256': SCOPE_SHA256,
+1421:               'design_freeze_sha256': DESIGN_FREEZE_SHA256, 'producer_sha256': SUPERVISOR19_SHA256,
+1422:               'item': item, 'state': state, 'causes': causes,
+1423:               'evidence': {cause: list(st.evidence[cause]) for cause in causes},
+1424:               'suppressed': {cause: st.suppressed[cause] for cause in causes if cause in st.suppressed},
+1425:               'prerequisites': [{'code': cause, 'needed': PREREQUISITES[cause]} for cause in causes],
+1426:               'histories': histories, 'members': members, 'unknown_incarnations': unknown_rows,
+1427:               'prt_identities': rows if state == CLOSED else None,
+1428:               'candidate_prt_identities': None if state == CLOSED else rows,
+1429:               'historical_pids': sorted({m['pid'] for m in members}),
+1430:               'historical_pgids': sorted({g for m in members for g in m['pgids']}),
+1431:               'reads': io.reads, 'callbacks': {'count': io.count, 'sha256': io.digest.hexdigest(), 'log': list(io.log)},
+1432:               'deadline_crossed': io.crossed, 'conditions': list(CONDITIONS), 'boundary': BOUNDARY}
+1433:     report['union_sha256'] = hashlib.sha256(_canonical(report)).hexdigest()
+1434:     return report
+1435: 
+1436: 
+1437: def _minimal_report(st, item):
+1438:     causes = st.causes() or ['U_INTERNAL_ERROR']
+1439:     report = {'format': UNION_FORMAT, 'module': MODULE, 'scheme': SCHEME, 'item': item if type(item) is str else None,
+1440:               'state': HELD, 'causes': causes, 'prerequisites': [{'code': c, 'needed': PREREQUISITES[c]} for c in causes],
+1441:               'members': [], 'unknown_incarnations': [], 'prt_identities': None, 'candidate_prt_identities': None,
+1442:               'historical_pids': [], 'historical_pgids': [], 'conditions': list(CONDITIONS), 'boundary': BOUNDARY}
+1443:     report['union_sha256'] = hashlib.sha256(_canonical(report)).hexdigest()
+1444:     return report
+1445: 
+1446: 
+1447: def build_identity_union(request, read_bytes, deadline_check):
+1448:     """CP2 historical identity-union consumer; observation only.
+1449: 
+1450:     Never raises Exception: every defect, gap, uncertainty or late completion is a HELD report naming the exact
+1451:     unfulfilled prerequisite. BaseException propagates after the bounded callback log is retained and a partial
+1452:     record is attached as parent_release_identity_partial. CLOSED_CONDITIONAL is the strongest state and remains
+1453:     conditional on the listed external conditions; it is not release authority.
+1454:     """
+1455:     st, io = _State(U_CAUSES), _Io(read_bytes, deadline_check)
+1456:     item, analyses, members, unknowns, rows = None, [], [], [], None
+1457:     try:
+1458:         try:
+1459:             if not callable(read_bytes) or not callable(deadline_check):
+1460:                 st.fire('U_CALLBACKS_INVALID', 'read_bytes and deadline_check must be callable')
+1461:             elif not io.tick('union start'):
+1462:                 st.fire('U_DEADLINE', 'original deadline unavailable at union start')
+1463:             else:
+1464:                 detached = _guard(io, st, 'U_REQUEST_INVALID', 'request', None, _request, request)
+1465:                 if detached is not _FAILED:
+1466:                     item = detached['item']
+1467:                     _guard(io, st, 'U_FAMILY_INVALID', 'families', None, _v_families, detached)
+1468:                     for index, history in enumerate(detached['histories']):
+1469:                         analyses.append(_analyze(io, st, item, index, history))
+1470:                     members = [m for a in analyses for m in a['members']]
+1471:                     unknowns = [u for a in analyses for u in a['unknowns']]
+1472:                     _guard(io, st, 'U_CAP_EXCEEDED', 'caps', None, _caps, members, unknowns)
+1473:                     built = _guard(io, st, 'U_ROW_CONFLICT', 'rows', None, _rows, members)
+1474:                     rows = None if built is _FAILED else built
+1475:         except _Crossed as exc:
+1476:             st.fire('U_DEADLINE', _why(exc))
+1477:         except Exception as exc:
+1478:             st.fire('U_INTERNAL_ERROR', _why(exc))
+1479:         try:
+1480:             report = _union_report(st, io, item, analyses, members, unknowns, rows)
+1481:         except Exception as exc:
+1482:             st.fire('U_INTERNAL_ERROR', 'assembly: ' + _why(exc))
+1483:             report = _minimal_report(st, item)
+1484:         if callable(deadline_check) and not io.crossed and not io.tick('union result assembled'):
+1485:             st.fire('U_DEADLINE', 'original deadline crossed during union result assembly')
+1486:             try:
+1487:                 report = _union_report(st, io, item, analyses, members, unknowns, rows)
+1488:             except Exception as exc:
+1489:                 st.fire('U_INTERNAL_ERROR', 'assembly: ' + _why(exc))
+1490:                 report = _minimal_report(st, item)
+1491:         return report
+1492:     except BaseException as exc:
+1493:         _attach(exc, 'parent_release_identity_partial', {'causes': st.causes(), 'callbacks': list(io.log)})
+1494:         raise
+1495: 
+1496: 
+1497: # ---------------------------------------------------------------- endedness join
+1498: def _union_version(union):
+1499:     """V3 (SF1): exact module/design-freeze/scheme/producer binding BEFORE any status use; absence refuses."""
+1500:     _require(type(union) is dict, 'union object required')
+1501:     for key, expected in (('module', MODULE), ('design_freeze_sha256', DESIGN_FREEZE_SHA256), ('scheme', SCHEME),
+1502:                           ('producer_sha256', SUPERVISOR19_SHA256)):
+1503:         value = union.get(key)
+1504:         shown = value[:80] if type(value) is str else type(value).__name__
+1505:         _require(type(value) is str and value == expected,
+1506:                  'union %s %r != %r: absent or built by another module/version' % (key, shown, expected))
+1507:     return True
+1508: 
+1509: 
+1510: def _v_union(union):
+1511:     _union_version(union)
+1512:     _require(type(union) is dict and union.get('format') == UNION_FORMAT and _hex(union.get('union_sha256')),
+1513:              'union format/digest field')
+1514:     body = {key: value for key, value in union.items() if key != 'union_sha256'}
+1515:     _require(hashlib.sha256(_canonical(body)).hexdigest() == union['union_sha256'],
+1516:              'union digest mismatch: mutated or foreign report')
+1517:     members = union.get('members')
+1518:     _require(type(members) is list and len(members) <= MAX_MEMBERS, 'union members')
+1519:     uids, by_pid, pids, pgids = set(), {}, set(), set()
+1520:     for member in members:
+1521:         _require(type(member) is dict and _u64(member.get('uniqueid')) and _u32(member.get('pid'))
+1522:                  and type(member.get('pgids')) is list and all(_u32(g) for g in member['pgids']), 'member shape')
+1523:         uids.add(member['uniqueid'])
+1524:         by_pid.setdefault(member['pid'], set()).add(member['uniqueid'])
+1525:         pids.add(member['pid'])
+1526:         pgids.update(member['pgids'])
+1527:     _require(_exact(union.get('historical_pids'), sorted(pids)) and _exact(union.get('historical_pgids'), sorted(pgids)),
+1528:              'historical pid/pgid sets differ from members')
+1529:     return {'uids': uids, 'by_pid': by_pid, 'pids': pids, 'pgids': pgids}
+1530: 
+1531: 
+1532: def _v_log(log):
+1533:     _require(type(log) is CensusLog, 'census log must be the CensusLog returned by make_census')
+1534:     served = list(log.served)
+1535:     _require(served, 'no served census snapshot: the census callback was never answered')
+1536:     return served
+1537: 
+1538: 
+1539: def _snapshot(st, sets, snap):
+1540:     tag = 'call %d' % snap['call']
+1541:     if snap['complete'] is not True:
+1542:         st.fire('E_CENSUS_INCOMPLETE', tag + ' served snapshot incomplete')
+1543:     if snap['observer_ok'] is not True:
+1544:         st.fire('E_OBSERVER_UNCOVERED', tag + ' observer bracket/coverage failed')
+1545:     for p in snap['rows']:
+1546:         where = '%s pid=%d ppid=%d pgid=%d uid=%d' % (tag, p['pid'], p['ppid'], p['pgid'], p['uniqueid'])
+1547:         if p['uniqueid'] in sets['uids']:
+1548:             st.fire('E_MEMBER_ALIVE', where)
+1549:         owners = sets['by_pid'].get(p['pid'])
+1550:         if owners is not None and p['uniqueid'] not in owners:
+1551:             st.fire('E_PID_REUSE_AMBIGUOUS', where)
+1552:         if p['pgid'] in sets['pgids']:
+1553:             st.fire('E_GROUP_NONEMPTY', where)
+1554:         if p['ppid'] in sets['pids']:
+1555:             st.fire('E_PID_CHILD_PRESENT', where)
+1556:     return True
+1557: 
+1558: 
+1559: def evaluate_endedness(union, log, deadline_check):
+1560:     """Join the union with EVERY served census snapshot; pure in-memory, original deadline at start and end.
+1561: 
+1562:     Never raises Exception (HELD with E_* causes); BaseException propagates. ENDED_CONDITIONAL requires a
+1563:     CLOSED_CONDITIONAL union with an intact digest, at least one served snapshot and no alive, reused-pid,
+1564:     occupied-group or child-of-historical-pid observation in any of them.
+1565:     """
+1566:     st, io = _State(E_CAUSES), _Io(None, deadline_check)
+1567:     union_sha, snapshots = None, []
+1568:     try:
+1569:         try:
+1570:             if not callable(deadline_check):
+1571:                 st.fire('E_INTERNAL_ERROR', 'deadline_check must be callable')
+1572:             elif not io.tick('endedness start'):
+1573:                 st.fire('E_DEADLINE', 'original deadline unavailable at endedness start')
+1574:             else:
+1575:                 version = _guard(io, st, 'E_UNION_VERSION', 'union version', None, _union_version, union)
+1576:                 sets = _FAILED if version is _FAILED else _guard(io, st, 'E_UNION_DIGEST', 'union', None,
+1577:                                                                  _v_union, union)
+1578:                 if sets is not _FAILED:
+1579:                     union_sha = union['union_sha256']
+1580:                     if union.get('state') != CLOSED or union.get('causes') != []:
+1581:                         st.fire('E_UNION_HELD', 'union state %r causes %r' % (union.get('state'), union.get('causes')))
+1582:                 served = _guard(io, st, 'E_NO_SERVED_CENSUS', 'census log', None, _v_log, log)
+1583:                 if served is not _FAILED:
+1584:                     keys = ('call', 'attempts', 'complete', 'observer_ok', 'process_count', 'served_sha256',
+1585:                             'rows_sha256', 'observed_at_mono')
+1586:                     snapshots = [{k: snap[k] for k in keys} for snap in served]
+1587:                     if sets is not _FAILED:
+1588:                         for snap in served:
+1589:                             _snapshot(st, sets, snap)
+1590:         except _Crossed as exc:
+1591:             st.fire('E_DEADLINE', _why(exc))
+1592:         except Exception as exc:
+1593:             st.fire('E_INTERNAL_ERROR', _why(exc))
+1594:         if callable(deadline_check) and not io.crossed and not io.tick('endedness result assembled'):
+1595:             st.fire('E_DEADLINE', 'original deadline crossed during endedness assembly')
+1596:         causes = st.causes()
+1597:         result = {'format': ENDEDNESS_FORMAT, 'module': MODULE, 'scheme': SCHEME, 'state': ENDED if not causes else HELD,
+1598:                   'causes': causes, 'evidence': {c: list(st.evidence[c]) for c in causes},
+1599:                   'suppressed': {c: st.suppressed[c] for c in causes if c in st.suppressed},
+1600:                   'union_sha256': union_sha, 'snapshots': snapshots, 'deadline_crossed': io.crossed,
+1601:                   'callbacks': {'count': io.count, 'sha256': io.digest.hexdigest(), 'log': list(io.log)},
+1602:                   'conditions': list(CONDITIONS), 'boundary': BOUNDARY}
+1603:         result['endedness_sha256'] = hashlib.sha256(_canonical(result)).hexdigest()
+1604:         return result
+1605:     except BaseException as exc:
+1606:         _attach(exc, 'parent_release_endedness_partial', {'causes': st.causes(), 'callbacks': list(io.log)})
+1607:         raise
+1608: 
+1609: 
+1610: def spec_identities_match(union, identities):
+1611:     """True only for an intact CLOSED_CONDITIONAL union whose PRT rows typed-equal spec.identities."""
+1612:     try:
+1613:         _v_union(union)
+1614:         return union.get('state') == CLOSED and type(union.get('prt_identities')) is list \
+1615:             and _exact(union['prt_identities'], identities)
+1616:     except Exception:
+1617:         return False
+
+### parent_release_identity_v2_to_v3.diff
+Path: /Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/review/parent_release_identity_v2_to_v3.diff
+Full-file SHA256: 25819afb23afb6ad95091f00294c13821555e05f93020b25f88be051ee688afd
+Physical LF lines: 1-82
+1: --- control/parent_release_identity_v2.py
+2: +++ control/parent_release_identity_v3.py
+3: @@ -1,5 +1,5 @@
+4:  #!/usr/bin/env python3
+5: -"""parent_release_identity_v2: CP2 historical identity-union consumer and fresh independent census callback.
+6: +"""parent_release_identity_v3: CP2 historical identity-union consumer and fresh independent census callback.
+7:  
+8:  NOEXEC SOURCE CANDIDATE: not accepted, not qualified, no runtime/release/signal/scheduling/science authority.
+9:  CP2 scope RUN/control/parent-release-cp1-cp2-implementation-scope-v1.json
+10: @@ -12,6 +12,14 @@
+11:  stays immutable HOLD): every pid-only unknown enumerable from a reconciliation (pending raw acquisition, overflow
+12:  observation, sv19 coverage-gap pid, identity-less helper or main spawn record) fires sticky U_UNKNOWN_INCARNATION,
+13:  and an unenumerable source fires it too. H7, a complete current census or ENDED never waive it. API/formats unchanged.
+14: +
+15: +V3 VERSION BINDING (scope RUN/control/parent-release-cp2-v3-repair-scope-v1.json
+16: +0b7b3b7c8ebb3b8ae88ad04472cc7e16a4d2ea8ee718706a6408d714303d2421; finding SF1 b52ab85f; exact delta frozen in
+17: +RUN/control/parent-release-cp2-design-freeze-v3.json; v2 7b2bc4021744aa6fa55677fa4953c9efc1088f53d341fb0ba339621abdddc3ec
+18: +stays immutable): _v_union, used by evaluate_endedness and spec_identities_match, first requires exact equality of the
+19: +union module, design_freeze_sha256, scheme and producer_sha256 with this module's own constants, before any status use;
+20: +absence or mismatch is HELD with E_UNION_VERSION (endedness) or False (spec match). Unions built by v1, v2 or any other
+21: +module are refused. These self-reported fields stop cross-version use, not forgery.
+22:  
+23:  CONVENTION. The owned_supervisor_v19 cb828a78367dc2023bfc6e330696745f186f186811752361472747e5fe547e93 native identity
+24:  is reused unchanged: proc_listallpids; proc_pidinfo flavor 17 (uniqueid, idversion) and flavor 13 (pid, ppid, pgid,
+25: @@ -52,13 +60,13 @@
+26:  import time
+27:  
+28:  SCOPE_SHA256 = '1f717bf944e6d5a524aa0a65776d39726cd251bcd006971ba322f328de6bd314'
+29: -DESIGN_FREEZE_SHA256 = '7f46b7e5f5581a6e905efa8405381208c9481332b26ba2e2a84f1ace436a1c28'
+30: +DESIGN_FREEZE_SHA256 = '033cb30dcde31ec94acbb0f8576f436e14bfaae980c8bff34e76932dd894cb5a'
+31:  V1_DESIGN_FREEZE_SHA256 = '3d6f48ced0d07293a81f44936c3559571e4d4f98919c024a257f32761a7af027'
+32:  V1_SOURCE_SHA256 = 'd07548e2dbff4ef6b64a3a902d3b59ed7c4abbf8dc2115e8b08ed37ee2ec14d5'
+33:  REPAIR_SCOPE_SHA256 = 'afe35832c808cf3d6a482fb6549dc8957d57ae982b7e48e76dba5b5374bcfa98'
+34:  SUPERVISOR19_SHA256 = 'cb828a78367dc2023bfc6e330696745f186f186811752361472747e5fe547e93'
+35:  SUPERVISOR19_VERSION = 'owned_supervisor_v19'
+36: -MODULE = 'parent_release_identity_v2.py'
+37: +MODULE = 'parent_release_identity_v3.py'
+38:  SCHEME = 'sv19-incarnation-v1'
+39:  REQUEST_FORMAT = 'parent-release-identity-request-v1'
+40:  UNION_FORMAT = 'parent-release-identity-union-v1'
+41: @@ -158,7 +166,8 @@
+42:      'U_CHILD_HELPER_UNBOUND', 'U_LAST_CENSUS_OPEN', 'U_LAST_CENSUS_TAPE_MISMATCH', 'U_SPAWN_CHRONOLOGY',
+43:      'U_UNKNOWN_INCARNATION', 'U_ROW_CONFLICT', 'U_CAP_EXCEEDED', 'U_DEADLINE', 'U_INTERNAL_ERROR')
+44:  E_CAUSES = (
+45: -    'E_UNION_HELD', 'E_UNION_DIGEST', 'E_NO_SERVED_CENSUS', 'E_CENSUS_INCOMPLETE', 'E_OBSERVER_UNCOVERED',
+46: +    'E_UNION_VERSION', 'E_UNION_HELD', 'E_UNION_DIGEST', 'E_NO_SERVED_CENSUS', 'E_CENSUS_INCOMPLETE',
+47: +    'E_OBSERVER_UNCOVERED',
+48:      'E_MEMBER_ALIVE', 'E_PID_REUSE_AMBIGUOUS', 'E_GROUP_NONEMPTY', 'E_PID_CHILD_PRESENT', 'E_DEADLINE',
+49:      'E_INTERNAL_ERROR')
+50:  PREREQUISITES = {
+51: @@ -1486,7 +1495,20 @@
+52:  
+53:  
+54:  # ---------------------------------------------------------------- endedness join
+55: +def _union_version(union):
+56: +    """V3 (SF1): exact module/design-freeze/scheme/producer binding BEFORE any status use; absence refuses."""
+57: +    _require(type(union) is dict, 'union object required')
+58: +    for key, expected in (('module', MODULE), ('design_freeze_sha256', DESIGN_FREEZE_SHA256), ('scheme', SCHEME),
+59: +                          ('producer_sha256', SUPERVISOR19_SHA256)):
+60: +        value = union.get(key)
+61: +        shown = value[:80] if type(value) is str else type(value).__name__
+62: +        _require(type(value) is str and value == expected,
+63: +                 'union %s %r != %r: absent or built by another module/version' % (key, shown, expected))
+64: +    return True
+65: +
+66: +
+67:  def _v_union(union):
+68: +    _union_version(union)
+69:      _require(type(union) is dict and union.get('format') == UNION_FORMAT and _hex(union.get('union_sha256')),
+70:               'union format/digest field')
+71:      body = {key: value for key, value in union.items() if key != 'union_sha256'}
+72: @@ -1550,7 +1572,9 @@
+73:              elif not io.tick('endedness start'):
+74:                  st.fire('E_DEADLINE', 'original deadline unavailable at endedness start')
+75:              else:
+76: -                sets = _guard(io, st, 'E_UNION_DIGEST', 'union', None, _v_union, union)
+77: +                version = _guard(io, st, 'E_UNION_VERSION', 'union version', None, _union_version, union)
+78: +                sets = _FAILED if version is _FAILED else _guard(io, st, 'E_UNION_DIGEST', 'union', None,
+79: +                                                                 _v_union, union)
+80:                  if sets is not _FAILED:
+81:                      union_sha = union['union_sha256']
+82:                      if union.get('state') != CLOSED or union.get('causes') != []:
+
+### parent_release_identity_v1_to_v2.diff
+Path: /Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/review/parent_release_identity_v1_to_v2.diff
+Full-file SHA256: ea20bf0283a100f3ef5e98ef1ad44d1a48a177e77344190e4c0e83a7e4dbaf05
+Physical LF lines: 1-111
+1: --- control/parent_release_identity_v1.py
+2: +++ control/parent_release_identity_v2.py
+3: @@ -1,10 +1,17 @@
+4:  #!/usr/bin/env python3
+5: -"""parent_release_identity_v1: CP2 historical identity-union consumer and fresh independent census callback.
+6: +"""parent_release_identity_v2: CP2 historical identity-union consumer and fresh independent census callback.
+7:  
+8:  NOEXEC SOURCE CANDIDATE: not accepted, not qualified, no runtime/release/signal/scheduling/science authority.
+9:  CP2 scope RUN/control/parent-release-cp1-cp2-implementation-scope-v1.json
+10:  1f717bf944e6d5a524aa0a65776d39726cd251bcd006971ba322f328de6bd314; exact design frozen before code in
+11:  RUN/control/parent-release-cp2-design-freeze-v1.json 3d6f48ced0d07293a81f44936c3559571e4d4f98919c024a257f32761a7af027.
+12: +
+13: +V2 MINIMAL REPAIR (scope RUN/control/parent-release-cp2-v2-repair-scope-v1.json
+14: +afe35832c808cf3d6a482fb6549dc8957d57ae982b7e48e76dba5b5374bcfa98; exact delta frozen in
+15: +RUN/control/parent-release-cp2-design-freeze-v2.json; v1 d07548e2dbff4ef6b64a3a902d3b59ed7c4abbf8dc2115e8b08ed37ee2ec14d5
+16: +stays immutable HOLD): every pid-only unknown enumerable from a reconciliation (pending raw acquisition, overflow
+17: +observation, sv19 coverage-gap pid, identity-less helper or main spawn record) fires sticky U_UNKNOWN_INCARNATION,
+18: +and an unenumerable source fires it too. H7, a complete current census or ENDED never waive it. API/formats unchanged.
+19:  
+20:  CONVENTION. The owned_supervisor_v19 cb828a78367dc2023bfc6e330696745f186f186811752361472747e5fe547e93 native identity
+21:  is reused unchanged: proc_listallpids; proc_pidinfo flavor 17 (uniqueid, idversion) and flavor 13 (pid, ppid, pgid,
+22: @@ -18,7 +25,8 @@
+23:  bytes to parent-supplied digests and to the exact producer serialization, re-checks the identity event tape, variants,
+24:  references, owned registry roots and edge proofs, unproved history and baseline, and unions every driver/oracle,
+25:  child, helper, descendant, reparented variant and unproved incarnation. Pid-only unknown incarnations are retained,
+26: -never given a fabricated fingerprint. A history is CLOSED only by rule H7: its LAST census is complete, its raw event
+27: +never given a fabricated fingerprint, and are sticky HELD. A history is CLOSED only by rule H7 with no sticky unknown:
+28: +its LAST census is complete, its raw event
+29:  window holds exactly L.pids distinct baseline identities and nothing later, and every supervisor spawn precedes it.
+30:  A JSON complete:true, an empty current tree/group or a digest alone is never completeness; otherwise HELD with a
+31:  named prerequisite.
+32: @@ -44,10 +52,13 @@
+33:  import time
+34:  
+35:  SCOPE_SHA256 = '1f717bf944e6d5a524aa0a65776d39726cd251bcd006971ba322f328de6bd314'
+36: -DESIGN_FREEZE_SHA256 = '3d6f48ced0d07293a81f44936c3559571e4d4f98919c024a257f32761a7af027'
+37: +DESIGN_FREEZE_SHA256 = '7f46b7e5f5581a6e905efa8405381208c9481332b26ba2e2a84f1ace436a1c28'
+38: +V1_DESIGN_FREEZE_SHA256 = '3d6f48ced0d07293a81f44936c3559571e4d4f98919c024a257f32761a7af027'
+39: +V1_SOURCE_SHA256 = 'd07548e2dbff4ef6b64a3a902d3b59ed7c4abbf8dc2115e8b08ed37ee2ec14d5'
+40: +REPAIR_SCOPE_SHA256 = 'afe35832c808cf3d6a482fb6549dc8957d57ae982b7e48e76dba5b5374bcfa98'
+41:  SUPERVISOR19_SHA256 = 'cb828a78367dc2023bfc6e330696745f186f186811752361472747e5fe547e93'
+42:  SUPERVISOR19_VERSION = 'owned_supervisor_v19'
+43: -MODULE = 'parent_release_identity_v1.py'
+44: +MODULE = 'parent_release_identity_v2.py'
+45:  SCHEME = 'sv19-incarnation-v1'
+46:  REQUEST_FORMAT = 'parent-release-identity-request-v1'
+47:  UNION_FORMAT = 'parent-release-identity-union-v1'
+48: @@ -145,7 +156,7 @@
+49:      'U_RECEIPT_BINDING', 'U_HISTORY_SCHEMA', 'U_HISTORY_INCOMPLETE', 'U_EVENT_TAPE_INCONSISTENT',
+50:      'U_OWNED_REGISTRY_INCONSISTENT', 'U_UNPROVED_INCONSISTENT', 'U_BASELINE_INVALID', 'U_DRIVER_UNBOUND',
+51:      'U_CHILD_HELPER_UNBOUND', 'U_LAST_CENSUS_OPEN', 'U_LAST_CENSUS_TAPE_MISMATCH', 'U_SPAWN_CHRONOLOGY',
+52: -    'U_ROW_CONFLICT', 'U_CAP_EXCEEDED', 'U_DEADLINE', 'U_INTERNAL_ERROR')
+53: +    'U_UNKNOWN_INCARNATION', 'U_ROW_CONFLICT', 'U_CAP_EXCEEDED', 'U_DEADLINE', 'U_INTERNAL_ERROR')
+54:  E_CAUSES = (
+55:      'E_UNION_HELD', 'E_UNION_DIGEST', 'E_NO_SERVED_CENSUS', 'E_CENSUS_INCOMPLETE', 'E_OBSERVER_UNCOVERED',
+56:      'E_MEMBER_ALIVE', 'E_PID_REUSE_AMBIGUOUS', 'E_GROUP_NONEMPTY', 'E_PID_CHILD_PRESENT', 'E_DEADLINE',
+57: @@ -177,6 +188,9 @@
+58:      'U_LAST_CENSUS_TAPE_MISMATCH': 'raw event window of the last census holding exactly L.pids baseline '
+59:                                     'identities and no later identification',
+60:      'U_SPAWN_CHRONOLOGY': 'every supervisor spawn provably before the last census',
+61: +    'U_UNKNOWN_INCARNATION': 'a governed history with no pid-only unknown incarnation (coverage-gap pid, identity-less '
+62: +                             'helper/main spawn, pending raw or overflow observation); sticky: never waived by H7, '
+63: +                             'a complete current census or ENDED',
+64:      'U_ROW_CONFLICT': 'conflict-free PRT rows: one driver, >=1 oracle, positive pid/pgid',
+65:      'U_CAP_EXCEEDED': 'union within member/unknown/row caps; larger unions need a separately reviewed interface',
+66:      'U_DEADLINE': 'a new call within the ORIGINAL deadline; no new allowance',
+67: @@ -1243,6 +1257,32 @@
+68:      return rows
+69:  
+70:  
+71: +def _sticky(recon, pending):
+72: +    """V2: every pid-only unknown, enumerated defensively from the raw reconciliation, independent of other checks."""
+73: +    details = ['%s pid=%r' % (row['kind'], row['pid']) for row in pending]
+74: +    coverage = recon['coverage_history']
+75: +    _require(type(coverage) is list, 'coverage history not enumerable: unknowns cannot be excluded')
+76: +    for entry in coverage:
+77: +        observation = entry.get('observation') if type(entry) is dict else None
+78: +        _require(type(observation) is list and len(observation) == 3,
+79: +                 'coverage entry not enumerable: unknowns cannot be excluded')
+80: +        details.append('coverage:%r pid=%r' % (observation[1], observation[0]))
+81: +    helpers = recon['helpers']
+82: +    _require(type(helpers) is list, 'helper reports not enumerable: unknowns cannot be excluded')
+83: +    for report in helpers:
+84: +        _require(type(report) is dict and 'identity' in report, 'helper report not enumerable')
+85: +        if report['identity'] is None:
+86: +            details.append('helper_without_identity pid=%r' % (report.get('pid'),))
+87: +    main = recon['main_wait']
+88: +    if main is not None and recon['main_identity'] is None:
+89: +        details.append('main_child_without_identity pid=%r' % (main.get('pid') if type(main) is dict else None,))
+90: +    return details
+91: +
+92: +
+93: +def _sticky_unknown(detail):
+94: +    raise IdentityRefusal('sticky pid-only unknown incarnation (never waived by H7, census or ENDED): ' + detail)
+95: +
+96: +
+97:  def _analyze(io, st, item, index, h):
+98:      """One governed history: every check fires its own cause; dependent checks are skipped, never passed."""
+99:      family = h['family']
+100: @@ -1284,6 +1324,11 @@
+101:      pending = guard('U_HISTORY_SCHEMA', 'pending', _pending, family, index, recon)
+102:      if pending is not _FAILED:
+103:          out['unknowns'].extend(pending)
+104: +    sticky = guard('U_UNKNOWN_INCARNATION', 'sticky enumeration', _sticky, recon,
+105: +                   [] if pending is _FAILED else pending)
+106: +    if sticky is not _FAILED:
+107: +        for detail in sticky:
+108: +            guard('U_UNKNOWN_INCARNATION', 'sticky unknown', _sticky_unknown, detail)
+109:      tape = guard('U_EVENT_TAPE_INCONSISTENT', 'event tape', _tape, recon)
+110:      if tape is _FAILED:
+111:          return out
+
+### parent-release-cp2-design-freeze-v3.json
+Path: /Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/control/parent-release-cp2-design-freeze-v3.json
+Full-file SHA256: 033cb30dcde31ec94acbb0f8576f436e14bfaae980c8bff34e76932dd894cb5a
+Physical LF lines: 1-86
+1: {
+2:  "at": "2026-10-19T17:10:29-0700",
+3:  "at_basis": "actual /bin/date immediately before this exclusive write",
+4:  "authority": {
+5:   "finding": {
+6:    "path": "/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/review/parent-release-cp2-finding-sf1-v1.json",
+7:    "sha256": "b52ab85fa4def5c75328fed083ac5fee2764a11eaef11d3e9abd0f3b0c00c099"
+8:   },
+9:   "parent_irc": "Main: v3 authorized; exact equality of module, design_freeze_sha256, scheme, producer_sha256 in _v_union before any status use; mismatch/absence HELD with named cause; nothing else changes; parent attestation alone not accepted",
+10:   "repair_scope": {
+11:    "path": "/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/control/parent-release-cp2-v3-repair-scope-v1.json",
+12:    "sha256": "0b7b3b7c8ebb3b8ae88ad04472cc7e16a4d2ea8ee718706a6408d714303d2421"
+13:   }
+14:  },
+15:  "construction": "v3 bytes = v2 bytes with exactly the replacements below, each old text occurring exactly once in v2; the placeholder becomes the SHA-256 of this freeze file. Nothing else changes.",
+16:  "design_freeze_rule": "v3 freezes this new design record, so per scope 0b7b3b7c the bound design_freeze_sha256 is the digest of THIS file (not 7f46b7e5); unions built by v2 or v1 are refused by v3.",
+17:  "format": "parent-release-cp2-design-freeze-v3",
+18:  "out_of_scope_recorded": [
+19:   "SR-4 dependent U_ROW_CONFLICT noise",
+20:   "SR-5 no structured request binding"
+21:  ],
+22:  "owner": "ParentIdentityCP2",
+23:  "placeholder": "<SHA256 of RUN/control/parent-release-cp2-design-freeze-v3.json>",
+24:  "prior": {
+25:   "design_freeze_v2": "7f46b7e5f5581a6e905efa8405381208c9481332b26ba2e2a84f1ace436a1c28",
+26:   "source_v1": "d07548e2dbff4ef6b64a3a902d3b59ed7c4abbf8dc2115e8b08ed37ee2ec14d5 (immutable HOLD)",
+27:   "source_v2": {
+28:    "path": "/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/control/parent_release_identity_v2.py",
+29:    "sha256": "7b2bc4021744aa6fa55677fa4953c9efc1088f53d341fb0ba339621abdddc3ec",
+30:    "state": "immutable; superseded by v3 for version binding"
+31:   }
+32:  },
+33:  "replacements": [
+34:   {
+35:    "name": "docstring title",
+36:    "new": "\"\"\"parent_release_identity_v3: CP2 historical identity-union consumer and fresh independent census callback.\n",
+37:    "old": "\"\"\"parent_release_identity_v2: CP2 historical identity-union consumer and fresh independent census callback.\n"
+38:   },
+39:   {
+40:    "name": "docstring v3 paragraph",
+41:    "new": "and an unenumerable source fires it too. H7, a complete current census or ENDED never waive it. API/formats unchanged.\n\nV3 VERSION BINDING (scope RUN/control/parent-release-cp2-v3-repair-scope-v1.json\n0b7b3b7c8ebb3b8ae88ad04472cc7e16a4d2ea8ee718706a6408d714303d2421; finding SF1 b52ab85f; exact delta frozen in\nRUN/control/parent-release-cp2-design-freeze-v3.json; v2 7b2bc4021744aa6fa55677fa4953c9efc1088f53d341fb0ba339621abdddc3ec\nstays immutable): _v_union, used by evaluate_endedness and spec_identities_match, first requires exact equality of the\nunion module, design_freeze_sha256, scheme and producer_sha256 with this module's own constants, before any status use;\nabsence or mismatch is HELD with E_UNION_VERSION (endedness) or False (spec match). Unions built by v1, v2 or any other\nmodule are refused. These self-reported fields stop cross-version use, not forgery.\n\n",
+42:    "old": "and an unenumerable source fires it too. H7, a complete current census or ENDED never waive it. API/formats unchanged.\n\n"
+43:   },
+44:   {
+45:    "name": "design freeze pin",
+46:    "new": "DESIGN_FREEZE_SHA256 = '<SHA256 of RUN/control/parent-release-cp2-design-freeze-v3.json>'\n",
+47:    "old": "DESIGN_FREEZE_SHA256 = '7f46b7e5f5581a6e905efa8405381208c9481332b26ba2e2a84f1ace436a1c28'\n"
+48:   },
+49:   {
+50:    "name": "module name",
+51:    "new": "MODULE = 'parent_release_identity_v3.py'\n",
+52:    "old": "MODULE = 'parent_release_identity_v2.py'\n"
+53:   },
+54:   {
+55:    "name": "endedness cause order",
+56:    "new": "E_CAUSES = (\n    'E_UNION_VERSION', 'E_UNION_HELD', 'E_UNION_DIGEST', 'E_NO_SERVED_CENSUS', 'E_CENSUS_INCOMPLETE',\n    'E_OBSERVER_UNCOVERED',\n",
+57:    "old": "E_CAUSES = (\n    'E_UNION_HELD', 'E_UNION_DIGEST', 'E_NO_SERVED_CENSUS', 'E_CENSUS_INCOMPLETE', 'E_OBSERVER_UNCOVERED',\n"
+58:   },
+59:   {
+60:    "name": "version check function and _v_union first statement",
+61:    "new": "def _union_version(union):\n    \"\"\"V3 (SF1): exact module/design-freeze/scheme/producer binding BEFORE any status use; absence refuses.\"\"\"\n    _require(type(union) is dict, 'union object required')\n    for key, expected in (('module', MODULE), ('design_freeze_sha256', DESIGN_FREEZE_SHA256), ('scheme', SCHEME),\n                          ('producer_sha256', SUPERVISOR19_SHA256)):\n        value = union.get(key)\n        shown = value[:80] if type(value) is str else type(value).__name__\n        _require(type(value) is str and value == expected,\n                 'union %s %r != %r: absent or built by another module/version' % (key, shown, expected))\n    return True\n\n\ndef _v_union(union):\n    _union_version(union)\n    _require(type(union) is dict and union.get('format') == UNION_FORMAT and _hex(union.get('union_sha256')),\n",
+62:    "old": "def _v_union(union):\n    _require(type(union) is dict and union.get('format') == UNION_FORMAT and _hex(union.get('union_sha256')),\n"
+63:   },
+64:   {
+65:    "name": "endedness named version cause before status use",
+66:    "new": "                version = _guard(io, st, 'E_UNION_VERSION', 'union version', None, _union_version, union)\n                sets = _FAILED if version is _FAILED else _guard(io, st, 'E_UNION_DIGEST', 'union', None,\n                                                                 _v_union, union)\n",
+67:    "old": "                sets = _guard(io, st, 'E_UNION_DIGEST', 'union', None, _v_union, union)\n"
+68:   }
+69:  ],
+70:  "rules": "No import/compile/AST/tests/execution; v1/v2 unchanged; all new files exclusive create; no self-approval.",
+71:  "semantics": {
+72:   "bound_fields": {
+73:    "design_freeze_sha256": "digest of this freeze",
+74:    "module": "parent_release_identity_v3.py",
+75:    "producer_sha256": "cb828a78367dc2023bfc6e330696745f186f186811752361472747e5fe547e93",
+76:    "scheme": "sv19-incarnation-v1"
+77:   },
+78:   "check": "exact str equality; absence, non-str or mismatch refuses; runs first inside _v_union and, in evaluate_endedness, as its own guarded step before _v_union and before any union state/causes use",
+79:   "interim": "until v3 is reviewed the parent interim (scope 0b7b3b7c) applies: only v2-built unions may be considered and no release is admitted; a reviewed v3 must both build and evaluate",
+80:   "known_effect": "_minimal_report (internal-error HELD report) carries no design_freeze_sha256/producer_sha256, so evaluating it yields E_UNION_VERSION instead of E_UNION_HELD; still HELD",
+81:   "named_cause": "E_UNION_VERSION (first in E_CAUSES); spec_identities_match returns False",
+82:   "unchanged": "build_identity_union, census callback, union content (except the module/design_freeze_sha256 values it reports), all U_* causes and H7/sticky rules, other E_* logic, formats and CP1 keys"
+83:  },
+84:  "status": "EXACT_V3_DELTA_FROZEN_BEFORE_EDITING_NOEXEC",
+85:  "target": "/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/control/parent_release_identity_v3.py"
+86: }
+
+### parent-release-cp2-design-notes-v1.md
+Path: /Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/control/parent-release-cp2-design-notes-v1.md
+Full-file SHA256: 688871953a2ccb33f9241f95c277ef3eaed75bd79bd5656d6a060777d71a5269
+Physical LF lines: 1-170
+1: # Parent release CP2 — historical identity union + fresh census, source v1 — NOEXEC
+2: 
+3: Actual `/bin/date` before this write: `2026-10-19T16:51:13-0700`.
+4: 
+5: Source `RUN/control/parent_release_identity_v1.py`: SHA-256 `d07548e2dbff4ef6b64a3a902d3b59ed7c4abbf8dc2115e8b08ed37ee2ec14d5`, 1548 lines, 81805 bytes, ASCII. Design frozen before code: `RUN/control/parent-release-cp2-design-freeze-v1.json` `3d6f48ced0d07293a81f44936c3559571e4d4f98919c024a257f32761a7af027`. Authority: CP2 scope `RUN/control/parent-release-cp1-cp2-implementation-scope-v1.json` `1f717bf944e6d5a524aa0a65776d39726cd251bcd006971ba322f328de6bd314`; obligations from PRT v2 notes lines 11/27/51 (`9e02abce…b7b`) and review line 88 (`935b74fb…5ad`).
+6: 
+7: **Status: NOEXEC source candidate.** Not source-accepted, not qualified, not complete CP2, no runtime/release/signal/scheduling/science authority. **No import, compile, AST parse, test, helper, fixture, census, model CLI or other execution occurred.** Evidence is source reading, hashes, byte/line metadata and a static grep audit of this file (no `os.kill`/`killpg`/`posix_spawn`/`subprocess`/fork/`waitpid`/`open`/write call; `ctypes.CDLL` only inside `_bind_libproc`; clocks only `time.monotonic`/`time.sleep` inside the census callback; import time = constants, definitions, `frozenset`, `object()`).
+8: 
+9: Self-review finding **SR-1 (MAJOR, unrepaired in v1)**: pid-only unknown incarnations are closed by H7 instead of HELD (see §9). A narrow successor was requested from the parent; v1 is immutable.
+10: 
+11: ## 1. Reused supervisor19 semantics (no second convention)
+12: 
+13: Pinned producer `RQ/code/owned_supervisor_v19.py` `cb828a78367dc2023bfc6e330696745f186f186811752361472747e5fe547e93` (SOURCE_READY_RUNTIME_HOLD, readiness `558f9ba3…6ce96`; interface v17 `089ae87c…`, v18 `ceeca0a9…`, v19 `75ee7c21…`). CP2 re-implements the identical native table in-module rather than importing the subject (an import would execute `CDLL` loading and module-global PID capture and bind a subject):
+14: 
+15: | CP2 | sv19 lines | Exact semantics |
+16: |---|---|---|
+17: | `_bind_libproc` | 169-173 | `/usr/lib/libproc.dylib`, `proc_pidinfo(int,int,uint64,void*,int)->int`, `proc_listallpids(void*,int)->int`; bound lazily per `make_census`, never at import |
+18: | `_pidinfo` | 202-208 | zombies flag 1 where sv19 uses it; return must equal the requested size else `_NativeError(OSError)` |
+19: | `_unique` | 211-213 | flavor 17, 56 bytes: `uniqueid '=Q'@16`, `idversion '=i'@32` |
+20: | `_short_info` | 216-222 | flavor 13, 64 bytes: `pid,ppid,pgid,status '=IIII'@0`, `comm[16:32]` utf-8 replace, `flags,uid '=II'@32` (`euid`=pbsi_uid), `ruid '=I'@44`, `traced=flags&2` |
+21: | `_identify` | 234-242 | unique, short, unique, short, unique; uniqueid/idversion stable and sv19 fingerprint `(pid,uniqueid,idversion,euid,ruid,ppid,pgid,traced)` equal else failure |
+22: | `_all_pids` | 292-310 | sizing call; cap=`count*2+1024`, 4 doublings; negative/duplicate => malformed; pid 0 dropped; original deadline after every native list call |
+23: | attempts | 1367-1383 | up to 3 fresh full attempts per call, 0.05 s pause, no stitching |
+24: 
+25: ## 2. One start-fingerprint convention
+26: 
+27: `start_fingerprint = 'sv19-incarnation-v1:%d:%d:%d' % (pid, uniqueid, idversion)` — exact sv19 integers (u32, u64, i32), canonical decimal (parser rejects signs except idversion `-`, leading zeros, non-ASCII digits, non-canonical text). It names one exec-image incarnation (XNU changes idversion on exec). ppid/pgid/euid/ruid/traced/comm are mutable **variant history**, not start identity.
+28: 
+29: Used identically by: CP2 census rows; CP2 PRT identity rows; **required** of the parent launch record `driver` and the parent wait records (`parent-release-wait-v1`); recommended for PRT `owned_date.child.start_fingerprint`. A parent producer obtains it by taking a separate `make_census()` snapshot after `posix_spawn` returns and before its first `waitpid`, and copying the row for the child pid (never reusing that factory/log for release). The same pid with a different fingerprint is **ambiguous, never endedness proof** (scope hard limit).
+30: 
+31: ## 3. API and exact contracts
+32: 
+33: - `start_fingerprint(pid, uniqueid, idversion) -> str` (pure).
+34: - `build_identity_union(request, read_bytes, deadline_check) -> dict` format `parent-release-identity-union-v1`. Never raises `Exception` (HELD report); `BaseException` propagates with `exc.parent_release_identity_partial`. No clock, write, process, signal or descriptor; all bytes via parent `read_bytes`.
+35: - `make_census(deadline_check) -> (census, log)`. `census()` returns PRT-exact `{complete:bool, processes:[{pid,ppid,pgid,uid,start_fingerprint}], observed_at_mono:float}` (`uid`=euid). Raises on deadline, listing failure, non-finite clock, process cap or log cap; identification gaps give `complete:false`. `log` is `CensusLog`: `served_count()` (exact int), `served` (records with full raw identities, `served_sha256` of the exact returned dict), `attempts`, `refusals`, `summary()`.
+36: - `evaluate_endedness(union, log, deadline_check) -> dict` format `parent-release-identity-endedness-v1`, keys used by CP1: `format`, `state` (`ENDED_CONDITIONAL`|`HELD`), `causes` (ordered, `[]` iff ENDED), `union_sha256` (echo or null), `endedness_sha256` (canonical digest without itself). Never raises `Exception`.
+37: - `spec_identities_match(union, identities) -> bool`.
+38: - `deadline_check` is always the caller's ORIGINAL nonrenewing predicate: union start, before and after every `read_bytes` (success or Exception), after result assembly (rebuild as HELD, no I/O); census start, observer bracket, after pid sizing/list, after every identification success or failure, around the retry pause, before return; endedness start and after assembly. Non-None return = crossed. Late success is never accepted.
+39: 
+40: Request (exact keys, bounded detach ≤4096 nodes/depth 8/64 KiB, JSON scalars only, no floats):
+41: `{format:'parent-release-identity-request-v1', item:str1..512, histories:[1..16 × {family:'main'|'oracle', producer:ref, wait_record:ref, launch_record:ref|null, stdout:capture, receipt:ref|null, settlement:ref|null}]}`; `ref={path,sha256}`; `capture` = PRT capture shape with `eof:true, overflow:false, error:null, seen==stored<=16MiB`. Exactly one `main` (launch_record required), ≥1 `oracle` (launch_record null in v1). ACK line ⇒ receipt+settlement required; refusal line ⇒ both null.
+42: 
+43: **CP1 join** (ParentCallerCP1 `RUN/control/parent_release_caller_v1.py` `4072c50ef5be021a22e72a43571550c1338ab8a4d243752d88e3b7cc71a75cae` uses exactly these names): union `state=='CLOSED_CONDITIONAL'`, `prt_identities` typed-equal spec.identities, the PRT census argument is this `census`, `served_count()` +1 across the PRT call, then `evaluate_endedness(detached union, log, deadline)` ENDED with `causes==[]` and echoed `union_sha256`. Use a fresh `make_census()` per transaction: endedness evaluates **every** served snapshot in the log. The union's canonical bytes must fit CP1 SPEC_CAP 4 MiB (larger unions are HELD by CP1, fail-closed).
+44: 
+45: ## 4. Origin boundary (what bytes are bound to what)
+46: 
+47: Per history: producer bytes == pinned sv19 digest; wait record exact keys/role/item, `waitstatus_to_exitcode(raw_status)==actual_exit`, canonical fingerprint; main launch `item` and `driver` typed-equal the wait identity; complete stdout capture bytes/length/hash; exactly one LF-terminated ASCII JSON line whose bytes equal the exact sv19 serialization (ACK `sort_keys,(',',':')`; refusal insertion order `(',',':')`); `supervisor=='owned_supervisor_v19'`; ACK keys exact (24), refusal keys within the 7 refuse() site sets; parent exit == line `exit_code`; ACK: receipt/settlement digests and byte counts equal the ACK, both equal exact `bytes_json` serialization, settlement receipt path/digest/config/state agree, receipt `supervisor_sha256==cb828a78`, receipt history fields are typed prefixes (events, censuses, coverage, owned) or order/variant prefixes (identity/unproved history) of the ACK reconciliation, helpers/main_wait/raw/overflow/timing typed-equal. These bind selected bytes across two producer representations (published file vs parent-captured stdout); **they do not authenticate origin** — condition `PARENT_OBSERVATION_AUTHENTICITY`.
+48: 
+49: ## 5. Identity boundary (union)
+50: 
+51: Members per history = `(identity_history uids \ baseline) ∪ owned uids ∪ {bound driver uid}`; all variants retained (pids, pgids, ppids, idversions, euids, ruids, comms, event refs, first source). Roles: main `driver|main_child|helper|descendant|unproved`, oracle `oracle|oracle_child|oracle_helper|descendant|unproved`; precedence driver > child > helper (owned via helper or helper-report identity) > descendant (owned_group/current_parent) > unproved (all other non-baseline uids, including first-seen-unproved-then-owned, pre-baseline transients and invalid-helper identities). PRT rows: one per (member, distinct idversion), pgid = last_identity pgid for its idversion else last variant with it, `source='sv19:<family>#<i>:<first category>:uid=<u>'`; cross-family dedupe by (pid, fingerprint) with `ROLE_PRIORITY`; driver/oracle collision HELD; exactly one driver, ≥1 oracle, positive pid/pgid, ≤200000. `historical_pgids` = every variant pgid of every member (covers pgids that one-pgid PRT rows cannot carry); `historical_pids` = member pids. Pid-only unknown incarnations (coverage gaps, identity-less helper/main spawns, pending raw, overflow observations) are listed in `unknown_incarnations`, never given fingerprints.
+52: 
+53: ## 6. Endedness boundary
+54: 
+55: **H7 closure** (per history): the LAST census record L is complete, not aborted, `incomplete_n==0`, and has empty `owned_live/unproved_live/owned_event_refs/unproved_event_refs/group_live/owned_zombies`; ACK `ack_census` typed-equals L; events with interval inside `[L.mono_start, L.mono_complete]` have exactly `L.pids` distinct uids, all baseline and none flagged unproved; no event straddles the window or begins after it; every helper spawn (`mono_spawn`) and the main spawn (receipt `mono_spawn`, or for refusals an earlier main-identity event) precede `L.mono_start`. Soundness: B is a complete scan before any spawn; run-owned processes have non-baseline uniqueids; at L's single-call listing every live process was identified as baseline, so no run-owned process existed then and none can descend afterwards; the supervisor spawns nothing after L. The fresh CP2 census then checks (defense in depth, and PRT part4) that no member uniqueid is alive, no member pid is reused (ambiguous), no historical variant pgid is occupied and no process has a historical pid as ppid, for every served snapshot.
+56: 
+57: Named residual conditions in every report: `PARENT_OBSERVATION_AUTHENTICITY`, `PARENT_DIRECT_LAUNCH` (direct posix_spawn, own new group, no intermediate process), `SUPERVISOR19_QUALIFICATION` (package v9/original22/finite matrix unexercised), `NON_DESCENDANT_CHANNELS` (launchd/XPC/at/cron), `PUBLICATION_FREEZE`, `CP1_JOIN`. A JSON `complete:true`, a currently empty tree/group (registry rows `census:'empty'`) or a digest alone is never accepted.
+58: 
+59: ## 7. Exact coverage map from producer histories (sv19 → CP2)
+60: 
+61: | sv19 field (ACK reconciliation unless noted) | CP2 use | Check | Cause on failure |
+62: |---|---|---|---|
+63: | stdout line (ACK/refusal) | origin of history | exact one-line serialization, keys, version, exit | U_OUTPUT_LINE_INVALID / U_PRODUCER_UNSUPPORTED / U_EXIT_BINDING |
+64: | receipt (`s.rec`), settlement | prefix binding, baseline identities, `supervisor_pid`, `mono_spawn` | digests, bytes_json, prefix/equality | U_RECEIPT_BINDING |
+65: | `timing_failed`, `history_halted`, `history_overflow`, `raw_acquisitions` | completeness | false/false/null/[] | U_HISTORY_INCOMPLETE (+ unknown rows) |
+66: | `identity_events` | raw acquisition tape | 6-tuple types, uid/variant exist, counts | U_EVENT_TAPE_INCONSISTENT |
+67: | `identity_history` | member variants, first source | exact keys, ≤64 distinct forms of one pid/uid, first/last = min/max end events, intervals, status, source ∈ 12 sv19 acquisition sites | U_EVENT_TAPE_INCONSISTENT |
+68: | `baseline_uniqueids` (+ receipt `baseline`) | exclusion set, driver | sorted unique nonempty ⊆ history; receipt identities/refs agree | U_BASELINE_INVALID |
+69: | `owned_identities` | child/helper/descendant roles, escaped/reparented ownership | ref denotes identity; via grammar; roots; current-parent edge proof refs (parent,child,parent) | U_OWNED_REGISTRY_INCONSISTENT |
+70: | `unproved_history` | unproved members | uid non-baseline; first/last = extreme unproved-flagged events; set == flagged uids | U_UNPROVED_INCONSISTENT |
+71: | `census_observations` | live sets, last census L | keys ⊆ allowed, live identities/refs consistent | U_HISTORY_SCHEMA, U_LAST_CENSUS_OPEN, U_LAST_CENSUS_TAPE_MISMATCH |
+72: | `coverage_history` | pid-only unknowns | entry/observation shape | U_HISTORY_SCHEMA (closure: SR-1) |
+73: | `helpers` (helper_reports) | helper roles, identity-less helpers, spawn chronology | exact 44 keys, identity pid/uid/ref | U_HISTORY_SCHEMA, U_CHILD_HELPER_UNBOUND, U_SPAWN_CHRONOLOGY |
+74: | `main_identity`, `main_wait` (+ receipt `child_identity/child_pid`) | main child | own group, owned child registration | U_CHILD_HELPER_UNBOUND |
+75: | parent wait/launch records | driver/oracle binding | baseline self-observation, uid/idversion/pgid, own group | U_WAIT_INVALID / U_LAUNCH_INVALID / U_DRIVER_UNBOUND |
+76: | `main_signal`, `helper_log`, `failures`, `observation_attempts`, resource fields | not consumed (signal identities enter via events) | — | owned by RQLS10 package-v9 consumer obligations |
+77: 
+78: ## 8. Census callback and owned helper lifecycle
+79: 
+80: In-process libproc only: **no helper process, no signal, no SIGKILL, no timeout wrapper, no cache**. Observer bracket: own pid identified before listing and after the last identification; the row for own pid must exist with the same sv19 fingerprint, else the attempt is incomplete. Every attempt summary (listed, identified, missing sample ≤64, rows digest) and every served snapshot is retained; ≤16 served/≤64 attempts, beyond which the callback refuses instead of discarding evidence. Any future helper-based census must be separately admitted and own its lifecycle like PRT `owned_date`: original pre-spawn deadline, own group, full identity/group/descendant/EOF proof and at most one identity-checked SIGTERM.
+81: 
+82: ## 9. Self-review findings and availability consequences
+83: 
+84: - **SR-1 MAJOR (unrepaired):** v1 closes pid-only unknown incarnations (coverage-gap pids, identity-less helper or main spawn records) by H7 + spawn chronology, recording `closure:'H7_CLOSED'`, instead of HELD. Scope says gaps/uncertain incarnations ⇒ HELD and the beta bridge treats them as sticky. Narrow successor: fire a new cause (e.g. `U_UNKNOWN_INCARNATION`) for every unknown row. Parent decision requested.
+85: - **SR-2 MINOR:** union/receipt canonical re-serialization assumes no int-keyed dicts in sv19 output (none found by source reading); a genuine positive failing only there is a v1 defect, never a waiver.
+86: - **SR-3 note:** endedness covers all served snapshots of a log (stricter); CP1 must use a fresh factory per transaction.
+87: - **Availability (not weakened):** sv19 makes every post-baseline process unproved, so H7 needs a final census with zero post-baseline live processes anywhere on the host; concurrent lanes or parent tooling started after the baseline make the history open (U_LAST_CENSUS_OPEN). Endedness and PRT part4 HOLD on any reused member pid or occupied historical pgid (e.g. a parent shell group shared by an unproved transient). Expected practical result on a busy shared host is HELD; release needs a quiescent host or a separately reviewed ancestry/containment design.
+88: 
+89: ## 10. Unfulfilled prerequisites / producer interface gaps
+90: 
+91: 1. Parent launch record `driver` and parent wait records in the `sv19-incarnation-v1` convention (none exist yet).
+92: 2. Complete parent outer stdout capture of each supervisor (exact one line).
+93: 3. Oracle executed under owned_supervisor_v19 (any other oracle driver ⇒ U_PRODUCER_UNSUPPORTED).
+94: 4. For open histories: a governed continuation history in the same convention, or a rerun whose final census closes.
+95: 5. sv19 package/finite qualification; parent observation authenticity and publication freeze; CP1 caller join (implemented by CP1, unqualified).
+96: 
+97: ## 11. Finite controls — frozen expectations, NOT exercised
+98: 
+99: Separately admitted later, isolated fixtures, exact pins; synthetic fixtures (S) prove predicates only; native cases (N) need a parent GO. Unless stated, all other fields are a valid closed fixture. Union causes are exact sets.
+100: 
+101: | ID | Case | Expected |
+102: |---|---|---|
+103: | C01 N | quiescent host: main + oracle sv19 SETTLED exit0, scheme launch/wait, complete captures | union CLOSED_CONDITIONAL, causes [], 1 driver + ≥1 oracle row; endedness ENDED unless the retained snapshot shows reuse/occupancy, then exactly those E causes (recomputable from log rows) |
+104: | C02 S | refusal PUBLICATION_REFUSED exit12, clean final census, receipt/settlement null | CLOSED_CONDITIONAL |
+105: | C03 N/S | ACK exit11 with unproved_live at ACK census | [U_LAST_CENSUS_OPEN] |
+106: | C04 S | ACK line exit0, parent actual_exit 14 | [U_EXIT_BINDING] |
+107: | C05 S | wait+launch fingerprint idversion differs from self-observation | [U_DRIVER_UNBOUND] |
+108: | C06 S | wait fingerprint with leading zero | [U_WAIT_INVALID] |
+109: | C07 S | launch.driver pgid differs from wait | [U_LAUNCH_INVALID] |
+110: | C08 S | producer ref digest ≠ cb828a78 | [U_PRODUCER_PIN] |
+111: | C09 S | stdout capture eof false | [U_REQUEST_INVALID] |
+112: | C10 S | stdout bytes digest mismatch | [U_CAPTURE_INVALID] |
+113: | C11 S | stdout two lines | [U_OUTPUT_LINE_INVALID] |
+114: | C12 S | ACK line re-serialized with spaces | [U_OUTPUT_LINE_INVALID] |
+115: | C13 S | supervisor 'owned_supervisor_v18' | [U_PRODUCER_UNSUPPORTED] |
+116: | C14 S | receipt digest ≠ ACK receipt_sha256 | [U_RECEIPT_BINDING] |
+117: | C15 S | receipt not bytes_json (indent 2), digests consistent | [U_RECEIPT_BINDING] |
+118: | C16 S | receipt non-baseline event altered (not ACK prefix) | [U_RECEIPT_BINDING] |
+119: | C17 S | refusal with timing_failed true, clean L | [U_HISTORY_INCOMPLETE] |
+120: | C18 S | refusal with one raw pending acquisition | [U_HISTORY_INCOMPLETE], unknown raw_pending_acquisition |
+121: | C19 S | history_halted true | [U_HISTORY_INCOMPLETE] |
+122: | C20 S | one event uid altered | [U_EVENT_TAPE_INCONSISTENT] (dependent checks skipped) |
+123: | C21 S | observations off by one | [U_EVENT_TAPE_INCONSISTENT] |
+124: | C22 S | current_parent edge proof ref to wrong uid | [U_OWNED_REGISTRY_INCONSISTENT] |
+125: | C23 S | owned_group root not child/helper | [U_OWNED_REGISTRY_INCONSISTENT] |
+126: | C24 S | flagged event without unproved_history entry | [U_UNPROVED_INCONSISTENT] |
+127: | C25 S | baseline_uniqueids unsorted | [U_BASELINE_INVALID] |
+128: | C26 S | driver launched in parent group (pgid≠pid) | [U_DRIVER_UNBOUND] |
+129: | C27 S | two history uids with the waited pid | [U_DRIVER_UNBOUND] |
+130: | C28 S | main_identity ≠ owned child registration | [U_CHILD_HELPER_UNBOUND] |
+131: | C29 S | L complete but group_live nonempty | [U_LAST_CENSUS_OPEN] |
+132: | C30 S | L.pids = window distinct uids + 1 | [U_LAST_CENSUS_TAPE_MISMATCH] |
+133: | C31 S | unflagged post-baseline event inside L | [U_LAST_CENSUS_TAPE_MISMATCH] |
+134: | C32 S | event beginning after L | [U_LAST_CENSUS_TAPE_MISMATCH] |
+135: | C33 S | helper mono_spawn ≥ L.mono_start | [U_SPAWN_CHRONOLOGY] |
+136: | C34 S | identity-less helper spawned before clean L | v1: CLOSED_CONDITIONAL with unknown closure H7_CLOSED (SR-1; successor: HELD) |
+137: | C35 S | no oracle history | [U_FAMILY_INVALID, U_ROW_CONFLICT] |
+138: | C36 S | two main histories | [U_FAMILY_INVALID, U_ROW_CONFLICT] |
+139: | C37 S | oracle launch_record non-null | [U_FAMILY_INVALID] |
+140: | C38 S | refusal with receipt ref | [U_RECEIPT_BINDING] |
+141: | C39 S | read_bytes RuntimeError at wait, deadline passes | [U_WAIT_INVALID]; EXCEPTION event retained |
+142: | C40 S | read_bytes RuntimeError then deadline raises | [U_WAIT_INVALID, U_DEADLINE]; no later read |
+143: | C41 S | deadline_check returns non-None at start | [U_DEADLINE]; zero reads |
+144: | C42 S | deadline crosses only at final assembly | report rebuilt HELD [U_DEADLINE] (+ none other) |
+145: | C43 S | read_bytes KeyboardInterrupt | propagates; `parent_release_identity_partial` attached |
+146: | C44 S | request with float / cycle / 4097 nodes | [U_REQUEST_INVALID] |
+147: | K01 N | admitted native census on host | complete true, observer_ok, PRT `_take_census` accepts, canonical fingerprints |
+148: | K02 S | identify ESRCH for one pid in 3 attempts | served complete false, attempts 3 |
+149: | K03 S | attempt1 gap, attempt2 complete | served complete true, attempts 2, both summaries retained |
+150: | K04 S | deadline Exception after pid list | that Exception propagates; refusals +1; served_count unchanged |
+151: | K05 S | deadline returns non-None | CensusRefusal; not served |
+152: | K06 S | deadline BaseException | propagates; refusals records type |
+153: | K07 S | listing never fits (overflow) | `_NativeError` PID_LIST_OVERFLOW raised |
+154: | K08 S | observer fingerprint changes | complete false, observer_ok false |
+155: | K09 S | 17th served call | CensusRefusal |
+156: | E01 S | union HELD | [E_UNION_HELD] |
+157: | E02 S | union mutated after digest | [E_UNION_DIGEST] |
+158: | E03 S | empty log | [E_NO_SERVED_CENSUS] |
+159: | E04 S | served complete false | [E_CENSUS_INCOMPLETE] |
+160: | E05 S | member alive, same pgid | [E_MEMBER_ALIVE, E_GROUP_NONEMPTY] |
+161: | E06 S | member pid reused, other pgid/ppid | [E_PID_REUSE_AMBIGUOUS] |
+162: | E07 S | unrelated process in a variant-only historical pgid (absent from PRT rows) | [E_GROUP_NONEMPTY] — CP2 covers what PRT rows cannot |
+163: | E08 S | unrelated process with ppid = historical pid | [E_PID_CHILD_PRESENT] |
+164: | E09 S | deadline crosses at start / at end | [E_DEADLINE] (+ retained others at end) |
+165: | E10 S | two snapshots, first shows member alive | [E_MEMBER_ALIVE] |
+166: | N01 N | child double-forks setsid escapee outliving ACK | sv19 UNSETTLED; union [U_LAST_CENSUS_OPEN]; endedness E_UNION_HELD + E_MEMBER_ALIVE |
+167: | N02 N | escapee ends before final census | union CLOSED with escapee member variants; endedness per C01 rule |
+168: | N03 N | reparented child (ppid→1) ending before final census | CLOSED; member has two ppid variants |
+169: 
+170: Also PRT T36 (omitted reparented identity): CP1 typed equality of spec.identities with `prt_identities` refuses; CP2 evaluation still covers the member.
+
+### parent-release-cp2-design-notes-v2.md
+Path: /Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/control/parent-release-cp2-design-notes-v2.md
+Full-file SHA256: ea89e043903aa5ae0a5e2afdf69749dd01758b8199369b84022ccd0e8cce3012
+Physical LF lines: 1-50
+1: # Parent release CP2 — source v2 minimal repair (sticky unknown incarnations) — NOEXEC
+2: 
+3: Actual `/bin/date` before this write: `2026-10-19T17:01:06-0700`.
+4: 
+5: | Artifact | Path | SHA-256 |
+6: |---|---|---|
+7: | v2 source | `RUN/control/parent_release_identity_v2.py` (1593 lines, 84818 bytes, ASCII) | `7b2bc4021744aa6fa55677fa4953c9efc1088f53d341fb0ba339621abdddc3ec` |
+8: | exact v1→v2 diff | `RUN/review/parent_release_identity_v1_to_v2.diff` | `ea20bf0283a100f3ef5e98ef1ad44d1a48a177e77344190e4c0e83a7e4dbaf05` |
+9: | v2 delta freeze (before code) | `RUN/control/parent-release-cp2-design-freeze-v2.json` | `7f46b7e5f5581a6e905efa8405381208c9481332b26ba2e2a84f1ace436a1c28` |
+10: | v2 controls matrix | `RUN/review/parent-release-cp2-controls-v2.json` | `3bcbc7476346b25bd7cc975a39a5510543cbc5b87089e3d86045c31988414758` |
+11: | repair scope (parent) | `RUN/control/parent-release-cp2-v2-repair-scope-v1.json` | `afe35832c808cf3d6a482fb6549dc8957d57ae982b7e48e76dba5b5374bcfa98` |
+12: | v1 source (immutable HOLD) | `RUN/control/parent_release_identity_v1.py` | `d07548e2dbff4ef6b64a3a902d3b59ed7c4abbf8dc2115e8b08ed37ee2ec14d5` |
+13: | v1 notes (unchanged sections still apply) | `RUN/control/parent-release-cp2-design-notes-v1.md` | `688871953a2ccb33f9241f95c277ef3eaed75bd79bd5656d6a060777d71a5269` |
+14: 
+15: **Status: NOEXEC source candidate, unqualified, not self-approved.** No import, compile, AST parse, test, fixture, census or other execution. v2 bytes were produced mechanically from v1 by the nine frozen exact-once text replacements in the v2 freeze (placeholder → freeze digest); the diff above is their complete effect. No old file was mutated.
+16: 
+17: ## Delta (the only behavioral change)
+18: 
+19: New cause `U_UNKNOWN_INCARNATION`, ordered after `U_SPAWN_CHRONOLOGY`. `_analyze` calls `_sticky(recon, pending)` immediately after reconciliation, completeness and pending-row extraction, **before** the event tape, so tape/baseline/owned/unproved failures cannot hide it. `_sticky` enumerates defensively from the raw reconciliation, independent of every other validation:
+20: 
+21: - each pending raw acquisition row and history-overflow completed observation (`_pending`);
+22: - **every** `coverage_history` entry (sv19 identification gap pid, including parent-edge and measurement gaps);
+23: - **every** helper report whose `identity` is null;
+24: - `main_wait` present with `main_identity` null.
+25: 
+26: Each record fires `U_UNKNOWN_INCARNATION` once (≤16 evidence strings, the rest counted in `suppressed`, so the exact count is retained). A coverage/helper structure that cannot be enumerated fires it too ("unknowns cannot be excluded"). Histories with no reconciliation (capture/line/producer failures) already HOLD and expose nothing to enumerate. Unknown rows stay in `unknown_incarnations`, never receive fingerprints, and their history closure is `OPEN_HELD`.
+27: 
+28: **Non-waiver:** the union becomes HELD, so `evaluate_endedness` fires `E_UNION_HELD` whatever the served census shows; H7 closure, a complete current census, parent ENDED/ENDED_PROVED or CP1 cannot clear a sticky unknown. This matches the beta bridge's sticky-history rule (BetaFiniteControls) without merging its formats.
+29: 
+30: ## Unchanged
+31: 
+32: Formats (`parent-release-identity-request-v1`, `-union-v1`, `-endedness-v1`), every public name/signature, `CensusLog.served_count()`, union keys `format/state/union_sha256/prt_identities`, endedness keys `format/state/causes/endedness_sha256/union_sha256`, census callback, start-fingerprint scheme, H7 and all other checks, coverage map and boundaries of v1 notes §1-§8 and §10. Report `module` is now `parent_release_identity_v2.py` and `design_freeze_sha256` is the v2 freeze. CP1 caller `parent_release_caller_v1.py` `4072c50e…` needs only the new source pin.
+33: 
+34: ## Findings after v2
+35: 
+36: - SR-1 MAJOR: **repaired in v2 source** (unexercised).
+37: - SR-4 MINOR (dependent `U_ROW_CONFLICT` when member assembly was blocked) and SR-5 MINOR (no structured request binding in the union report; consumed paths/digests only in the bounded callback log): **unrepaired**, outside the minimal scope.
+38: - SR-2 residual (exact re-serialization assumes no int-keyed sv19 dicts) and SR-3 note (endedness covers every served snapshot; fresh `make_census` per transaction) unchanged.
+39: 
+40: ## Availability consequence (stronger than v1, not weakened)
+41: 
+42: sv19 records every listed-but-unidentifiable pid (typically a process exiting between listing and identification) as a coverage gap. Under v2 any such gap anywhere in a run's history makes the union HELD, in addition to v1's requirement that the last census show no post-baseline live process on the host. A release-eligible history therefore needs a quiescent host for the whole run. Expected practical outcome on a busy shared host: HELD.
+43: 
+44: ## Controls
+45: 
+46: `review/parent-release-cp2-controls-v2.json` supersedes v1 expectations for v2: C18 → [U_HISTORY_INCOMPLETE, U_UNKNOWN_INCARNATION]; C34 → [U_UNKNOWN_INCARNATION]; new C45 (one coverage gap) [U_UNKNOWN_INCARNATION]; C46 (ACK, identity-less main spawn) [U_UNKNOWN_INCARNATION]; C47 (tape inconsistent + gap) [U_EVENT_TAPE_INCONSISTENT, U_UNKNOWN_INCARNATION, U_ROW_CONFLICT]; C48 (malformed coverage entry) [U_HISTORY_SCHEMA, U_UNKNOWN_INCARNATION]; E11 (union HELD only by sticky unknown, clean census) [E_UNION_HELD]. Base fixture must contain no gap, identity-less spawn, pending raw or overflow observation. All expectations frozen, none exercised; synthetic fixtures prove predicates only.
+47: 
+48: ## Remaining prerequisites (unchanged from v1 §10)
+49: 
+50: Parent launch/wait records in `sv19-incarnation-v1`; complete outer stdout capture; oracle under owned_supervisor_v19; continuation history or closing rerun for open histories; sv19 package/finite qualification; parent observation authenticity, direct launch in own groups, publication freeze, non-descendant channel residual; CP1 join; independent parent source review and separate finite qualification.
+
+### parent-release-cp2-controls-v3.json
+Path: /Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/review/parent-release-cp2-controls-v3.json
+Full-file SHA256: d87dfd4d657481f70c88ae56ff74e6401091b724a3c4239ef961a43fae9c9bf2
+Physical LF lines: 1-705
+1: {
+2:  "at": "2026-10-19T17:11:14-0700",
+3:  "at_basis": "actual /bin/date before write",
+4:  "census_cases": [
+5:   {
+6:    "case": "admitted native census on host",
+7:    "id": "K01",
+8:    "kind": "N",
+9:    "outcome": "complete true, observer_ok true, PRT _take_census fires no P4 census cause, every fingerprint canonical"
+10:   },
+11:   {
+12:    "case": "identify ESRCH for one pid in all 3 attempts",
+13:    "id": "K02",
+14:    "kind": "S",
+15:    "outcome": "served complete false, attempts 3"
+16:   },
+17:   {
+18:    "case": "attempt1 gap, attempt2 complete",
+19:    "id": "K03",
+20:    "kind": "S",
+21:    "outcome": "served complete true, attempts 2, both summaries retained"
+22:   },
+23:   {
+24:    "case": "deadline Exception after pid list",
+25:    "id": "K04",
+26:    "kind": "S",
+27:    "outcome": "that Exception propagates; refusals +1; served_count unchanged"
+28:   },
+29:   {
+30:    "case": "deadline returns non-None",
+31:    "id": "K05",
+32:    "kind": "S",
+33:    "outcome": "CensusRefusal; not served"
+34:   },
+35:   {
+36:    "case": "deadline BaseException",
+37:    "id": "K06",
+38:    "kind": "S",
+39:    "outcome": "propagates; refusals records type name"
+40:   },
+41:   {
+42:    "case": "pid list never fits",
+43:    "id": "K07",
+44:    "kind": "S",
+45:    "outcome": "_NativeError PID_LIST_OVERFLOW"
+46:   },
+47:   {
+48:    "case": "observer fingerprint changes during attempt",
+49:    "id": "K08",
+50:    "kind": "S",
+51:    "outcome": "complete false, observer_ok false"
+52:   },
+53:   {
+54:    "case": "17th served call",
+55:    "id": "K09",
+56:    "kind": "S",
+57:    "outcome": "CensusRefusal"
+58:   }
+59:  ],
+60:  "cp1_note": "CP1 caller 4072c50e does not itself pin module/design freeze (SF1 CP1 side); CP1 successor is to pin module 'parent_release_identity_v3.py', design_freeze_sha256 and source sha independently.",
+61:  "design_freeze": {
+62:   "path": "/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/control/parent-release-cp2-design-freeze-v3.json",
+63:   "sha256": "033cb30dcde31ec94acbb0f8576f436e14bfaae980c8bff34e76932dd894cb5a"
+64:  },
+65:  "endedness_cases": [
+66:   {
+67:    "case": "union HELD, clean snapshot",
+68:    "causes": [
+69:     "E_UNION_HELD"
+70:    ],
+71:    "id": "E01",
+72:    "kind": "S"
+73:   },
+74:   {
+75:    "case": "union mutated after digest",
+76:    "causes": [
+77:     "E_UNION_DIGEST"
+78:    ],
+79:    "id": "E02",
+80:    "kind": "S"
+81:   },
+82:   {
+83:    "case": "no served snapshot",
+84:    "causes": [
+85:     "E_NO_SERVED_CENSUS"
+86:    ],
+87:    "id": "E03",
+88:    "kind": "S"
+89:   },
+90:   {
+91:    "case": "served complete false",
+92:    "causes": [
+93:     "E_CENSUS_INCOMPLETE"
+94:    ],
+95:    "id": "E04",
+96:    "kind": "S"
+97:   },
+98:   {
+99:    "case": "member alive, same pgid, ppid 1",
+100:    "causes": [
+101:     "E_MEMBER_ALIVE",
+102:     "E_GROUP_NONEMPTY"
+103:    ],
+104:    "id": "E05",
+105:    "kind": "S"
+106:   },
+107:   {
+108:    "case": "member pid reused by other uid, other pgid/ppid",
+109:    "causes": [
+110:     "E_PID_REUSE_AMBIGUOUS"
+111:    ],
+112:    "id": "E06",
+113:    "kind": "S"
+114:   },
+115:   {
+116:    "case": "unrelated process in a variant-only historical pgid absent from PRT rows",
+117:    "causes": [
+118:     "E_GROUP_NONEMPTY"
+119:    ],
+120:    "id": "E07",
+121:    "kind": "S"
+122:   },
+123:   {
+124:    "case": "unrelated process with ppid = historical pid",
+125:    "causes": [
+126:     "E_PID_CHILD_PRESENT"
+127:    ],
+128:    "id": "E08",
+129:    "kind": "S"
+130:   },
+131:   {
+132:    "also": "at end other fired causes retained",
+133:    "case": "deadline crosses at start / at end",
+134:    "causes": [
+135:     "E_DEADLINE"
+136:    ],
+137:    "id": "E09",
+138:    "kind": "S"
+139:   },
+140:   {
+141:    "case": "two snapshots, first shows member alive",
+142:    "causes": [
+143:     "E_MEMBER_ALIVE"
+144:    ],
+145:    "id": "E10",
+146:    "kind": "S"
+147:   },
+148:   {
+149:    "also": "a complete current census never waives a sticky unknown",
+150:    "case": "union HELD only by U_UNKNOWN_INCARNATION, fully clean served census",
+151:    "causes": [
+152:     "E_UNION_HELD"
+153:    ],
+154:    "id": "E11",
+155:    "kind": "S"
+156:   },
+157:   {
+158:    "also": "no status use; union_sha256 echo null",
+159:    "case": "module mismatch: v3 CLOSED union with module 'parent_release_identity_v2.py', digest recomputed, clean census",
+160:    "causes": [
+161:     "E_UNION_VERSION"
+162:    ],
+163:    "id": "E12",
+164:    "kind": "S"
+165:   },
+166:   {
+167:    "case": "design_freeze_sha256 mismatch: v2 freeze 7f46b7e5 in an otherwise v3 CLOSED union, digest recomputed",
+168:    "causes": [
+169:     "E_UNION_VERSION"
+170:    ],
+171:    "id": "E13",
+172:    "kind": "S"
+173:   },
+174:   {
+175:    "case": "scheme mismatch: 'sv19-incarnation-v0', digest recomputed",
+176:    "causes": [
+177:     "E_UNION_VERSION"
+178:    ],
+179:    "id": "E14",
+180:    "kind": "S"
+181:   },
+182:   {
+183:    "case": "producer_sha256 mismatch (any other 64-hex), digest recomputed",
+184:    "causes": [
+185:     "E_UNION_VERSION"
+186:    ],
+187:    "id": "E15",
+188:    "kind": "S"
+189:   },
+190:   {
+191:    "case": "each of module/design_freeze_sha256/scheme/producer_sha256 absent or non-str (4 sub-cases), digest recomputed",
+192:    "causes": [
+193:     "E_UNION_VERSION"
+194:    ],
+195:    "id": "E16",
+196:    "kind": "S"
+197:   },
+198:   {
+199:    "also": "the v1 H7-closed unknowns can no longer reach ENDED",
+200:    "case": "SF1 bypass: CLOSED union built by v1 d07548e2 (module v1, design freeze 3d6f48ce, intact digest), clean served census",
+201:    "causes": [
+202:     "E_UNION_VERSION"
+203:    ],
+204:    "id": "E17",
+205:    "kind": "S"
+206:   },
+207:   {
+208:    "also": "v3 evaluates only v3-built unions",
+209:    "case": "CLOSED union built by v2 7b2bc402 (module v2, freeze 7f46b7e5), clean census",
+210:    "causes": [
+211:     "E_UNION_VERSION"
+212:    ],
+213:    "id": "E18",
+214:    "kind": "S"
+215:   },
+216:   {
+217:    "also": "still HELD; no E_UNION_HELD because status is never used",
+218:    "case": "v3 _minimal_report (internal-error HELD, lacks design_freeze_sha256/producer_sha256)",
+219:    "causes": [
+220:     "E_UNION_VERSION"
+221:    ],
+222:    "id": "E19",
+223:    "kind": "S"
+224:   },
+225:   {
+226:    "case": "v3 CLOSED union with intact version fields but body mutated without digest recomputation",
+227:    "causes": [
+228:     "E_UNION_DIGEST"
+229:    ],
+230:    "id": "E20",
+231:    "kind": "S"
+232:   }
+233:  ],
+234:  "fixture_rule": "Base fixture = one main and one oracle owned_supervisor_v19 history, both closed and mutually consistent; each case changes only the named element of the MAIN history unless stated, re-pinning digests/ACK fields needed to isolate it. S = synthetic predicate fixture (no OS provenance claim); N = native case needing its own parent GO. Expected causes are exact ordered sets in U_CAUSES/E_CAUSES order; no broadening to absorb unrelated failures. V2: the base fixture contains no coverage_history entry, no identity-less helper/main spawn, no pending raw acquisition and no overflow observation; otherwise every case also carries U_UNKNOWN_INCARNATION. V3: every endedness/spec-match fixture union is built by v3 (module 'parent_release_identity_v3.py', design_freeze_sha256 033cb30dcde31ec94acbb0f8576f436e14bfaae980c8bff34e76932dd894cb5a, scheme 'sv19-incarnation-v1', producer_sha256 cb828a78...) unless the case alters it; otherwise E_UNION_VERSION is added.",
+235:  "format": "parent-release-cp2-controls-v3",
+236:  "native_escape_cases": [
+237:   {
+238:    "case": "child double-fork setsid escapee outliving ACK",
+239:    "id": "N01",
+240:    "kind": "N",
+241:    "outcome": "sv19 UNSETTLED; union [U_LAST_CENSUS_OPEN]; endedness E_UNION_HELD plus E_MEMBER_ALIVE"
+242:   },
+243:   {
+244:    "case": "escapee ends before final census",
+245:    "id": "N02",
+246:    "kind": "N",
+247:    "outcome": "union CLOSED_CONDITIONAL with escapee member and variants; endedness per E-rule"
+248:   },
+249:   {
+250:    "case": "reparented child (ppid->1) ends before final census",
+251:    "id": "N03",
+252:    "kind": "N",
+253:    "outcome": "CLOSED_CONDITIONAL; member has two ppid variants"
+254:   }
+255:  ],
+256:  "not_claimed": "Expectations only; nothing exercised. Synthetic results prove predicates, not OS provenance.",
+257:  "prior_matrix": {
+258:   "applies_to": "v2 7b2bc402 only",
+259:   "path": "/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/review/parent-release-cp2-controls-v2.json",
+260:   "sha256": "3bcbc7476346b25bd7cc975a39a5510543cbc5b87089e3d86045c31988414758"
+261:  },
+262:  "prt_join": "PRT T36 (omitted reparented identity): CP1 typed equality spec.identities == union.prt_identities refuses; CP2 endedness still covers the member.",
+263:  "source": {
+264:   "path": "/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/control/parent_release_identity_v3.py",
+265:   "sha256": "f21b4296ae52778fe31677f749a871d8982c31c6d5133609dc1d0b0e0fe58b38"
+266:  },
+267:  "spec_match_cases": [
+268:   {
+269:    "case": "spec_identities_match(v1-built CLOSED union, its own prt_identities)",
+270:    "id": "SM1",
+271:    "kind": "S",
+272:    "outcome": false
+273:   },
+274:   {
+275:    "case": "spec_identities_match(v3-built CLOSED union, typed-equal identities)",
+276:    "id": "SM2",
+277:    "kind": "S",
+278:    "outcome": true
+279:   },
+280:   {
+281:    "case": "spec_identities_match(v3-built CLOSED union with module altered and digest recomputed, typed-equal identities)",
+282:    "id": "SM3",
+283:    "kind": "S",
+284:    "outcome": false
+285:   },
+286:   {
+287:    "case": "spec_identities_match(v2-built CLOSED union, its own prt_identities)",
+288:    "id": "SM4",
+289:    "kind": "S",
+290:    "outcome": false
+291:   }
+292:  ],
+293:  "status": "FROZEN_EXPECTATIONS_NOT_EXERCISED",
+294:  "union_cases": [
+295:   {
+296:    "also": "one driver + >=1 oracle row; endedness per E-rule recomputed from retained log rows",
+297:    "case": "quiescent host, main+oracle sv19 SETTLED exit0, scheme launch/wait, complete captures",
+298:    "causes": [],
+299:    "id": "C01",
+300:    "kind": "N",
+301:    "state": "CLOSED_CONDITIONAL"
+302:   },
+303:   {
+304:    "case": "main refusal PUBLICATION_REFUSED exit12 after clean final census, receipt/settlement null",
+305:    "causes": [],
+306:    "id": "C02",
+307:    "kind": "S",
+308:    "state": "CLOSED_CONDITIONAL"
+309:   },
+310:   {
+311:    "case": "ACK exit11 with unproved_live at ACK census",
+312:    "causes": [
+313:     "U_LAST_CENSUS_OPEN"
+314:    ],
+315:    "id": "C03",
+316:    "kind": "S/N"
+317:   },
+318:   {
+319:    "case": "ACK exit_code 0, parent actual_exit 14",
+320:    "causes": [
+321:     "U_EXIT_BINDING"
+322:    ],
+323:    "id": "C04",
+324:    "kind": "S"
+325:   },
+326:   {
+327:    "case": "wait+launch fingerprint idversion != self-observation",
+328:    "causes": [
+329:     "U_DRIVER_UNBOUND",
+330:     "U_ROW_CONFLICT"
+331:    ],
+332:    "id": "C05",
+333:    "kind": "S"
+334:   },
+335:   {
+336:    "case": "wait fingerprint with leading zero",
+337:    "causes": [
+338:     "U_WAIT_INVALID",
+339:     "U_ROW_CONFLICT"
+340:    ],
+341:    "id": "C06",
+342:    "kind": "S"
+343:   },
+344:   {
+345:    "case": "launch.driver pgid differs from wait",
+346:    "causes": [
+347:     "U_LAUNCH_INVALID"
+348:    ],
+349:    "id": "C07",
+350:    "kind": "S"
+351:   },
+352:   {
+353:    "case": "producer ref digest != cb828a78",
+354:    "causes": [
+355:     "U_PRODUCER_PIN"
+356:    ],
+357:    "id": "C08",
+358:    "kind": "S"
+359:   },
+360:   {
+361:    "case": "stdout capture record eof false",
+362:    "causes": [
+363:     "U_REQUEST_INVALID"
+364:    ],
+365:    "id": "C09",
+366:    "kind": "S"
+367:   },
+368:   {
+369:    "case": "stdout bytes digest mismatch",
+370:    "causes": [
+371:     "U_CAPTURE_INVALID",
+372:     "U_ROW_CONFLICT"
+373:    ],
+374:    "id": "C10",
+375:    "kind": "S"
+376:   },
+377:   {
+378:    "case": "stdout two lines",
+379:    "causes": [
+380:     "U_OUTPUT_LINE_INVALID",
+381:     "U_ROW_CONFLICT"
+382:    ],
+383:    "id": "C11",
+384:    "kind": "S"
+385:   },
+386:   {
+387:    "case": "ACK line re-serialized with spaces",
+388:    "causes": [
+389:     "U_OUTPUT_LINE_INVALID",
+390:     "U_ROW_CONFLICT"
+391:    ],
+392:    "id": "C12",
+393:    "kind": "S"
+394:   },
+395:   {
+396:    "case": "supervisor owned_supervisor_v18",
+397:    "causes": [
+398:     "U_PRODUCER_UNSUPPORTED",
+399:     "U_ROW_CONFLICT"
+400:    ],
+401:    "id": "C13",
+402:    "kind": "S"
+403:   },
+404:   {
+405:    "case": "receipt digest != ACK receipt_sha256",
+406:    "causes": [
+407:     "U_RECEIPT_BINDING"
+408:    ],
+409:    "id": "C14",
+410:    "kind": "S"
+411:   },
+412:   {
+413:    "case": "receipt bytes not bytes_json (indent 2), digests consistent",
+414:    "causes": [
+415:     "U_RECEIPT_BINDING"
+416:    ],
+417:    "id": "C15",
+418:    "kind": "S"
+419:   },
+420:   {
+421:    "case": "receipt non-baseline event altered (not an ACK prefix)",
+422:    "causes": [
+423:     "U_RECEIPT_BINDING"
+424:    ],
+425:    "id": "C16",
+426:    "kind": "S"
+427:   },
+428:   {
+429:    "case": "refusal with timing_failed true, clean last census",
+430:    "causes": [
+431:     "U_HISTORY_INCOMPLETE"
+432:    ],
+433:    "id": "C17",
+434:    "kind": "S"
+435:   },
+436:   {
+437:    "also": "unknown raw_pending_acquisition row; sticky",
+438:    "case": "refusal with one pending raw acquisition",
+439:    "causes": [
+440:     "U_HISTORY_INCOMPLETE",
+441:     "U_UNKNOWN_INCARNATION"
+442:    ],
+443:    "id": "C18",
+444:    "kind": "S"
+445:   },
+446:   {
+447:    "case": "history_halted true",
+448:    "causes": [
+449:     "U_HISTORY_INCOMPLETE"
+450:    ],
+451:    "id": "C19",
+452:    "kind": "S"
+453:   },
+454:   {
+455:    "case": "one event uid altered",
+456:    "causes": [
+457:     "U_EVENT_TAPE_INCONSISTENT",
+458:     "U_ROW_CONFLICT"
+459:    ],
+460:    "id": "C20",
+461:    "kind": "S"
+462:   },
+463:   {
+464:    "case": "identity_history observations off by one",
+465:    "causes": [
+466:     "U_EVENT_TAPE_INCONSISTENT",
+467:     "U_ROW_CONFLICT"
+468:    ],
+469:    "id": "C21",
+470:    "kind": "S"
+471:   },
+472:   {
+473:    "case": "current_parent edge proof ref to wrong uid",
+474:    "causes": [
+475:     "U_OWNED_REGISTRY_INCONSISTENT",
+476:     "U_ROW_CONFLICT"
+477:    ],
+478:    "id": "C22",
+479:    "kind": "S"
+480:   },
+481:   {
+482:    "case": "owned_group root not child/helper",
+483:    "causes": [
+484:     "U_OWNED_REGISTRY_INCONSISTENT",
+485:     "U_ROW_CONFLICT"
+486:    ],
+487:    "id": "C23",
+488:    "kind": "S"
+489:   },
+490:   {
+491:    "case": "flagged event without unproved_history entry",
+492:    "causes": [
+493:     "U_UNPROVED_INCONSISTENT",
+494:     "U_ROW_CONFLICT"
+495:    ],
+496:    "id": "C24",
+497:    "kind": "S"
+498:   },
+499:   {
+500:    "case": "baseline_uniqueids unsorted",
+501:    "causes": [
+502:     "U_BASELINE_INVALID",
+503:     "U_ROW_CONFLICT"
+504:    ],
+505:    "id": "C25",
+506:    "kind": "S"
+507:   },
+508:   {
+509:    "case": "driver launched in parent group (wait pgid != pid)",
+510:    "causes": [
+511:     "U_DRIVER_UNBOUND",
+512:     "U_ROW_CONFLICT"
+513:    ],
+514:    "id": "C26",
+515:    "kind": "S"
+516:   },
+517:   {
+518:    "case": "two history uids carry the waited pid",
+519:    "causes": [
+520:     "U_DRIVER_UNBOUND",
+521:     "U_ROW_CONFLICT"
+522:    ],
+523:    "id": "C27",
+524:    "kind": "S"
+525:   },
+526:   {
+527:    "case": "main_identity != owned child registration",
+528:    "causes": [
+529:     "U_CHILD_HELPER_UNBOUND"
+530:    ],
+531:    "id": "C28",
+532:    "kind": "S"
+533:   },
+534:   {
+535:    "case": "last census complete but group_live nonempty",
+536:    "causes": [
+537:     "U_LAST_CENSUS_OPEN"
+538:    ],
+539:    "id": "C29",
+540:    "kind": "S"
+541:   },
+542:   {
+543:    "case": "last census pids = window distinct uids + 1",
+544:    "causes": [
+545:     "U_LAST_CENSUS_TAPE_MISMATCH"
+546:    ],
+547:    "id": "C30",
+548:    "kind": "S"
+549:   },
+550:   {
+551:    "case": "unflagged post-baseline event inside last census window",
+552:    "causes": [
+553:     "U_LAST_CENSUS_TAPE_MISMATCH"
+554:    ],
+555:    "id": "C31",
+556:    "kind": "S"
+557:   },
+558:   {
+559:    "case": "identity event beginning after last census",
+560:    "causes": [
+561:     "U_LAST_CENSUS_TAPE_MISMATCH"
+562:    ],
+563:    "id": "C32",
+564:    "kind": "S"
+565:   },
+566:   {
+567:    "case": "helper mono_spawn >= last census mono_start",
+568:    "causes": [
+569:     "U_SPAWN_CHRONOLOGY"
+570:    ],
+571:    "id": "C33",
+572:    "kind": "S"
+573:   },
+574:   {
+575:    "also": "v2 repair of SR-1: sticky, never closed by H7",
+576:    "case": "identity-less helper spawned before clean last census",
+577:    "causes": [
+578:     "U_UNKNOWN_INCARNATION"
+579:    ],
+580:    "id": "C34",
+581:    "kind": "S"
+582:   },
+583:   {
+584:    "case": "no oracle history",
+585:    "causes": [
+586:     "U_FAMILY_INVALID",
+587:     "U_ROW_CONFLICT"
+588:    ],
+589:    "id": "C35",
+590:    "kind": "S"
+591:   },
+592:   {
+593:    "case": "two main histories plus one oracle",
+594:    "causes": [
+595:     "U_FAMILY_INVALID",
+596:     "U_ROW_CONFLICT"
+597:    ],
+598:    "id": "C36",
+599:    "kind": "S"
+600:   },
+601:   {
+602:    "case": "oracle launch_record non-null",
+603:    "causes": [
+604:     "U_FAMILY_INVALID"
+605:    ],
+606:    "id": "C37",
+607:    "kind": "S"
+608:   },
+609:   {
+610:    "case": "refusal history with receipt ref",
+611:    "causes": [
+612:     "U_RECEIPT_BINDING"
+613:    ],
+614:    "id": "C38",
+615:    "kind": "S"
+616:   },
+617:   {
+618:    "also": "EXCEPTION callback event retained",
+619:    "case": "read_bytes RuntimeError at wait record, deadline passes",
+620:    "causes": [
+621:     "U_WAIT_INVALID",
+622:     "U_ROW_CONFLICT"
+623:    ],
+624:    "id": "C39",
+625:    "kind": "S"
+626:   },
+627:   {
+628:    "also": "no later read_bytes call",
+629:    "case": "read_bytes RuntimeError then deadline raises",
+630:    "causes": [
+631:     "U_WAIT_INVALID",
+632:     "U_DEADLINE"
+633:    ],
+634:    "id": "C40",
+635:    "kind": "S"
+636:   },
+637:   {
+638:    "also": "zero reads",
+639:    "case": "deadline_check returns non-None at start",
+640:    "causes": [
+641:     "U_DEADLINE"
+642:    ],
+643:    "id": "C41",
+644:    "kind": "S"
+645:   },
+646:   {
+647:    "also": "report rebuilt HELD; no I/O after crossing",
+648:    "case": "deadline crosses only at final assembly",
+649:    "causes": [
+650:     "U_DEADLINE"
+651:    ],
+652:    "id": "C42",
+653:    "kind": "S"
+654:   },
+655:   {
+656:    "case": "read_bytes KeyboardInterrupt",
+657:    "id": "C43",
+658:    "kind": "S",
+659:    "outcome": "propagates with parent_release_identity_partial"
+660:   },
+661:   {
+662:    "case": "request with float, cycle or 4097 nodes",
+663:    "causes": [
+664:     "U_REQUEST_INVALID"
+665:    ],
+666:    "id": "C44",
+667:    "kind": "S"
+668:   },
+669:   {
+670:    "case": "one coverage_history gap entry in otherwise closed history",
+671:    "causes": [
+672:     "U_UNKNOWN_INCARNATION"
+673:    ],
+674:    "id": "C45",
+675:    "kind": "S"
+676:   },
+677:   {
+678:    "case": "ACK history with main_wait pid and main_identity null (receipt mono_spawn before last census)",
+679:    "causes": [
+680:     "U_UNKNOWN_INCARNATION"
+681:    ],
+682:    "id": "C46",
+683:    "kind": "S"
+684:   },
+685:   {
+686:    "case": "event tape inconsistent plus one coverage gap",
+687:    "causes": [
+688:     "U_EVENT_TAPE_INCONSISTENT",
+689:     "U_UNKNOWN_INCARNATION",
+690:     "U_ROW_CONFLICT"
+691:    ],
+692:    "id": "C47",
+693:    "kind": "S"
+694:   },
+695:   {
+696:    "case": "one coverage_history entry whose observation is not a 3-list",
+697:    "causes": [
+698:     "U_HISTORY_SCHEMA",
+699:     "U_UNKNOWN_INCARNATION"
+700:    ],
+701:    "id": "C48",
+702:    "kind": "S"
+703:   }
+704:  ]
+705: }
+
+### parent-release-cp2-source-disposition-v3.json
+Path: /Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/review/parent-release-cp2-source-disposition-v3.json
+Full-file SHA256: f9d676d019fc000c0b49c850e71d34df359c9a86d052409fabd219198337357e
+Physical LF lines: 1-92
+1: {
+2:  "at": "2026-10-19T17:11:39-0700",
+3:  "at_basis": "actual /bin/date before write",
+4:  "authority": {
+5:   "finding": {
+6:    "path": "/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/review/parent-release-cp2-finding-sf1-v1.json",
+7:    "sha256": "b52ab85fa4def5c75328fed083ac5fee2764a11eaef11d3e9abd0f3b0c00c099"
+8:   },
+9:   "repair_scope": {
+10:    "path": "/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/control/parent-release-cp2-v3-repair-scope-v1.json",
+11:    "sha256": "0b7b3b7c8ebb3b8ae88ad04472cc7e16a4d2ea8ee718706a6408d714303d2421"
+12:   }
+13:  },
+14:  "construction": "v3 = v2 with the seven exact-once replacements frozen in design-freeze-v3 (placeholder -> freeze digest); the diff is their complete effect.",
+15:  "cp1": "v3 pin (source, module, design freeze, scheme, producer) sent to agent://ParentCallerCP1; CP1 caller 4072c50e does not pin these itself; CP1 successor pending parent scope.",
+16:  "files": {
+17:   "controls_v3": {
+18:    "cases": {
+19:     "census": 9,
+20:     "endedness": 20,
+21:     "native_escape": 3,
+22:     "spec_match": 4,
+23:     "union": 48
+24:    },
+25:    "path": "/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/review/parent-release-cp2-controls-v3.json",
+26:    "sha256": "d87dfd4d657481f70c88ae56ff74e6401091b724a3c4239ef961a43fae9c9bf2"
+27:   },
+28:   "design_freeze_v3": {
+29:    "path": "/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/control/parent-release-cp2-design-freeze-v3.json",
+30:    "sha256": "033cb30dcde31ec94acbb0f8576f436e14bfaae980c8bff34e76932dd894cb5a"
+31:   },
+32:   "diff_v2_to_v3": {
+33:    "lines": 82,
+34:    "path": "/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/review/parent_release_identity_v2_to_v3.diff",
+35:    "sha256": "25819afb23afb6ad95091f00294c13821555e05f93020b25f88be051ee688afd"
+36:   },
+37:   "prior": {
+38:    "all_immutable": true,
+39:    "disposition_v2": "bde19a8de1a03a6f3c66de61c37bda453841726fc670bc7bb254aa0820ac4545",
+40:    "source_v1": "d07548e2dbff4ef6b64a3a902d3b59ed7c4abbf8dc2115e8b08ed37ee2ec14d5",
+41:    "source_v2": "7b2bc4021744aa6fa55677fa4953c9efc1088f53d341fb0ba339621abdddc3ec"
+42:   },
+43:   "source_v3": {
+44:    "bytes": 86499,
+45:    "lines": 1617,
+46:    "path": "/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/control/parent_release_identity_v3.py",
+47:    "sha256": "f21b4296ae52778fe31677f749a871d8982c31c6d5133609dc1d0b0e0fe58b38"
+48:   }
+49:  },
+50:  "format": "parent-release-cp2-source-disposition-v3",
+51:  "known_effect": "_minimal_report lacks design_freeze_sha256/producer_sha256, so evaluating an internal-error HELD report gives E_UNION_VERSION instead of E_UNION_HELD (still HELD).",
+52:  "limit": "Bound fields are self-reported JSON: they stop accidental cross-version use, not forgery; parent attestation of the union/callable source (CP1 prerequisite identity_union_census_cp2) is still required in addition.",
+53:  "not_granted": [
+54:   "source acceptance",
+55:   "qualification",
+56:   "runtime",
+57:   "release",
+58:   "reservation",
+59:   "signals",
+60:   "scheduling",
+61:   "science"
+62:  ],
+63:  "owner": "ParentIdentityCP2",
+64:  "repair": {
+65:   "SF1": "REPAIRED_IN_SOURCE_UNEXERCISED: new _union_version requires exact str equality of union module ('parent_release_identity_v3.py'), design_freeze_sha256 (033cb30d..., this v3 freeze), scheme ('sv19-incarnation-v1') and producer_sha256 (cb828a78...); called first in _v_union (so spec_identities_match returns False) and as its own guarded step in evaluate_endedness before _v_union and any state/causes use; mismatch or absence fires E_UNION_VERSION (first in E_CAUSES). v1- and v2-built unions are refused."
+66:  },
+67:  "status": "SOURCE_CANDIDATE_NOEXEC_UNQUALIFIED_NOT_SELF_APPROVED",
+68:  "status_meaning": "SF1 version binding repaired in source only; awaits independent parent review and separate finite qualification. Global HOLD; no release admitted; interim per scope 0b7b3b7c: only v2-built unions may be considered until v3 is reviewed.",
+69:  "unrepaired_recorded": {
+70:   "SR-2": "residual re-serialization assumption",
+71:   "SR-3": "fresh make_census per transaction",
+72:   "SR-4": "MINOR dependent U_ROW_CONFLICT noise",
+73:   "SR-5": "MINOR no structured request binding"
+74:  },
+75:  "verification_not_performed": [
+76:   "import",
+77:   "compile",
+78:   "AST parse",
+79:   "tests",
+80:   "fixtures",
+81:   "native census",
+82:   "model review",
+83:   "self-approval"
+84:  ],
+85:  "verification_performed": [
+86:   "exclusive-create writes",
+87:   "sha256/byte/line metadata",
+88:   "exact-once replacement assertions against v2 bytes",
+89:   "difflib unified diff of v2/v3 text and full read-back",
+90:   "static grep audit of v3: no kill/killpg/posix_spawn/subprocess/fork/waitpid/open/write/exec/eval calls"
+91:  ]
+92: }
+
+### parent-release-cp2-finding-sf1-v1.json
+Path: /Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/review/parent-release-cp2-finding-sf1-v1.json
+Full-file SHA256: b52ab85fa4def5c75328fed083ac5fee2764a11eaef11d3e9abd0f3b0c00c099
+Physical LF lines: 1-24
+1: {
+2:  "at": "2026-10-19T17:08:21-0700",
+3:  "at_basis": "actual /bin/date before write",
+4:  "evidence": {
+5:   "check_site": "v2 _v_union 1489-1507; spec_identities_match 1586-1592",
+6:   "union_report_fields": "v2 lines 1411-1412 emit module 'parent_release_identity_v2.py' and design_freeze_sha256 7f46b7e5...; v1 emits 'parent_release_identity_v1.py' and 3d6f48ce..."
+7:  },
+8:  "finding": "_v_union (v2 lines 1489-1507), used by evaluate_endedness and spec_identities_match, checks only format 'parent-release-identity-union-v1', the union_sha256 self-digest, member shapes and historical sets. It does not check module, design_freeze_sha256, scheme or producer_sha256. v1 (immutable HOLD, SR-1) emits the same format, so a CLOSED union built by v1 (pid-only unknowns closed by H7) passes v2 endedness and CP1 caller 4072c50e, bypassing the sticky U_UNKNOWN_INCARNATION rule.",
+9:  "format": "parent-release-cp2-finding-v1",
+10:  "id": "SF1",
+11:  "interim_guard": "Parent must only pass unions built by parent_release_identity_v2.py 7b2bc402 (attested), never v1 d07548e2.",
+12:  "limit": "Even after repair these fields are self-reported JSON: they prevent accidental cross-version use, not forgery. Provenance of the union/callables remains the parent attestation (CP1 prerequisite identity_union_census_cp2).",
+13:  "not_done": "No v3 written: write scope afe35832 authorizes v2 only. Parent decision requested.",
+14:  "owner": "ParentIdentityCP2",
+15:  "process_disclosure": "Source read/grep and this exclusive-create write only; no execution.",
+16:  "proposed_minimal_repair": "CP2 successor: _v_union additionally requires union['module'] == MODULE, union['design_freeze_sha256'] == DESIGN_FREEZE_SHA256, union['scheme'] == SCHEME, union['producer_sha256'] == SUPERVISOR19_SHA256 (else E_UNION_DIGEST / spec_identities_match False). CP1 successor independently pins the same module and design-freeze digest.",
+17:  "reported_by": "ParentCallerCP1 (IRC), confirmed by CP2 source read",
+18:  "severity": "MAJOR (integration version binding)",
+19:  "source": {
+20:   "path": "/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/control/parent_release_identity_v2.py",
+21:   "sha256": "7b2bc4021744aa6fa55677fa4953c9efc1088f53d341fb0ba339621abdddc3ec"
+22:  },
+23:  "status": "CONFIRMED_UNREPAIRED_V2_IMMUTABLE_SUCCESSOR_NEEDS_PARENT_AUTHORIZATION"
+24: }
+
+### parent-release-cp2-v3-repair-scope-v1.json
+Path: /Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/control/parent-release-cp2-v3-repair-scope-v1.json
+Full-file SHA256: 0b7b3b7c8ebb3b8ae88ad04472cc7e16a4d2ea8ee718706a6408d714303d2421
+Physical LF lines: 1-17
+1: {
+2:   "at": "2026-10-19T17:08:52-0700",
+3:   "status": "REPAIR_AUTHORIZED_SOURCE_ONLY_RUNTIME_HOLD",
+4:   "owner": "ParentIdentityCP2",
+5:   "subject": {
+6:     "path": "/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/control/parent_release_identity_v2.py",
+7:     "sha256": "7b2bc4021744aa6fa55677fa4953c9efc1088f53d341fb0ba339621abdddc3ec"
+8:   },
+9:   "finding": {
+10:     "path": "/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/review/parent-release-cp2-finding-sf1-v1.json",
+11:     "sha256": "b52ab85fa4def5c75328fed083ac5fee2764a11eaef11d3e9abd0f3b0c00c099"
+12:   },
+13:   "decision": "Code-level guard required; parent attestation alone is NOT accepted as the only guard.",
+14:   "authorized_change": "New parent_release_identity_v3.py: in _v_union add exact equality checks of union module, design_freeze_sha256 (= v2 design freeze 7f46b7e5 or its v3 successor if and only if v3 freezes a new design record), scheme, and producer_sha256 (supervisor19 cb828a78...) BEFORE any status use; any mismatch or absence -> HELD with a named cause; no other semantic change. Freeze exact-once replacement list before editing; exact diff; controls amendment for the four mismatch cases and the v1-built CLOSED union bypass; notify ParentCallerCP1 of the v3 pin.",
+15:   "interim": "Until v3 is reviewed, only unions built by v2 7b2bc402 may be considered, and no release is admitted in any case (global HOLD).",
+16:   "forbidden": "execution/import/compile/AST/tests; edits to v1/v2; scope widening (the two out-of-scope minors stay recorded)."
+17: }

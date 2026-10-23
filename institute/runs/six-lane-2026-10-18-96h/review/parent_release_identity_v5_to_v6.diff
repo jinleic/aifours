@@ -1,0 +1,63 @@
+--- control/parent_release_identity_v5.py
++++ control/parent_release_identity_v6.py
+@@ -1,10 +1,18 @@
+ #!/usr/bin/env python3
+-"""parent_release_identity_v5: CP2 captured historical union and bound independent census; NOEXEC candidate.
++"""parent_release_identity_v6: CP2 captured historical union and bound independent census; NOEXEC candidate.
+ 
+ Scope RUN/control/parent-release-cp2-v5-joined-repair-scope-v1.json
+ f05d60f8faee5f1db7539991507352520fefb8dd3ea3b6135ff1bc2a5763f997 joins SR-6 and the v4 HOLD 0F/4M/4m review.
+ Design frozen before code in RUN/control/parent-release-cp2-design-freeze-v5.json; final pre-source
+ interface clarifications RUN/control/parent-release-cp2-v5-frozen-interface-clarifications-v1.json. All predecessors remain immutable.
++
++V6 MINIMAL SUCCESSOR (authority RUN/control/parent-release-and-cp2-v6-successor-authority-v1.json
++b08a12dd36d52a020a3927e64d28d483886505b4d02df4407142aaae3393e27e; exact delta frozen in
++RUN/control/parent-release-cp2-design-freeze-v6.json; v5
++7a512b8e4a724b59fb2c8a651123a2dbce4ef6d4d38e152547624b6f477f9d53 stays immutable SELF-HOLD H09): _native retains
++BOTH the native primary and the completion-secondary objects and propagates a non-Exception native primary over
++an ORDINARY completion secondary (bare re-raise; the primary's own context is not rewritten); otherwise the
++secondary propagates. Every other v5 rule and interface is unchanged.
+ 
+ ENDED depends on REBUILDING the union from frozen parent-captured supervisor19 histories with this module's builder,
+ then typed equality of PRT spec.identities with the rebuilt rows; no caller union or self-reported digest authenticates
+@@ -54,13 +62,13 @@
+ from types import MappingProxyType
+ 
+ SCOPE_SHA256 = '1f717bf944e6d5a524aa0a65776d39726cd251bcd006971ba322f328de6bd314'
+-DESIGN_FREEZE_SHA256 = '687a3f93f4a3df1a3929b60e2485fa5d6912a128749139f4ae898c7121d320ad'
++DESIGN_FREEZE_SHA256 = '2135fc82e5acc80ae1122badcccd40e441824018190fca07d9158d777a266bf2'
+ V1_DESIGN_FREEZE_SHA256 = '3d6f48ced0d07293a81f44936c3559571e4d4f98919c024a257f32761a7af027'
+ V1_SOURCE_SHA256 = 'd07548e2dbff4ef6b64a3a902d3b59ed7c4abbf8dc2115e8b08ed37ee2ec14d5'
+ REPAIR_SCOPE_SHA256 = 'afe35832c808cf3d6a482fb6549dc8957d57ae982b7e48e76dba5b5374bcfa98'
+ SUPERVISOR19_SHA256 = 'cb828a78367dc2023bfc6e330696745f186f186811752361472747e5fe547e93'
+ SUPERVISOR19_VERSION = 'owned_supervisor_v19'
+-MODULE = 'parent_release_identity_v5.py'
++MODULE = 'parent_release_identity_v6.py'
+ SCHEME = 'sv19-incarnation-v1'
+ REQUEST_FORMAT = 'parent-release-identity-request-v1'
+ UNION_FORMAT = 'parent-release-identity-union-v1'
+@@ -698,7 +706,11 @@
+ def _native(state, stage, pid, function, *args, **kwargs):
+     """One native acquisition between ORIGINAL checks. Every primary and secondary object retained. The failing
+     completion check runs INSIDE the primary's handler, so interpreter implicit context links retain it without
+-    calling a foreign exception's __context__ property. No Python-level linking/overwriting."""
++    calling a foreign exception's __context__ property. No Python-level linking/overwriting.
++    V6 selection: a non-Exception primary (KeyboardInterrupt/SystemExit/...) outranks an ORDINARY completion
++    secondary and propagates by bare re-raise after the secondary handler ends, so its own context is not rewritten
++    and no caller can absorb it as an ordinary failure; otherwise the secondary propagates. Both objects stay in
++    the transaction's retained exceptions (CensusLog.exceptions) either way."""
+     _check(state, stage, pid, 'before')
+     try:
+         value = function(*args, **kwargs)
+@@ -708,8 +720,9 @@
+         except BaseException as secondary:
+             state.keep(primary)
+             state.keep(secondary)
+-            raise
+-        state.keep(primary)
++            if _ordinary(primary) or not _ordinary(secondary):
++                raise  # secondary selected; interpreter context keeps the primary
++        state.keep(primary)  # identity-deduplicated: completion passed or the primary outranks an ordinary secondary
+         raise
+     _check(state, stage, pid, 'after')
+     return value

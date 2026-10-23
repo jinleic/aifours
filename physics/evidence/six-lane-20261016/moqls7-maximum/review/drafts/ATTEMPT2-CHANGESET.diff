@@ -1,0 +1,171 @@
+--- code/k3_cuts_certify_r5.py
++++ code/k3_cuts_certify_r6.py
+@@ -1,9 +1,17 @@
+ #!/usr/bin/env python3
+-"""k3_cuts_certify_r5.py: AMENDMENT-4.r4 appender and certification driver for C311 + transported cuts, r5.
+-
+-New version of driver r4 (3ad6a4df...c038). Drivers r1 to r4 are preserved; none of them ran a native pipeline. The
+-only changes from r4 are the paths of the frozen amendment (AMENDMENT-4.r4), the frozen delta (r5), the receipts
+-(generator r6, controls r5, supervisor controls r3), the route directories (_r5), and a generic refusal message. As
+-in r4, the pinned supervisor (now supervise_r3.py, with the Darwin zombie rule) is read from the frozen delta, not
++"""k3_cuts_certify_r6.py: AMENDMENT-4.r4 appender and certification driver for C311 + transported cuts, r6.
++
++Path-only new version of driver r5 (a12f9632...e0a5) for the new attempts the parent authorised after the external
++floor stop at 04:09:50 (route A attempt under driver r5: supervisor record f0311593...04d2). Driver r5 would refuse,
++because its exclusive route directory evidence/k3cubes/C311cuts_A_r5 exists. Changes from r5, nothing else:
++  - route directories evidence/k3cubes/C311cuts_<route>_r6;
++  - the frozen delta K3-CUTS-CERT-DELTA.r6;
++  - the controls receipt binding is indirect. The observed controls r5 receipt (bb9445a2...b3e3) was produced
++    against driver r5 and delta r5, so preflight checks it against the driver/delta SHAs that delta r6 pins for it
++    (controls_receipt_driver_sha256, controls_receipt_delta_sha256), not against this file's SHA;
++  - usage and refusal text.
++Preparation, regeneration, appending, the block, headers, streaming, the strict parser and the acceptance predicate are
++byte-for-byte the r5 code, so the strengthened SHA must still equal the controls r5 receipt value. As in r5, the
++pinned supervisor (supervise_r3.py, with the Darwin zombie rule) is read from the frozen delta, not
+ hard-coded, so this driver refuses to run unless it is the session and process-group leader started by
+ the supervisor file whose SHA the frozen delta pins. Resource supervision lives in that supervisor, following the
+@@ -18,5 +26,5 @@
+      [b"s UNSATISFIABLE"]; both are recorded.
+   2. Admission is refused while evidence/k3cubes/C311cuts.QUARANTINE.json exists.
+-  3. Each route has one directory, evidence/k3cubes/C311cuts_<route>_r5, created by os.mkdir; if it exists, nothing
++  3. Each route has one directory, evidence/k3cubes/C311cuts_<route>_r6, created by os.mkdir; if it exists, nothing
+      runs. Outputs are exclusive-create. A receipt is written on every outcome this process survives; if the
+      supervisor stops the group, its record is the receipt of that stop.
+@@ -29,5 +37,5 @@
+   - FIFO feeds with per-feed SHA; binary DRAT through proof_stream.watch.
+ No CNF or proof file is written.
+-Usage (only under the supervisor, see the delta): /usr/bin/python3 -I -B k3_cuts_certify_r5.py A|B
++Usage (only under the supervisor, see the delta): /usr/bin/python3 -I -B k3_cuts_certify_r6.py A|B
+ """
+ import errno
+@@ -57,5 +65,5 @@
+ QUARANTINE = os.path.join(K3DIR, "C311cuts.QUARANTINE.json")
+ AMENDMENT = os.path.join(LANE, "review", "AMENDMENT-4.r4.md")
+-DELTA = os.path.join(LANE, "review", "K3-CUTS-CERT-DELTA.r5.json")
++DELTA = os.path.join(LANE, "review", "K3-CUTS-CERT-DELTA.r6.json")
+ GENERATOR_RECEIPT = os.path.join(K3DIR, "cuts_r6_receipt.json")
+ CONTROLS_RECEIPT = os.path.join(K3DIR, "cuts_cert_controls_r5.json")
+@@ -496,6 +504,7 @@
+           and generator.get("status") == "PASS" and generator["amendment"]["sha256"] == amendment_sha
+           and generator["generator_sha256"] == delta["generator"]["sha256"] and generator["block_sha256_A"] == BLOCK_SHA
+-          and controls.get("status") == "PASS" and controls["driver_sha256"] == driver_sha
+-          and controls["amendment_sha256"] == amendment_sha and controls["delta_sha256"] == delta_sha
++          and controls.get("status") == "PASS" and controls["driver_sha256"] == delta["controls_receipt_driver_sha256"]
++          and controls["amendment_sha256"] == amendment_sha
++          and controls["delta_sha256"] == delta["controls_receipt_delta_sha256"]
+           and controls["controls_sha256"] == delta["controls"]["sha256"]
+           and controls["routes"][route_name]["strengthened_sha256"] is not None
+@@ -550,5 +559,5 @@
+ def main():
+     if len(sys.argv) != 2 or sys.argv[1] not in ROUTES:
+-        raise SystemExit("usage: k3_cuts_certify_r5.py A|B")
++        raise SystemExit("usage: k3_cuts_certify_r6.py A|B")
+     route_name = sys.argv[1]
+     supervisor = require_supervisor()
+@@ -560,5 +569,5 @@
+     except OSError:
+         raise SystemExit("another C311+cuts pipeline holds the lock; not launched")
+-    route_dir = make_route_dir(os.path.join(K3DIR, "C311cuts_%s_r5" % route_name))
++    route_dir = make_route_dir(os.path.join(K3DIR, "C311cuts_%s_r6" % route_name))
+     receipt = os.path.join(route_dir, "C311cuts_%s.json" % route_name)
+     state = {"route": route_name, "status": "UNKNOWN", "verified_unsat": False, "started_at": now(),
+@@ -578,5 +587,6 @@
+                                                   "trip, no quarantine",
+                       "authority": "Parent AMENDMENT-4 disposition 3c9373c0...4e44 decisions 1-6; parent source "
+-                                   "reviews; frozen AMENDMENT-4.r4 and K3-CUTS-CERT-DELTA.r5",
++                                   "reviews; frozen AMENDMENT-4.r4 and K3-CUTS-CERT-DELTA.r6 (attempt after the "
++                                   "external floor stop at 04:09:50)",
+                       "scope": "One strengthened C311 input on one route; parent replay and composition review remain separate"})
+         with open(receipt, "x") as f:
+--- code/k3_direct_B_r6.py
++++ code/k3_direct_B_r7.py
+@@ -1,18 +1,18 @@
+ #!/usr/bin/env python3
+-"""k3_direct_B_r6.py: ONE authorised B/C321 or B/C411 retry after a checker-clock obstruction (parent 2026-10-18).
++"""k3_direct_B_r7.py: ONE authorised B/C411 attempt after the external floor stop (parent 2026-10-18, after 04:10).
+ 
+-Same science as k3_direct_B_r5.py (0e391cc7...e4f6): unchanged frozen B cube CNFs (pinned below), runtime B-map
+-oracle prerequisite, A calibration and control receipts, tested in-memory regeneration, outer 12.2e9-plus-growth
+-gates, kissat --time=3600, streamed binary DRAT only (no proof file), unchanged acceptance predicate.
+-Driver-only deltas:
+-  * transport proof_stream_r2.run_pair with drat-trim -t 7200 (drat-trim's clock starts at checker start and so
+-    includes the FIFO wait for the solver); cooperative wall guard max(3600, 7200) + 120 = 7320 s < 10800 s;
+-  * refuses unless the r5 receipt for this cube ended ONLY on the checker-clock obstruction: status UNKNOWN,
+-    solver rc 20, checker rc 0, checker status lines exactly ["s TIMEOUT"], no safety stop, pinned CNF SHA;
+-  * refuses unless kissat, drat-trim (binary and source), the oracle receipt and the CNF match the frozen pins;
+-  * B/C321 refuses until the B/C411 r5 attempt has ended (its receipt or deferral exists);
+-  * fixed output directory evidence/k3cubes/cert_B_r6 with exclusive files, so each cube gets at most one attempt.
++Path-only new version of k3_direct_B_r6.py (24fcfea8...c44d). The r6 B/C411 attempt (receipt 92354254...0184) was
++stopped by the global free-space floor at 04:09:50, an external stop and not a checker or solver obstruction. Driver
++r6 would now refuse its exclusive cert_B_r6/B_C411 names. Changes from r6, nothing else:
++  * output directory evidence/k3cubes/cert_B_r7 (exclusive files; at most one attempt);
++  * cube C411 only;
++  * the precondition reads the r6 C411 receipt and requires the external floor stop: status UNKNOWN, verified_unsat
++    false, safety_stop_reason "global free-space floor", pinned CNF. The B/C321 ordering check is dropped;
++  * authority, delta-record and retry fields name this attempt.
++Unchanged from r6: the frozen B cube CNF pin, the runtime B-map oracle prerequisite, A calibration and control
++receipts, tested in-memory regeneration, outer 12.2e9-plus-growth gates, kissat --time=3600, proof_stream_r2 with
++drat-trim -t 7200 and wall guard 7320 s, streamed binary DRAT only, binary pins and the acceptance predicate.
+ UNKNOWN is retained; no further limit increase or retry is automatic.
+-Usage: k3_direct_B_r6.py C321|C411
++Usage: k3_direct_B_r7.py C411   (start only after the parent desk's B/C321 replay hands over slot 2)
+ """
+ import argparse
+@@ -27,6 +27,6 @@
+ HERE = os.path.dirname(os.path.abspath(__file__))
+ LANE = os.path.dirname(HERE)
+-OUTDIR = os.path.join(LANE, "evidence", "k3cubes", "cert_B_r6")
+-R5DIR = os.path.join(LANE, "evidence", "k3cubes", "cert_B_r5")
++OUTDIR = os.path.join(LANE, "evidence", "k3cubes", "cert_B_r7")
++R6DIR = os.path.join(LANE, "evidence", "k3cubes", "cert_B_r6")
+ GROWTH = 10485760
+ SOLVER_SECONDS, CHECKER_SECONDS = 3600, 7200
+@@ -39,7 +39,7 @@
+ CHECKER_SHA = "111b0405566d55629f5d391b80b3220cc7a3ebc3cd406a35895ff65cc9acd5e4"
+ CHECKER_SOURCE_SHA = "d834b649f437e091597f5347f259b9f681087f89ca0844d0cee250a1a1a0c2ee"
+-AUTHORITY = ("Parent message 15aadaf1be5e6ec0 (received 2026-10-18 about 01:52 PDT host clock): ONE new-version "
+-             "B/C321 retry after the B/C411 r5 attempt ends, solver native 3600 s and drat-trim native 7200 s; ONE "
+-             "analogous B/C411 retry only if its r5 attempt ends only on the same checker-clock obstruction")
++AUTHORITY = ("Parent message after the 04:09:50 external floor stop (received about 04:16 PDT host clock): ONE new "
++             "B/C411 attempt with the r6 limits (solver 3600 s, drat-trim 7200 s) in slot 2, only after the parent "
++             "desk M7BCubeParentReplay finishes its B/C321 replay")
+ 
+ 
+@@ -62,5 +62,5 @@
+ def main():
+     ap = argparse.ArgumentParser()
+-    ap.add_argument("cube", choices=("C321", "C411"))
++    ap.add_argument("cube", choices=("C411",))
+     a = ap.parse_args()
+     os.makedirs(OUTDIR, exist_ok=True)
+@@ -70,14 +70,11 @@
+         if os.path.exists(path):
+             raise FileExistsError(path)
+-    if a.cube == "C321" and not any(os.path.exists(os.path.join(R5DIR, "B_C411" + s)) for s in (".json", ".deferred.json")):
+-        raise SystemExit("B/C411 r5 attempt has not ended; B/C321 retry not yet authorised")
+-    r5_path = os.path.join(R5DIR, "B_" + a.cube + ".json")
+-    with open(r5_path) as f:
+-        r5 = json.load(f)
+-    if not (r5.get("encoder") == "B" and r5.get("cube") == a.cube and r5.get("status") == "UNKNOWN"
+-            and r5.get("verified_unsat") is False and r5.get("solver_rc") == 20 and r5.get("checker_rc") == 0
+-            and r5.get("checker_status_lines") == ["s TIMEOUT"] and r5.get("safety_stop_reason") is None
+-            and r5.get("cnf_sha256") == CNF_SHA[a.cube]):
+-        raise SystemExit("r5 receipt does not show only the checker-clock obstruction; retry not authorised")
++    r6_path = os.path.join(R6DIR, "B_" + a.cube + ".json")
++    with open(r6_path) as f:
++        r6 = json.load(f)
++    if not (r6.get("encoder") == "B" and r6.get("cube") == a.cube and r6.get("status") == "UNKNOWN"
++            and r6.get("verified_unsat") is False and r6.get("safety_stop_reason") == "global free-space floor"
++            and r6.get("cnf_sha256") == CNF_SHA[a.cube]):
++        raise SystemExit("r6 receipt does not show the external floor stop; attempt not authorised")
+     kissat = os.path.realpath(shutil.which("kissat") or "")
+     if not (os.path.isfile(kissat) and sha(kissat) == KISSAT_SHA and sha(CHECKER) == CHECKER_SHA
+@@ -120,6 +117,6 @@
+                    "calibration_A_receipt_sha256": sha(acase), "B_pre_screened": False,
+                    "bmap_oracle_receipt_sha256": sha(ORACLE_RECEIPT), "bmap_oracle_sha256": ORACLE_SHA,
+-                   "retry_of_r5_receipt_sha256": sha(r5_path), "authority": AUTHORITY,
+-                   "delta_record": "review/K3-DIRECT-B-DELTA.r6.json",
++                   "retry_of_r6_receipt_sha256": sha(r6_path), "authority": AUTHORITY,
++                   "delta_record": "review/K3-DIRECT-B-DELTA.r7.json",
+                    "controls": controls, "driver_sha256": sha(__file__),
+                    "scope": "This original B cube only; parent whole-proof acceptance remains separate"})

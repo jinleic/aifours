@@ -1,0 +1,5 @@
+ACCEPT-WITH-FIXES
+
+- **[P2] Replay still accepts malformed numeric fields.** [Loading validation](/Users/jinleic/repos/aifours/institute/review/continuation-20261015/math-certificate-code-rereview-snapshot/code/certify.py:466) omits stored block/witness type checks, and the [final comparison](/Users/jinleic/repos/aifours/institute/review/continuation-20261015/math-certificate-code-rereview-snapshot/code/certify.py:496) uses Python equality. In an otherwise matching low-block-0 receipt, changing `id: 0` to `false`, `start: 8` to `8.0`, or the genuine n=512 collision coordinate `1` to `true` still passes these comparisons. Coverage rejects each mutation. Replay should validate stored field types before comparing; its malformed-input rejection remains incomplete.
+
+Authentic receipts and C logs are absent, so this review does not certify the final endpoint.

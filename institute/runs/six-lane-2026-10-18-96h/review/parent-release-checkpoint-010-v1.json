@@ -1,0 +1,43 @@
+{
+ "checkpoint": "parent-release-checkpoint-010-v1",
+ "at_from_bin_date": "2026-10-19T18:25:41-0700",
+ "author": "ParentReleaseTxn",
+ "status": "V5_PLAN_FROZEN_BEFORE_ANY_V5_SOURCE_BYTE",
+ "previous": {"checkpoint009": "963d5e3d4c46b4ef6782059054aa0a2ae18643d88b130469b9d370132582c670", "interval_s": 886},
+ "governing": {"subject_v4": "4c4a84f07047fa7499d4cc4bdc8ea29230614f760b2f7cf6fc42e85b16963b59", "review": "b38745818f96a032106eea3da675a40adf640d19c483c83dac64691f7228a8e8", "scope": "ef0ab41a6e6e5ec2357f2f5022a611e99f1e4d4a05ab2001699572232e6fb2f3", "base_contract": "4d12287257f8bf74d9057a796a0c6f7a391387c411b95d5dcda1131aa4692d3e"},
+ "plan": {
+  "M1": [
+   "_shape: ctx.commit_dir assigned only in the exclusion-success branch AND only if txn.fired is empty at that last statement. Completeness argument: _shape is the first step on a fresh _Txn (fired empty), no callback is invoked during shaping, and every caught shaping failure fires a cause (_shape_field, _shape_captures key/path checks, callables, spec, commit_dir, oracle keys, exclusion). Any uncaught exception leaves the statement unreached.",
+   "Affected rows re-frozen to in-memory HELD (disposition null, ACK_NOT_ATTEMPTED, registry NOT_ATTEMPTED, unchanged causes, final_deadline_check PASSED): T12, T14, T21, T23, T37, T70 registry_path variant; H(c) convention amended for shaping-time causes. New T122 (Codex example: exit.actual_exit=True, valid commit_dir outside job_dir) and T123 (malformed captures keys, direct-fire site)."
+  ],
+  "M2": [
+   "New _Txn.keep(exc): retains non-Exception BaseException objects at encounter, identity-deduplicated, oldest first; fires Pn_BASE_EXCEPTION with a detail built only from the non-overridable type name (runs no object code).",
+   "keep at every origin and handler: call (after the unsafe latch), native, tick (after the crossed latch), observe (both BaseException handlers), failed, close (before bookkeeping), release, open, directory; plus an in-flight clause 'except BaseException as exc: txn.keep(exc); raise' before the finally at all nine cleanup sites: _names, _artifacts, _hash_file, _scan child, _walk, _free_bytes, _write_new, _commit, _append_registry.",
+   "release: every owned close attempted once; NEWEST BaseException re-raised after all attempts; earlier ones stay retained.",
+   "decide_and_commit: the pending variable is removed; at every decision point the selection is txn.base_exceptions[-1]; _absorb(txn, exc, stage) retains first, then fires Pn_INTERNAL_ERROR (Exception) or Pn_BASE_EXCEPTION (BaseException) with stage + description; never raises (failures retained). After _finish any retained BaseException raises; the final-check path keeps final_deadline_check BASE_EXCEPTION.",
+   "New controls: T124 (registry fd close KeyboardInterrupt then directory fd close SystemExit), T125 (artifact read_bytes KeyboardInterrupt then job-dir fd close SystemExit, in-memory), T126 (native os.read KeyboardInterrupt then file fd close SystemExit, commit-safe HELD commit)."
+  ],
+  "M3": [
+   "Module constants _CONTEXT = BaseException.__dict__['__context__'], _EXC_DICT = BaseException.__dict__['__dict__'], _TYPE_NAME = type.__dict__['__name__']; _ordinary(exc) = issubclass(type(exc), Exception) replaces all four isinstance uses (call, close, _guard, _absorb).",
+   "_link(txn, exc, prior): reads and writes only through _CONTEXT, keeps the occupied-slot and bounded 64-step acyclicity protections, guarded by except BaseException with failures retained; observe and failed use it instead of direct __context__ access.",
+   "_why becomes _Txn.why(exc): exact str via str.__str__(str(exc)) and the non-overridable type name; a BaseException raised while describing is retained, never raised. All 32 call sites converted mechanically.",
+   "_attach_and_raise(txn, ctx, result): re-finalizes, selects the newest retained object, links it to the previous one best-effort, and writes parent_release_prior_exceptions (plain tuple of the original objects, oldest first, excluding the raised one) and parent_release_result directly into the instance dict via _EXC_DICT.__get__(exc) and dict.__setitem__ (no setattr or object.__setattr__). Failure: a BaseException is retained and becomes the newest, an Exception fires P5_INTERNAL_ERROR; re-finalize and retry for at most 8 rounds, then raise the newest without guaranteed attributes. Called only outside except clauses.",
+   "New controls: T128 hostile __context__ property, T129 hostile __setattr__ and same-name data descriptors, T130 hostile __str__ on an ordinary callback exception, T131 hostile __class__ on a non-Exception BaseException."
+  ],
+  "m4": "Notes only: T121 ack set {ACK_NOT_ATTEMPTED, ACK_OK, ACK_FAILED, ACK_UNPROVED_DEADLINE}; registry status set {NOT_ATTEMPTED, APPENDED, DEADLINE_CROSSED, FAILED} unchanged; extended to T01-T132.",
+  "m5": "_scan: _parts(full) immediately after full is built, before lstat, hashing, insertion or descent; the whole walk/baseline is refused. New T132 (>4096 characters; >128 components variant via a deeper second root).",
+  "format_cutover": "result parent-release-result-v5; disposition parent-release-disposition-v5, module parent_release_v5.py, repair_scope_sha256s [2fdf13b4, 1f9befdb, 32d161b0, ef0ab41a]; file prefix prt-v5-; registry parent-release-registry-v5 owner parent_release_v5.py; _held_for accepts only v5 HELD rows. Result key set (22), registry/disposition key sets and ack/status/final_deadline_check vocabularies unchanged; parent_release_result remains pure JSON data (dict/list/str/int/bool/None, no exception objects).",
+  "non_goals": "No other behaviour change; spec, wait-v1 and baseline-v2 unchanged; no v1-v4 import, alias or compatibility path."
+ },
+ "limits_to_record": [
+  "No hard guarantee against MemoryError or an asynchronous exception arriving inside retention, description or attachment code itself, or between an origin and its first handler.",
+  "__context__ links are best-effort: Python rewrites the context when an exception is raised inside a handler (including the caller's). The attached prior tuple is the retention channel.",
+  "build_late_baseline retains internally but attaches no prior tuple; BaseExceptions propagate with Python's implicit context only.",
+  "No adversarial in-process authenticity: readers using getattr can be intercepted by subclass descriptors; CP1 reads the instance dict.",
+  "Pn_BASE_EXCEPTION evidence gains one 'retained at encounter: <type>' entry per retained object besides the described absorption entries."
+ ],
+ "deliverables_in_order": ["control/parent_release_v5.py", "review/parent_release_v4_to_v5.diff (= /usr/bin/diff -u -L control/parent_release_v4.py -L control/parent_release_v5.py stream)", "control/parent-release-v5-design-notes.md", "review/parent-release-v5-codex-v1.prompt.txt (<220000 B; sections hash-verified)", "final checkpoint"],
+ "prompt_plan": "Numbered v5 source, v4->v5 diff, v5 notes, v4 notes, v3 notes, v2 notes, v4 review stdout, v5 scope, this checkpoint, base contract. If over budget, embed the v2 notes control section as a hash-pinned line-range excerpt rather than dropping it, and record that in the final checkpoint.",
+ "verification": {"execution": false, "import": false, "compile": false, "AST": false, "tests": false},
+ "authority": "Global runtime HOLD unchanged; no runtime, reservation-release or scientific authority."
+}

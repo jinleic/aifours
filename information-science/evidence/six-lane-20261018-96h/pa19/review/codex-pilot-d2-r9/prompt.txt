@@ -1,0 +1,16 @@
+You are a hostile, read-only source reviewer (round 9, narrow scope). Read ONLY files inside the current working directory (this snapshot). Modify nothing, do not delegate, and do not use the network. Report only real problems, highest severity first, with file:line.
+
+Decision D2 of `evidence/production-plan-v1.json` proposes constants-only variants of the two reviewed runner families:
+- `src/pilot_file_drat_v26.py` (SHA-256 d31f1a8e7e230eca32f8c16303a783901eefeabf1b1b739a97ca5b2c94347ae3) = `src/pilot_file_drat_v17.py` (ms06 DIRECT, build_v2; Codex r8 ready: `previous-review/r8-result.json`) with exactly two lines changed (`src/pilot-runner-v17-to-v26.diff`): SOLVER_SECONDS 600 -> 300 and PROOF_CAP 1,258,291,200 -> 629,145,600.
+- `src/pilot_file_drat_v27.py` (SHA-256 d9a1d5b30c8e9e386ef581ee942f3a102b7a07df25165279b41192b0095cf0a5) = `src/pilot_file_drat_v16.py` (ms09 PLACEMENT, build_partbatch; v14 Codex r7 ready + constant-only diffs) with the same two constants changed (`src/pilot-runner-v16-to-v27.diff`).
+v26/v27 are TEMPLATES: their ITEMS are still the old executed batches. Production runs would be item-only deltas of them, as for v18-v25.
+
+Purpose: halve the per-item retained-output reservation (1.305 GB -> 0.676 GB) and the disk retained by a timeout (partial proof up to the cap) under a fixed 10 GiB lane ceiling. `evidence/d2-measured-impact.json` lists 45 measured solver-UNSAT items (ms06 direct and ms09 partbatch, kissat and CaDiCaL): max solve 223.49 s, max proof 516,674,215 B, all within the new limits.
+
+Tasks, scoped to the constants change only:
+1. Confirm that the diffs change exactly those two constants and nothing else.
+2. Trace every use of SOLVER_SECONDS and PROOF_CAP and their derived quantities (ITEM_RESERVE, ITEM_WORST_SECONDS, chunk fit and absolute end, the kissat --time argument, the ProofSink cap, admission projections, qualify_unsat's size check, launch-record limits, controls). Confirm that the smaller values keep every safety, settlement, admission and qualification property: no wrong UNSAT/count, cap overflow fail-closed to UNKNOWN, no unbounded write, reservations still bound the retained output, and controls C1-C7 unaffected (CONTROL_PROOF_CAP unchanged).
+3. Check for a value-dependent defect: an inequality or a time/byte computation that was safe only for the old values, or a control whose intended reason depends on the item cap.
+4. Report only NEW blocker or major problems introduced by these two constants. Do not re-review unchanged framework code unless the new values make a defect newly reachable.
+
+Use `blocker` only for a possible wrong UNSAT/count, an unsettled or abandoned child, a double signal, an unbounded write, or a rule violation (`control/launch-contract-tightening-v1.json`). An empty findings list is valid. Return JSON matching the schema.

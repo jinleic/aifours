@@ -1,0 +1,50 @@
+Feasibility probes, 2026-10-15 PT. Each ran for at most 5 minutes. No attack was made.
+
+1) rsbf9_milp.py: exact MILP (scipy.optimize.milp / HiGHS), 9-variable rotation-symmetric class (60 orbits), 70 s limit per run.
+   Interpreter: /Users/jinleic/jinleic-workspace/scratch/ai4s-venv/bin/python (that directory disappeared at 02:27–02:31 PT, after the run).
+   Verbatim output:
+   orbits=60 T=30 balanced=False: TIMEOUT/iter-limit in 70.0s; independent-check nl=None balanced=None
+   orbits=60 T=28 balanced=False: TIMEOUT/iter-limit in 70.0s; independent-check nl=None balanced=None
+   orbits=60 T=30 balanced=True: TIMEOUT/iter-limit in 70.0s; independent-check nl=None balanced=None
+   orbits=60 T=32 balanced=True: FEASIBLE(optimal) in 0.0s; independent-check nl=240 balanced=1
+   Wall time: 210.36 seconds
+   Reading: a generic MILP cannot reproduce the known RSBF facts quickly. It neither finds a known nl-241 RSBF nor proves the known absence of nl >= 242 within 70 s. Exact class searches need a dedicated Walsh-bound branch-and-bound (Kavut-style) or a SAT encoding [INFERENCE].
+
+2) lxw_lemma6_probe.py: Lou–Xu–Wang arXiv:2610.17897, Lemma 6, case wt(h)=5.
+   Reformulation (derived here): nl(f1 xor 1_S) >= 27 <=> N(w) <= 3 for all w. The search is a pruned DFS over 5-subsets S, with an FWHT re-check of any hit.
+   Interpreter: /usr/bin/python3 (numpy 2.0.2). Seed 20261015. Each f1 is a random Maiorana–McFarland bent function x.pi(y)+g(y); the quadratic x1x2+x3x4+x5x6 was tested first.
+   Verbatim output:
+   tested 3753 Maiorana-McFarland bent f1 (incl. quadratic); counterexample found: False; 240s
+   Reading: this is evidence, not a certificate, that Lemma 6 holds even though the printed counting step is wrong. A complete check needs one representative of each EA class of 6-variable bent functions. That every 6-variable bent function lies in the completed MM class is [ASSUMPTION, source not opened].
+
+EA-invariance (why one bent f1 per EA class suffices for Lemma 6):
+Let f1' = f1∘L ⊕ l and f2' = f2∘L ⊕ l, where L is an affine permutation of F_2^6 and l is an affine function. Then f1' is bent, d(f1', f2') = d(f1, f2) and nl(f2') = nl(f2), because nl is invariant under affine permutations of the input and under adding affine functions. So the statement "d(f1,f2) in {4,5,6} => nl(f2) <= 26 for every bent f1" holds for all f1 iff it holds for one representative of each EA class of 6-variable bent functions.
+
+3) ky242_check.py: independent check of the three 9-variable nl-242 truth tables printed by Kavut–Yücel (arXiv:0808.0684, §3.1; hex copied from the PDF text). Interpreter /usr/bin/python3; runtime about 1 s.
+   Verbatim output:
+   3-DSBF ai=40 [msb]: weight=250 nl=242 walsh_zeros=0 W0=12 all_W_mod4={0}
+   3-DSBF ai=40 [lsb]: weight=250 nl=242 walsh_zeros=0 W0=12 all_W_mod4={0}
+   3-DSBF ai=32 [msb]: weight=250 nl=242 walsh_zeros=0 W0=12 all_W_mod4={0}
+   3-DSBF ai=32 [lsb]: weight=250 nl=242 walsh_zeros=0 W0=12 all_W_mod4={0}
+   3-RSBF ai=56 [msb]: weight=242 nl=242 walsh_zeros=0 W0=28 all_W_mod4={0}
+   3-RSBF ai=56 [lsb]: weight=242 nl=242 walsh_zeros=0 W0=28 all_W_mod4={0}
+   Reading: this confirms KY's statement that their nl-242 functions have no Walsh zeros, so none of them can be made balanced by adding a linear function. These tables are ready-made positive controls and seeds for a run on info-p0403-q9bal242.
+
+4) rsbf9_dfs.c (clang -O3; single thread): plain exact branch-and-bound over the 60-orbit RSBF class. It prunes when |partial W(a)| - remaining mass > T, with larger orbits assigned first.
+   Verbatim output:
+   orbits=60 T=32 balanced=1: TIMEOUT; nodes=158334976 solutions=0 explored_fraction=3.738e-06 time=20.1s
+     naive extrapolated full time ~ 5.385e+06 s
+   orbits=60 T=28 balanced=0: TIMEOUT; nodes=805306368 solutions=0 explored_fraction=6.064e-06 time=100.1s
+     naive extrapolated full time ~ 1.651e+07 s
+   orbits=60 T=28 balanced=1: TIMEOUT; nodes=765460480 solutions=0 explored_fraction=1.248e-05 time=100.1s
+     naive extrapolated full time ~ 8.018e+06 s
+   Reading: plain exact enumeration of a 60-orbit class needs on the order of 1e7 CPU-seconds, far above a 6 h x 4-thread budget (~8.6e4 s). Exact class enumeration is realistic only for classes of about 45 orbits or fewer, unless a smarter Kavut-style or meet-in-the-middle enumerator is built [INFERENCE]. The explored-fraction extrapolation is crude.
+
+5) lemma6_classes.py (/usr/bin/python3; seed 20261015; 200 s): the exhaustive Lemma 6 (wt 5) DFS for each sampled bent f1, plus an EA invariant: the histogram over a != 0 of rad(a) = #{b : D_a D_b f constant}.
+   Verbatim output:
+   elapsed 200s; distinct invariant classes seen: 4
+     samples= 1421 counterexamples=0  rad-histogram={4: 32, 16: 30, 64: 1}
+     samples=  822 counterexamples=0  rad-histogram={4: 56, 16: 7}
+     samples=  817 counterexamples=0  rad-histogram={16: 56, 64: 7}
+     samples=   41 counterexamples=0  rad-histogram={64: 63}
+   Reading: four distinct EA-invariant classes were hit: the quadratic class plus three cubic classes. For every sampled f1 the 5-subset DFS is exhaustive, and it found no counterexample. The property is EA-invariant (see above). Bent functions in 6 variables fall into exactly 4 EA classes (Rothaus 1976, the book's ref. [1]; classical, primary not opened here). Under that count, Lemma 6 (wt 5) of arXiv:2610.17897 holds for every 6-variable bent function, so the printed counting slip is harmless. This is a probe result, not an independently replayed certificate.

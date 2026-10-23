@@ -1,0 +1,48 @@
+--- code/rqls_fixedb_lm_v1.py	2026-10-19 05:01:39
++++ code/rqls_fixedb_lm_v2.py	2026-10-19 05:12:30
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""rqls_fixedb_lm_v1: float Levenberg-Marquardt assay of the FIXED-B UNITARY MODEL (no orbit symmetry) for 1-RQLS(v)
++"""rqls_fixedb_lm_v2: float Levenberg-Marquardt assay of the FIXED-B UNITARY MODEL (no orbit symmetry) for 1-RQLS(v)
+ (design note evidence/fixedb-unitary-model-proposal-v1.md). NOT a certificate; any target miss is a scoped UNKNOWN.
+ 
+ Model: B is a fixed Latin square (the resolution). Cell (i, j) carries q_ij = U_i e_j with U_0 = I (rows built in);
+@@ -15,8 +15,9 @@
+ lines, per family recorded); "verified" = max deviation < 1e-8. For deviation < 1e-6 distinct rays are counted (pairs
+ with 1 - |<q,q'>|^2 < 1e-7 merged; minsep recorded). Maximal candidate = v = 10 (ANY stage), verified, 100 rays, minsep >
+ 1e-6: U written at full precision, then IMMEDIATE stop (exit 7). Model defect = LM residual < 1e-10 with deviation >=
+-1e-8 (any stage): U written, IMMEDIATE stop (exit 8). U is also written for the first 32 verified v = 10 endpoints and
+-the first 8 verified S8 endpoints.
++1e-8 (any stage): U written, IMMEDIATE stop (exit 8). U is also written for the first 32 verified v = 10 TARGET
++endpoints (stages W, WD, WS; v2 change: v1 also spent these slots on the Parker calibration stages) and the first 8
++verified S8 endpoints.
+ 
+ Stages (deterministic seeds; wall-clock stage ends inside BUDGET; actual counts recorded; unfinished runs SKIPPED_TIME):
+  S   self-tests (gate): input pins (sha256) of the exact anchors and the Parker pair; analytic Jacobian vs central
+@@ -42,7 +43,7 @@
+ MODE "full" runs every stage with fixed calibration slots (S 60 s, N 120, C 60, KP 300, KR 900, S8 420) and splits the
+ remainder R = BUDGET - 1980 as W 0.6 R, WD 0.3 R, WS 0.1 R (120 s reserve). MODE "target" runs S and KP (the gated
+ self-tests and near-anchor recovery) and then W / WD / WS on R = BUDGET - 480 (same split). R <= 0 is a gate failure.
+-Usage: rqls_fixedb_lm_v1.py OUT.jsonl BUDGET_S MODE NN NC NKR NKR10 N8 NW NWD NS STOP_RECEIPT
++Usage: rqls_fixedb_lm_v2.py OUT.jsonl BUDGET_S MODE NN NC NKR NKR10 N8 NW NWD NS STOP_RECEIPT
+ Protocol (owned_supervisor_v2): no computation before the line "GO" on stdin (otherwise exit 6, no output); SIGTERM sets
+ a flag honoured between runs. Exit codes: 0 done, 2 exception, 3 gate failure, 4 output cap, 5 SIGTERM, 6 no GO,
+ 7 maximal candidate (unverified; immediate), 8 model defect (immediate). On every non-zero exit after GO a separate
+@@ -340,7 +341,7 @@
+     rec["maximal_candidate"] = bool(Pr.v == 10 and rec["ok"] and rec.get("rays") == 100 and rec.get("minsep", 0.0) > 1e-6)
+     rec["model_defect"] = bool(res < 1e-10 and rec["md"] >= 1e-8)
+     save = rec["maximal_candidate"] or rec["model_defect"]
+-    if not save and rec["ok"] and Pr.v == 10 and SAVED["v10"] < 32:
++    if not save and rec["ok"] and Pr.v == 10 and tag.startswith("W") and SAVED["v10"] < 32:
+         SAVED["v10"] += 1
+         save = True
+     if not save and rec["ok"] and tag.startswith("S8") and SAVED["S8"] < 8:
+@@ -492,7 +493,7 @@
+ 
+ 
+ def main():
+-    W({"assay": "rqls_fixedb_lm_v1", "numpy": np.__version__, "python": sys.version, "budget_s": BUDGET,
++    W({"assay": "rqls_fixedb_lm_v2", "numpy": np.__version__, "python": sys.version, "budget_s": BUDGET,
+        "argv": sys.argv[1:], "flags": {"optimize": sys.flags.optimize, "isolated": sys.flags.isolated}})
+     if sys.flags.optimize:
+         raise GateFail("python optimize flag set")

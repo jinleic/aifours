@@ -1,0 +1,740 @@
+#!/usr/bin/env python3
+"""Independent encoder M2 for one A2 skeleton case, written separately from encode_skel.py
+and the M1 helpers (no shared code). Input: a gen_skel_b skeleton (row types + #empty rows)
+and the multiset's special profiles.
+
+Rows: the given types (rows in >= 2 P0 quads) in the listed order, then for each P0 column v
+its 4 - deg(v) private rows, then the empty rows. Columns: P0 columns 0..c0-1, then the
+special columns in the order given. Cell variables v(r,c,s) = 1 + 48 r + 6 c + s.
+Clauses:
+  * one symbol per cell (ALO + pairwise AMO);
+  * P0 quad cells fixed (symbol 0 iff the row's type contains the column);
+  * every symbol s of column c at most n_{c,s} times (binomial (n+1)-subset clauses; the
+    counts sum to 19, so this forces exact counts);
+  * column-pair definition: no ordered symbol pair twice in any two columns (4-clauses);
+  * row identity (validity counting): with u(r,r') = 'rows r,r' agree nowhere' (forced true
+    when no agreement witness a(r,r',c,s) -> v(r,c,s) & v(r',c,s) is chosen),
+    sum_{r'} u(r,r') + sum_{special c} (n_{c,A[r][c]} - 2) = 2 - |T(r)| + #special,
+    encoded exactly with a totalizer over the multiset of literals (size-1 blocks moved to
+    the other side as negated literals);
+  * symmetry: in each P0 column c the rows of Q_d minus Q_c (d maximizing that set) get triple
+    labels 1,2,3(,4) in row order; in each special column, equal-count labels s < s+1 obey
+    first-occurrence order (long clauses); identical consecutive special columns are
+    lexicographically non-decreasing read top-down (order literals). The last two are
+    lex-leader constraints for the column-major reading order of the special columns; the P0
+    relabeling acts on other columns, so all hold simultaneously for some image of every
+    valid array. No row symmetry breaking.
+"""
+import itertools
+
+
+class Builder:
+    def __init__(self, nfixed):
+        self.nv = nfixed
+        self.cl = []
+
+    def new(self):
+        self.nv += 1
+        return self.nv
+
+    def totalizer(self, lits):
+        """unary sum: returns outputs o[0..n-1] with o[j] <-> (sum >= j+1)."""
+        layer = [[l] for l in lits]
+        if not layer:
+            return []
+        while len(layer) > 1:
+            nxt = []
+            for i in range(0, len(layer) - 1, 2):
+                a, b = layer[i], layer[i + 1]
+                o = [self.new() for _ in range(len(a) + len(b))]
+                for x in range(len(a) + 1):
+                    for y in range(len(b) + 1):
+                        if x + y == 0:
+                            continue
+                        c = [o[x + y - 1]]
+                        if x:
+                            c.append(-a[x - 1])
+                        if y:
+                            c.append(-b[y - 1])
+                        self.cl.append(c)
+                for x in range(len(a) + 1):
+                    for y in range(len(b) + 1):
+                        if x + y >= len(a) + len(b):
+                            continue
+                        c = [-o[x + y]]
+                        if x < len(a):
+                            c.append(a[x])
+                        if y < len(b):
+                            c.append(b[y])
+                        self.cl.append(c)
+                nxt.append(o)
+            if len(layer) % 2:
+                nxt.append(layer[-1])
+            layer = nxt
+        return layer[0]
+
+
+def build(c0, types, empty, special, N=19, K=8, Q=6):
+    assert N == 3 * Q + 1
+    deg = [0] * c0
+    for t in types:
+        for x in t:
+            deg[x] += 1
+    member = [set(t) for t in types]
+    for x in range(c0):
+        member += [{x} for _ in range(4 - deg[x])]
+    member += [set() for _ in range(empty)]
+    assert len(member) == N
+    profs = [[4] + [3] * (Q - 1)] * c0 + [sorted(p, reverse=True) for p in special]
+    assert len(profs) == K
+    v = lambda r, c, s: 1 + K * Q * r + Q * c + s  # noqa: E731
+    B = Builder(N * K * Q)
+    cl = B.cl
+    for r in range(N):
+        for c in range(K):
+            cl.append([v(r, c, s) for s in range(Q)])
+            for s, t in itertools.combinations(range(Q), 2):
+                cl.append([-v(r, c, s), -v(r, c, t)])
+            if c < c0:
+                cl.append([v(r, c, 0)] if c in member[r] else [-v(r, c, 0)])
+    for c in range(K):
+        for s in range(Q):
+            if c < c0 and s == 0:
+                continue
+            n = profs[c][s]
+            for sub in itertools.combinations(range(N), n + 1):
+                cl.append([-v(r, c, s) for r in sub])
+    for c1, c2 in itertools.combinations(range(K), 2):
+        for a in range(Q):
+            for b in range(Q):
+                for r, r2 in itertools.combinations(range(N), 2):
+                    cl.append([-v(r, c1, a), -v(r, c2, b), -v(r2, c1, a), -v(r2, c2, b)])
+    U = {}
+    for r, r2 in itertools.combinations(range(N), 2):
+        u = B.new()
+        U[(r, r2)] = u
+        wit = []
+        for c in range(K):
+            for s in range(Q):
+                a = B.new()
+                cl.append([-a, v(r, c, s)])
+                cl.append([-a, v(r2, c, s)])
+                wit.append(a)
+        cl.append(wit + [u])
+    ns = K - c0
+    for r in range(N):
+        lits = [U[(min(r, x), max(r, x))] for x in range(N) if x != r]
+        target = (N - 1) - 2 * c0 - ns - len(member[r])  # = 2 - |T| + ns when N=19, K=8
+        for c in range(c0, K):
+            for s in range(Q):
+                n = profs[c][s]
+                if n >= 2:
+                    lits += [v(r, c, s)] * (n - 2)
+                else:  # n == 1: coefficient -1 -> +(not v) on the left, +1 on the right
+                    lits.append(-v(r, c, s))
+                    target += 1
+        o = B.totalizer(lits)
+        if target < 0 or target > len(o):
+            cl.append([])
+            continue
+        if target >= 1:
+            cl.append([o[target - 1]])
+        if target < len(o):
+            cl.append([-o[target]])
+    for c in range(c0):
+        Qc = {r for r in range(N) if c in member[r]}
+        best = None
+        for d in range(c0):
+            if d == c:
+                continue
+            S = [r for r in range(N) if d in member[r] and r not in Qc]
+            if best is None or len(S) > len(best):
+                best = S
+        if best:
+            for lab, r in enumerate(sorted(best), start=1):
+                cl.append([v(r, c, lab)])
+    for c in range(c0, K):
+        for s in range(Q - 1):
+            if profs[c][s] != profs[c][s + 1]:
+                continue
+            for r in range(N):
+                cl.append([-v(r, c, s + 1)] + [v(r2, c, s) for r2 in range(r)])
+    for c in range(c0, K - 1):
+        c2 = c + 1
+        if profs[c] != profs[c2]:
+            continue
+        eq_prev = None
+        for r in range(N):
+            for k in range(1, Q):
+                # if all previous rows equal: value(r,c) >= k -> value(r,c2) >= k
+                lhs = [v(r, c, s) for s in range(k, Q)]
+                for s in lhs:
+                    cl.append(([-eq_prev] if eq_prev else []) + [-s] + [v(r, c2, t) for t in range(k, Q)])
+            if r < N - 1:
+                e = B.new()
+                for s in range(Q):
+                    cl.append(([-eq_prev] if eq_prev else []) + [-v(r, c, s), -v(r, c2, s), e])
+                eq_prev = e
+    return B.nv, cl
+
+
+def cnf_bytes(nv, cl):
+    parts = ["p cnf %d %d\n" % (nv, len(cl))]
+    parts.extend(" ".join(map(str, c)) + " 0\n" for c in cl)
+    return "".join(parts).encode()
+
+
+def build_variant18():
+    """18-row control variant (PA18 positive control): five (3^6) base columns without fixed
+    cells and three (4,3,3,3,3,2) columns, same clause families as build(); base columns use
+    first-occurrence order for their six equal-count labels (no quads to fix labels with).
+    Row identity: sum u + sum_special (n-2) = 17 - 2*5 - 3 = 4."""
+    N, K, Q = 18, 8, 6
+    c0 = 5
+    profs = [[3] * 6] * c0 + [[4, 3, 3, 3, 3, 2]] * 3
+    v = lambda r, c, s: 1 + 48 * r + 6 * c + s  # noqa: E731
+    B = Builder(N * K * Q)
+    cl = B.cl
+    for r in range(N):
+        for c in range(K):
+            cl.append([v(r, c, s) for s in range(Q)])
+            for s, t in itertools.combinations(range(Q), 2):
+                cl.append([-v(r, c, s), -v(r, c, t)])
+    for c in range(K):
+        for s in range(Q):
+            for sub in itertools.combinations(range(N), profs[c][s] + 1):
+                cl.append([-v(r, c, s) for r in sub])
+    for c1, c2 in itertools.combinations(range(K), 2):
+        for a in range(Q):
+            for b in range(Q):
+                for r, r2 in itertools.combinations(range(N), 2):
+                    cl.append([-v(r, c1, a), -v(r, c2, b), -v(r2, c1, a), -v(r2, c2, b)])
+    U = {}
+    for r, r2 in itertools.combinations(range(N), 2):
+        u = B.new()
+        U[(r, r2)] = u
+        wit = []
+        for c in range(K):
+            for s in range(Q):
+                a = B.new()
+                cl.append([-a, v(r, c, s)])
+                cl.append([-a, v(r2, c, s)])
+                wit.append(a)
+        cl.append(wit + [u])
+    for r in range(N):
+        lits = [U[(min(r, x), max(r, x))] for x in range(N) if x != r]
+        target = (N - 1) - 2 * c0 - (K - c0)
+        for c in range(c0, K):
+            for s in range(Q):
+                lits += [v(r, c, s)] * (profs[c][s] - 2)
+        o = B.totalizer(lits)
+        if target >= 1:
+            cl.append([o[target - 1]])
+        if target < len(o):
+            cl.append([-o[target]])
+    for c in range(K):
+        for s in range(Q - 1):
+            if profs[c][s] != profs[c][s + 1]:
+                continue
+            for r in range(N):
+                cl.append([-v(r, c, s + 1)] + [v(r2, c, s) for r2 in range(r)])
+    for c in range(c0, K - 1):
+        c2 = c + 1
+        eq_prev = None
+        for r in range(N):
+            for k in range(1, Q):
+                for s in range(k, Q):
+                    cl.append(([-eq_prev] if eq_prev else []) + [-v(r, c, s)] + [v(r, c2, t) for t in range(k, Q)])
+            if r < N - 1:
+                e = B.new()
+                for s in range(Q):
+                    cl.append(([-eq_prev] if eq_prev else []) + [-v(r, c, s), -v(r, c2, s), e])
+                eq_prev = e
+    return B.nv, cl, v
+
+
+def build_part(c0, types, empty, special, placed, N=19, K=8, Q=6):
+    """M2 subcase: like build(), with the blocks of the first len(placed) special columns
+    fixed (A -> 0, B -> 1, P -> Q-1, the other rows of that column restricted to the triple
+    labels 2..Q-2). Symmetry (column-major lex-leader on special columns): first-occurrence
+    order among the triple labels of fixed columns and among equal-count labels of free
+    columns; lexicographic order only between consecutive identical FREE special columns.
+    The P0 triple-label fixing is unchanged."""
+    # dedicated construction (the symmetry families differ from build())
+    return _build_part_fresh(c0, types, empty, special, placed, N, K, Q)
+
+
+def _build_part_fresh(c0, types, empty, special, placed, N, K, Q):
+    deg = [0] * c0
+    for t in types:
+        for x in t:
+            deg[x] += 1
+    member = [set(t) for t in types]
+    for x in range(c0):
+        member += [{x} for _ in range(4 - deg[x])]
+    member += [set() for _ in range(empty)]
+    assert len(member) == N
+    profs = [[4] + [3] * (Q - 1)] * c0 + [sorted(p, reverse=True) for p in special]
+    assert all(p == [4, 4] + [3] * (Q - 3) + [2] for p in profs[c0:])
+    m = len(placed)
+    PAIR = Q - 1
+    v = lambda r, c, s: 1 + K * Q * r + Q * c + s  # noqa: E731
+    B = Builder(N * K * Q)
+    cl = B.cl
+    fixedcol = {}
+    for i, (A, Bl, P) in enumerate(placed):
+        c = c0 + i
+        for r in A:
+            fixedcol[(r, c)] = 0
+        for r in Bl:
+            fixedcol[(r, c)] = 1
+        for r in P:
+            fixedcol[(r, c)] = PAIR
+    for r in range(N):
+        for c in range(K):
+            cl.append([v(r, c, s) for s in range(Q)])
+            for s, t in itertools.combinations(range(Q), 2):
+                cl.append([-v(r, c, s), -v(r, c, t)])
+            if c < c0:
+                cl.append([v(r, c, 0)] if c in member[r] else [-v(r, c, 0)])
+            elif c < c0 + m:
+                if (r, c) in fixedcol:
+                    cl.append([v(r, c, fixedcol[(r, c)])])
+                else:
+                    for s in (0, 1, PAIR):
+                        cl.append([-v(r, c, s)])
+    for c in range(K):
+        for s in range(Q):
+            if c < c0 and s == 0:
+                continue
+            if c0 <= c < c0 + m and s in (0, 1, PAIR):
+                continue
+            n = profs[c][s]
+            for sub in itertools.combinations(range(N), n + 1):
+                cl.append([-v(r, c, s) for r in sub])
+    for c1, c2 in itertools.combinations(range(K), 2):
+        for a in range(Q):
+            for b in range(Q):
+                for r, r2 in itertools.combinations(range(N), 2):
+                    cl.append([-v(r, c1, a), -v(r, c2, b), -v(r2, c1, a), -v(r2, c2, b)])
+    U = {}
+    for r, r2 in itertools.combinations(range(N), 2):
+        u = B.new()
+        U[(r, r2)] = u
+        wit = []
+        for c in range(K):
+            for s in range(Q):
+                a = B.new()
+                cl.append([-a, v(r, c, s)])
+                cl.append([-a, v(r2, c, s)])
+                wit.append(a)
+        cl.append(wit + [u])
+    ns = K - c0
+    for r in range(N):
+        lits = [U[(min(r, x), max(r, x))] for x in range(N) if x != r]
+        target = (N - 1) - 2 * c0 - ns - len(member[r])
+        for c in range(c0, K):
+            for s in range(Q):
+                lits += [v(r, c, s)] * (profs[c][s] - 2)
+        o = B.totalizer(lits)
+        if target < 0 or target > len(o):
+            cl.append([])
+            continue
+        if target >= 1:
+            cl.append([o[target - 1]])
+        if target < len(o):
+            cl.append([-o[target]])
+    for c in range(c0):
+        Qc = {r for r in range(N) if c in member[r]}
+        best = None
+        for d in range(c0):
+            if d == c:
+                continue
+            S_ = [r for r in range(N) if d in member[r] and r not in Qc]
+            if best is None or len(S_) > len(best):
+                best = S_
+        if best:
+            for lab, r in enumerate(sorted(best), start=1):
+                cl.append([v(r, c, lab)])
+    for c in range(c0, K):
+        if c < c0 + m:
+            prs = [(s, s + 1) for s in range(2, Q - 2)]
+        else:
+            prs = [(s, s + 1) for s in range(Q - 1) if profs[c][s] == profs[c][s + 1]]
+        for s, s2 in prs:
+            for r in range(N):
+                cl.append([-v(r, c, s2)] + [v(r2, c, s) for r2 in range(r)])
+    for c in range(c0 + m, K - 1):
+        c2 = c + 1
+        eq_prev = None
+        for r in range(N):
+            for k in range(1, Q):
+                for s in range(k, Q):
+                    cl.append(([-eq_prev] if eq_prev else []) + [-v(r, c, s)] + [v(r, c2, t) for t in range(k, Q)])
+            if r < N - 1:
+                e = B.new()
+                for s in range(Q):
+                    cl.append(([-eq_prev] if eq_prev else []) + [-v(r, c, s), -v(r, c2, s), e])
+                eq_prev = e
+    return B.nv, cl
+
+
+def build_partbatch(c0, types, empty, special, placements, N=19, K=8, Q=6):
+    """M2 batch of one-column placements: selector s_i per placement, clause OR s_i; the
+    first special column c* has exact label counts (binomial, as in build()) and, guarded by
+    s_i, its A rows -> 0, B rows -> 1, P rows -> Q-1 and the labels 0, 1, Q-1 excluded for all
+    other rows. Symmetry: P0 triple-label fixing; first-occurrence order among the triple
+    labels of c* and among equal-count labels of the free special columns; lexicographic
+    order between consecutive identical FREE special columns (column-major lex-leader).
+    UNSAT iff every placement subcase is UNSAT."""
+    placements = [pl[0] if len(pl) == 1 else pl for pl in placements]
+    deg = [0] * c0
+    for t in types:
+        for x in t:
+            deg[x] += 1
+    member = [set(t) for t in types]
+    for x in range(c0):
+        member += [{x} for _ in range(4 - deg[x])]
+    member += [set() for _ in range(empty)]
+    assert len(member) == N
+    profs = [[4] + [3] * (Q - 1)] * c0 + [sorted(p, reverse=True) for p in special]
+    assert all(p == [4, 4] + [3] * (Q - 3) + [2] for p in profs[c0:])
+    PAIR = Q - 1
+    cs = c0
+    v = lambda r, c, s: 1 + K * Q * r + Q * c + s  # noqa: E731
+    B = Builder(N * K * Q)
+    cl = B.cl
+    for r in range(N):
+        for c in range(K):
+            cl.append([v(r, c, s) for s in range(Q)])
+            for s, t in itertools.combinations(range(Q), 2):
+                cl.append([-v(r, c, s), -v(r, c, t)])
+            if c < c0:
+                cl.append([v(r, c, 0)] if c in member[r] else [-v(r, c, 0)])
+    for c in range(K):
+        for s in range(Q):
+            if c < c0 and s == 0:
+                continue
+            for sub in itertools.combinations(range(N), profs[c][s] + 1):
+                cl.append([-v(r, c, s) for r in sub])
+    sels = [B.new() for _ in placements]
+    cl.append(list(sels))
+    for s_i, (A, Bl, P) in zip(sels, placements):
+        role = {}
+        for r in A:
+            role[r] = 0
+        for r in Bl:
+            role[r] = 1
+        for r in P:
+            role[r] = PAIR
+        for r in range(N):
+            if r in role:
+                cl.append([-s_i, v(r, cs, role[r])])
+            else:
+                for s in (0, 1, PAIR):
+                    cl.append([-s_i, -v(r, cs, s)])
+    for c1, c2 in itertools.combinations(range(K), 2):
+        for a in range(Q):
+            for b in range(Q):
+                for r, r2 in itertools.combinations(range(N), 2):
+                    cl.append([-v(r, c1, a), -v(r, c2, b), -v(r2, c1, a), -v(r2, c2, b)])
+    U = {}
+    for r, r2 in itertools.combinations(range(N), 2):
+        u = B.new()
+        U[(r, r2)] = u
+        wit = []
+        for c in range(K):
+            for s in range(Q):
+                a = B.new()
+                cl.append([-a, v(r, c, s)])
+                cl.append([-a, v(r2, c, s)])
+                wit.append(a)
+        cl.append(wit + [u])
+    ns = K - c0
+    for r in range(N):
+        lits = [U[(min(r, x), max(r, x))] for x in range(N) if x != r]
+        target = (N - 1) - 2 * c0 - ns - len(member[r])
+        for c in range(c0, K):
+            for s in range(Q):
+                lits += [v(r, c, s)] * (profs[c][s] - 2)
+        o = B.totalizer(lits)
+        if target < 0 or target > len(o):
+            cl.append([])
+            continue
+        if target >= 1:
+            cl.append([o[target - 1]])
+        if target < len(o):
+            cl.append([-o[target]])
+    for c in range(c0):
+        Qc = {r for r in range(N) if c in member[r]}
+        best = None
+        for d in range(c0):
+            if d == c:
+                continue
+            S_ = [r for r in range(N) if d in member[r] and r not in Qc]
+            if best is None or len(S_) > len(best):
+                best = S_
+        if best:
+            for lab, r in enumerate(sorted(best), start=1):
+                cl.append([v(r, c, lab)])
+    for c in range(c0, K):
+        if c == cs:
+            prs = [(s, s + 1) for s in range(2, Q - 2)]
+        else:
+            prs = [(s, s + 1) for s in range(Q - 1) if profs[c][s] == profs[c][s + 1]]
+        for s, s2 in prs:
+            for r in range(N):
+                cl.append([-v(r, c, s2)] + [v(r2, c, s) for r2 in range(r)])
+    for c in range(cs + 1, K - 1):
+        c2 = c + 1
+        eq_prev = None
+        for r in range(N):
+            for k in range(1, Q):
+                for s in range(k, Q):
+                    cl.append(([-eq_prev] if eq_prev else []) + [-v(r, c, s)] + [v(r, c2, t) for t in range(k, Q)])
+            if r < N - 1:
+                e = B.new()
+                for s in range(Q):
+                    cl.append(([-eq_prev] if eq_prev else []) + [-v(r, c, s), -v(r, c2, s), e])
+                eq_prev = e
+    return B.nv, cl
+
+
+def build_v2(c0, types, empty, special, N=19, K=8, Q=6):
+    """M2 encoder version 2 (adds row symmetry breaking). Same clause families as build()
+    except the symmetry breaking, which is now entirely lex-leader for ONE row-major reading
+    order (rows top-down, columns left to right):
+      * P0 columns: first-occurrence order of the triple labels 1..Q-1 (replaces the label
+        fixing of build(), which is not a lex-leader constraint);
+      * special columns: first-occurrence order among equal-count labels;
+      * identical consecutive special columns: column read top-down lexicographically
+        non-decreasing (the row-major lex-leader constraint of the column swap);
+      * rows with identical P0 membership (same type), consecutive in the row order:
+        row r lexicographically <= row r' (the lex-leader constraint of the transposition),
+        encoded with order literals ge(r,c,k) <-> value >= k and prefix-equality literals.
+    The lex-least array of each orbit under the group generated by these symmetries satisfies
+    all of them."""
+    deg = [0] * c0
+    for t in types:
+        for x in t:
+            deg[x] += 1
+    member = [set(t) for t in types]
+    for x in range(c0):
+        member += [{x} for _ in range(4 - deg[x])]
+    member += [set() for _ in range(empty)]
+    assert len(member) == N
+    profs = [[4] + [3] * (Q - 1)] * c0 + [sorted(p, reverse=True) for p in special]
+    v = lambda r, c, s: 1 + K * Q * r + Q * c + s  # noqa: E731
+    B = Builder(N * K * Q)
+    cl = B.cl
+    for r in range(N):
+        for c in range(K):
+            cl.append([v(r, c, s) for s in range(Q)])
+            for s, t in itertools.combinations(range(Q), 2):
+                cl.append([-v(r, c, s), -v(r, c, t)])
+            if c < c0:
+                cl.append([v(r, c, 0)] if c in member[r] else [-v(r, c, 0)])
+    for c in range(K):
+        for s in range(Q):
+            if c < c0 and s == 0:
+                continue
+            for sub in itertools.combinations(range(N), profs[c][s] + 1):
+                cl.append([-v(r, c, s) for r in sub])
+    for c1, c2 in itertools.combinations(range(K), 2):
+        for a in range(Q):
+            for b in range(Q):
+                for r, r2 in itertools.combinations(range(N), 2):
+                    cl.append([-v(r, c1, a), -v(r, c2, b), -v(r2, c1, a), -v(r2, c2, b)])
+    U = {}
+    for r, r2 in itertools.combinations(range(N), 2):
+        u = B.new()
+        U[(r, r2)] = u
+        wit = []
+        for c in range(K):
+            for s in range(Q):
+                a = B.new()
+                cl.append([-a, v(r, c, s)])
+                cl.append([-a, v(r2, c, s)])
+                wit.append(a)
+        cl.append(wit + [u])
+    ns = K - c0
+    for r in range(N):
+        lits = [U[(min(r, x), max(r, x))] for x in range(N) if x != r]
+        target = (N - 1) - 2 * c0 - ns - len(member[r])
+        for c in range(c0, K):
+            for s in range(Q):
+                n = profs[c][s]
+                if n >= 2:
+                    lits += [v(r, c, s)] * (n - 2)
+                else:
+                    lits.append(-v(r, c, s))
+                    target += 1
+        o = B.totalizer(lits)
+        if target < 0 or target > len(o):
+            cl.append([])
+            continue
+        if target >= 1:
+            cl.append([o[target - 1]])
+        if target < len(o):
+            cl.append([-o[target]])
+    # first-occurrence order (P0 triple labels; equal-count special labels)
+    for c in range(K):
+        if c < c0:
+            prs = [(s, s + 1) for s in range(1, Q - 1)]
+        else:
+            prs = [(s, s + 1) for s in range(Q - 1) if profs[c][s] == profs[c][s + 1]]
+        for s, s2 in prs:
+            for r in range(N):
+                cl.append([-v(r, c, s2)] + [v(r2, c, s) for r2 in range(r)])
+    # identical consecutive special columns: top-down lex
+    for c in range(c0, K - 1):
+        c2 = c + 1
+        if profs[c] != profs[c2]:
+            continue
+        eq_prev = None
+        for r in range(N):
+            for k in range(1, Q):
+                for s in range(k, Q):
+                    cl.append(([-eq_prev] if eq_prev else []) + [-v(r, c, s)] + [v(r, c2, t) for t in range(k, Q)])
+            if r < N - 1:
+                e = B.new()
+                for s in range(Q):
+                    cl.append(([-eq_prev] if eq_prev else []) + [-v(r, c, s), -v(r, c2, s), e])
+                eq_prev = e
+    # rows with identical type, consecutive: row lex (columns left to right)
+    for r in range(N - 1):
+        r2 = r + 1
+        if member[r] != member[r2] or len(member[r]) >= 2:
+            continue
+        eq_prev = None
+        for c in range(K):
+            for k in range(1, Q):
+                for s in range(k, Q):
+                    cl.append(([-eq_prev] if eq_prev else []) + [-v(r, c, s)] + [v(r2, c, t) for t in range(k, Q)])
+            if c < K - 1:
+                e = B.new()
+                for s in range(Q):
+                    cl.append(([-eq_prev] if eq_prev else []) + [-v(r, c, s), -v(r2, c, s), e])
+                eq_prev = e
+    return B.nv, cl
+
+
+def build_v2g(c0, types, empty, special, N=19, K=8, Q=6, base_quad=True):
+    """build_v2 generalized: base_quad=False gives the 18-row control variant (base profile
+    (3^Q), no fixed cells, first-occurrence order on all base labels). Otherwise identical to
+    build_v2. M2 encoder version 2 (adds row symmetry breaking). Same clause families as build()
+    except the symmetry breaking, which is now entirely lex-leader for ONE row-major reading
+    order (rows top-down, columns left to right):
+      * P0 columns: first-occurrence order of the triple labels 1..Q-1 (replaces the label
+        fixing of build(), which is not a lex-leader constraint);
+      * special columns: first-occurrence order among equal-count labels;
+      * identical consecutive special columns: column read top-down lexicographically
+        non-decreasing (the row-major lex-leader constraint of the column swap);
+      * rows with identical P0 membership (same type), consecutive in the row order:
+        row r lexicographically <= row r' (the lex-leader constraint of the transposition),
+        encoded with order literals ge(r,c,k) <-> value >= k and prefix-equality literals.
+    The lex-least array of each orbit under the group generated by these symmetries satisfies
+    all of them."""
+    deg = [0] * c0
+    for t in types:
+        for x in t:
+            deg[x] += 1
+    member = [set(t) for t in types]
+    for x in range(c0 if base_quad else 0):
+        member += [{x} for _ in range(4 - deg[x])]
+    member += [set() for _ in range(empty)]
+    assert len(member) == N
+    profs = ([[4] + [3] * (Q - 1)] if base_quad else [[3] * Q]) * c0 + [sorted(p, reverse=True) for p in special]
+    v = lambda r, c, s: 1 + K * Q * r + Q * c + s  # noqa: E731
+    B = Builder(N * K * Q)
+    cl = B.cl
+    for r in range(N):
+        for c in range(K):
+            cl.append([v(r, c, s) for s in range(Q)])
+            for s, t in itertools.combinations(range(Q), 2):
+                cl.append([-v(r, c, s), -v(r, c, t)])
+            if c < c0 and base_quad:
+                cl.append([v(r, c, 0)] if c in member[r] else [-v(r, c, 0)])
+    for c in range(K):
+        for s in range(Q):
+            if c < c0 and s == 0 and base_quad:
+                continue
+            for sub in itertools.combinations(range(N), profs[c][s] + 1):
+                cl.append([-v(r, c, s) for r in sub])
+    for c1, c2 in itertools.combinations(range(K), 2):
+        for a in range(Q):
+            for b in range(Q):
+                for r, r2 in itertools.combinations(range(N), 2):
+                    cl.append([-v(r, c1, a), -v(r, c2, b), -v(r2, c1, a), -v(r2, c2, b)])
+    U = {}
+    for r, r2 in itertools.combinations(range(N), 2):
+        u = B.new()
+        U[(r, r2)] = u
+        wit = []
+        for c in range(K):
+            for s in range(Q):
+                a = B.new()
+                cl.append([-a, v(r, c, s)])
+                cl.append([-a, v(r2, c, s)])
+                wit.append(a)
+        cl.append(wit + [u])
+    ns = K - c0
+    for r in range(N):
+        lits = [U[(min(r, x), max(r, x))] for x in range(N) if x != r]
+        target = (N - 1) - 2 * c0 - ns - len(member[r])
+        for c in range(c0, K):
+            for s in range(Q):
+                n = profs[c][s]
+                if n >= 2:
+                    lits += [v(r, c, s)] * (n - 2)
+                else:
+                    lits.append(-v(r, c, s))
+                    target += 1
+        o = B.totalizer(lits)
+        if target < 0 or target > len(o):
+            cl.append([])
+            continue
+        if target >= 1:
+            cl.append([o[target - 1]])
+        if target < len(o):
+            cl.append([-o[target]])
+    # first-occurrence order (P0 triple labels; equal-count special labels)
+    for c in range(K):
+        if c < c0:
+            prs = [(s, s + 1) for s in range(1 if base_quad else 0, Q - 1)]
+        else:
+            prs = [(s, s + 1) for s in range(Q - 1) if profs[c][s] == profs[c][s + 1]]
+        for s, s2 in prs:
+            for r in range(N):
+                cl.append([-v(r, c, s2)] + [v(r2, c, s) for r2 in range(r)])
+    # identical consecutive special columns: top-down lex
+    for c in range(c0, K - 1):
+        c2 = c + 1
+        if profs[c] != profs[c2]:
+            continue
+        eq_prev = None
+        for r in range(N):
+            for k in range(1, Q):
+                for s in range(k, Q):
+                    cl.append(([-eq_prev] if eq_prev else []) + [-v(r, c, s)] + [v(r, c2, t) for t in range(k, Q)])
+            if r < N - 1:
+                e = B.new()
+                for s in range(Q):
+                    cl.append(([-eq_prev] if eq_prev else []) + [-v(r, c, s), -v(r, c2, s), e])
+                eq_prev = e
+    # rows with identical type, consecutive: row lex (columns left to right)
+    for r in range(N - 1):
+        r2 = r + 1
+        if member[r] != member[r2] or len(member[r]) >= 2:
+            continue
+        eq_prev = None
+        for c in range(K):
+            for k in range(1, Q):
+                for s in range(k, Q):
+                    cl.append(([-eq_prev] if eq_prev else []) + [-v(r, c, s)] + [v(r2, c, t) for t in range(k, Q)])
+            if c < K - 1:
+                e = B.new()
+                for s in range(Q):
+                    cl.append(([-eq_prev] if eq_prev else []) + [-v(r, c, s), -v(r2, c, s), e])
+                eq_prev = e
+    return B.nv, cl

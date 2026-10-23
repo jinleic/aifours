@@ -1,0 +1,1085 @@
+--- code/owned_supervisor_v11.py
++++ code/owned_supervisor_v13.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""owned_supervisor_v11: owned bounded guard, stdlib + read-only macOS libproc.
++"""owned_supervisor_v13: three-finding integrated successor, preserving v12's fixed owned guard core.
+ 
+ BINDING correction: RUN/review/rqls10-supervisor-v10-scope-parent-correction-v1.json
+ fabe57ab4aeacc416f22bdf334c2cc3bbd5fda1d0e777d7279187ae0564155a2. V10's scope weakening is withdrawn,
+@@ -52,11 +52,25 @@
+ 
+ Exit:0 acknowledged SETTLED;10 acknowledged NOT_LAUNCHED;11 acknowledged UNSETTLED;12 publication refused/receipt
+ failed;13 settlement/sync/finalization failed;14 ACK refused/overran;2 unusable config/anchors. NOEXEC until separately
+-accepted source/package and an exact item GO. Usage: owned_supervisor_v11.py CONFIG.json
++accepted source/package and an exact item GO. Usage: owned_supervisor_v13.py CONFIG.json
++V12 preserves v11 helper/clearance/identity/root machinery and fabe57ab. Repairs all nine v11 review findings plus
++three package integration blockers: enforce main runtime before/after every reap (late observation cannot erase it),
++restore bounded spawn-to-GO age, fresh ACK census, actual conservative /bin/date stability age, authorization last
++after preparation I/O, post-write pending-cancel/expiry checks, aggregate OUTPUT including exact publication bytes,
++retained unproved/coverage/resource-observation history, original fsynced staged inode through link, proved injected
++overrun, nonempty fast-exit samples, complete retry extrema provenance, and no end-helper attempt without authority.
++History caps fail closed, never silently discard evidence. Every commit checks stability age against the configured
++maximum; a run outliving its frozen stability window may refuse ACK rather than weakening that policy.
++V13 additionally checks ACTUAL completed GO delivery age/runtime and enters owned stop on lateness; a first-date
++monotonic stability expiry can only tighten, never renew after civil-clock rollback; completed identity/resource and
++abort evidence is retained incrementally, with current capped reconciliation evidence emitted on post-publication
++refusal. The v12 review's finite empirical matrix remains REQUIRED and UNEXERCISED; the existing22 controls do not
++claim to cover that matrix. Rebound qualification is deferred pending the separate package review.
+ """
+ import contextlib
+ import ctypes
+ import errno
++import datetime
+ import hashlib
+ import json
+ import math
+@@ -68,7 +82,7 @@
+ import threading
+ import time
+ 
+-VERSION = "owned_supervisor_v11"
++VERSION = "owned_supervisor_v13"
+ CANCEL_SIGNALS = {signal.SIGTERM, signal.SIGINT, signal.SIGHUP}
+ CANCEL = {"signal": None, "mono": None}
+ POLICY = {"disk": 10737418240, "free": 12000000000, "launch_free": 12200000000,
+@@ -90,12 +104,13 @@
+           "free_trip_bytes": int, "launch_free_min_bytes": int, "output_trip_bytes": int,
+           "lane_roots": list, "lane_disk_root": str, "lane_disk_ceiling_bytes": int,
+           "lane_walk_s": float, "busy_limit": int, "busy_cpu_fraction": float, "cpu_slots": int,
+-          "admission": dict, "helper_budget": dict, "fault_injection": dict}
++          "admission": dict, "helper_budget": dict, "fault_injection": dict, "creation_channel": dict}
+ HELPER = {"max_calls": int, "call_budget_s": float, "term_grace_s": float}
+ HELPER_FAULTS = {"date_helper_fails", "helper_observation_overrun", "helper_group_unproved", "helper_eof_unproved"}
+ ADMISSION = {"go_path": str, "stability_receipt_path": str, "reservation_bytes": int,
+-             "outstanding_reservations_bytes": int, "lane_outstanding_reservations_bytes": int}
+-BOUND_KEYS = ("output_roots", "argv", "max_wall_s", "cpu_slots", "reservation_bytes",
++             "outstanding_reservations_bytes": int, "lane_outstanding_reservations_bytes": int,
++             "stability_max_age_s": float}
++BOUND_KEYS = ("output_roots", "argv", "max_wall_s", "cpu_slots", "creation_channel", "reservation_bytes",
+               "outstanding_reservations_bytes", "lane_outstanding_reservations_bytes")
+ MY_PID, MY_UID = os.getpid(), os.getuid()
+ SELF = os.path.abspath(__file__)
+@@ -206,8 +221,6 @@
+     return s2
+ 
+ 
+-def stable(pid, before):
+-    return fingerprint(identify(pid)) == fingerprint(before)
+ 
+ 
+ def cwd_of(pid):
+@@ -345,6 +358,15 @@
+ 
+ def parse_json(raw):
+     return json.loads(raw.decode(), object_pairs_hook=pairs, parse_float=json_float, parse_constant=json_constant)
++
++
++def parse_date_epoch(text):
++    if not isinstance(text, str):
++        raise GuardError("STABILITY_TIMESTAMP_MISSING")
++    parsed = datetime.datetime.strptime(text, "%Y-%m-%dT%H:%M:%S%z")
++    if parsed.strftime("%Y-%m-%dT%H:%M:%S%z") != text:
++        raise GuardError("STABILITY_TIMESTAMP_NONCANONICAL")
++    return parsed.timestamp()
+ 
+ 
+ def norm_abs(p):
+@@ -466,16 +488,16 @@
+     a, _ = read_file(name, len(data), dl, fd)
+     if a["sha256"] != hashlib.sha256(data).hexdigest() or tuple(a["inode"]) != ident:
+         raise GuardError("PUBLICATION_READBACK_MISMATCH")
+-    return a["sha256"]
++    return a["sha256"], ident
+ 
+ 
+ def linked_publication(fd, name, data, dl):
+-    h = publish(fd, name + ".staged", data, dl)
++    h, published_inode = publish(fd, name + ".staged", data, dl)
+     os.link(name + ".staged", name, src_dir_fd=fd, dst_dir_fd=fd)
+     dl.check("after settlement link")
+     a, _ = read_file(name, len(data), dl, fd)
+     s = os.stat(name + ".staged", dir_fd=fd, follow_symlinks=False)
+-    if a["sha256"] != h or a["inode"] != [s.st_dev, s.st_ino] or a["nlink"] != 2:
++    if a["sha256"] != h or tuple(a["inode"]) != published_inode or (s.st_dev, s.st_ino) != published_inode or a["nlink"] != 2:
+         raise GuardError("SETTLEMENT_LINK_MISMATCH")
+     dl.check("after settlement link readback")
+     return h
+@@ -507,6 +529,8 @@
+     hb = cfg["helper_budget"]
+     if not (1 <= hb["max_calls"] <= 32 and 0.001 <= hb["call_budget_s"] <= 10 and 0.01 <= hb["term_grace_s"] <= 10):
+         raise ValueError("helper budget policy")
++    if not 0.01 <= cfg["admission"]["stability_max_age_s"] <= 300:
++        raise ValueError("stability freshness policy")
+     limits = {"max_chunk_seconds": (1, POLICY["chunk"]), "max_wall_s": (0.01, cfg["max_chunk_seconds"]),
+               "settle_s": (0.01, 600), "sample_s": (0.2, 10), "lane_walk_s": (1, 600),
+               "owned_compute_settled_by_epoch": (1, 4e9), "rss_trip_bytes": (1, POLICY["rss"]),
+@@ -560,6 +584,17 @@
+     for p in (a["go_path"], a["stability_receipt_path"]):
+         if not norm_abs(p) or any(below(p, r) for r in cfg["output_roots"]):
+             raise ValueError("invalid authorization path")
++    channel = cfg["creation_channel"]
++    if channel:
++        keys = {"kind", "scenario", "preparation_path", "preparation_sha256", "target_path"}
++        if cfg["purpose"] != "guard-qualification" or set(channel) != keys or \
++                channel["kind"] != "qualification-creation-v1" or channel["scenario"] not in ("mutate_pin", "mutate_evidence") or \
++                len(cfg["output_roots"]) != 1 or not hex64(channel["preparation_sha256"]):
++            raise ValueError("creation channel is restricted to declared mutation qualification negatives")
++        run = os.path.dirname(cfg["output_roots"][0])
++        expected_target = run + "/pinned-scratch.txt" if channel["scenario"] == "mutate_pin" else cfg["launch_record"]
++        if channel["target_path"] != expected_target or channel["preparation_path"] != run + "/preparation.json":
++            raise ValueError("creation channel target/preparation is not the fixed current-run fixture")
+ 
+ 
+ def spawn_registered(s, argv, env, role, dl, required_s):
+@@ -598,6 +633,8 @@
+             dl.check("before protected spawn")
+             if role == "helper" and (s.failures or s.in_helper is False):
+                 raise GuardError("HELPER_LAUNCH_REFUSED")
++            s.authorization_io(dl)  # LAST preparation I/O before the protected fresh-clock spawn commit.
++            dl.check("after protected spawn authorization")
+             record["launch_commit"] = s.time_commit("HELPER" if role == "helper" else "LAUNCH", required_s)
+             record["mono_spawn"], record["epoch_spawn"] = time.monotonic(), time.time()
+             if role != "helper":
+@@ -665,6 +702,12 @@
+         self.helper_calls = 0
+         self.phase = "ADMISSION"
+         self.in_helper = False
++        self.clock_observation = None
++        self.unproved_history, self.coverage_history, self.census_history = {}, [], []
++        self.runtime_observations = []
++        self.stability_expiry_mono = None
++        self.identity_history, self.attempt_history = {}, []
++        self.history_charge, self.history_halted, self.history_overflow = 0, False, None
+ 
+     def deadline(self, seconds, phase=None):
+         cut = min([self.fit_mono] + [x[1] for x in self.cutoffs()])
+@@ -685,9 +728,22 @@
+             self.trips[key] = {"trip": key, "detail": detail, "mono": time.monotonic(), "epoch": time.time()}
+         self.request_stop(key)
+ 
++    def enforce_runtime(self, where):
++        if self.pid is None or self.mono_spawn is None:
++            return
++        now = time.monotonic()
++        cutoff = self.mono_spawn + self.cfg["max_wall_s"]
++        if now >= cutoff and "DEADLINE" not in self.trips:
++            self.runtime_observations.append({"where": where, "mono": now, "mono_deadline": cutoff})
++            late = now > cutoff + self.cfg["sample_s"] + 0.05
++            self.trip("DEADLINE")
++            if late:
++                self.fail("MAIN_DEADLINE_ENFORCEMENT_LATE", {"mono_observed": now, "mono_deadline": cutoff})
++
+     def reap(self):
+         if self.pid is None or self.rc is not None or self.lost_wait:
+             return
++        self.enforce_runtime("before_waitpid")
+         try:
+             p, st = os.waitpid(self.pid, os.WNOHANG)
+         except ChildProcessError:
+@@ -695,7 +751,9 @@
+             self.fail("WAIT_STATUS_LOST")
+             return
+         if p:
++            # Publish the reaped state BEFORE any stop path can consider signalling this PID.
+             self.rc, self.exit_mono, self.exit_epoch = os.waitstatus_to_exitcode(st), time.monotonic(), time.time()
++        self.enforce_runtime("after_waitpid_including_success")
+ 
+     def request_stop(self, reason):
+         if self.stop is not None:
+@@ -723,6 +781,7 @@
+         try:
+             dl = self.deadline(IO_S)
+             now = identify(self.pid)
++            s["identity_observed"] = dict(now)  # Once-only stop witness survives even a full history ledger.
+             dl.check("after main stop identity")
+             ok = fingerprint(now) == fingerprint(self.ident)
+             s["identity_ok"] = ok
+@@ -745,58 +804,184 @@
+             cuts.append(("GRACE_EXPIRED_AFTER_CHILD_EXIT", self.exit_mono + self.cfg["settle_s"]))
+         return cuts
+ 
++    def history_abort(self, kind, witness=None):
++        if not self.history_halted:
++            self.history_overflow = {"kind": kind, "mono": time.monotonic(), "witness": witness}
++        self.history_halted = True
++        self.fail(kind, witness)
++        raise GuardError(kind)
++
++    def reserve_history(self, kind, new, old=None, witness=None, extra=0):
++        if self.history_halted:
++            raise GuardError("HISTORY_ALREADY_HALTED")
++        def size(value):
++            return len(json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False).encode())
++        # Deliberate overcharge bounds the complete compact refusal envelope, not just entry counts.
++        delta = max(0, size(new) - (0 if old is None else size(old)))
++        charge = 2 * delta + (64 if old is None else 0) + extra
++        if self.history_charge + charge > 4 << 20:
++            self.history_abort("HISTORY_BYTE_CAP", witness)
++        self.history_charge += charge
++
++    def retain_identity(self, p, source, known=False):
++        stamp, uid = time.monotonic(), p["uniqueid"]
++        old = self.identity_history.get(uid)
++        if old is None:
++            if len(self.identity_history) >= 8192:
++                self.history_abort("IDENTITY_HISTORY_CAP", dict(p))
++            new = {"first_identity": dict(p), "last_identity": dict(p), "mono_first_seen": stamp,
++                   "mono_last_seen": stamp, "source": source, "observations": 1, "variants": [dict(p)]}
++        else:
++            variants = old["variants"]
++            if fingerprint(p) != fingerprint(old["last_identity"]) and not any(fingerprint(p) == fingerprint(x) for x in variants):
++                if len(variants) >= 64:
++                    self.history_abort("IDENTITY_VARIANT_CAP", dict(p))
++                variants = variants + [dict(p)]
++            new = dict(old, last_identity=dict(p), mono_last_seen=stamp, observations=old["observations"] + 1,
++                       variants=variants)
++        self.reserve_history("identity", new, old, dict(p))
++        self.identity_history[uid] = new
++        # Do this NOW, before any later PID, edge proof or deadline can abort the scan.
++        if not known and self.baseline is not None and uid not in self.baseline and uid not in self.owned:
++            previous = self.unproved_history.get(uid)
++            if previous is None:
++                if len(self.unproved_history) >= 8192:
++                    self.history_abort("UNPROVED_HISTORY_CAP", dict(p))
++                unknown = {"first_identity": dict(p), "last_identity": dict(p),
++                           "mono_first_seen": stamp, "mono_last_seen": stamp}
++            else:
++                unknown = dict(previous, last_identity=dict(p), mono_last_seen=stamp)
++            self.reserve_history("unproved", unknown, previous, dict(p))
++            self.unproved_history[uid] = unknown
++
++    @contextlib.contextmanager
++    def observation_attempt(self, kind, resources=None):
++        if self.history_halted:
++            raise GuardError("HISTORY_ALREADY_HALTED")
++        if len(self.attempt_history) >= 4096:
++            self.history_abort("ATTEMPT_HISTORY_CAP", {"kind": kind})
++        attempt = {"kind": kind, "phase": self.phase, "inside_helper": self.in_helper,
++                   "mono_start": time.monotonic(), "mono_end": None, "aborted": False, "error": None}
++        self.reserve_history("attempt", attempt, extra=2048)
++        self.attempt_history.append(attempt)
++        try:
++            yield attempt
++        except BaseException as e:
++            attempt.update(aborted=True, error=repr(e)[:600])
++            if resources is not None:
++                resources.update(complete=False, aborted=True, abort_error=repr(e)[:600],
++                                 mono_aborted=time.monotonic())
++                self.enforce_observed_resources(resources)
++            raise
++        finally:
++            attempt["mono_end"] = time.monotonic()
++            if resources is not None:
++                resources["mono_end"] = attempt["mono_end"]
++
++    def enforce_observed_resources(self, c):
++        if self.phase in ("ADMISSION", "PRE_GO"):
++            if not self.limits(c, True):
++                self.fail("ADMISSION_RESOURCE_VIOLATION",
++                          {"busy": c["lane_busy"], "rss": c["lane_rss"], "partial": True})
++        else:
++            self.limits(c)
++
++    def reconciliation_evidence(self):
++        return {"owned_identities": list(self.owned.values()), "unproved_history": list(self.unproved_history.values()),
++                "identity_history": list(self.identity_history.values()), "coverage_history": self.coverage_history,
++                "census_observations": self.census_history, "observation_attempts": self.attempt_history,
++                "helpers": self.helper_reports(), "helper_log": self.helper_log, "failures": self.failures,
++                "main_identity": self.ident, "main_signal": self.signal, "main_stop": self.stop,
++                "baseline_uniqueids": [] if self.baseline is None else sorted(self.baseline),
++                "stability_expiry_mono": self.stability_expiry_mono,
++                "history_charge_bytes": self.history_charge, "history_cap_bytes": 4 << 20,
++                "history_halted": self.history_halted, "history_overflow": self.history_overflow}
++
++    def observed_identity(self, pid, source, known=False):
++        p = identify(pid)
++        self.retain_identity(p, source, known)
++        return p
++
++    def identity_stable(self, pid, before):
++        p = self.observed_identity(pid, "measurement_bracket")
++        return fingerprint(p) == fingerprint(before)
++
+     def register_owned(self, p, via, root=None):
+         u = p["uniqueid"]
++        self.retain_identity(p, "owned_registration", True)
+         if u not in self.owned:
+-            self.owned[u] = {"identity": dict(p), "via": via, "root": u if root is None else root,
+-                             "first_seen_mono": time.monotonic()}
++            entry = {"identity": dict(p), "via": via, "root": u if root is None else root,
++                     "first_seen_mono": time.monotonic()}
++            self.reserve_history("owned", entry, witness=dict(p))
++            self.owned[u] = entry
+             if via not in ("child", "helper"):
+-                self.violations.append(dict(p))  # Retain, never erase or exempt an observed extra identity.
++                self.violations.append(dict(p))
+ 
+     def scan_identities(self, dl):
+-        procs, missing = {}, []
+-        for pid in all_pids(dl):
+-            dl.check("census identification")
+-            try:
+-                procs[pid] = identify(pid)
+-            except OSError as e:
+-                missing.append([pid, "identify", repr(e)])
+-        live_owned = {p["uniqueid"] for p in procs.values() if p["uniqueid"] in self.owned}
+-        groups = {self.group: self.ident["uniqueid"]} if self.group is not None and self.ident is not None else {}
+-        for h in self.helpers:
+-            if h.get("identity") is not None:
+-                groups[h["identity"]["pgid"]] = h["identity"]["uniqueid"]
+-        if self.ident is not None:
++        with self.observation_attempt("identity_scan") as attempt:
++            procs, missing = {}, []
++            for pid in all_pids(dl):
++                dl.check("census identification")
++                try:
++                    p = self.observed_identity(pid, "pid_scan")
++                    procs[pid] = p
++                    attempt["identified_count"] = len(procs)
++                except OSError as e:
++                    if self.history_halted:
++                        raise
++                    error = [pid, "identify", repr(e)[:600]]
++                    missing.append(error)
++                    self.retain_coverage([error], time.monotonic())
++            live_owned = {p["uniqueid"] for p in procs.values() if p["uniqueid"] in self.owned}
++            groups = {self.group: self.ident["uniqueid"]} if self.group is not None and self.ident is not None else {}
++            for h in self.helpers:
++                if h.get("identity") is not None:
++                    groups[h["identity"]["pgid"]] = h["identity"]["uniqueid"]
++            if self.ident is not None:
++                for p in procs.values():
++                    if p["uniqueid"] == self.ident["uniqueid"] and fingerprint(p) != fingerprint(self.ident):
++                        self.fail("CHILD_IDENTITY_CHANGED", p)
+             for p in procs.values():
+-                if p["uniqueid"] == self.ident["uniqueid"] and fingerprint(p) != fingerprint(self.ident):
+-                    self.fail("CHILD_IDENTITY_CHANGED", p)
+-        for p in procs.values():
+-            if p["pgid"] in groups:
+-                self.register_owned(p, "owned_group", groups[p["pgid"]])
+-                live_owned.add(p["uniqueid"])
+-        changed = True
+-        while changed:
+-            changed = False
+-            for p in procs.values():
+-                if p["uniqueid"] in live_owned:
+-                    continue
+-                parent = procs.get(p["ppid"])
+-                if parent is None or parent["uniqueid"] not in live_owned:
+-                    continue
+-                try:
+-                    a, b, c = identify(parent["pid"]), identify(p["pid"]), identify(parent["pid"])
+-                    if fingerprint(a) != fingerprint(parent) or fingerprint(c) != fingerprint(parent) or fingerprint(b) != fingerprint(p):
+-                        raise GuardError("CURRENT_PARENT_EDGE_CHANGED")
+-                    root = self.owned[parent["uniqueid"]]["root"]
+-                    self.register_owned(p, "current_parent:%d" % parent["uniqueid"], root)
++                if p["pgid"] in groups:
++                    self.register_owned(p, "owned_group", groups[p["pgid"]])
+                     live_owned.add(p["uniqueid"])
+-                    changed = True
+-                except OSError as e:
+-                    missing.append([p["pid"], "parent_edge", repr(e)])
+-        unproved = {p["uniqueid"] for p in procs.values()
+-                    if self.baseline is not None and p["uniqueid"] not in self.baseline and p["uniqueid"] not in live_owned}
+-        dl.check("after identity/ownership scan")
+-        return procs, missing, live_owned, unproved
++            changed = True
++            while changed:
++                changed = False
++                for p in procs.values():
++                    if p["uniqueid"] in live_owned:
++                        continue
++                    parent = procs.get(p["ppid"])
++                    if parent is None or parent["uniqueid"] not in live_owned:
++                        continue
++                    try:
++                        a = self.observed_identity(parent["pid"], "edge_parent_before")
++                        b = self.observed_identity(p["pid"], "edge_child")
++                        c = self.observed_identity(parent["pid"], "edge_parent_after")
++                        if fingerprint(a) != fingerprint(parent) or fingerprint(c) != fingerprint(parent) or fingerprint(b) != fingerprint(p):
++                            raise GuardError("CURRENT_PARENT_EDGE_CHANGED")
++                        root = self.owned[parent["uniqueid"]]["root"]
++                        self.register_owned(p, "current_parent:%d" % parent["uniqueid"], root)
++                        live_owned.add(p["uniqueid"])
++                        changed = True
++                    except OSError as e:
++                        if self.history_halted:
++                            raise
++                        error = [p["pid"], "parent_edge", repr(e)[:600]]
++                        missing.append(error)
++                        self.retain_coverage([error], time.monotonic())
++            unproved = {p["uniqueid"] for p in procs.values()
++                        if self.baseline is not None and p["uniqueid"] not in self.baseline and p["uniqueid"] not in live_owned}
++            dl.check("after identity/ownership scan")
++            return procs, missing, live_owned, unproved
++
++    def retain_coverage(self, missing, stamp):
++        for item in missing:
++            if len(self.coverage_history) >= 16384:
++                self.history_abort("COVERAGE_HISTORY_CAP", {"observation": item})
++            entry = {"mono": stamp, "observation": list(item)}
++            self.reserve_history("coverage", entry, witness={"observation": item})
++            self.coverage_history.append(entry)
+ 
+     def establish_baseline(self):
+         dl = Deadline(20, self.fit_mono)
+@@ -812,55 +997,84 @@
+         raise GuardError("NO_COMPLETE_PRESPAWN_BASELINE")
+ 
+     def census(self, dl):
+-        procs, missing, live_owned, unproved = self.scan_identities(dl)
+-        lane, cpu = {}, {}
+-        for pid, p in procs.items():
+-            dl.check("census accounting")
+-            if p["status"] == SZOMB or not (p["euid"] == MY_UID or p["ruid"] == MY_UID):
+-                continue
+-            owned = p["uniqueid"] in live_owned or p["uniqueid"] in unproved
+-            try:
+-                if not stable(pid, p):
+-                    raise GuardError("BEFORE_MEASUREMENT_CHANGED")
+-                member = owned
+-                if not member:
+-                    c1 = cwd_of(pid)
+-                    av = argv_of(pid, self.arg_max)
+-                    c2 = cwd_of(pid)
+-                    member = any(below(c, r) for c in (c1, c2) for r in self.cfg["lane_roots"]) or any(
+-                        r in a for a in av for r in self.cfg["lane_roots"])
+-                if not stable(pid, p):
+-                    raise GuardError("MEMBERSHIP_IDENTITY_CHANGED")
+-                if not member:
++        if len(self.census_history) >= 4096:
++            self.history_abort("CENSUS_HISTORY_CAP", {"phase": self.phase})
++        record = {"phase": self.phase, "inside_helper": self.in_helper, "complete": False, "aborted": False,
++                  "mono_start": time.monotonic(), "mono_complete": None, "incomplete_n": 0, "incomplete": [],
++                  "pids": 0, "owned_live": [], "unproved_live": [], "group_live": [], "owned_zombies": [],
++                  "lane_pids": [], "lane_rss": 0, "lane_busy_pids": [], "lane_busy": 0, "measurements": []}
++        self.reserve_history("resource_attempt", record, extra=2048)
++        self.census_history.append(record)  # Retained BEFORE identity or resource I/O can abort.
++        with self.observation_attempt("resource_scan", record):
++            procs, missing, live_owned, unproved = self.scan_identities(dl)
++            header = dict(record, pids=len(procs), incomplete_n=len(missing), incomplete=missing[:30],
++                          owned_live=[dict(p) for p in procs.values() if p["uniqueid"] in live_owned],
++                          unproved_live=[dict(p) for p in procs.values() if p["uniqueid"] in unproved],
++                          group_live=sorted(p["pid"] for p in procs.values() if self.group is not None and p["pgid"] == self.group),
++                          owned_zombies=sorted(p["pid"] for p in procs.values() if p["uniqueid"] in live_owned and p["status"] == SZOMB))
++            self.reserve_history("resource_header", header, record, {"phase": self.phase})
++            record.update(header)
++            cpu = {}
++            for pid, p in procs.items():
++                dl.check("census accounting")
++                if p["status"] == SZOMB or not (p["euid"] == MY_UID or p["ruid"] == MY_UID):
+                     continue
+-                rss, ticks = task_of(pid)
+-                key = (p["uniqueid"], p["idversion"])
+-                prior = self.prev_cpu.get(key)
+-                start = start_of(pid) if prior is None else None
+-                if not stable(pid, p):
+-                    raise GuardError("TASK_IDENTITY_CHANGED")
+-                now_m, now_e = time.monotonic(), time.time()
+-                if prior is None:
+-                    seconds = now_e - start
+-                    busy = seconds <= 0.05 or ticks * self.num_tb >= seconds * 1e9 * self.cfg["busy_cpu_fraction"]
+-                else:
+-                    seconds = now_m - prior[0]
+-                    busy = seconds <= 0 or (ticks - prior[1]) * self.num_tb >= seconds * 1e9 * self.cfg["busy_cpu_fraction"]
+-                cpu[key] = (now_m, ticks)
+-                lane[pid] = {"rss": rss, "busy": busy}
+-            except OSError as e:
+-                missing.append([pid, "real_or_effective_uid_measurement", repr(e)])
+-        self.prev_cpu = cpu
+-        dl.check("after census")
+-        owned = [p for p in procs.values() if p["uniqueid"] in live_owned]
+-        return {"complete": not missing, "incomplete_n": len(missing), "incomplete": missing[:30], "pids": len(procs),
+-                "owned_live": [dict(p) for p in sorted(owned, key=lambda x: x["pid"])],
+-                "unproved_live": [dict(p) for p in sorted(procs.values(), key=lambda x: x["pid"]) if p["uniqueid"] in unproved],
+-                "group_live": sorted(p["pid"] for p in procs.values() if self.group is not None and p["pgid"] == self.group),
+-                "owned_zombies": sorted(p["pid"] for p in owned if p["status"] == SZOMB),
+-                "lane_pids": sorted(lane), "lane_rss": sum(v["rss"] for v in lane.values()),
+-                "lane_busy_pids": sorted(pid for pid, v in lane.items() if v["busy"]),
+-                "lane_busy": sum(1 for v in lane.values() if v["busy"]), "mono_complete": time.monotonic()}
++                owned = p["uniqueid"] in live_owned or p["uniqueid"] in unproved
++                try:
++                    if not self.identity_stable(pid, p):
++                        raise GuardError("BEFORE_MEASUREMENT_CHANGED")
++                    member = owned
++                    if not member:
++                        c1 = cwd_of(pid)
++                        av = argv_of(pid, self.arg_max)
++                        c2 = cwd_of(pid)
++                        member = any(below(c, r) for c in (c1, c2) for r in self.cfg["lane_roots"]) or any(
++                            r in a for a in av for r in self.cfg["lane_roots"])
++                    if not self.identity_stable(pid, p):
++                        raise GuardError("MEMBERSHIP_IDENTITY_CHANGED")
++                    if not member:
++                        continue
++                    rss, ticks = task_of(pid)
++                    key = (p["uniqueid"], p["idversion"])
++                    prior = self.prev_cpu.get(key)
++                    start = start_of(pid) if prior is None else None
++                    if not self.identity_stable(pid, p):
++                        raise GuardError("TASK_IDENTITY_CHANGED")
++                    now_m, now_e = time.monotonic(), time.time()
++                    if prior is None:
++                        seconds = now_e - start
++                        busy = seconds <= 0.05 or ticks * self.num_tb >= seconds * 1e9 * self.cfg["busy_cpu_fraction"]
++                    else:
++                        seconds = now_m - prior[0]
++                        busy = seconds <= 0 or (ticks - prior[1]) * self.num_tb >= seconds * 1e9 * self.cfg["busy_cpu_fraction"]
++                    measured = {"identity": dict(p), "rss": rss, "cpu_ticks": ticks, "busy": busy, "mono_observed": now_m}
++                    # Totals and observed excesses are latched BEFORE another I/O or any possible abort.
++                    record["lane_pids"].append(pid)
++                    record["lane_rss"] += rss
++                    if busy:
++                        record["lane_busy_pids"].append(pid)
++                        record["lane_busy"] += 1
++                    record["mono_last_observation"] = now_m
++                    self.reserve_history("measurement", measured, witness=measured, extra=256)
++                    record["measurements"].append(measured)
++                    cpu[key] = (now_m, ticks)
++                    self.enforce_observed_resources(record)
++                except OSError as e:
++                    if self.history_halted:
++                        raise
++                    error = [pid, "real_or_effective_uid_measurement", repr(e)[:600]]
++                    missing.append(error)
++                    self.retain_coverage([error], time.monotonic())
++                    record["incomplete_n"] = len(missing)
++                    record["incomplete"] = missing[:30]
++            self.prev_cpu = cpu
++            record["lane_pids"].sort()
++            record["lane_busy_pids"].sort()
++            self.enforce_observed_resources(record)
++            dl.check("after census including completed resource observations")
++            record.update(complete=not missing, incomplete_n=len(missing), incomplete=missing[:30],
++                          mono_complete=time.monotonic())
++            return record
+ 
+     def full_census(self, dl):
+         c = None
+@@ -888,14 +1102,39 @@
+             os.close(fd)
+             h["parent_close_fds"].remove(fd)
+             dl.check("helper parent endpoint close")
++        if self.history_halted:
++            # Still reap/drain within the bounded cleanup; never claim group/coverage proof from a full ledger.
++            if not h["leader_reaped"] and not h["wait_lost"]:
++                try:
++                    pid, status = os.waitpid(h["pid"], os.WNOHANG)
++                    if pid:
++                        h["leader_reaped"], h["rc"], h["mono_reaped"] = True, os.waitstatus_to_exitcode(status), time.monotonic()
++                except ChildProcessError:
++                    h["wait_lost"] = True
++                dl.check("after cap-path helper reap")
++            if h.get("stdout_fd") is not None:
++                os.set_blocking(h["stdout_fd"], False)
++                try:
++                    data = os.read(h["stdout_fd"], max(1, 257 - len(h["capture"])))
++                    h["capture"] += data
++                    if data == b"" or len(h["capture"]) > 256:
++                        h["raw_eof"] = data == b""
++                        h["capture_overflow"] = len(h["capture"]) > 256
++                        os.close(h["stdout_fd"])
++                        h["stdout_fd"], h["stdout_closed"] = None, True
++                    dl.check("after cap-path helper capture/close")
++                except BlockingIOError:
++                    pass
++            h["settled"] = False
++            raise GuardError("HISTORY_HALTED_HELPER_PROOF_UNAVAILABLE")
+         if h.get("identity") is None and not h["leader_reaped"]:
+-            h["identity"] = identify(h["pid"])
++            h["identity"] = self.observed_identity(h["pid"], "helper_initial", True)
+             p = h["identity"]
+             h["initial_identity_valid"] = p["pgid"] == h["pid"] and p["euid"] == MY_UID and p["ruid"] == MY_UID
+             if not h["initial_identity_valid"]:
+                 raise GuardError("HELPER_IDENTITY_INVALID")
+             self.register_owned(p, "helper")
+-        if not h["leader_reaped"] and not stable(h["pid"], h["identity"]):
++        if not h["leader_reaped"] and not self.identity_stable(h["pid"], h["identity"]):
+             raise GuardError("HELPER_EXEC_OR_CREDENTIAL_CHANGE")
+         if not h["leader_reaped"] and not h["wait_lost"]:
+             try:
+@@ -932,7 +1171,9 @@
+                 h["stdout_fd"], h["stdout_closed"] = None, True
+                 dl.check("after helper stdout close")
+         c = self.full_census(dl)
+-        h["proof"] = {k: c[k] for k in ("complete", "incomplete_n", "owned_live", "unproved_live", "mono_complete")}
++        proof = {k: c[k] for k in ("complete", "incomplete_n", "owned_live", "unproved_live", "mono_complete")}
++        self.reserve_history("helper_proof", proof, h.get("proof"), {"helper_pid": h["pid"]})
++        h["proof"] = proof
+         root = None if h.get("identity") is None else h["identity"]["uniqueid"]
+         h["group_clear"] = h.get("identity") is not None and not any(p["pgid"] == h["identity"]["pgid"] for p in c["owned_live"])
+         h["descendants_clear"] = root is not None and not any(self.owned[p["uniqueid"]]["root"] == root for p in c["owned_live"])
+@@ -959,6 +1200,7 @@
+         h["signal"] = {"sent": False}
+         try:
+             p = identify(h["pid"])
++            h["signal"]["identity_observed"] = dict(p)
+             dl.check("after helper stop identity")
+             if fingerprint(p) != fingerprint(ident):
+                 raise GuardError("HELPER_SIGNAL_IDENTITY_CHANGED")
+@@ -1005,6 +1247,9 @@
+         try:
+             if self.failures or pending_cancel() or self.in_helper:
+                 entry["outcome"] = "REFUSED_FAILURE_CANCEL_OR_REENTRANCY"
++                return None
++            if self.authorization is None:
++                entry["outcome"] = "REFUSED_NO_AUTHORIZATION"
+                 return None
+             if self.helper_calls >= hb["max_calls"]:
+                 self.fail("HELPER_CALL_BUDGET")
+@@ -1034,7 +1279,11 @@
+                      mono_call_start=entry["mono_start"], mono_call_deadline=call.end, date=None)
+             entry["pid"] = h["pid"]
+             if self.cfg["fault_injection"].get("helper_observation_overrun"):
+-                time.sleep(min(0.05, hb["call_budget_s"] + 0.01))
++                h["mono_injection_start"] = time.monotonic()
++                time.sleep(max(0.0, call.end - time.monotonic()) + 0.01)
++                h["mono_injection_end"] = time.monotonic()
++                if h["mono_injection_end"] <= call.end:
++                    raise GuardError("OVERRUN_STIMULUS_NOT_ESTABLISHED")
+             if h["spawn_error"] is not None:
+                 raise GuardError(h["spawn_error"])
+             while True:
+@@ -1051,6 +1300,17 @@
+             if h["rc"] != 0 or not shape or not digits.isdigit() or text[13:14] != ":" or text[16:17] != ":":
+                 raise GuardError("HELPER_BAD_DATE_OUTPUT")
+             h["date"] = text
++            observation = {"date": text, "mono_before_read": entry["mono_start"],
++                           "mono_after_read": time.monotonic(), "epoch_date_floor": parse_date_epoch(text)}
++            base_age = observation["epoch_date_floor"] - self.authorization["stability_epoch"] + 1.0
++            if base_age < 1.0:
++                raise GuardError("STABILITY_TIMESTAMP_IN_FUTURE")
++            candidate = observation["mono_before_read"] + self.cfg["admission"]["stability_max_age_s"] - base_age
++            h["stability_expiry_before"] = self.stability_expiry_mono
++            h["stability_expiry_candidate"] = candidate
++            self.stability_expiry_mono = candidate if self.stability_expiry_mono is None else min(self.stability_expiry_mono, candidate)
++            h["stability_expiry_effective"] = self.stability_expiry_mono
++            self.clock_observation = observation
+             entry["outcome"] = "OK"
+             return text
+         except BaseException as e:
+@@ -1088,7 +1348,8 @@
+                 "initial_identity_valid", "stdout_closed", "eof_proved", "group_clear", "descendants_clear",
+                 "coverage_complete", "clock_failed", "date", "signal", "proof", "spawn_error", "launch_commit",
+                 "mono_call_start", "mono_call_deadline", "mono_cleanup_start", "mono_cleanup_deadline",
+-                "mono_proof_complete", "mono_reaped")
++                "mono_proof_complete", "mono_reaped", "mono_injection_start", "mono_injection_end",
++                "stability_expiry_before", "stability_expiry_candidate", "stability_expiry_effective")
+         return [{**{k: h.get(k) for k in keys}, "capture_hex": h.get("capture", b"").hex()}
+                 for h in self.helpers if h.get("pid") is not None]
+ 
+@@ -1205,26 +1466,114 @@
+         go, sr = parse_json(gb), parse_json(sb)
+         if not isinstance(go, dict) or go.get("decision") != "GO" or go.get("item") != self.cfg["item"]:
+             raise GuardError("GO_NOT_FOR_ITEM")
+-        expected = {k: self.cfg[k] for k in BOUND_KEYS[:4]}
+-        expected.update({k: adm[k] for k in BOUND_KEYS[4:]})
++        expected = {k: self.cfg[k] for k in BOUND_KEYS[:5]}
++        expected.update({k: adm[k] for k in BOUND_KEYS[5:]})
+         entries = go.get("configs")
+         if not isinstance(entries, dict) or self.config_sha not in entries:
+             raise GuardError("GO_DOES_NOT_NAME_THIS_CONFIG")
+         if entries != {self.config_sha: expected}:
+             raise GuardError("GO_BINDING_MISMATCH")
++        channel = self.cfg["creation_channel"]
++        if channel:
++            negative = {"scenario": channel["scenario"], "kind": "mutation", "creation_channel": True}
++            if go.get("qualification_negative") != negative:
++                raise GuardError("MUTATION_NEGATIVE_GO_NOT_EXPLICIT")
++            pa, _ = read_file(channel["preparation_path"], SMALL, dl)
++            if pa["sha256"] != channel["preparation_sha256"]:
++                raise GuardError("CREATION_PREPARATION_BINDING_CHANGED")
+         if not number(go.get("not_after_epoch")) or not hex64(go.get("stability_receipt_sha256")):
+             raise GuardError("GO_FRESHNESS_FIELDS_INVALID")
+         if go["stability_receipt_sha256"] != sa["sha256"] or not isinstance(sr, dict) or sr.get("verdict") != "PASS":
+             raise GuardError("STABILITY_DIGEST_OR_VERDICT_MISMATCH")
+-        out = {"go_sha256": ga["sha256"], "stability_receipt_sha256": sa["sha256"], "not_after_epoch": go["not_after_epoch"]}
++        stability_epoch = parse_date_epoch(sr.get("now_date"))
++        out = {"go_sha256": ga["sha256"], "stability_receipt_sha256": sa["sha256"],
++               "not_after_epoch": go["not_after_epoch"], "stability_epoch": stability_epoch,
++               "stability_date": sr["now_date"]}
+         if self.authorization is not None and self.authorization != out:
+             raise GuardError("AUTHORIZATION_CHANGED")
+         self.authorization = out
+         dl.check("after authorization I/O")
+         return out
+ 
++    def stability_age(self, mono):
++        if self.authorization is None or self.clock_observation is None or self.stability_expiry_mono is None:
++            raise GuardError("STABILITY_AGE_UNVERIFIABLE")
++        obs = self.clock_observation
++        # Include whole-second resolution and elapsed time from BEFORE the actual reading/cleanup.
++        base = obs["epoch_date_floor"] - self.authorization["stability_epoch"]
++        if base < 0:
++            raise GuardError("STABILITY_TIMESTAMP_IN_FUTURE")
++        upper = max(base + 1.0 + max(0.0, mono - obs["mono_before_read"]),
++                    self.cfg["admission"]["stability_max_age_s"] + mono - self.stability_expiry_mono)
++        if upper > self.cfg["admission"]["stability_max_age_s"]:
++            raise GuardError("STABILITY_STALE")
++        return upper
++
++    def creation_manifest(self, dl):
++        """Only explicitly declared mutation negatives receive this fixed extra JSON line; ordinary GO stays exact."""
++        channel = self.cfg["creation_channel"]
++        if not channel:
++            return b""
++        pa, raw = read_file(channel["preparation_path"], SMALL, dl, keep=True)
++        prep = parse_json(raw)
++        required = {"kind", "scenario", "run", "output_root", "fixture", "source_pins", "python", "allocation", "negative_control"}
++        if pa["sha256"] != channel["preparation_sha256"] or not isinstance(prep, dict) or set(prep) != required or \
++                prep["kind"] != "qualification-creation-preparation-v1" or prep["scenario"] != channel["scenario"] or prep["negative_control"] is not True:
++            raise GuardError("CREATION_PREPARATION_SCHEMA_OR_BINDING")
++        pins = prep["source_pins"]
++        if not isinstance(pins, dict) or set(pins) != {"supervisor", "child", "writer", "checker"} or any(
++                not isinstance(v, dict) or set(v) != {"path", "sha256"} or not norm_abs(v["path"]) or not hex64(v["sha256"])
++                for v in pins.values()) or pins["supervisor"] != {"path": SELF, "sha256": self.self_sha}:
++            raise GuardError("CREATION_PREPARATION_SOURCE_PINS")
++        expected_allocation = {"bytes": self.cfg["admission"]["reservation_bytes"], "cpu_slots": self.cfg["cpu_slots"],
++                               "outstanding_reservations_bytes": self.cfg["admission"]["outstanding_reservations_bytes"],
++                               "lane_outstanding_reservations_bytes": self.cfg["admission"]["lane_outstanding_reservations_bytes"]}
++        if prep["allocation"] != expected_allocation or not isinstance(prep["python"], dict) or set(prep["python"]) != {"path", "sha256"} or \
++                prep["python"]["path"] != self.cfg["argv"][0] or not hex64(prep["python"]["sha256"]):
++            raise GuardError("CREATION_PREPARATION_ALLOCATION_OR_INTERPRETER")
++        out = self.cfg["output_roots"][0]
++        run = os.path.dirname(out)
++        rfd = directory_at(self.lane_fd, os.path.relpath(run, self.cfg["lane_disk_root"]), dl)
++        try:
++            if prep["run"] != {"path": run, "inode": list(stat_id(rfd))} or \
++                    prep["output_root"] != {"path": out, "inode": list(self.root_fds[out][1])}:
++                raise GuardError("CREATION_RUN_ANCHOR_CHANGED")
++            if channel["scenario"] == "mutate_pin":
++                expected = prep["fixture"]
++                if not isinstance(expected, dict) or set(expected) != {"path", "inode", "sha256", "bytes", "nlink"} or \
++                        expected["path"] != channel["target_path"] or not integer(expected["nlink"]) or expected["nlink"] != 1 or \
++                        not integer(expected["bytes"]) or expected["bytes"] < 1 or not hex64(expected["sha256"]) or \
++                        not isinstance(expected["inode"], list) or len(expected["inode"]) != 2 or not all(integer(v) and v >= 0 for v in expected["inode"]):
++                    raise GuardError("PIN_CREATION_MANIFEST_SCHEMA")
++                actual, _ = read_file("pinned-scratch.txt", SMALL, dl, rfd)
++            else:
++                if prep["fixture"] is not None:
++                    raise GuardError("LAUNCH_MUTATION_HAS_UNDECLARED_PIN_FIXTURE")
++                target = self.cfg["launch_record"]
++                expected = {"path": target, "inode": list(self.created[target]),
++                            "sha256": self.rec["launch_record_sha256"], "bytes": None, "nlink": 1}
++                fd, name = self.location(target)
++                actual, _ = read_file(name, SMALL, dl, fd)
++                expected["bytes"] = actual["bytes"]
++            for k in ("inode", "sha256", "bytes", "nlink"):
++                if actual[k] != expected[k]:
++                    raise GuardError("ORIGINAL_CREATION_IDENTITY_CHANGED_BEFORE_GO")
++            manifest = {"kind": "qualification-creation-manifest-v1", "scenario": channel["scenario"],
++                        "preparation_sha256": pa["sha256"], "run": prep["run"], "output_root": prep["output_root"],
++                        "target": expected}
++            line = (json.dumps(manifest, sort_keys=True, separators=(",", ":"), allow_nan=False) + "\n").encode()
++            if len(line) > 4096:
++                raise GuardError("CREATION_MANIFEST_BYTE_CAP")
++            self.rec["go_creation_manifest"] = manifest
++            self.rec["go_creation_manifest_sha256"] = hashlib.sha256(line).hexdigest()
++            dl.check("after original-creation manifest")
++            return line
++        finally:
++            os.close(rfd)
++            dl.check("after creation manifest anchor close")
++
+     def time_commit(self, phase, required_s=0):
+-        """called with cancellation signals masked, AFTER all I/O. No timestamp formatting or helper."""
++        """Fresh raw clocks after LAST binding I/O, while cancellation is protected."""
+         epoch, mono = time.time(), time.monotonic()
+         if pending_cancel():
+             raise GuardError("CANCEL_AT_" + phase)
+@@ -1232,7 +1581,35 @@
+             raise GuardError("GO_EXPIRED_AT_" + phase)
+         if epoch + required_s > self.fit_epoch or mono + required_s > self.fit_mono:
+             raise GuardError("FIT_FAILED_AT_" + phase)
+-        return {"phase": phase, "mono": mono, "epoch": epoch, "required_s": required_s}
++        age = None if phase == "HELPER" and self.clock_observation is None else self.stability_age(mono)
++        return {"phase": phase, "mono": mono, "epoch": epoch, "required_s": required_s,
++                "stability_age_upper_s": age}
++
++    def completion_check(self, phase, dl):
++        if phase == "GO":
++            observed = time.monotonic()
++            age = observed - self.mono_spawn
++            remaining = self.mono_spawn + self.cfg["max_wall_s"] - observed
++            bound = min(60.0, self.cfg["max_wall_s"] / 2.0)
++            self.rec["go_delivery_completion"] = {"mono": observed, "spawn_age_s": age,
++                                                  "spawn_age_bound_s": bound, "remaining_main_runtime_s": remaining}
++            late = age > bound or remaining <= 0
++            if age > bound:
++                self.fail("GO_COMPLETION_AGE_EXCEEDED", self.rec["go_delivery_completion"])
++            if remaining <= 0:
++                self.fail("GO_COMPLETION_MAIN_RUNTIME_EXPIRED", self.rec["go_delivery_completion"])
++                self.enforce_runtime("actual_GO_completion")
++            if late:
++                raise GuardError("LATE_ACTUAL_GO_DELIVERY_OWNED_STOP")
++        dl.check("after " + phase + " completion")
++        if set(signal.sigpending()) & CANCEL_SIGNALS or (CANCEL["signal"] is not None and not self.cancel_handled):
++            raise GuardError("CANCEL_DURING_" + phase + "_COMPLETION")
++        epoch, mono = time.time(), time.monotonic()
++        if self.authorization is None or epoch > self.authorization["not_after_epoch"]:
++            raise GuardError("AUTHORIZATION_EXPIRED_DURING_" + phase)
++        if epoch > self.fit_epoch or mono > self.fit_mono:
++            raise GuardError("FIT_EXPIRED_DURING_" + phase)
++        self.stability_age(mono)
+ 
+     def sample(self, obj):
+         if self.samples_dead or self.samples_fd is None:
+@@ -1385,7 +1762,7 @@
+                              s.cfg["max_wall_s"] + s.cfg["settle_s"] + FINALIZE_S)
+     s.rec["launch_commit"] = child["launch_commit"]
+     try:
+-        s.ident = identify(s.pid)  # Before any fallible capture setup, fast exits are unreaped zombies.
++        s.ident = s.observed_identity(s.pid, "main_initial", True)
+         if s.ident["pgid"] != s.pid or s.ident["euid"] != MY_UID or s.ident["ruid"] != MY_UID:
+             raise GuardError("CHILD_IDENTITY_OR_GROUP_INVALID")
+         s.group = s.ident["pgid"]
+@@ -1407,33 +1784,41 @@
+                   "authorization": s.authorization, "launch_commit": s.rec["launch_commit"],
+                   "cpu_slots": s.cfg["cpu_slots"], "reservation_bytes": s.cfg["admission"]["reservation_bytes"]}
+         fd, name = s.location(s.cfg["launch_record"])
+-        s.rec["launch_record_sha256"] = publish(fd, name, bytes_json(launch), s.deadline(IO_S))
+-        st = os.stat(name, dir_fd=fd, follow_symlinks=False)
+-        s.created[s.cfg["launch_record"]] = (st.st_dev, st.st_ino)
++        launch_sha, launch_inode = publish(fd, name, bytes_json(launch), s.deadline(IO_S))
++        s.rec["launch_record_sha256"] = launch_sha
++        s.created[s.cfg["launch_record"]] = launch_inode
+         gd = s.deadline(IO_S)
+         c = s.full_census(gd)
+         s.rec["pre_go_census"] = c
+         live = [p["uniqueid"] for p in c["owned_live"]]
+         if not c["complete"] or c["unproved_live"] or live != [s.ident["uniqueid"]] or not s.limits(c, True):
+             raise GuardError("GO_CENSUS_INCOMPLETE_OWNERSHIP_OR_LIMITS")
+-        s.authorization_io(gd)
+         a = s.accounting(gd)
+         if a["free"] < s.cfg["launch_free_min_bytes"] + s.cfg["admission"]["reservation_bytes"] or not s.reservation_fits(a):
+             raise GuardError("GO_RESOURCES_FAILED")
+         gd.check("after GO preparation")
+         with protected():
++            creation_line = s.creation_manifest(gd)
++            s.authorization_io(gd)  # Last I/O, after census/accounting, before commit clocks.
++            gd.check("after GO authorization read")
+             s.resource_age(c)
+             remaining = max(0, s.mono_spawn + s.cfg["max_wall_s"] - time.monotonic())
++            spawn_age = time.monotonic() - s.mono_spawn
++            if spawn_age > min(60.0, s.cfg["max_wall_s"] / 2.0):
++                raise GuardError("SPAWN_TO_GO_AGE_EXCEEDED")
+             if remaining <= 0 or s.stop is not None or s.failures:
+                 raise GuardError("GO_STOP_OR_DEADLINE")
+             s.rec["go_commit"] = s.time_commit("GO", remaining + s.cfg["settle_s"] + FINALIZE_S)
+             s.rec["go_write_attempted"] = True
+             write_all(child["stdin_fd"], b"GO\n", gd)
++            if creation_line:
++                write_all(child["stdin_fd"], creation_line, gd)
+             s.rec["go_written_mono"] = time.monotonic()
+             os.close(child["stdin_fd"])
+             child["stdin_fd"] = None
+-            gd.check("after GO write/close")
+-            s.rec["go_delivered"] = True
++            s.rec["go_delivered"] = True  # Bytes were delivered; a later completion failure is not hidden.
++            s.completion_check("GO", gd)
++            s.resource_age(c)
+     except BaseException as e:
+         s.fail("POST_SPAWN_FAILURE", repr(e))
+     finally:
+@@ -1457,8 +1842,6 @@
+             if CANCEL["signal"] is not None:
+                 s.cancel_handled = True
+                 s.trip("SUPERVISOR_CANCEL", CANCEL["signal"])
+-            if s.clearance():
+-                return
+             for name, cut in s.cutoffs():
+                 if time.monotonic() > cut:
+                     s.fail(name)
+@@ -1479,8 +1862,11 @@
+                       "resources": a, "streams": {k: dict(v) for k, v in s.streams.items()},
+                       "stop": None if s.stop is None else s.stop["reason"], "failure_codes": sorted(s.failure_keys),
+                       "trips": list(s.trips)})
++            if s.clearance():
++                return
+         except BaseException as e:
+             s.fail("OBSERVATION_FAILED", repr(e))
++            s.enforce_runtime("observation_exception_after_native_return")
+         for name, cut in s.cutoffs():
+             if time.monotonic() > cut:
+                 s.fail(name)
+@@ -1490,12 +1876,26 @@
+         time.sleep(max(0, min([s.cfg["sample_s"]] + remaining)))
+ 
+ 
++def exception_code(e):
++    if isinstance(e, GuardError) and e.args and isinstance(e.args[0], str):
++        return e.args[0].split(" ", 1)[0]
++    if isinstance(e, OSError):
++        return "OS_ERROR_%s" % e.errno
++    return type(e).__name__
++
++
++def refuse(s, code, reason, extra=None):
++    fields = dict(extra or {})
++    fields["reconciliation"] = s.reconciliation_evidence()
++    return unsuccessful(code, reason, fields)
++
++
+ def unsuccessful(code, reason, extra=None):
+     obj = {"supervisor": VERSION, "acknowledged": False, "exit_code": code, "reason": reason,
+            "clock_note": "raw monotonic/epoch telemetry only"}
+     if extra:
+         obj.update(extra)
+-    sys.stdout.write(json.dumps(obj, allow_nan=False) + "\n")
++    sys.stdout.write(json.dumps(obj, allow_nan=False, separators=(",", ":")) + "\n")
+     sys.stdout.flush()
+     return code
+ 
+@@ -1506,7 +1906,7 @@
+         return final_body(s, phase)
+     except BaseException as e:
+         sys.stderr.write("FINALIZATION_FAILED %r\n" % e)
+-        return unsuccessful(13, "FINALIZATION_FAILED", {"config_sha256": s.config_sha})
++        return refuse(s, 13, "FINALIZATION_FAILED", {"config_sha256": s.config_sha, "error": repr(e), "error_code": exception_code(e)})
+ 
+ 
+ def final_body(s, phase):
+@@ -1528,7 +1928,7 @@
+         s.limits(c)
+         if not s.cheap_clear():
+             s.fail("STREAMS_OR_THREADS_NOT_CLOSED")
+-        if s.clear is None and not c["owned_live"] and s.cheap_clear():
++        if s.clear is None and not c["owned_live"] and not c["unproved_live"] and s.cheap_clear():
+             # Finalization cannot retroactively replace a missing timely clearance observation.
+             s.fail("TIMELY_CLEARANCE_NOT_ESTABLISHED")
+     if s.samples_fd is not None:
+@@ -1597,10 +1997,17 @@
+     unresolved = any(not h["settled"] for h in s.helpers) or not c["complete"] or bool(c["owned_live"] or c["unproved_live"])
+     state = "UNSETTLED" if unresolved else "NOT_LAUNCHED" if s.pid is None else "UNSETTLED" if s.failures else "SETTLED"
+     code = {"SETTLED": 0, "NOT_LAUNCHED": 10, "UNSETTLED": 11}[state]
++    frozen_failure_codes, frozen_trip_codes = tuple(sorted(s.failure_keys)), tuple(s.trips)
+     s.rec.update(settlement=state, child_pid=s.pid, child_identity=s.ident, child_returncode=s.rc,
+                  child_exit_mono=s.exit_mono, child_exit_epoch=s.exit_epoch, wait_status_lost=s.lost_wait,
+                  failures=s.failures, trips=list(s.trips.values()), stop_request=s.stop, signal=s.signal,
+                  owned_identities=list(s.owned.values()), contract_violations=s.violations, clear=s.clear,
++                 unproved_history=list(s.unproved_history.values()), coverage_history=list(s.coverage_history),
++                 census_observations=list(s.census_history), runtime_observations=s.runtime_observations,
++                 identity_history=list(s.identity_history.values()), observation_attempts=list(s.attempt_history),
++                 history_charge_bytes=s.history_charge, history_overflow=s.history_overflow,
++                 stability_expiry_mono=s.stability_expiry_mono,
++                 clock_observation=s.clock_observation,
+                  helper_calls=s.helper_calls, helper_log=s.helper_log, helpers=s.helper_reports(),
+                  streams=s.streams, loop_status=s.loop_status, samples_written=s.sample_count,
+                  samples_bytes=s.sample_bytes, maxima=s.maxima, min_free=s.min_free, artifacts=arts,
+@@ -1617,18 +2024,19 @@
+     payload = len(rb) + len(sb)
+     b = s.accounting(Deadline(IO_S, phase.end))
+     adm = s.cfg["admission"]
+-    fits = payload <= PUBLICATION_CAP and s.reservation_fits(b, payload)
++    fits = payload <= PUBLICATION_CAP and s.reservation_fits(b, payload) and \
++        b["charged_bytes"] + payload <= s.cfg["output_trip_bytes"]
+     if not fits:
+-        return unsuccessful(12, "PUBLICATION_REFUSED", {"config_sha256": s.config_sha, "payload_bytes": payload,
++        return refuse(s, 12, "PUBLICATION_REFUSED", {"config_sha256": s.config_sha, "payload_bytes": payload,
+                                                          "resources": b, "reservation_bytes": adm["reservation_bytes"]})
+     pub = Deadline(60, phase.end)
+     fd, name = s.location(s.cfg["receipt"])
+     try:
+-        got = publish(fd, name, rb, pub)
++        got, receipt_inode = publish(fd, name, rb, pub)
+         if got != rsha:
+             raise GuardError("RECEIPT_DIGEST_MISMATCH")
+     except OSError as e:
+-        return unsuccessful(12, "RECEIPT_PUBLICATION_FAILED", {"error": repr(e)})
++        return refuse(s, 12, "RECEIPT_PUBLICATION_FAILED", {"error": repr(e), "error_code": exception_code(e)})
+     fd, name = s.location(s.cfg["settlement_record"])
+     try:
+         ssha = linked_publication(fd, name, sb, pub)
+@@ -1636,22 +2044,32 @@
+             os.fsync(fd)
+             pub.check("after directory fsync")
+     except OSError as e:
+-        return unsuccessful(13, "SETTLEMENT_OR_DIRECTORY_SYNC_FAILED", {"receipt_sha256": rsha, "error": repr(e)})
++        return refuse(s, 13, "SETTLEMENT_OR_DIRECTORY_SYNC_FAILED", {"receipt_sha256": rsha, "error": repr(e), "error_code": exception_code(e)})
+     post_publish = time.monotonic()
+     # I/O FIRST, fresh raw-clock/cancel checks LAST at the protected acknowledgment commit.
+     try:
+-        s.authorization_io(Deadline(IO_S, phase.end))
+         end = s.accounting(Deadline(IO_S, phase.end))
+-        if not s.reservation_fits(end):
+-            raise GuardError("ACK_RESOURCE_RECHECK_FAILED")
++        if not s.reservation_fits(end) or end["charged_bytes"] > s.cfg["output_trip_bytes"]:
++            raise GuardError("ACK_RESOURCE_OR_AGGREGATE_OUTPUT_FAILED")
++        ack_census = s.full_census(Deadline(CENSUS_S, phase.end))
++        final_ids = {p["uniqueid"] for p in c["owned_live"] + c["unproved_live"]}
++        ack_ids = {p["uniqueid"] for p in ack_census["owned_live"] + ack_census["unproved_live"]}
++        if not ack_census["complete"] or not ack_ids <= final_ids or (state != "UNSETTLED" and ack_ids):
++            raise GuardError("ACK_PROCESS_COVERAGE_CHANGED_OR_BLOCKING")
++        if tuple(sorted(s.failure_keys)) != frozen_failure_codes or tuple(s.trips) != frozen_trip_codes:
++            raise GuardError("ACK_OBSERVATION_CHANGED_FROZEN_OUTCOME")
+         phase.check("after acknowledgment preparation")
+         with protected():
++            s.authorization_io(phase)  # Last binding read after ALL preparation I/O.
++            s.resource_age(ack_census)
+             # A cancel already acted on as the cause of this result does not masquerade as an unobserved late cancel.
+             if s.cancel_handled and CANCEL["signal"] is not None and not (set(signal.sigpending()) & CANCEL_SIGNALS):
+                 epoch, mono = time.time(), time.monotonic()
+                 if epoch > s.authorization["not_after_epoch"] or epoch > s.fit_epoch or mono > s.fit_mono:
+                     raise GuardError("ACK_EXPIRY_OR_FIT")
+-                commit = {"phase": "ACK", "epoch": epoch, "mono": mono, "cancel_handled": True}
++                age = s.stability_age(mono)
++                commit = {"phase": "ACK", "epoch": epoch, "mono": mono, "cancel_handled": True,
++                          "stability_age_upper_s": age}
+             else:
+                 commit = s.time_commit("ACK")
+             phase.check("acknowledgment commit")
+@@ -1660,19 +2078,26 @@
+                    "receipt_bytes": len(rb), "settlement_bytes": len(sb), "post_publish_mono": post_publish,
+                    "ack_commit": commit, "publication_resources": b, "ack_resources": end,
+                    "child_returncode": s.rc, "failure_codes": sorted(s.failure_keys),
+-                   "owned_live": s.rec.get("final_census", {}).get("owned_live", []),
+-                   "contract_violations": s.violations}
+-            sys.stdout.write(json.dumps(ack, sort_keys=True, allow_nan=False) + "\n")
++                   "owned_live": ack_census["owned_live"], "unproved_live": ack_census["unproved_live"],
++                   "ack_census": ack_census, "contract_violations": s.violations,
++                   "unproved_history": list(s.unproved_history.values()), "coverage_history": s.coverage_history,
++                   "census_observations": s.census_history, "reconciliation": s.reconciliation_evidence()}
++            sys.stdout.write(json.dumps(ack, sort_keys=True, allow_nan=False, separators=(",", ":")) + "\n")
+             sys.stdout.flush()
+-            phase.check("after acknowledgment write/flush")
++            s.completion_check("ACK", phase)
++            s.resource_age(ack_census)
+         return code
+     except BaseException as e:
+         # If stdout already committed a line, do not emit a contradictory second line: mismatch exit refuses release.
+         if "ack" in locals():
+-            sys.stderr.write("ACK_COMPLETION_FAILED %r\n" % e)
++            sys.stderr.write(json.dumps({"kind": "POST_ACK_REFUSAL_EVIDENCE", "exit_code": 14,
++                                         "error": repr(e), "error_code": exception_code(e),
++                                         "reconciliation": s.reconciliation_evidence()},
++                                        allow_nan=False, separators=(",", ":")) + "\n")
++            sys.stderr.flush()
+             return 14
+-        return unsuccessful(14, "ACK_REFUSED", {"receipt_sha256": rsha, "settlement_record_sha256": ssha,
+-                                               "post_publish_mono": post_publish, "error": repr(e)})
++        return refuse(s, 14, "ACK_REFUSED", {"receipt_sha256": rsha, "settlement_record_sha256": ssha,
++                                           "post_publish_mono": post_publish, "error": repr(e), "error_code": exception_code(e)})
+ 
+ 
+ def main():
+@@ -1681,8 +2106,9 @@
+     signal.signal(signal.SIGCHLD, signal.SIG_DFL)
+     signal.pthread_sigmask(signal.SIG_UNBLOCK, CANCEL_SIGNALS)
+     if len(sys.argv) != 2:
+-        sys.stderr.write("usage: owned_supervisor_v11.py CONFIG.json\n")
++        sys.stderr.write("usage: owned_supervisor_v13.py CONFIG.json\n")
+         return 2
++    s = None
+     try:
+         path = os.path.abspath(sys.argv[1])
+         a, raw = read_file(path, SMALL, Deadline(IO_S), keep=True)
+@@ -1695,6 +2121,8 @@
+         s.establish_baseline()
+     except BaseException as e:
+         sys.stderr.write("CONFIG_OR_ANCHORS_UNUSABLE %r\n" % e)
++        if s is not None:
++            return refuse(s, 2, "CONFIG_OR_ANCHORS_UNUSABLE", {"error": repr(e), "error_code": exception_code(e)})
+         return 2
+     s.rec["admission"] = admission(s)
+     if not s.rec["admission"]["reasons"]:

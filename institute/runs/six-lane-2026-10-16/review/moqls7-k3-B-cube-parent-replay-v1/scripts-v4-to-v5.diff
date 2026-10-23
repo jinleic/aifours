@@ -1,0 +1,482 @@
+--- scripts/launch_B_v4.py
++++ scripts/launch_B_v5.py
+@@ -1,27 +1,29 @@
+ #!/usr/bin/env python3
+-"""Capacity-gated launcher of the parent B-side K3 cube replay desk (review/moqls7-k3-B-cube-parent-replay-v1), v4.
+-
+-v4 = launch_B_v3.py with one change, the launcher's signal handling (Main's source review, about 05:16 PDT):
+-  * on_term is flag-only: it records the signal and never signals any PID;
+-  * run_owned() spawns the supervisor and owns it in a wait loop. The flag is checked first in every iteration,
+-    starting immediately after the child is registered, so a signal that arrived while Popen ran is forwarded in
+-    the first iteration. SIGTERM is forwarded only while the child is owned, i.e. not yet reaped. An exited child
+-    stays a zombie until this loop reaps it, so its PID cannot be recycled. Ownership is cleared at the same
+-    control-flow point as the successful wait4, and nothing is signalled after it;
+-  * any exception after Popen forwards SIGTERM to the still-owned child and waits a bounded SUP_GRACE + 120 s for it;
+-    an attempt stopped this way stays UNKNOWN;
+-  * a signal that races Popen yields a prompt cooperative stop and an UNKNOWN attempt; it does not guarantee that
+-    no supervisor process was created;
+-  * a 'smoke-signal LABEL' mode, a targeted smoke of the signal intervals around a harmless '/bin/sleep 117' under
+-    the pinned supervisor (no solver, checker or CNF).
+-v3 (unchanged here): attempt 2 owns lane SLOT 2 ONLY, after PhysEpQutrit's B/C411 r7 is fully reaped and
+-end-recorded. That means no live lane process of B/C411 r7 (driver or natives) in a fresh scan AND
+-evidence/k3cubes/cert_B_r7/B_C411.json exists as a regular file; a low busy count alone never admits. A signal
+-received before launch prevents the launch. Labels, refusal while any receipts/*.QUARANTINE.json exists, the
+-wait-start watcher, pins, limits, supervisor arguments and the RSS-cap rule are as in v2/v3.
+-
+-Usage: launch_B_v4.py run ITEM --label ITEM-<suffix>
+-       launch_B_v4.py wait-start LABEL
+-       launch_B_v4.py smoke-signal LABEL
++"""Capacity-gated launcher of the parent B-side K3 cube replay desk (review/moqls7-k3-B-cube-parent-replay-v1), v5.
++
++v5 = launch_B_v4.py with one change, the cleanup obligation of run_owned() (Main's source review, about 05:23 PDT):
++  * every operation after a successful Popen is inside the cleanup scope: the PID is registered by the statement right
++    after Popen and everything else runs inside try/except/finally;
++  * the finally block never lets run_owned() return or raise while the child is owned and unreaped. After the bounded
++    SIGTERM wait of the exception path, if ownership remains, it writes a desk-owned quarantine/UNKNOWN marker (best
++    effort: a write failure is recorded and never skips the wait). It then keeps ownership and waits (blocking wait4)
++    for that known child to be reaped, with no further signals and no escalation. The launcher may therefore stay
++    alive beyond its stage deadline; that attempt is UNKNOWN, never PASS;
++  * a lost child (wait4 ECHILD) also writes the marker: UNKNOWN, never a known-clean exit;
++  * the outcome receipt reports the slot released only for a cleanly reaped child with no marker and no lost child;
++  * the v4 'smoke-signal' mode stays in v4, where it ran. v5 has a 'test-exception-path LABEL' mode instead: the
++    exception path once, with a short, self-exiting, SIGTERM-ignoring python child and an injected marker-write error.
++v4 (unchanged): on_term is flag-only; the wait loop checks the flag first from registration on and forwards SIGTERM
++only while the child is owned (unreaped, so its PID is reserved); ownership is cleared by the first statement after
++the successful wait4; a signal racing Popen gives a prompt cooperative stop and an UNKNOWN attempt.
++v3 (unchanged): attempt 2 owns lane SLOT 2 ONLY, after PhysEpQutrit's B/C411 r7 is fully reaped and end-recorded (no
++live lane process of B/C411 r7 in a fresh scan AND evidence/k3cubes/cert_B_r7/B_C411.json exists as a regular file);
++a low busy count alone never admits; a signal received before launch prevents the launch. Labels, refusal while any
++receipts/*.QUARANTINE.json exists, the wait-start watcher, pins, limits, supervisor arguments and the RSS-cap rule are
++as in v2/v3.
++
++Usage: launch_B_v5.py run ITEM --label ITEM-<suffix>
++       launch_B_v5.py wait-start LABEL
++       launch_B_v5.py test-exception-path LABEL          (LABEL: test-...)
+ 
+ run waits, with bounded sleeps of 90 s (never spinning), until a fresh lane scan and a fresh free-space reading admit a
+@@ -77,59 +79,93 @@
+ 
+ 
+-def run_owned(argv, out_fd, inject=None):
+-    """Spawn one child in its own session and own it until this function reaps it (see the module docstring)."""
++def reap_step(p, box, ev, t0, flags):
++    """One wait4 on the owned child. Ownership (box['owned']) is cleared by the first statement after a successful
++    wait4, or on ECHILD (lost child: never signalled again, and recorded so that the caller quarantines)."""
++    try:
++        pid, st, ru = os.wait4(box["owned"], flags)
++    except ChildProcessError as e:
++        box["owned"] = None
++        ev["lost_child"] = repr(e)
++        return
++    if pid:
++        box["owned"] = None
++        p.returncode = os.waitstatus_to_exitcode(st)
++        ev["reaped"] = {"at": K.now(), "rc": p.returncode, "maxrss_bytes": ru.ru_maxrss,
++                        "user_seconds": round(ru.ru_utime, 3), "after_spawn_seconds": round(time.monotonic() - t0, 3)}
++
++
++def write_marker(path, ev, reason):
++    """Best-effort desk-owned quarantine/UNKNOWN marker; a failure is recorded and never raised."""
++    ev["marker"] = path
++    try:
++        with open(path, "x") as f:
++            json.dump({"at": K.now(), "pid": ev.get("pid"), "argv0": ev.get("argv0"), "reason": reason,
++                       "lost_child": ev.get("lost_child"), "exception": ev.get("exception"),
++                       "rule": ("UNKNOWN; no further signals or escalation; the launcher keeps waiting for this known "
++                                "child; every later admission is refused while this record exists")}, f, indent=2)
++            f.write("\n")
++    except BaseException as e:
++        ev["marker_error"] = repr(e)
++
++
++def run_owned(argv, out_fd, marker_path, inject=None, stop_wait=STOP_WAIT):
++    """Spawn one child in its own session and own it; never return or raise while it is owned and unreaped."""
+     ev = {"argv0": argv[0], "pid": None, "spawned_at": None, "forwarded": [], "reaped": None, "exception": None,
+-          "lost_child": None, "stop_wait": None}
++          "lost_child": None, "stop_wait": None, "marker": None, "marker_error": None, "wait_errors": [],
++          "blocking_wait": None}
+     t0 = time.monotonic()
+     p = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=out_fd, stderr=subprocess.STDOUT, cwd=K.TMP,
+                          env=K.ENV, start_new_session=True)
+-    if inject is not None:
+-        inject()                                    # smoke only: a signal inside the spawn/registration interval
+-    owned = p.pid                                   # registration
+-    ev.update(pid=owned, spawned_at=K.now())
+-
+-    def try_reap():
+-        nonlocal owned
++    box = {"owned": p.pid}                          # registration: the statement right after Popen
++    try:
+         try:
+-            pid, st, ru = os.wait4(owned, os.WNOHANG)
+-        except ChildProcessError as e:              # not our unreaped child any more: never signal it
+-            owned = None
+-            ev["lost_child"] = repr(e)
+-            return True
+-        if pid:
+-            owned = None                            # ownership cleared with the successful wait4
+-            p.returncode = os.waitstatus_to_exitcode(st)
+-            ev["reaped"] = {"at": K.now(), "rc": p.returncode, "maxrss_bytes": ru.ru_maxrss,
+-                            "user_seconds": round(ru.ru_utime, 3),
+-                            "after_spawn_seconds": round(time.monotonic() - t0, 3)}
+-            return True
+-        return False
+-
+-    iteration = 0
+-    try:
+-        while owned is not None:
+-            iteration += 1
+-            if STATE["signals"] and not ev["forwarded"]:
+-                os.kill(owned, signal.SIGTERM)      # owned => unreaped => PID reserved
+-                ev["forwarded"].append({"at": K.now(), "after_spawn_seconds": round(time.monotonic() - t0, 3),
+-                                        "iteration": iteration, "signals_seen": len(STATE["signals"])})
+-            if try_reap():
+-                break
+-            time.sleep(POLL)
+-    except BaseException as exc:
+-        ev["exception"] = repr(exc)
+-        if owned is not None:
++            ev["pid"] = box["owned"]
++            ev["spawned_at"] = K.now()
++            if inject is not None:
++                inject()                            # tests only
++            iteration = 0
++            while box["owned"] is not None:
++                iteration += 1
++                if STATE["signals"] and not ev["forwarded"]:
++                    os.kill(box["owned"], signal.SIGTERM)       # owned => unreaped => PID reserved
++                    ev["forwarded"].append({"at": K.now(), "after_spawn_seconds": round(time.monotonic() - t0, 3),
++                                            "iteration": iteration, "signals_seen": len(STATE["signals"])})
++                reap_step(p, box, ev, t0, os.WNOHANG)
++                if box["owned"] is not None:
++                    time.sleep(POLL)
++        except BaseException as exc:
++            ev["exception"] = repr(exc)
++            if box["owned"] is not None:
++                try:
++                    os.kill(box["owned"], signal.SIGTERM)
++                    ev["forwarded"].append({"at": K.now(), "why": "exception after Popen"})
++                except BaseException as e:
++                    ev["forwarded"].append({"why": "exception after Popen", "error": repr(e)})
++                deadline = time.monotonic() + stop_wait
++                while box["owned"] is not None and time.monotonic() < deadline:
++                    try:
++                        reap_step(p, box, ev, t0, os.WNOHANG)
++                    except BaseException as e:
++                        ev["wait_errors"].append(repr(e))
++                    if box["owned"] is not None:
++                        time.sleep(POLL)
++                ev["stop_wait"] = {"bounded_seconds": stop_wait, "unreaped_after_wait": box["owned"] is not None}
++    finally:
++        if box["owned"] is not None:
++            write_marker(marker_path, ev, "child unreaped after the bounded SIGTERM wait")
+             try:
+-                os.kill(owned, signal.SIGTERM)
+-                ev["forwarded"].append({"at": K.now(), "why": "exception after Popen"})
+-            except OSError as e:
+-                ev["forwarded"].append({"at": K.now(), "why": "exception after Popen", "error": repr(e)})
+-            deadline = time.monotonic() + STOP_WAIT
+-            while owned is not None and time.monotonic() < deadline:
+-                if try_reap():
+-                    break
++                ev["blocking_wait"] = {"started_at": K.now(), "after_spawn_seconds": round(time.monotonic() - t0, 3)}
++            except BaseException as e:
++                ev["wait_errors"].append(repr(e))
++        while box["owned"] is not None:             # no further signals or escalation; wait for the known child
++            try:
++                reap_step(p, box, ev, t0, 0)
++            except BaseException as e:
++                ev["wait_errors"].append(repr(e))
+                 time.sleep(POLL)
+-            ev["stop_wait"] = {"bounded_seconds": STOP_WAIT, "unreaped_after_wait": owned is not None}
+-    ev["owned_at_return"] = owned
++        if ev["lost_child"] and ev["marker"] is None:
++            write_marker(marker_path, ev, "lost child: wait4 ECHILD; exit status unknown")
++        ev["owned_at_return"] = box["owned"]
++        ev["returned_after_spawn_seconds"] = round(time.monotonic() - t0, 3)
+     return ev
+ 
+@@ -190,5 +226,6 @@
+     quarantine = os.path.join(K.RECEIPTS, label + ".QUARANTINE.json")
+     stdout_log = os.path.join(K.LOGS, label + ".supervisor-stdout.log")
+-    for pth in (gate_path, outcome_path, record, quarantine, stdout_log):
++    launcher_marker = os.path.join(K.RECEIPTS, label + ".launcher.QUARANTINE.json")
++    for pth in (gate_path, outcome_path, record, quarantine, stdout_log, launcher_marker):
+         if os.path.lexists(pth):
+             raise SystemExit("exists: " + pth)
+@@ -233,7 +270,8 @@
+     started = K.now()
+     t0 = time.monotonic()
+-    ev = run_owned(argv, out_fd)
++    ev = run_owned(argv, out_fd, launcher_marker)
+     os.close(out_fd)
+     os.write(logfd, (json.dumps({"at": started, "supervisor_pid": ev["pid"], "gate_sha256": gate_sha}) + "\n").encode())
++    clean = ev["reaped"] is not None and ev["lost_child"] is None and ev["marker"] is None and ev["owned_at_return"] is None
+     outcome = {"item": item, "label": label, "gate_receipt_sha256": gate_sha, "supervisor_started_at": started,
+                "supervisor_finished_at": K.now(), "seconds": round(time.monotonic() - t0, 3), "owned_child": ev,
+@@ -241,4 +279,7 @@
+                "launcher_signals": STATE["signals"],
+                "stopped_by_launcher": bool(ev["forwarded"]),
++               "launcher_marker_exists": os.path.lexists(launcher_marker),
++               "slot_released": clean,
++               "unknown_by_launcher": (not clean) or ev["exception"] is not None or bool(ev["forwarded"]),
+                "supervisor_record_exists": os.path.exists(record),
+                "supervisor_record_sha256": K.sha_file(record) if os.path.exists(record) else None,
+@@ -251,7 +292,8 @@
+     os.close(logfd)
+     print(json.dumps({"outcome_sha256": h, "supervisor_rc": outcome["supervisor"]["rc"], "seconds": outcome["seconds"],
+-                      "stopped_by_launcher": outcome["stopped_by_launcher"],
++                      "stopped_by_launcher": outcome["stopped_by_launcher"], "slot_released": clean,
++                      "launcher_marker_exists": outcome["launcher_marker_exists"],
+                       "quarantine_exists": outcome["quarantine_exists"]}), flush=True)
+-    return 0 if ev["exception"] is None and ev["owned_at_return"] is None else 3
++    return 0 if clean and ev["exception"] is None else 3
+ 
+ 
+@@ -299,80 +341,63 @@
+ 
+ 
+-SMOKE_ARGS = "/bin/sleep 117"
+-
+-
+-def sleep_survivors():
+-    out = subprocess.run(["/bin/ps", "-axww", "-o", "pid=,ppid=,pgid=,args="], stdin=subprocess.DEVNULL,
+-                         capture_output=True, text=True, env=K.ENV, cwd=K.TMP).stdout
+-    rows = [ln.split(None, 3) for ln in out.splitlines()]
+-    return [r for r in rows if len(r) == 4 and r[3].strip() == SMOKE_ARGS]
+-
+-
+-def mode_smoke(label):
+-    """Targeted signal-interval smoke (no solver, checker or CNF). Case A: a real SIGTERM to this launcher inside the
+-    spawn/registration interval of run_owned(), around the pinned supervisor and '/bin/sleep 117'. Expected: flag set,
+-    SIGTERM forwarded exactly once to the owned child in the first loop iteration, the supervisor exits and is reaped,
+-    no sleep survivor, no quarantine. Case B: a SIGTERM after the reap. Expected: a recorded flag only, no os.kill of
+-    any PID other than this process's own self-signal."""
+-    paths = {"receipt": os.path.join(K.RECEIPTS, label + ".smoke.json"),
+-             "record": os.path.join(K.RECEIPTS, label + ".supervisor.json"),
+-             "quarantine": os.path.join(K.RECEIPTS, label + ".QUARANTINE.json"),
+-             "stdout": os.path.join(K.LOGS, label + ".supervisor-stdout.log")}
+-    for p in paths.values():
+-        if os.path.lexists(p):
+-            raise SystemExit("exists: " + p)
+-    if sleep_survivors():
+-        raise SystemExit("a '%s' process already exists; smoke not run" % SMOKE_ARGS)
+-    argv = [K.PY, "-I", "-B", K.SUPERVISOR, "--name", label, "--wall", "120", "--rss-cap", str(512 * 1024 * 1024),
+-            "--floor", str(K.FLOOR), "--lane", K.DESK, "--record", paths["record"], "--quarantine", paths["quarantine"],
+-            "--grace", "30", "--"] + SMOKE_ARGS.split()
++TEST_CHILD_SECONDS = 6
++TEST_STOP_WAIT = 2
++
++
++def mode_test_exception_path(label):
++    """The new exception path, once. No solver, checker, CNF or supervisor. The child is a short python sleeper that
++    inherits SIGTERM=SIG_IGN from this test process, so it ignores SIGTERM from its first instruction, and exits by
++    itself after TEST_CHILD_SECONDS. An exception is injected right after Popen, and the marker path points into a
++    missing directory (injected record-write error). Expected: exactly one SIGTERM forwarded to the owned child
++    (ignored); the bounded wait (TEST_STOP_WAIT) expires with the child unreaped; the marker write fails and is
++    recorded; run_owned() keeps waiting with no further signals and returns only after the child exited by itself and
++    was reaped."""
++    receipt = os.path.join(K.RECEIPTS, label + ".test.json")
++    stdout_path = os.path.join(K.LOGS, label + ".child-stdout.log")
++    bad_marker = os.path.join(K.RECEIPTS, "no-such-dir-" + label, label + ".launcher.QUARANTINE.json")
++    for pth in (receipt, stdout_path, os.path.dirname(bad_marker)):
++        if os.path.lexists(pth):
++            raise SystemExit("exists: " + pth)
++    signal.signal(signal.SIGTERM, signal.SIG_IGN)   # inherited across exec: the child is SIGTERM-resistant
++    argv = [K.PY, "-I", "-B", "-c", "import time; time.sleep(%d)" % TEST_CHILD_SECONDS]
+     kills, real_kill, t0 = [], os.kill, time.monotonic()
+ 
+     def logged_kill(pid, sig):
+-        kills.append({"pid": pid, "signal": signal.Signals(sig).name, "self": pid == os.getpid(),
+-                      "t": round(time.monotonic() - t0, 4)})
++        kills.append({"pid": pid, "signal": signal.Signals(sig).name, "t": round(time.monotonic() - t0, 4)})
+         real_kill(pid, sig)
++
++    def inject():
++        raise RuntimeError("injected exception after Popen (test)")
+ 
+     os.kill = logged_kill
+     try:
+-        out_fd = K.open_append_x(paths["stdout"])
+-        ev_a = run_owned(argv, out_fd, inject=lambda: os.kill(os.getpid(), signal.SIGTERM))
++        out_fd = K.open_append_x(stdout_path)
++        ev = run_owned(argv, out_fd, bad_marker, inject=inject, stop_wait=TEST_STOP_WAIT)
++        returned_at = round(time.monotonic() - t0, 3)
+         os.close(out_fd)
+-        n_a, kills_a = len(STATE["signals"]), list(kills)
+-        os.kill(os.getpid(), signal.SIGTERM)        # case B: after the reap
+-        time.sleep(1.0)
+-        n_b = len(STATE["signals"])
+     finally:
+         os.kill = real_kill
+-    kills_b = kills[len(kills_a):]
+-    survivors = sleep_survivors()
+-    child_kills = [k for k in kills_a if not k["self"]]
+-    fw = ev_a["forwarded"]
++    sw, bw, rp = ev["stop_wait"] or {}, ev["blocking_wait"] or {}, ev["reaped"] or {}
+     checks = {
+-        "A_self_signal_in_spawn_window": any(k["self"] for k in kills_a) and n_a >= 1,
+-        "A_forwarded_exactly_once_to_owned_child": (len(child_kills) == 1 and len(fw) == 1
+-                                                    and child_kills[0]["pid"] == ev_a["pid"]),
+-        "A_forwarded_in_first_iteration": bool(fw) and fw[0].get("iteration") == 1,
+-        "A_child_reaped_after_forward": (ev_a["reaped"] is not None and ev_a["owned_at_return"] is None
+-                                         and ev_a["exception"] is None and ev_a["lost_child"] is None),
+-        "A_no_sleep_survivor": not survivors,
+-        "A_no_quarantine": not os.path.lexists(paths["quarantine"]),
+-        "B_post_reap_signal_is_flag_only": n_b == n_a + 1 and len(kills_b) == 1 and kills_b[0]["self"],
++        "exception_recorded": "injected exception after Popen" in (ev["exception"] or ""),
++        "exactly_one_sigterm_to_owned_child": (len(kills) == 1 and kills[0]["pid"] == ev["pid"]
++                                               and kills[0]["signal"] == "SIGTERM"),
++        "bounded_wait_expired_child_unreaped": (sw.get("bounded_seconds") == TEST_STOP_WAIT
++                                                and sw.get("unreaped_after_wait") is True),
++        "marker_write_attempted_failed_and_recorded": (ev["marker"] == bad_marker and ev["marker_error"] is not None
++                                                       and not os.path.lexists(bad_marker)),
++        "blocking_wait_after_bounded_wait": bw.get("after_spawn_seconds", -1) >= TEST_STOP_WAIT,
++        "child_exited_by_itself_rc0": rp.get("rc") == 0 and rp.get("after_spawn_seconds", 0) >= TEST_CHILD_SECONDS - 0.5,
++        "owner_returned_only_after_reap": (ev["owned_at_return"] is None and rp != {}
++                                           and returned_at >= rp["after_spawn_seconds"] >= TEST_CHILD_SECONDS - 0.5),
++        "no_lost_child_no_wait_errors": ev["lost_child"] is None and not ev["wait_errors"],
+     }
+-    record = json.loads(K.read_regular(paths["record"])) if os.path.exists(paths["record"]) else None
+-    out = {"label": label, "at": K.now(), "argv": argv, "case_A": ev_a, "kills_A": kills_a, "kills_B": kills_b,
+-           "signals": STATE["signals"], "sleep_survivors": survivors,
+-           "supervisor_record": ({k: record.get(k) for k in ("trip_reason", "uncertain", "stop", "leader_returncode",
+-                                                             "quarantine_record", "completed_cleanly",
+-                                                             "observed_identities")} if record else None),
+-           "supervisor_record_sha256": K.sha_file(paths["record"]) if record else None,
+-           "supervisor_stdout_sha256": K.sha_file(paths["stdout"]),
+-           "note": ("rc -15 means the forwarded SIGTERM reached the supervisor before it installed its handler (it "
+-                    "had not spawned its command); rc 3 means its own group stop. Either is a prompt cooperative "
+-                    "stop; a real attempt stopped this way is UNKNOWN."),
++    out = {"label": label, "at": K.now(), "argv": argv, "test_stop_wait_seconds": TEST_STOP_WAIT,
++           "child_seconds": TEST_CHILD_SECONDS, "injected_marker_path": bad_marker, "ev": ev, "kills": kills,
++           "returned_after_start_seconds": returned_at, "child_stdout_sha256": K.sha_file(stdout_path),
+            "checks": checks, "all_ok": all(checks.values()), "scripts_sha256": K.script_hashes()}
+-    h = K.write_json_x(paths["receipt"], out)
+-    print(json.dumps({"smoke_receipt_sha256": h, "all_ok": out["all_ok"], "checks": checks,
+-                      "supervisor_rc": (ev_a["reaped"] or {}).get("rc"), "record_written": record is not None}),
++    h = K.write_json_x(receipt, out)
++    print(json.dumps({"test_receipt_sha256": h, "all_ok": out["all_ok"], "checks": checks,
++                      "returned_after_start_seconds": returned_at, "reaped": rp, "marker_error": ev["marker_error"]}),
+           flush=True)
+     return 0 if out["all_ok"] else 1
+@@ -384,5 +409,5 @@
+         if (len(a) != 4 or a[1] not in K.ITEMS or a[2] != "--label"
+                 or not (re.fullmatch(r"[A-Za-z0-9_.-]+", a[3]) and a[3].startswith(a[1] + "-"))):
+-            raise SystemExit("usage: launch_B_v4.py run ITEM --label ITEM-<suffix>")
++            raise SystemExit("usage: launch_B_v5.py run ITEM --label ITEM-<suffix>")
+         signal.signal(signal.SIGTERM, on_term)
+         signal.signal(signal.SIGINT, on_term)
+@@ -390,8 +415,6 @@
+     if a and a[0] == "wait-start" and len(a) == 2 and re.fullmatch(r"[A-Za-z0-9_.-]+", a[1]):
+         sys.exit(mode_wait_start(a[1]))
+-    if a and a[0] == "smoke-signal" and len(a) == 2 and re.fullmatch(r"smoke-[A-Za-z0-9_.-]+", a[1]):
+-        signal.signal(signal.SIGTERM, on_term)
+-        signal.signal(signal.SIGINT, on_term)
+-        sys.exit(mode_smoke(a[1]))
++    if a and a[0] == "test-exception-path" and len(a) == 2 and re.fullmatch(r"test-[A-Za-z0-9_.-]+", a[1]):
++        sys.exit(mode_test_exception_path(a[1]))
+     raise SystemExit(__doc__)
+ 
+--- scripts/assemble_B_v4.py
++++ scripts/assemble_B_v5.py
+@@ -1,13 +1,13 @@
+ #!/usr/bin/env python3
+ """Assemble the attempt receipt, deviations, RESULT.v2.json and REPORT.v2.md of a labelled replay attempt of the
+-parent B-side K3 cube replay desk (review/moqls7-k3-B-cube-parent-replay-v1), v4.
+-
+-v4 = assemble_B_v3.py with the deviation set updated for launch_B_v4.py (flag-only signal handler, owned-child wait
+-loop) and the v4 signal-interval smoke receipt in the result. It reads the LABEL receipts and logs written by
+-launch_B_v4.py and replay_B_v2.py, and writes receipts/LABEL.json, deviations-v2.json, RESULT.v2.json and
+-REPORT.v2.md, each created exclusively. Attempt 1 (label ITEM, files from v1) is summarised by its existing receipts,
+-never rewritten.
+-
+-Usage: assemble_B_v4.py ITEM LABEL          (e.g. B_C321 B_C321-a2b)
++parent B-side K3 cube replay desk (review/moqls7-k3-B-cube-parent-replay-v1), v5.
++
++v5 = assemble_B_v4.py with the deviation set updated for launch_B_v5.py (cleanup obligation of run_owned), the
++launcher-marker and slot-release conditions, and the v5 exception-path test receipt in the result. It reads the LABEL
++receipts and logs written by launch_B_v5.py and replay_B_v2.py, and writes receipts/LABEL.json, deviations-v2.json,
++RESULT.v2.json and REPORT.v2.md, each created exclusively. Attempt 1 (label ITEM, files from v1) is summarised by its
++existing receipts, never rewritten.
++
++Usage: assemble_B_v5.py ITEM LABEL          (e.g. B_C321 B_C321-a2b)
+ 
+ Reads the desk's receipts and logs (never modifies them), re-hashes every referenced file, checks the hash bindings
+@@ -26,9 +26,10 @@
+     {"id": "D16-versioned-scripts",
+      "what": "New versioned scripts. replay_B_v2.py (diff scripts-v1-to-v2.r2.diff) adds only the attempt label, "
+-             "from which every run receipt, log, FIFO and the expected supervisor record are named. launch_B_v4.py "
++             "from which every run receipt, log, FIFO and the expected supervisor record are named. launch_B_v5.py "
+              "is launch_B_v2.py (labels, refusal while any receipts/*.QUARANTINE.json exists, wait-start watcher, "
+              "no selfcheck mode) plus, in v3, Main's corrected slot-2-only rule and a pre-launch signal check "
+-             "(scripts-v2-to-v3.diff), plus, in v4, the signal-handling fix (scripts-v3-to-v4.diff, deviation D26). "
+-             "assemble_B_v4.py is assemble_B_v2.py with this deviation set. bklib_v1.py, compose_B_v1.py and "
++             "(scripts-v2-to-v3.diff), plus, in v4, the signal-handling fix (scripts-v3-to-v4.diff, deviation D26), "
++             "plus, in v5, the cleanup obligation (scripts-v4-to-v5.diff, deviation D27). assemble_B_v5.py is "
++             "assemble_B_v2.py with this deviation set and the launcher conditions. bklib_v1.py, compose_B_v1.py and "
+              "supervise_r3.py are unchanged. Pins, native limits (kissat --time=5400, drat-trim -t 9000), supervisor "
+              "arguments (wall 10200 s, grace 180 s, floor 12e9) and the RSS-cap rule are unchanged."},
+@@ -53,5 +54,5 @@
+              "are not causal attributions."},
+     {"id": "D21-assembler-before-run",
+-     "what": "assemble_B_v4.py was created before the attempt-2 launch; its SHA-256 is part of every recording "
++     "what": "assemble_B_v5.py was created before the attempt-2 launch; its SHA-256 is part of every recording "
+              "made by that run."},
+     {"id": "D23-launcher-guard-fix-and-noop-start",
+@@ -70,7 +71,7 @@
+              "are spent, so the attempt-2 launch uses label B_C321-a2b."},
+     {"id": "D25-armed-after-go",
+-     "what": "launch_B_v4.py was armed only after Main's GO following its source review (HOLD received about "
+-             "05:10 PDT, launcher signal issue raised about 05:16 PDT). The arming time is the first line of "
+-             "logs/launch-run-<LABEL>.log."},
++     "what": "launch_B_v5.py was armed only after Main's GO following its source review (HOLD received about "
++             "05:10 PDT; launcher signal issue raised about 05:16 PDT; cleanup obligation raised about 05:23 PDT). "
++             "The arming time is the first line of logs/launch-run-<LABEL>.log."},
+     {"id": "D26-launcher-signal-handling-v4",
+      "what": "launch_B_v4.py: on_term is flag-only. run_owned() checks the flag first in every iteration from the "
+@@ -82,4 +83,15 @@
+              "(receipts/smoke-v4-signal.smoke.json) ran the pinned supervisor around '/bin/sleep 117': no solver, "
+              "checker or CNF; no self-check or regeneration rerun."},
++    {"id": "D27-launcher-cleanup-obligation-v5",
++     "what": "launch_B_v5.py: every operation after a successful Popen is inside try/except/finally. The finally block "
++             "never lets run_owned() return or raise while the supervisor is owned and unreaped. After the bounded "
++             "SIGTERM wait of the exception path, remaining ownership leads to a best-effort marker "
++             "receipts/<LABEL>.launcher.QUARANTINE.json, whose write failure never skips the wait, and then to a "
++             "blocking wait4 for that known child with no further signals or escalation. A lost child (wait4 ECHILD) "
++             "also writes the marker. The outcome receipt reports slot_released only for a cleanly reaped child "
++             "with no marker and no lost child. Exception-path test, run once (receipts/test-v5-exception-path."
++             "test.json): a SIGTERM-ignoring python child that exits by itself after 6 s, an injected exception after "
++             "Popen, a 2 s bounded wait and an injected marker-write error. No solver, checker, CNF or supervisor; no "
++             "self-check or regeneration rerun."},
+ ]
+ 
+@@ -159,4 +171,9 @@
+         "supervisor_process_rc_0": (outc.get("supervisor") or {}).get("rc") == 0,
+         "launcher_received_no_signal": not outc.get("launcher_signals"),
++        "launcher_no_marker_no_lost_child": (not os.path.lexists(os.path.join(K.RECEIPTS,
++                                                                              label + ".launcher.QUARANTINE.json"))
++                                             and (outc.get("owned_child") or {}).get("marker") is None
++                                             and (outc.get("owned_child") or {}).get("lost_child") is None),
++        "launcher_slot_released_cleanly": outc.get("slot_released") is True and not outc.get("stopped_by_launcher"),
+         "logs_unchanged_since_driver_receipt": all(v.get("equals_driver_receipt", True) for v in logs.values()),
+         "binaries_at_assembly_equal_pins": all(bins_now[k]["sha256"] == K.BIN_PINS[p]
+@@ -279,5 +296,5 @@
+         "# Parent replay of the phys-2 K3 cube certificate B/C321 (MOQLS(7), encoder B), attempt %s" % r["label"], "",
+         "Desk: `review/moqls7-k3-B-cube-parent-replay-v1/`, 2026-10-18 PDT. RESULT.v2.json sha256 `%s`." % result_sha,
+-        "Generated by `scripts/assemble_B_v4.py` from the same data as RESULT.v2.json. Attempt 1 (label B_C321): "
++        "Generated by `scripts/assemble_B_v5.py` from the same data as RESULT.v2.json. Attempt 1 (label B_C321): "
+         "%s, item receipt `%s`, RESULT.json `%s`." % (result["attempt_1"]["status"],
+                                                        result["attempt_1"]["item_receipt_sha256"],
+@@ -452,7 +469,11 @@
+         "scripts_diff_v2_to_v3": file_entry("scripts-v2-to-v3.diff"),
+         "scripts_diff_v3_to_v4": file_entry("scripts-v3-to-v4.diff"),
++        "scripts_diff_v4_to_v5": file_entry("scripts-v4-to-v5.diff"),
+         "signal_smoke": dict(file_entry("receipts/smoke-v4-signal.smoke.json"),
+                              all_ok=json.loads(K.read_regular(os.path.join(
+                                  K.RECEIPTS, "smoke-v4-signal.smoke.json"))).get("all_ok")),
++        "exception_path_test": dict(file_entry("receipts/test-v5-exception-path.test.json"),
++                                    all_ok=json.loads(K.read_regular(os.path.join(
++                                        K.RECEIPTS, "test-v5-exception-path.test.json"))).get("all_ok")),
+         "superseded_scripts_diff": file_entry("scripts-v1-to-v2.diff"),
+         "disarmed_v2_launcher": {"gate_receipt": file_entry("receipts/B_C321-a2.gate.json"),

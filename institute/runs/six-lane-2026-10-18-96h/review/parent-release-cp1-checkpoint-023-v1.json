@@ -1,0 +1,56 @@
+{
+ "checkpoint": "parent-release-cp1-checkpoint-023-v1",
+ "at_from_bin_date": "2026-10-19T22:22:22-0700",
+ "author": "ParentCallerCP1",
+ "status": "J5B_APPROVED_RECORDED_PLAN_V3_AMENDED_PLAN_ONLY_NOEXEC",
+ "previous": {
+  "path": "RUN/review/parent-release-cp1-checkpoint-022-v1.json",
+  "sha256": "a00c3b6adc3f9b80f3ac1ad76ff3be45fa1b79279cca3afa6b6be43006ae9b5a"
+ },
+ "decision": {
+  "path": "RUN/control/parent-release-cp1-J5b-unverified-state-decision-v1.json",
+  "sha256": "c97782b4328feb8061113ffb84552bdab212feaffe55a714a250782e9e3de02a",
+  "at": "2026-10-19T22:21:44-0700",
+  "verdict": "APPROVE_YES_AND_EXTEND_TO_FALLBACK_UNCERTAINTY",
+  "rule": "Any exception escaping decide_and_commit, and any FALLBACK_UNCERTAINTY report (returned or attached), permanently marks PRT resource state unverified in-process. Attached reports are evidence only, never bound to the current call. CP1 then refuses further release in that process."
+ },
+ "prt_owner_confirmation": "ParentReleaseTxn IRC after checkpoint 022: both readings match the v7 notes. FALLBACK_UNCERTAINTY pin confirmed (244 chars, sha256 6e43595141033a485b2d0d6a1526b132d4f9cf9f2cbacc106dada778f4a43b38, v7 92-94). Fallback counts (acquired/closed/live/unresolved_total), causes, parts, callback_count, original_deadline_crossed and callback_event_sha256 come from the last completed assembly; residual (i) includes failed removal; code running during unwinding (e.g. __del__) could alter the propagated object's dict even after a successful attachment. No PRT change.",
+ "plan_v3": {
+  "path": "RUN/control/parent-release-cp1-v3-integration-plan-v3.md",
+  "sha256": "d0ab479886be77354381d2f3e98e3114503f27cb7a2ccf02b370d834d258559b",
+  "note": "immutable; amended here; the replacement-list checkpoint must implement these amendments"
+ },
+ "plan_v3_amendments": {
+  "J5_replaced": [
+   "J5-1: on ANY exception (ordinary or non-Exception BaseException) escaping the S7 decide_and_commit invocation, CP1 first sets the process-level unverified latch, then retains the object (S2), then records evidence. Exceptions from S4 PRT loading (definitions only, PRT not invoked) are CP1_PRT_SOURCE and do not set the latch.",
+   "J5-2: on a returned or attached report whose uncertainty equals the pinned FALLBACK_UNCERTAINTY text, CP1 sets the same latch.",
+   "J5-3: on a returned result that cannot be detached or fails the shape check, CP1 sets the same latch (replaces the v2 per-entry record \"result malformed or not detachable\").",
+   "J5-4: attached reports are read only via dict.get on the propagated object's base instance dict, bounded-detached and kept as evidence only. They are never release evidence, never bound to the current call, and never clear or prevent the latch.",
+   "J5-5: the latch is a constant store (one boolean attribute on the process ledger, set to True) performed BEFORE any allocation-dependent recording, so an allocation failure while recording cannot lose it; a bounded best-effort ledger record follows. The latch is never cleared in-process and is not persisted; a restart loses it together with every outcome (nothing can be accounted after a restart).",
+   "J5-6: _Ledger.snapshot reports clean = False whenever the latch is set and names it as a fixed reason string. Every S11/S15 global join therefore fails with CP1_UNRESOLVED_RESOURCES, and every ReservationAccount.release fails with AC_UNRESOLVED_RESOURCES, including outcomes minted RELEASED before the latch was set but not yet accounted (consistent with frozen A07)."
+  ],
+  "affected_change_units": [
+   "U13 outcome v2 records latch state and reason",
+   "U14 replaced by J5-1..J5-6 (_invoke origin handler, _attached, _result, _Ledger, _notes)",
+   "U15/S2: latch store precedes retention bookkeeping in the PRT origin handler",
+   "U16: account join reads the latch through the snapshot"
+  ],
+  "expectations_updated_not_exercised": [
+   "K6/K7 (FALLBACK returned with final NOT_PERFORMED / CROSSED): H(CP1_RESULT_NOT_RELEASED); latch set; every later CP1 invocation in the process H(CP1_UNRESOLVED_RESOURCES) at S11 if it reaches it; accounting AC_UNRESOLVED_RESOURCES",
+   "K8 (T141 shape): latch set by the escaping exception regardless of the attached report contents",
+   "K9 (foreign or stale attached report claiming clean resources): latch set; the report is evidence only (named residual closed on the CP1 side)",
+   "K10 (construction MemoryError, no report): latch set",
+   "K11: PRT raises an ordinary exception with no report -> H(CP1_PRT_EXCEPTION); latch set",
+   "K12: S4 load failure (bytes mismatch or exec failure) -> H(CP1_PRT_SOURCE); latch NOT set; no PRT invocation",
+   "K13: synthetic allocation failure while writing the ledger record after the latch store -> latch still set; snapshot not clean",
+   "K14: outcome minted RELEASED, then a later invocation sets the latch, then ReservationAccount.release on the earlier outcome -> AC_UNRESOLVED_RESOURCES; outcome latched HELD"
+  ]
+ },
+ "actual_result": "Verified the decision hash and recorded the PRT owner confirmation. No caller source or plan file changed; CP1 v2 unchanged at 9f3d158b; no subject import/compile/AST/exec/tests; no repin.",
+ "blockers": [
+  "PRT v7 (or successor) non-HOLD parent disposition including the known-limit gate",
+  "CP2 v7 owner pins and non-HOLD parent disposition"
+ ],
+ "next_bounded_action": "Park. After both non-HOLD dispositions: verify the accepted sources against plan v3 sections 3-5 and checkpoints 021-023, freeze the exact-once replacement list against 9f3d158b, write v3 source + diff + notes + disposition, park.",
+ "authority_statement": "No runtime, release, scheduling or scientific authority. Not self-accepted. Global HOLD unchanged."
+}

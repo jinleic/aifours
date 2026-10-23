@@ -1,0 +1,412 @@
+--- code/guard_qual_check_v11.py@2774e848b653594cc6ec0c10d761ce640931ba2d863ca6bcaad1eca94363bdb5
++++ continuations/guard-v10-repair/base/guard_qual_check_v11.py@3995e868985c4a4cc1eb515b9233d90a7e9368ceff7998d830d8c264d3fecb5b
+@@ -9,6 +9,7 @@
+ Ownership workloads require their OWN negative-control GO, are not science and never weaken global busy<=2.
+ Exit0 PASS,1 FAIL,2 infrastructure error. No execution authorized by this source.
+ """
++import bisect
+ import hashlib
+ import json
+ import math
+@@ -513,11 +514,14 @@
+             p, after = m.get("identity"), m.get("identity_after")
+             retained(p, (c["mono_start"], c["mono_end"]), m.get("identity_event_ref"))
+             retained(after, (c["mono_start"], c["mono_end"]), m.get("identity_after_event_ref"))
++            initial_event = event_at(m.get("identity_event_ref"))
+             before_event = event_at(m.get("before_task_event_ref"))
+             after_event = event_at(m.get("identity_after_event_ref"))
++            # The pre-task acquisition belongs to THIS census and the initial acquisition precedes the task.
+             if identity(before_event["identity"]) != identity(p) or identity(after) != identity(p) or \
+                     not same(m.get("identity_after_interval"), [after_event["mono_begin"], after_event["mono_end"]]) or \
+                     not all(finite(m.get(k)) for k in ("mono_task_begin", "mono_task_end", "mono_observed")) or \
++                    not c["mono_start"] <= before_event["mono_begin"] or initial_event["mono_end"] > m["mono_task_begin"] or \
+                     not before_event["mono_end"] <= m["mono_task_begin"] <= m["mono_task_end"] <= after_event["mono_begin"] <= after_event["mono_end"] <= m["mono_observed"]:
+                 raise Invalid("actual task/identity brackets do not causally enclose the measurement")
+             if not integer(m.get("rss"), 0) or not integer(m.get("cpu_ticks"), 0) or not isinstance(m.get("busy"), bool) or \
+@@ -627,6 +631,9 @@
+                 raise Invalid("EOF precedes included read/write")
+         elif value["mono_eof"] is not None:
+             raise Invalid("EOF timestamp without native EOF")
++        close = value["mono_close_completed"]
++        if close is not None and any(value[k] is not None and value[k] > close for k in ("mono_last_read", "mono_last_write", "mono_eof")):
++            raise Invalid("read/write/EOF transition after the stream's completed closure")
+         final_hash = value["sha256_written"]
+         if final_hash is not None:
+             if final_hash != value["sha256_prefix"] or hashed != written or value["hash_pending"] or \
+@@ -776,6 +783,32 @@
+             if p["uniqueid"] not in registry:
+                 raise Invalid("helper proof loses a historical owned registration")
+     return registry
++
++
++def unresolved_coverage(view, complete, baseuids, registry):
++    """Classification is recomputed from baseline/registration chronology, never trusted from the event boolean.
++    Acquisitions are single-threaded: one retained after the baseline completed for an incarnation outside the
++    baseline and not yet rooted MUST be unproved, except the known MAIN/helper registration acquisition itself."""
++    events = view["identity_events"]
++    for ref, row in enumerate(events, 1):
++        uid, end, unproved = row[0], row[4], row[5]
++        if uid in baseuids or end <= complete or unproved:
++            continue
++        entry = registry.get(uid)
++        if entry is None or (end < entry["first_seen_mono"] and not
++                (entry["via"] in ("child", "helper") and entry["identity_event_ref"] == ref)):
++            raise Invalid("post-baseline unrooted acquisition omitted from unproved coverage")
++    # Every census that was not aborted classifies each non-baseline incarnation it acquired as owned or unproved.
++    order = sorted(range(len(events)), key=lambda i: (events[i][3], i))
++    begins = [events[i][3] for i in order]
++    for c in view["census_observations"]:
++        if c["aborted"]:
++            continue
++        covered = {p["uniqueid"] for p in c["owned_live"] + c["unproved_live"]}
++        for i in order[bisect.bisect_left(begins, c["mono_start"]):bisect.bisect_right(begins, c["mono_end"])]:
++            uid, end = events[i][0], events[i][4]
++            if end <= c["mono_end"] and uid not in baseuids and uid not in covered:
++                raise Invalid("census omits an acquired non-baseline incarnation from owned/unproved coverage")
+ 
+ 
+ def signal_witness(record, intended, stop, event_at):
+@@ -913,16 +946,32 @@
+     current_imap, current_umap, current_retained, current_event_at = histories(current, baseuids)
+     native_result_evidence(receipt)
+     native_result_evidence(current)
+-    rooted_registry(receipt, event_at)
+-    rooted_registry(current, current_event_at)
++    registry = rooted_registry(receipt, event_at)
++    current_registry = rooted_registry(current, current_event_at)
+     history_extensions(receipt, current)
++    unresolved_coverage(receipt, baseline["mono_complete"], baseuids, registry)
++    unresolved_coverage(current, baseline["mono_complete"], baseuids, current_registry)
+     refs = baseline.get("event_refs")
+     if not isinstance(refs, list) or len(refs) != len(baseline["identities"]):
+         raise Invalid("baseline actual acquisition references missing")
++    # The baseline is the LAST completed identity scan before its own completion clock, inside the observation window.
++    complete = baseline["mono_complete"]
++    scans = [a for a in receipt["observation_attempts"] if a["kind"] == "identity_scan" and a["mono_end"] <= complete]
++    scan = scans[-1] if scans else None
++    if scan is None or scan["aborted"] is not False or scan["phase"] != "ADMISSION" or scan["inside_helper"] is not False or \
++            not receipt["initial_fit"]["start_mono"] <= scan["mono_start"] or not complete <= receipt["mono_decision"]:
++        raise Invalid("baseline not completed by its actual pre-spawn identity scan inside the observation window")
+     for p, ref in zip(baseline["identities"], refs):
+         if not integer(ref, 1):
+             raise Invalid("baseline acquisition ref not an integer")
+-        retained(p, (receipt["initial_fit"]["start_mono"], baseline["mono_complete"]), ref)
++        retained(p, (scan["mono_start"], scan["mono_end"]), ref)
++    creations = [e.get("mono_start") if isinstance(e, dict) else None for e in receipt["helper_log"]]
++    creations += [h.get("mono_call_start") for h in receipt["helpers"]]
++    if receipt["child_pid"] is not None:
++        creations += [receipt.get("mono_spawn"),
++                      receipt["launch_commit"].get("mono") if isinstance(receipt.get("launch_commit"), dict) else None]
++    if any(not finite(t) or t < complete for t in creations):
++        raise Invalid("pre-spawn baseline completed after a helper or MAIN creation")
+     if not same(current.get("baseline_uniqueids"), sorted(baseuids)):
+         raise Invalid("current reconciliation baseline changed")
+     owned = current.get("owned_identities")
+@@ -947,7 +996,16 @@
+     for c in embedded:
+         census_join(c, obs)
+     for h in receipt["helpers"]:
+-        census_join(h["proof"], obs, subset=True)
++        proof_census = census_join(h["proof"], obs, subset=True)
++        if h.get("settled") is True:
++            # Settlement completes only after the leader reap and the retained ownership census, inside its deadline.
++            deadline = h.get("call_deadline") if h.get("clock_failed") is False else h.get("cleanup_deadline")
++            if not isinstance(deadline, dict) or not all(finite(v) for v in (
++                    h.get("mono_reaped"), proof_census.get("mono_start"), proof_census.get("mono_complete"),
++                    h.get("mono_proof_complete"), deadline.get("end"))) or \
++                    not h["mono_reaped"] <= proof_census["mono_start"] <= proof_census["mono_complete"] <= \
++                        h["mono_proof_complete"] <= deadline["end"]:
++                raise Invalid("settled helper completion precedes its reap/ownership census or exceeds its deadline")
+     if summary.get("acknowledged") is True:
+         for k in ("unproved_history", "coverage_history", "census_observations"):
+             if not same(summary.get(k), current[k]):
+@@ -1117,10 +1175,14 @@
+     return rows
+ 
+ 
+-def accounting_join(resources, ref, rows, before=None):
+-    if not integer(ref, 1) or ref > len(rows) or not same(resources, rows[ref - 1]["resources"]) or \
+-            (before is not None and rows[ref - 1]["mono_observed"] > before):
++def accounting_join(resources, ref, rows, phase, after, before):
++    """A stage's resources join ITS actual non-helper accounting call inside the stage's causal window."""
++    if not integer(ref, 1) or ref > len(rows) or not same(resources, rows[ref - 1]["resources"]):
+         raise Invalid("resource dictionary does not join its actual accounting observation")
++    event = rows[ref - 1]
++    if event["phase"] != phase or event["inside_helper"] is not False or not finite(after) or not finite(before) or \
++            not after <= event["mono_begin"] or not event["mono_observed"] <= before:
++        raise Invalid("accounting observation not from its stage phase, non-helper context and causal window")
+ 
+ 
+ def common_final_evidence(receipt, summary, cfg, files, late, runfd, require, samples):
+@@ -1184,7 +1246,10 @@
+     current_accounting = accounting_history(summary["reconciliation"])
+     if len(current_accounting) != len(accounting) + 2 or not same(current_accounting[:len(accounting)], accounting):
+         raise Invalid("original22 exact pre-publication/b/end accounting stages not joined")
+-    accounting_join(receipt["publication_precheck"], receipt.get("publication_precheck_ref"), accounting)
++    if maxima["charged_bytes"] != max(event["resources"]["charged_bytes"] for event in accounting):
++        raise Invalid("frozen charged maximum not reconstructed from its complete accounting history")
++    accounting_join(receipt["publication_precheck"], receipt.get("publication_precheck_ref"), accounting,
++                    "FINAL", final.get("mono_end"), receipt.get("mono_decision"))
+     if receipt["publication_precheck_ref"] != len(accounting):
+         raise Invalid("precheck is not the final frozen accounting observation")
+     if receipt["child_pid"] is None:
+@@ -1192,11 +1257,18 @@
+             raise Invalid("admission-negative FREE minimum contradicts its actual sole accounting")
+     else:
+         admission = receipt["admission"]
+-        accounting_join(admission.get("resources"), admission.get("accounting_ref"), accounting, admission["checked"]["mono"])
+-        accounting_join(receipt.get("launch_resources"), receipt.get("launch_accounting_ref"), accounting, receipt["launch_commit"]["mono"])
+-        accounting_join(receipt.get("pre_go_resources"), receipt.get("pre_go_accounting_ref"), accounting, receipt["go_commit"]["mono"])
++        dates = [e for e in receipt["helper_log"] if isinstance(e, dict) and e.get("purpose") == "admission"]
++        censuses = admission.get("censuses") or []
++        accounting_join(admission.get("resources"), admission.get("accounting_ref"), accounting, "ADMISSION",
++                        dates[0].get("mono_end") if len(dates) == 1 else None,
++                        min([admission["checked"]["mono"]] + [c["mono_start"] for c in censuses[:1]]))
++        accounting_join(receipt.get("launch_resources"), receipt.get("launch_accounting_ref"), accounting, "PRE_GO",
++                        receipt["launch_census"]["mono_end"], receipt["launch_commit"]["mono"])
++        accounting_join(receipt.get("pre_go_resources"), receipt.get("pre_go_accounting_ref"), accounting, "PRE_GO",
++                        receipt["pre_go_census"]["mono_end"], receipt["go_commit"]["mono"])
+         for sample in samples:
+-            accounting_join(sample.get("resources"), sample.get("accounting_ref"), accounting, sample["mono"])
++            accounting_join(sample.get("resources"), sample.get("accounting_ref"), accounting, "RUNNING",
++                            sample["census"]["mono_end"], sample["mono"])
+     require("common_wait_registry_and_final_census", True)
+     published = {"supervisor-receipt.json", "settlement.json", "settlement.json.staged"}
+     before = sum(v["bytes"] for n, v in files.items() if v is not None and n not in published and n not in late)
+@@ -1217,6 +1289,10 @@
+             not same(ar, current_accounting[-1]["resources"]) or not finite(summary.get("post_publish_mono")) or \
+             observation["mono_observed"] < summary["post_publish_mono"]:
+         raise Invalid("actual historical b/end and last accounting observation not exactly joined")
++    accounting_join(br, len(current_accounting) - 1, current_accounting, "FINAL",
++                    receipt.get("mono_decision"), summary["post_publish_mono"])
++    accounting_join(ar, len(current_accounting), current_accounting, "FINAL",
++                    summary["post_publish_mono"], current.get("mono_snapshot"))
+     require("common_exact_payload_and_distinct_inode_charge", before_resources["charged_bytes"] == br["charged_bytes"] == before and
+             ar["charged_bytes"] == before + payload and payload <= 4 << 20 and
+             before + payload <= cfg["output_trip_bytes"] and before + payload <= RESERVATION and
+@@ -1230,6 +1306,7 @@
+     current_max = current.get("maxima")
+     if not isinstance(current_max, dict) or not all(integer(current_max.get(k), 0) for k in maxima) or \
+             any(current_max[k] < maxima[k] for k in maxima) or current_max["charged_bytes"] != before + payload or \
++            current_max["charged_bytes"] != max(event["resources"]["charged_bytes"] for event in current_accounting) or \
+             not integer(current.get("min_free"), 0) or current["min_free"] > receipt["min_free"] or \
+             current["min_free"] > min(br["free"], ar["free"]) or current["min_free"] < cfg["free_trip_bytes"]:
+         raise Invalid("current extrema/free minimum absent or contradictory")
+@@ -1269,8 +1346,9 @@
+     return p
+ 
+ 
+-def private_transport(value, coop, role, entry, report_mono, expected=None, extra=None, cap=32768):
+-    """Validate the retained ORIGINAL bytes and their actual fixed-role read/write completion evidence."""
++def private_transport(value, coop, role, entry, report_mono, expected=None, extra=None, cap=32768, *, kind):
++    """Validate the retained ORIGINAL bytes and their actual fixed-role read/write completion evidence.
++    The caller names the producer interface: a read must prove literal EOF, a write must prove its return."""
+     common = {"mono_start", "deadline_mono", "deadline_role", "bytes", "sha256", "raw_hex", "error", "mono_end"}
+     extras = set(extra or ())
+     if not isinstance(value, dict) or not integer(value.get("bytes"), 0) or value["bytes"] > cap or \
+@@ -1283,15 +1361,18 @@
+     raw = bytes.fromhex(value["raw_hex"])
+     if value["sha256"] != hashlib.sha256(raw).hexdigest() or (expected is not None and raw != expected):
+         raise Invalid("private transport original content/digest")
+-    if "eof" in value:
++    if kind == "read":
+         if set(value) != common | {"eof", "mono_eof"} | extras or value["eof"] is not True or \
+                 not finite(value.get("mono_eof")) or \
+                 not value["mono_start"] <= value["mono_eof"] < coop[role] or \
+                 not value["mono_eof"] <= value["mono_end"]:
+             raise Invalid("private read did not prove actual EOF before original cutoff")
+-    elif set(value) != common | {"returned"} | extras or value.get("returned") is not True or \
+-            not value["mono_end"] < coop[role]:
+-        raise Invalid("private write incomplete/late or wrong exact schema")
++    elif kind == "write":
++        if set(value) != common | {"returned"} | extras or value.get("returned") is not True or \
++                not value["mono_end"] < coop[role]:
++            raise Invalid("private write incomplete/late or wrong exact schema")
++    else:
++        raise Invalid("private transport interface kind unknown")
+     return raw
+ 
+ 
+@@ -1383,7 +1464,9 @@
+     """All included native acquisition/edge/poll/join evidence finishes before THIS original containing report."""
+     observations = []
+     for o in container["descendants"]:
+-        child_observation(o, coop["mono_life_deadline"], allowed)
++        # Refusal is derived from the included record itself, never from an independently empty failure list.
++        if child_observation(o, coop["mono_life_deadline"], allowed) is None:
++            raise Invalid("included private acquisition failed although the report claims no evidence failure")
+         observations.append(o)
+     for edge in container["ownership_edges"]:
+         if not isinstance(edge, dict) or set(edge) != {"phase", "parent_before", "child", "parent_after",
+@@ -1398,16 +1481,15 @@
+         if target_role is None or [o["role"] for o in items] != [parent_role, target_role, parent_role] or \
+                 [o["phase"] for o in items] != [edge["phase"] + "_parent_before", edge["phase"], edge["phase"] + "_parent_after"]:
+             raise Invalid("private current-parent edge changed its declared role/phase")
+-        if edge["error"] is None:
+-            a, b, c = ps
+-            if any(p is None for p in ps) or identity(a) != identity(c) or b["ppid"] != a["pid"] or \
+-                    any(o["observer"] != a["pid"] for o in items) or \
+-                    edge["current_parent_verified"] is not True or edge["same_group_verified"] is not (b["pgid"] == a["pgid"]) or \
+-                    not items[0]["observed_mono"] <= items[1]["mono_start"] <= \
+-                        items[1]["observed_mono"] <= items[2]["mono_start"]:
+-                raise Invalid("private asserted current-parent edge without actual full ordered brackets")
+-        elif not isinstance(edge["error"], str):
+-            raise Invalid("private edge uncertainty missing")
++        if edge["error"] is not None:
++            raise Invalid("included private ownership edge failed although the report claims no evidence failure")
++        a, b, c = ps
++        if any(p is None for p in ps) or identity(a) != identity(c) or b["ppid"] != a["pid"] or \
++                any(o["observer"] != a["pid"] for o in items) or \
++                edge["current_parent_verified"] is not True or edge["same_group_verified"] is not (b["pgid"] == a["pgid"]) or \
++                not items[0]["observed_mono"] <= items[1]["mono_start"] <= \
++                    items[1]["observed_mono"] <= items[2]["mono_start"]:
++            raise Invalid("private asserted current-parent edge without actual full ordered brackets")
+     for j in container["joins"]:
+         observations.extend(private_join(j, source_observations, coop, entry, report_mono, allowed))
+     wait_fields = {"role", "pid", "phase", "observer", "deadline_mono", "deadline_role", "mono_start", "mono_end",
+@@ -1448,7 +1530,7 @@
+     return observations
+ 
+ 
+-def child_envelope(report, name, main, receipt, cfg, has_output):
++def child_envelope(report, name, main, receipt, cfg, has_output, late_output):
+     """Validate original private evidence and report every acquired incarnation for the separate parent endedness audit."""
+     base = {"child", "scenario", "pid", "pgid", "ppid", "negative_control", "mono_module_entry", "epoch_module_entry",
+         "mono_life_deadline", "stdin_protocol", "main_identity", "main_identity_observed_mono", "main_identity_observation",
+@@ -1493,7 +1575,7 @@
+             raise Invalid("actual bounded creation line digest missing")
+     proto = report["stdin_protocol"]
+     private_transport(proto, coop, "mono_join_deadline", entry, output, b"GO\n" + line,
+-                      {"creation_line_bytes", "creation_manifest_sha256"}, 4099)
++                      {"creation_line_bytes", "creation_manifest_sha256"}, 4099, kind="read")
+     if proto["mono_eof"] < receipt["go_written_mono"] or \
+             not same(proto["creation_line_bytes"], len(line) if line else None) or \
+             not same(proto["creation_manifest_sha256"], hashlib.sha256(line).hexdigest() if line else None):
+@@ -1510,29 +1592,41 @@
+         raise Invalid("original full main incarnation/actual GO/report chronology mismatch")
+     source_observations = [main_o] + report["descendants"]
+     observations = [main_o] + private_members(report, source_observations, coop, entry, output, allowed)
++    edges = report["ownership_edges"]
++    required_edges = {"ownership_group": ["post_setup", "hold_end"], "ownership_slow": ["post_setup", "hold_end"],
++                      "ownership_fast": ["post_setup"], "ownership_double": ["pre_exec", "post_exec_current_parent"]}
++    if [e["phase"] for e in edges] != required_edges.get(name, []) or \
++            (name == "ownership_group" and any(e["same_group_verified"] is not True for e in edges)) or \
++            (name in ("ownership_slow", "ownership_fast") and edges[0]["child"]["identity"]["pgid"] != report["grandchild"]):
++        raise Invalid("scenario-required private ownership edges missing, extra or not proved")
+     if has_output:
+         o = report["main_identity_at_output"]
+         p = child_observation(o, life, allowed)
+         if p is None or o["observer"] != main["pid"] or o["pid"] != main["pid"] or \
+                 o["role"] != "main" or o["phase"] != "output" or o["observed_mono"] > output:
+             raise Invalid("main output incarnation not acquired before containing report")
++        # The output acquisition is the SAME launched incarnation. Only a verified late report may observe the
++        # launchd reparent after the supervisor ended; every other safety field stays invariant.
++        if identity(p) != identity(main) and not (late_output and p["ppid"] == 1 and
++                identity(dict(p, ppid=main["ppid"])) == identity(main)):
++            raise Invalid("main output observation is not the launched main incarnation")
+         observations.append(o)
+     transports = report["transports"]
+     if name in ("ownership_group", "ownership_slow", "ownership_fast"):
+         if set(transports) != {"descendant_ready"}:
+             raise Invalid("ownership readiness transport exact set")
+-        private_transport(transports["descendant_ready"], coop, "mono_join_deadline", entry, output, b"R", cap=1)
++        private_transport(transports["descendant_ready"], coop, "mono_join_deadline", entry, output, b"R", cap=1, kind="read")
+         starts = [o["mono_start"] for o in report["descendants"] if o["phase"] == "post_setup"]
+         if len(starts) != 1 or transports["descendant_ready"]["mono_end"] > starts[0]:
+             raise Invalid("readiness completed after its intended setup acquisition")
+     elif name == "busy2" and has_output:
+         if set(transports) != {"busy_start_gate"}:
+             raise Invalid("busy actual start transport exact set")
+-        private_transport(transports["busy_start_gate"], coop, "mono_join_deadline", entry, output, b"S", cap=1)
++        private_transport(transports["busy_start_gate"], coop, "mono_join_deadline", entry, output, b"S", cap=1, kind="write")
+     elif name in ("ownership_double", "zombie_hold"):
+         if set(transports) != {"intermediate_report", "intermediate_internal"}:
+             raise Invalid("original intermediate transports exact set")
+-        raw = private_transport(transports["intermediate_report"], coop, "mono_join_deadline", entry, output, cap=32768)
++        raw = private_transport(transports["intermediate_report"], coop, "mono_join_deadline", entry, output, cap=32768, kind="read")
+         if not raw.endswith(b"\n") or raw.count(b"\n") != 1:
+             raise Invalid("original intermediate report incomplete/non-single-line")
+         original = decode(raw)
+@@ -1571,12 +1665,23 @@
+         if name == "ownership_double":
+             if set(internal) != {"exec_start_gate", "exec_status"}:
+                 raise Invalid("double-fork original internal exec transports exact set")
+-            private_transport(internal["exec_start_gate"], coop, "mono_inner_deadline", entry, original["mono_output"], b"S", cap=1)
+-            private_transport(internal["exec_status"], coop, "mono_inner_deadline", entry, original["mono_output"], b"", cap=2048)
++            private_transport(internal["exec_start_gate"], coop, "mono_inner_deadline", entry, original["mono_output"], b"S", cap=1, kind="write")
++            private_transport(internal["exec_status"], coop, "mono_inner_deadline", entry, original["mono_output"], b"", cap=2048, kind="read")
+             post = [w for w in original["identity_waits"] if w["phase"] == "post_exec_pre_reparent"]
+             if len(post) != 1 or internal["exec_start_gate"]["mono_end"] > internal["exec_status"]["mono_start"] or \
+                     internal["exec_status"]["mono_end"] > post[0]["mono_start"]:
+                 raise Invalid("double-fork actual close-on-exec EOF before native post-exec identity")
++            matched = post[0]["last_observation"]["identity"]
++            indexes = [i for i, o in enumerate(report["descendants"]) if o["role"] == "exec_descendant" and
++                       o["phase"] == "post_exec_post_reparent"]
++            moved = report["descendants"][indexes[0]] if len(indexes) == 1 else None
++            if moved is None or indexes[0] < len(original["descendants"]) or moved["observer"] != main["pid"] or \
++                    moved["pid"] != report["grandchild"] or moved["identity"] is None or \
++                    any(not same(moved["identity"][k], matched[k]) for k in
++                        ("pid", "uniqueid", "idversion", "euid", "ruid", "pgid", "traced")) or \
++                    moved["identity"]["comm"] != "sleep" or moved["identity"]["status"] == 5 or \
++                    moved["identity"]["ppid"] == report["intermediate"] or moved["mono_start"] < main_joins[0]["mono_end"]:
++                raise Invalid("double-fork post-reparent record is not the matched post-exec incarnation observed by main after the intermediate join")
+         else:
+             hold = original["zombie_hold"]
+             waited = [w for w in original["identity_waits"] if w["role"] == "zombie"]
+@@ -1613,7 +1718,7 @@
+         if name in ("ok", "rc_nonzero", "mutate_pin", "mutate_evidence", "stray_file", "zombie_hold") or name.startswith("ownership_"):
+             raise Invalid("mandatory intended-child report missing")
+         return []
+-    observations, reported = child_envelope(report, name, main, receipt, cfg, childout is not None)
++    observations, reported = child_envelope(report, name, main, receipt, cfg, childout is not None, "child-out.json" in late)
+     imap = {e["first_identity"]["uniqueid"]: e for e in receipt["identity_history"]}
+     registry = {e["identity"]["uniqueid"]: e for e in receipt["owned_identities"]}
+     roots = {h["identity"]["uniqueid"] for h in receipt["helpers"]} | {main["uniqueid"]}
+@@ -1745,6 +1850,8 @@
+                     not before["observed_mono"] <= r["mono_start"] <= after["mono_start"] <= \
+                         after["observed_mono"] <= r["mono_end"] <= report["mono_output"]:
+                 raise Invalid("RSS task read lacks intended full fingerprint/native bracket/report chronology")
++        if not report["main_identity_observation"]["observed_mono"] <= report["rss_before"]["identity_before"]["mono_start"]:
++            raise Invalid("RSS stimulus/task evidence precedes the post-GO main observation")
+         if not all(integer(report.get(k), 0) for k in ("rss_before_bytes", "rss_after_bytes", "rss_delta_bytes")) or \
+                 report["rss_before_bytes"] != report["rss_before"]["rss_bytes"] or \
+                 report["rss_after_bytes"] != report["rss_after"]["rss_bytes"] or \
+@@ -1781,7 +1888,7 @@
+             raise Invalid("creation manifest semantic schema/original publication binding")
+         if not isinstance(creation, dict) or not same(creation.get("manifest"), manifest) or \
+                 creation.get("manifest_sha256") != receipt["go_creation_manifest_sha256"] or \
+-                creation.get("manifest_line_bytes") != len(manifest_line) or \
++                not same(creation.get("manifest_line_bytes"), len(manifest_line)) or \
+                 creation.get("preparation_sha256") != preparation["sha256"] or \
+                 not same(creation.get("run"), prep["run"]) or not same(creation.get("output_root"), prep["output_root"]) or \
+                 not same(creation.get("original"), original) or not same(creation.get("after"), after) or \
+@@ -1789,10 +1896,12 @@
+                 not same(manifest.get("output_root"), prep["output_root"]) or \
+                 manifest.get("preparation_sha256") != preparation["sha256"] or \
+                 not same(creation.get("preparation_facts"), {"path": QROOT + "/" + name + "/preparation.json", **hash_entry(preparation)}) or \
+-                creation.get("name_inode_before") != original["inode"] or creation.get("name_inode_after") != original["inode"] or \
+-                creation.get("append_bytes") != 1 or actual["raw"] != raw_original + b"x" or \
++                not same(creation.get("name_inode_before"), original["inode"]) or not same(creation.get("name_inode_after"), original["inode"]) or \
++                not same(creation.get("append_bytes"), 1) or actual["raw"] != raw_original + b"x" or \
+                 not all(finite(creation.get(k)) for k in ("mono_verified", "mono_append", "mono_fsync_completed", "mono_after_verified")) or \
+-                not creation["mono_verified"] <= creation["mono_append"] <= creation["mono_fsync_completed"] <= creation["mono_after_verified"] < report["mono_life_deadline"]:
++                not creation["mono_verified"] <= creation["mono_append"] <= creation["mono_fsync_completed"] <= creation["mono_after_verified"] < report["mono_life_deadline"] or \
++                not report["main_identity_observation"]["observed_mono"] <= creation["mono_verified"] or \
++                not creation["mono_after_verified"] <= report["main_identity_at_output"]["mono_start"]:
+             raise Invalid("original approved creation identity not continuously verified BEFORE mutation")
+         if name == "mutate_pin" and (not same(original, prep["fixture"]) or raw_original != FIXTURE):
+             raise Invalid("mutated inode not original CREATED approved fresh fixture")
+@@ -2101,10 +2210,10 @@
+     if name == "mutate_pin":
+         fixture = snapshot(runfd, "pinned-scratch.txt", 1 << 20)
+         require("fixture_one_byte_append", fixture["raw"] == FIXTURE + b"x" and fixture["nlink"] == 1 and
+-                childout.get("target_inode") == fixture["inode"] and childout.get("size_before") == len(FIXTURE))
++                same(childout.get("target_inode"), fixture["inode"]) and same(childout.get("size_before"), len(FIXTURE)))
+     if name == "mutate_evidence":
+-        require("launch_mutation_same_inode", childout.get("target_inode") == files["launch.json"]["inode"] and
+-                childout.get("size_before") + 1 == files["launch.json"]["bytes"])
++        require("launch_mutation_same_inode", same(childout.get("target_inode"), files["launch.json"]["inode"]) and
++                integer(childout.get("size_before"), 0) and childout["size_before"] + 1 == files["launch.json"]["bytes"])
+     if name == "stray_file":
+         require("stray_actual_bytes", files["stray.txt"]["raw"] == b"undeclared file\n" and files["stray.txt"]["nlink"] == 1)
+     if exp["trips"]:

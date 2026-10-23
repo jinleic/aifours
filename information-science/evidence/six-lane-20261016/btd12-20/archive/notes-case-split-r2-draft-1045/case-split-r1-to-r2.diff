@@ -1,0 +1,103 @@
+--- notes/case-split-r1.md	2026-10-17 10:32:52
++++ notes/case-split-r2.md	2026-10-17 10:45:36
+@@ -1,12 +1,14 @@
+-# Candidate case split r1: there is no BTD(12,20;4,3,10;6,4)
++# Candidate case split r2: there is no BTD(12,20;4,3,10;6,4)
+ 
+ ## Status
+-* CANDIDATE r1, computer-assisted, untrusted until parent review. Written by worker `InfoCyclic100` on 2026-10-17
+-  (host clock PDT) after the lane README freeze (10:12:02).
++* CANDIDATE r2, computer-assisted, untrusted until parent review. Written by worker `InfoCyclic100` on 2026-10-17
++  (host clock PDT) after the lane README freeze (10:12:02). r2 = r1 (`notes/case-split-r1.md`, sha256
++  d405956c09917073fa7a9c31347eef8ce9729bfb70158d39a946f329fccd4da2, unchanged) plus the Part E results; Parts A-D
++  are unchanged except this Status section, the title and the Part E text.
+ * Uses only the contract definition (repeated columns allowed, no other assumption).
+-* Parts A-C below are mathematics. Part D (every case has no completion) currently rests on CP-SAT INFEASIBLE answers,
+-  which are information only. The certificate plan (an independent small CNF per case, kissat DRAT proofs checked by
+-  drat-trim, encoding controls) is in Part E and is NOT yet done.
++* Parts A-C are mathematics with finite checks. Part D was first observed with CP-SAT (information only); Part E now
++  certifies every case with a kissat DRAT proof verified by drat-trim, on a dedicated encoding with passing controls.
++  Independent re-checking (parent) and review are pending; the claim stays a candidate until then.
+ * Lemma T and its use follow the parent's untrusted lead (contract `parent_lead_untrusted`). Its statement matches
+   Elkies-Kominers arXiv:0902.1942v1 Section 1.1 (pinned, which cites Koch without proof); the proof below is
+   self-contained and does not use that source.
+@@ -91,6 +93,22 @@
+   * Counts: (E0) 2069 multigraphs (n = 4..10: 7, 59, 312, 550, 616, 352, 173); (E1) 1004 patterns. Total 3073.
+   * Files: `runs/mg-v1/mg-n{4..10}.txt`, `runs/e-v1/e-multisets.json` (b5498c35…31ca14),
+     `runs/e-v1/e-combos-v2.jsonl` (8864ab42…c3b3).
++* Carried data (added in r2; nothing is dropped between the structure and the case list):
++  * Row multiplicities. A multigraph edge of multiplicity mu becomes mu identical rows (`code/case_list.py`), and an
++    e-component multiplicity vector m becomes m_T identical rows per tetrad T (`code/e_combos.py`). Every case has
++    exactly 12 rows, repeats included; identical rows are distinct rows of M, and the completion predicate of Part D
++    is imposed on every pair of rows, including identical ones (there x = 4, so u = z = 0).
++  * Zero columns. Every case is a full 12 x 20 pattern. Columns covered by no row (20 minus the columns of the
++    multigraph vertices and of the e-components) are free columns with a_j = 0; the completion problem keeps a
++    d-variable for every cell of a free column and requires (6 - 0)/2 = 3 twos there.
++  * Overlaps. A component satisfying both (d) and (e8) is listed in E0 (and may reappear inside E1); e-multisets
++    without full support are not used in E1 because they are d-type (Lemma T step 4: a family avoiding a point of e8
++    lies in e7, and one avoiding a point of e7 lies in three tetrads on 6 points, which is d-type). Duplicates only
++    cost time; no isomorphism class is omitted.
++  * Labels. Within a case, d-type vertex v uses columns 2v, 2v+1, e-components come first, free columns last. Any
++    A of the kind described is mapped onto its case by a row permutation (matching rows with equal tetrads and
++    multiplicities) and a column permutation (vertex pairs to vertex pairs via the multigraph isomorphism, e-columns
++    via the e7/e8 isomorphism, free columns to free columns), which carries a BTD to a BTD.
+ 
+ ## Part D: no case has a completion (computational; to be certified)
+ * For a fixed A, a BTD with 1-pattern A is exactly a 0/1 matrix D supported off A with row sums 3, column sums
+@@ -98,11 +116,48 @@
+ * CP-SAT (OR-Tools 9.15, 1 worker, 60 s limit per case; `code/restricted_batch.py`) answered INFEASIBLE for all 3073
+   cases (`runs/mg-v1/res-n*.jsonl`, `runs/e-v1/res-e-combos-v2.jsonl`; slowest 26.8 s). This is information only.
+ 
+-## Part E: certification plan (not yet run)
+-* `code/tetrad_facts.py`: exhaustive check of the code facts used in Lemma T.
+-* Independent cross-checks of the enumeration (a second implementation of the multigraph and e-multiset counts).
+-* One small dedicated CNF per case (variables d_ij off A; exact cardinality counters for rows, columns and the pair
+-  equation), with positive controls (published BTDs: their own A must give SAT and decode to a verified BTD) and
+-  counting controls against brute force on small instances; kissat DRAT proofs checked by drat-trim, all hashes
+-  recorded.
+-* Only after Part E passes and the parent reviews would the case split support a nonexistence claim.
++## Part E: certificates (run 10:36-10:43 PDT, 1 CPU)
++* Finite facts of Lemma T: `code/tetrad_facts.py` (777f87cd…b4ec) -> `evidence/tetrad-facts-v1.json`
++  (0f68f8a4…6776): TETRAD-FACTS PASS. F1 split lemma; F2 the seed spans 7 weight-4 words, its dual has weight
++  distribution {0:1, 3:7, 4:7, 7:1}, dual weight-4 words = seed words, weight-3 words form a Fano plane; F3 every
++  extension by L + {y} is a self-dual [8,4] code with distribution {0:1, 4:14, 8:1} and the stated 14 tetrads; F4
++  explicit bijections from the seed e7 / e8 to the e7 / e8 tetrad sets used by the enumeration.
++* Enumeration cross-check: `code/enum_crosscheck.py` (81187f8c…c476) -> `evidence/enum-crosscheck-v1.json`
++  (23a90df8…d2ca5): ENUM-CROSSCHECK PASS.
++  * For every (n, e) used, nauty `genbg` (multigraphs as bicoloured vertex-node / edge-node graphs) and the
++    `geng | multig` pipeline give the same number of multigraphs with degrees in {2,4,6}; recounts E0 = 2069 and
++    E1 = 1004.
++  * Burnside counts by a separate cycle-wise recursion give 29 e7 orbits (17 full-support) and 216 e8 orbits (187
++    full-support), equal to the lists of `code/e_multisets.py`.
++* Case list: `code/case_list.py` (c5f95d8c…e825c) -> `runs/cases-v1/cases.jsonl` (4a6aedb8…ad5f), 3073 cases; each
++  case is re-checked to have 12 rows of 4 columns, pairwise intersections in {0,2,4} and column covers in {0,2,4,6}.
++* Encoding: `code/dcomp_cnf.py` (2e7d68b4…6d3), the D-completion of Part D as CNF (variables d_ij off A; exact
++  two-sided Sinz counters of `code/btd_cnf_a.py` for row counts, column counts (6 - a_j)/2 and the pair equation, the
++  last over the list [d_kj : j in A_i \ A_k] + [d_ij : j in A_k \ A_i] + twice [d_ij AND d_kj : j off both]).
++  Controls `code/dcomp_controls.py` (c80bd181…24fb) -> `controls/dcomp-v1/controls.json` (d34d0860…28d0):
++  DCOMP-CONTROLS PASS.
++  * Positive: the 1-pattern of each of six published BTDs (3,3;1,1,3;3,2), (3,6;2,2,6;3,4), (4,12;3,6,15;5,16),
++    (12,16;4,4,12;9,8), (14,21;6,3,12;8,6), (16,22;9,1,11;8,5) gives SAT, and the decoded matrix passes both checkers.
++  * Negative: a moved 1 in BTD(12,16) produces the empty clause (column parity) and UNSAT.
++  * Counting: brute force and CNF agree on every 1-pattern tested (27 for (3,3;1,1,3;3,2), 60 for (3,6;2,2,6;3,4)).
++* Certificates: `code/cert_run.py` (fd02ffef…1965) -> `runs/cert-v1/` (`results-0-20.jsonl` 74f9c8a6…2471,
++  `results-20-3073.jsonl` fedfdc05…fb33; per case the CNF and its binary DRAT proof with SHA-256).
++  * kissat 4.0.4 (05d6f3e9…a848) `-q --time=600` answered UNSAT on all 3073 cases (max 1.09 s).
++  * drat-trim (a46c0c71…8e37, upstream commit 2e3b2dc0) `-t 600` printed `s VERIFIED` with exit 0 on all 3073 proofs
++    (max 0.83 s; 666 MB of proofs).
++  * Coverage: case indices 0..3072 each exactly once, all CERTIFIED.
++* Consequence (candidate): by Parts A-C every BTD(12,20;4,3,10;6,4) would have, after row and column permutations,
++  the 1-pattern of one of the 3073 cases, and by Part E no case has a completion. Hence no BTD(12,20;4,3,10;6,4)
++  exists. Trusted base: nauty 2.9.3 (two generators cross-checked), the lane scripts above, kissat as proof producer
++  only, drat-trim as checker, and the written Parts A-C.
++* Tools and flags (binary SHA-256):
++  * nauty 2.9.3 (Homebrew Cellar): `geng` ad2f68ad…f5ad, `multig` c8029bea…0d0f, `genbg` 63822426…5f83; flags as
++    above (`geng -q -d1 -D6 n lo:e`, `multig -q -e<e> -D6 -T`, `genbg -q -d2:2 -D6:2 n e 2e:2e`).
++  * kissat 4.0.4 `/opt/homebrew/bin/kissat` 05d6f3e9…a848 (proof producer only); drat-trim built with `cc -O2` from
++    the pinned upstream source (commit 2e3b2dc0), `bin/drat-trim` a46c0c71…8e37, byte-identical to the btd12-15
++    build.
++  * Python 3.9.6 `/usr/bin/python3` for every script of the case split; OR-Tools CP-SAT only for the information-only
++    runs of Part D.
++* Replay: `code/case_split_replay.py` pins every file and binary (`evidence/case-split-manifest-v1.json`) and
++  re-runs the regeneration, the checks and drat-trim on every stored proof.
++* Not done: a Lean kernel proof; independent re-checking by the parent; review.

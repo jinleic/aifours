@@ -1,0 +1,117 @@
+--- code/pilot_file_drat_v13.py	2026-10-19 01:11:54.689956956 -0700
++++ code/pilot_file_drat_v14.py	2026-10-19 01:17:38.989009285 -0700
+@@ -1,5 +1,12 @@
+ #!/usr/bin/env python3
+-"""PA19 96h pilot runner v13 = v12 + fixes for the Codex r5 cleanup findings (review/codex-pilot-v12-r5/result.json
++"""PA19 96h pilot runner v14 = v13 + fixes for Codex r6 (review/codex-pilot-v13-r6/result.json a79577ae...;
++R5#2-#4 resolved there):
++  r6#1 the settle-all pass iterates OWNED by index entirely inside its retry guard (no unguarded snapshot
++       allocation) and is a module function settle_all(), also used by main's closeout.
++  r6#2 an unstarted capture reader is an explicit settlement failure (streams closed, sink finished,
++       UNSETTLED + latch); settle-all stops retrying bookkeeping for a REAPED child after 20 failures and
++       records it UNSETTLED with the latch held; an unreaped child is always retried.
++PA19 96h pilot runner v13 notes follow (= v12 + fixes for the Codex r5 cleanup findings, review/codex-pilot-v12-r5/result.json
+ 545eb709...; R4#2-#5 resolved there):
+   r5#1 settle-all sets the emergency stop WITHOUT polling and retries settle() inside a protected loop.
+   r5#2 single SIGTERM: the timestamp is computed before send_signal and the delivery marker is stored
+@@ -674,12 +681,16 @@
+         if self.quarantined and self.quarantine_receipt_state != "written":
+             problems.append("quarantine receipt not published (%s)" % self.quarantine_receipt_state)
+         stream_alive = None
+-        if self.reader is not None:
++        if self.reader is not None and self.reader.ident is not None:
+             self.reader.join(STREAM_JOIN)
+             stream_alive = self.reader.is_alive()
+         else:
+-            problems.append("no capture reader")
++            problems.append("no started capture reader")  # r6#2: explicit settlement failure
+             try:
++                self.proc.stdout.close()
++            except Exception as exc:
++                problems.append("stdout close %r" % exc)
++            try:
+                 self.capture.close()
+             except Exception as exc:
+                 problems.append("capture close %r" % exc)
+@@ -833,16 +844,39 @@
+         lines = segments(ch.out_path) if rec.get("stream_thread_alive_after_join") is False else []
+         return rec, lines, []
+     finally:
+-        for c in list(OWNED):
+-            while c.proc is not None and c.settled_rec is None:
++        settle_all()
++        if sink is not None and (ch is None or ch.proc is None):
++            sink.finish()  # never-spawned producer: unblock and join the reader
++
++
++def settle_all():
++    """r6#1/#2: index iteration entirely inside the retry guard; an unreaped child is retried forever
++    (never abandoned); a reaped child whose settlement bookkeeping keeps failing is recorded UNSETTLED
++    with the latch held after 20 attempts."""
++    i = 0
++    failures = 0
++    while True:
++        try:
++            if i >= len(OWNED):
++                return
++            c = OWNED[i]
++            if c.proc is not None and c.settled_rec is None:
++                if c.stop is None:
++                    c.stop = "runner_escape_cleanup"  # emergency stop without polling first
+                 try:
+-                    if c.stop is None:
+-                        c.stop = "runner_escape_cleanup"  # r5#1: emergency stop without polling first
+-                    c.settle()  # protected retry: any escape above still reaps and settles every owned child
++                    c.settle()
+                 except BaseException:
++                    failures += 1
++                    if c.proc.returncode is not None and failures >= 20:
++                        c.settled_rec = {"seq": c.seq, "label": c.label, "pid": c.pid, "settled": False,
++                                         "returncode": c.proc.returncode, "stop": c.stop,
++                                         "note": "settlement bookkeeping failed after reap"}
++                        LATCH.append("child settlement bookkeeping failed after reap")
+                     continue
+-        if sink is not None and (ch is None or ch.proc is None):
+-            sink.finish()  # never-spawned producer: unblock and join the reader
++            i += 1
++            failures = 0
++        except BaseException:
++            continue
+ 
+ 
+ def run_kissat(cnf_path, proof_file, label, seconds, cap, reserve, inputs):
+@@ -1126,7 +1160,7 @@
+     signal.signal(signal.SIGTERM, on_term)
+     signal.signal(signal.SIGINT, on_term)
+     if len(sys.argv) != 4:
+-        print("usage: pilot_file_drat_v13.py GO.json GO_SHA256 OUT_DIR", flush=True)
++        print("usage: pilot_file_drat_v14.py GO.json GO_SHA256 OUT_DIR", flush=True)
+         return EXIT_PRESTART_REFUSED
+     go_path, go_sha, out_dir = sys.argv[1], sys.argv[2], os.path.abspath(sys.argv[3])
+     if not out_dir.startswith(LANE + "/evidence/pilot-v1/"):
+@@ -1156,7 +1190,7 @@
+                  remaining_reserve=RUN_RESERVE + CONTROL_RESERVE + len(ITEMS) * ITEM_RESERVE,
+                  go={"path": go_path, "sha256": go_sha}, runner_sha=self_sha)
+     launch = {
+-        "schema": "PA19-96H-PILOT-LAUNCH-v13", "host_clock": clock(), "owner": "ContinuePA19",
++        "schema": "PA19-96H-PILOT-LAUNCH-v14", "host_clock": clock(), "owner": "ContinuePA19",
+         "go": STATE["go"], "runner": {"path": os.path.abspath(__file__), "sha256": self_sha},
+         "pid": os.getpid(), "ppid": os.getppid(), "pgid": os.getpgid(0), "cwd": os.getcwd(), "argv": sys.argv,
+         "python": sys.version, "binaries": {"kissat": KISSAT, "drat_trim_lane_copy": DRAT, "drat_trim_old": DRAT_OLD},
+@@ -1180,7 +1214,7 @@
+     run_record = os.path.join(out_dir, "launch-record.json")
+     STATE["run_record"] = {"path": run_record, "sha256": write_x(run_record, launch)}
+     print("LAUNCH_RECORD", run_record, flush=True)
+-    summary = {"schema": "PA19-96H-PILOT-SUMMARY-v13", "items": {}, "controls_ok": None, "stopped": None,
++    summary = {"schema": "PA19-96H-PILOT-SUMMARY-v14", "items": {}, "controls_ok": None, "stopped": None,
+                "terminal_policy": "exit code reports runner execution only; per-item records carry the scientific "
+                                   "status; an item counts only if qualify_unsat, the terminal gate and the commit "
+                                   "boundary all pass; case closure is decided by the parent audit"}
+@@ -1191,6 +1225,7 @@
+         outcome["exception"] = True
+         summary["stopped"] = {"phase": "exception", "error": repr(exc)}
+     finally:
++        settle_all()
+         code = final_code(summary, outcome)
+     return code
+ 

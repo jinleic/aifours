@@ -1,0 +1,521 @@
+# Unified diff: scripts/gb_staged_v3.py (sha256 6f5b3a8adab95d41f609f31c59704592071be91124dbeba622a329ff541a0f14, unchanged) -> scripts/gb_staged_v4.py (sha256 b9f9d562ca2640185c57f1aeded895f0159feef156f73391acb9c73fba339cdf)
+# Scope: only the two MAJOR findings of review/n8-gb-staged-v3-delta-codex-v1.note.md (eb8f8ac4...be17): completion
+# evidence bound to the exact commit and consumed by admission; the previous cancellation semantics kept through the
+# successful publication (persistent cancellation veto, protected durable run summary); plus gbs4- names and pins.
+--- a/scripts/gb_staged_v3.py
++++ b/scripts/gb_staged_v4.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Parent staged GB replay desk v3: the counted parent replay of the eighteen GB (gram_b_r2) inputs of the MOQLS(8) n8
++"""Parent staged GB replay desk v4: the counted parent replay of the eighteen GB (gram_b_r2) inputs of the MOQLS(8) n8
+ contract, implementing review/gb-parent-replay-brief-v1.md (sha256 d95f3a0b...27ed) exactly.
+ 
+ v2 = scripts/gb_staged_v1.py (b36fbb57...8151, kept unchanged) + DIFF-gb_staged_v1-to-v2.txt, which repairs only the
+@@ -33,6 +33,23 @@
+     and only then restores the signal mask, so a signal arriving during publication is handled after it and stops
+     the desk. Any durability or publication failure fails closed (no qualified commit) and stops the desk.
+ Every v3 file name has the 'gbs3-' prefix.
++
++v4 = scripts/gb_staged_v3.py (6f5b3a8a...0f14, kept unchanged) + DIFF-gb_staged_v3-to-v4.txt, which repairs only the
++two MAJOR findings of the Codex delta review review/n8-gb-staged-v3-delta-codex-v1.note.md (eb8f8ac4...be17), keeping
++the previous cancellation semantics (no snapshot linearization): a SIGTERM/SIGINT latched or pending at ANY point
++through the successful publication of an item vetoes that item, and qualification never rests on the early commit
++flag. publish_qualification() keeps both signals blocked from the decision through the end of the item's
++publication: (1) commit = the decision record (published by link of its synced .prepare file, directory synced);
++(2) a post-commit check of latched and pending signals; (3) only if the decision qualified and nothing is pending or
++failed, the completion record <label>.complete.json bound to the exact receipt and commit sha256 (same durable link
++publication); (4) a post-completion check; (5) any signal or failure after the commit -> the persistent cancellation
++veto <label>.cancelled.json, whose exclusive creation alone vetoes (its directory entry is synced first); (6) the
++mask is restored and a signal delivered then also cancels the item. The run summary is published the same way
++(runs/run-<tag>.json, protected and durable; a signal during it creates runs/run-<tag>.cancelled.json). Admission
++(qualification_problems, used by validate_controls and the read-only 'qualification' subcommand) requires the
++durable receipt, the qualified commit, the completion bound to both, no item cancellation, and the durable summary of
++the producing run with no stop, no signal at the summary, no run cancellation and an entry for the label with
++publication COMPLETE and the same digests. Every v4 file name has the 'gbs4-' prefix.
+ 
+ Desk: institute/runs/six-lane-2026-10-16/review/moqls8-gb-parent-staged-replay-v1 (parent-owned, created exclusively
+ 2026-10-18T10:08:20-07:00). Inputs, and no others: the twelve direct templates P1-B4, P0-B4, P0-B5, P0-B6, P1-B6, P2-C4,
+@@ -88,8 +105,9 @@
+ desk. A timeout, guard stop or deferral is never success; no retries.
+ 
+ Usage (/opt/homebrew/opt/python@3.14/bin/python3.14 -I -B, environment TMPDIR=<desk>/tmp/; absolute paths):
+-  gb_staged_v3.py preexec OUT ITEM...    ITEM = control:NAME | gb:ID:aN  (only controls, or exactly one gb item)
+-  gb_staged_v3.py run PREEXEC GO         GO = the parent-written release record required by validate_go()
++  gb_staged_v4.py preexec OUT ITEM...    ITEM = control:NAME | gb:ID:aN  (only controls, or exactly one gb item)
++  gb_staged_v4.py run PREEXEC GO         GO = the parent-written release record required by validate_go()
++  gb_staged_v4.py qualification LABEL    read-only: the full admission predicate for one receipt label (JSON)
+ """
+ import ctypes
+ import datetime
+@@ -118,8 +136,8 @@
+ DESK = REVIEW + "/moqls8-gb-parent-staged-replay-v1"
+ DESK_REL = "review/moqls8-gb-parent-staged-replay-v1"  # relative to RUN; the parent GO record names it
+ SCRIPT = os.path.realpath(__file__)
+-SCRIPT_REL = "scripts/gb_staged_v3.py"
+-LABEL_PREFIX = "gbs3-"  # every receipt/log/FIFO/TMPDIR name of this version (v1: gbs1-, v2: gbs2-)
++SCRIPT_REL = "scripts/gb_staged_v4.py"
++LABEL_PREFIX = "gbs4-"  # every receipt/log/FIFO/TMPDIR name of this version (v1-v3: gbs1-, gbs2-, gbs3-)
+ TMP = DESK + "/tmp"
+ 
+ KISSAT = "/opt/homebrew/Cellar/kissat/4.0.4/bin/kissat"
+@@ -160,6 +178,10 @@
+                    "89db96359ba1a94c3c6a45f7386a34006178fd38d4653e9fefcd921c62532844"),
+     "codex_gbs2_source_audit": (REVIEW + "/n8-gb-staged-v2-source-codex-v1.note.md",
+                                 "f39a65cda7eaf2a291f50e922501c8bc3b5a609418d3be39140e4c738ef4fe16"),
++    "runtime_v3": (DESK + "/scripts/gb_staged_v3.py",
++                   "6f5b3a8adab95d41f609f31c59704592071be91124dbeba622a329ff541a0f14"),
++    "codex_gbs3_delta_audit": (REVIEW + "/n8-gb-staged-v3-delta-codex-v1.note.md",
++                               "eb8f8ac40ebe8ad023b6f2ddf36da1299f9661b4a8524d4f1f2977840a90be17"),
+ }
+ 
+ # --- the eighteen authorized inputs, in the brief's order (no other input or refinement)
+@@ -210,10 +232,12 @@
+ STABLE_RUNWAY_BASE, STABLE_RUNWAY_DIV = 13500000000, 12
+ STABLE_WINDOW, STABLE_MIN_DROP_CAP = 300.0, 300000000
+ STABLE_MAX_AGE, STABLE_MIN_SAMPLES, STABLE_MIN_SPAN = 30.0, 25, 290.0
+-RECEIPT_SCHEMA = "moqls8-gb-staged-replay-receipt/3"
+-COMMIT_SCHEMA = "moqls8-gb-staged-replay-commit/3"
+-PREEXEC_SCHEMA = "moqls8-gb-staged-replay-preexec/3"
+-RUN_SCHEMA = "moqls8-gb-staged-replay-run/3"
++RECEIPT_SCHEMA = "moqls8-gb-staged-replay-receipt/4"
++COMMIT_SCHEMA = "moqls8-gb-staged-replay-commit/4"
++COMPLETION_SCHEMA = "moqls8-gb-staged-replay-completion/4"
++CANCELLATION_SCHEMA = "moqls8-gb-staged-replay-cancellation/4"
++PREEXEC_SCHEMA = "moqls8-gb-staged-replay-preexec/4"
++RUN_SCHEMA = "moqls8-gb-staged-replay-run/4"
+ PUBLICATION_SIGNALS = (signal.SIGTERM, signal.SIGINT)  # (F4') blocked across the final decision and publication
+ GO_STATUS = "PARENT_GO"
+ 
+@@ -363,9 +387,11 @@
+               "receipts/<label>.commit.json with qualified true: the receipt is first synced (file + directory), "
+               "then the decision is taken with SIGTERM/SIGINT blocked (verdict PASS, durable receipt, no latched or "
+               "pending signal, the driver the only thread) and published durably and atomically (os.link of the "
+-              "synced .prepare record). A SAT report, a safety stop or any settlement failure stops "
+-              "the desk. No retries: a new attempt needs a new parent GO and a new attempt tag; old UNKNOWN receipts "
+-              "are retained.")
++              "synced .prepare record); the item qualifies only when the completion record bound to that commit "
++              "is published with no signal through the whole publication, no cancellation veto exists and the "
++              "run's durable summary shows no stop or signal. A SAT report, a safety stop or any settlement failure "
++              "stops the desk. No retries: a new attempt needs a new parent GO and a new attempt tag; old UNKNOWN "
++              "receipts are retained.")
+ GATE_RULE = ("Before each launch (stage 1; stage 2 is not a new admission): a fresh lane scan (native solver/checker "
+              "processes plus python processes whose cwd or argv lies in the lane or a review/moqls8-* desk, "
+              "excluding this driver and its children; python counts as busy if its CPU use over a 2 s libproc window "
+@@ -503,35 +529,215 @@
+     return digest
+ 
+ 
+-def publish_commit(cpath, base, eligible, stop):
+-    """(F4') Protected, durable, atomic publication of the qualification record. SIGTERM/SIGINT are blocked first;
+-    the qualification is then decided at one explicit linearization point from the latched driver signal, the blocked
+-    signals already pending, the driver being the only thread (so no other thread can run the signal handler while the
+-    mask is set) and eligible (qualifying verdict, durable receipt, no signal at pre-evaluation or after evaluation).
+-    The decided record is written durably under cpath + '.prepare' and published atomically by os.link() to cpath
+-    (fails if cpath exists; nothing is renamed or deleted), the directory is synced, and only then is the old mask
+-    restored: a signal that arrived during the publication is delivered afterwards and stops the desk. Any failure
+-    before the link leaves no commit (unqualified); a failure after it is reported. -> (commit, sha256, error)."""
+-    tmp = cpath + ".prepare"
+-    commit, digest, err = None, None, None
++def pending_publication_signals():
++    return sorted(signal.Signals(s).name for s in signal.sigpending() if s in PUBLICATION_SIGNALS)
++
++
++def publish_record(path, obj):
++    """(F4'') Durable atomic publication of one record: written and synced under path + '.prepare', made visible by
++    os.link() to path (fails if path exists; nothing is renamed or deleted), directory synced. Any failure raises.
++    -> sha256."""
++    digest = write_json_durable(path + ".prepare", obj)
++    os.link(path + ".prepare", path)
++    fsync_dir(os.path.dirname(path))
++    return digest
++
++
++def write_cancellation(path, obj):
++    """(F4'') The persistent cancellation veto. Its exclusive creation alone vetoes (admission rejects whenever the name
++    exists, whatever its content), so its directory entry is synced first, then the reason is written and synced.
++    Any failure raises. -> sha256."""
++    data = (json.dumps(obj, indent=1) + "\n").encode("utf-8")
++    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
++    try:
++        fsync_dir(os.path.dirname(path))
++        view, off = memoryview(data), 0
++        while off < len(view):
++            off += os.write(fd, view[off:])
++        full_sync(fd)
++    finally:
++        os.close(fd)
++    fsync_dir(os.path.dirname(path))
++    return sha_file(path)
++
++
++def publish_qualification(paths, base, eligible, stop):
++    """(F4'') Protected publication of one item's qualification, keeping the previous cancellation semantics: a
++    SIGTERM/SIGINT latched or pending at ANY point through the successful publication vetoes the item. Both signals
++    stay blocked from the decision to the end: decision (eligible, no latched or pending signal, single-threaded driver,
++    so no other thread can run the handler) -> commit record published -> post-commit check -> (qualified only) the
++    completion record bound to the exact receipt and commit sha256 published -> post-completion check; any signal or
++    failure after the decision of a qualified item creates the cancellation veto; the mask is then restored and a
++    signal delivered at that moment cancels the item too. paths: commit, complete, cancel. -> publication record whose
++    status is COMPLETE, CANCELLED, UNQUALIFIED or FAILED (only COMPLETE can ever be admitted)."""
++    out = {"commit_sha256": None, "completion_sha256": None, "cancellation_sha256": None, "checks": [],
++           "errors": [], "cancel_reason": None}
++    commit = completion = None
++    qualified = False
+     old = signal.pthread_sigmask(signal.SIG_BLOCK, PUBLICATION_SIGNALS)
+     try:
+-        pending = sorted(signal.Signals(s).name for s in signal.sigpending() if s in PUBLICATION_SIGNALS)
+-        threads_alive = threading.active_count()
+-        latched = stop.get("signal")
+-        commit = dict(base, stop_signal_at_commit=latched, pending_signals_at_commit=pending,
+-                      driver_threads_at_commit=threads_alive, decided_at=now(),
+-                      qualified=bool(eligible and latched is None and not pending and threads_alive == 1),
+-                      linearization=("qualification decided with SIGTERM/SIGINT blocked at decided_at; any later "
+-                                     "signal stays pending until after the atomic publication and stops the desk"))
+-        digest = write_json_durable(tmp, commit)
+-        os.link(tmp, cpath)  # the publication instant: the complete, durable record appears atomically
+-        fsync_dir(os.path.dirname(cpath))
+-    except Exception as e:  # fail closed: without the link no commit exists; every error is reported
+-        err = "%s: %s" % (type(e).__name__, e)
++        try:
++            pending, latched = pending_publication_signals(), stop.get("signal")
++            threads_alive = threading.active_count()
++            qualified = bool(eligible and latched is None and not pending and threads_alive == 1)
++            commit = dict(base, qualified=qualified, stop_signal_at_decision=latched,
++                          pending_signals_at_decision=pending, driver_threads_at_decision=threads_alive,
++                          decided_at=now(), meaning="decision record only; admission also needs the bound completion "
++                                                    "record, no cancellation and a clean durable run summary")
++            out["commit_sha256"] = publish_record(paths["commit"], commit)
++            check = {"after": "commit publication", "pending": pending_publication_signals(),
++                     "latched": stop.get("signal")}
++            out["checks"].append(check)
++            if qualified and (check["pending"] or check["latched"]):
++                out["cancel_reason"] = "signal through the commit publication: %s" % check
++            elif qualified:
++                completion = {"schema": COMPLETION_SCHEMA, "label": base["label"], "receipt": base["receipt"],
++                              "receipt_sha256": base["receipt_sha256"], "commit": rel(paths["commit"]),
++                              "commit_sha256": out["commit_sha256"], "publication_completed": True,
++                              "checks_through_commit": out["checks"][:], "completed_at": now()}
++                out["completion_sha256"] = publish_record(paths["complete"], completion)
++                check = {"after": "completion publication", "pending": pending_publication_signals(),
++                         "latched": stop.get("signal")}
++                out["checks"].append(check)
++                if check["pending"] or check["latched"]:
++                    out["cancel_reason"] = "signal through the completion publication: %s" % check
++        except Exception as e:  # a failure after a qualified decision cancels the item; before it, nothing qualifies
++            out["errors"].append("%s: %s" % (type(e).__name__, e))
++            if qualified and out["cancel_reason"] is None:
++                out["cancel_reason"] = "publication failure after the decision: %s: %s" % (type(e).__name__, e)
++        if out["cancel_reason"] is not None:
++            try:
++                out["cancellation_sha256"] = write_cancellation(paths["cancel"], {
++                    "schema": CANCELLATION_SCHEMA, "label": base["label"], "reason": out["cancel_reason"],
++                    "commit_sha256": out["commit_sha256"], "completion_sha256": out["completion_sha256"],
++                    "at": now()})
++            except Exception as e:  # recorded; the run stops on any error and the run summary records it
++                out["errors"].append("cancellation: %s: %s" % (type(e).__name__, e))
+     finally:
+         signal.pthread_sigmask(signal.SIG_SETMASK, old)  # a pending SIGTERM/SIGINT is delivered (latched) now
+-    return commit, digest, err
++    late = _latched_after_unmask(stop)
++    if qualified and out["cancel_reason"] is None and late is not None:
++        out["cancel_reason"] = "signal %s delivered when the publication mask was restored" % late
++        try:
++            out["cancellation_sha256"] = write_cancellation(paths["cancel"], {
++                "schema": CANCELLATION_SCHEMA, "label": base["label"], "reason": out["cancel_reason"],
++                "commit_sha256": out["commit_sha256"], "completion_sha256": out["completion_sha256"], "at": now()})
++        except Exception as e:
++            out["errors"].append("cancellation: %s: %s" % (type(e).__name__, e))
++    if out["cancel_reason"] is not None:
++        out["status"] = "CANCELLED"
++    elif out["errors"]:
++        out["status"] = "FAILED"
++    elif qualified and out["completion_sha256"] is not None:
++        out["status"] = "COMPLETE"
++    else:
++        out["status"] = "UNQUALIFIED"
++    out["qualified_decision"] = qualified
++    return out
++
++
++def _latched_after_unmask(stop):
++    """A Python-level call boundary after the mask is restored, so a signal delivered by the restore has run its
++    (latching) handler before the caller reads the latch."""
++    return stop.get("signal")
++
++
++def publish_run_summary(path, summary, stop):
++    """(F4'') The run summary is the run's terminal evidence and is published the same way: signals blocked, the
++    latched/pending state recorded in it, durable atomic publication, a post-publication check; a signal during it,
++    or one delivered when the mask is restored, creates the run cancellation veto <path minus .json>.cancelled.json.
++    -> (sha256 or None, errors, cancelled)."""
++    cancel = path[:-len(".json")] + ".cancelled.json"
++    errors, reason, digest = [], None, None
++    old = signal.pthread_sigmask(signal.SIG_BLOCK, PUBLICATION_SIGNALS)
++    try:
++        try:
++            summary["stop_latched_at_summary"] = stop.get("signal")
++            summary["pending_signals_at_summary"] = pending_publication_signals()
++            summary["published_at"] = now()
++            digest = publish_record(path, summary)
++            pending, latched = pending_publication_signals(), stop.get("signal")
++            if pending or (latched and not summary["stop_latched_at_summary"]):
++                reason = "signal through the run summary publication: pending %s latched %s" % (pending, latched)
++        except Exception as e:
++            errors.append("%s: %s" % (type(e).__name__, e))
++            reason = "run summary publication failure: %s: %s" % (type(e).__name__, e)
++        if reason is not None:
++            try:
++                write_cancellation(cancel, {"schema": CANCELLATION_SCHEMA, "run_summary": rel(path),
++                                            "reason": reason, "at": now()})
++            except Exception as e:
++                errors.append("run cancellation: %s: %s" % (type(e).__name__, e))
++    finally:
++        signal.pthread_sigmask(signal.SIG_SETMASK, old)
++    late = _latched_after_unmask(stop)
++    if reason is None and late is not None and not summary.get("stop_latched_at_summary"):
++        reason = "signal %s delivered when the run-summary mask was restored" % late
++        try:
++            write_cancellation(cancel, {"schema": CANCELLATION_SCHEMA, "run_summary": rel(path), "reason": reason,
++                                        "at": now()})
++        except Exception as e:
++            errors.append("run cancellation: %s: %s" % (type(e).__name__, e))
++    return digest, errors, reason is not None
++
++
++def _load_json(path):
++    try:
++        return json.loads(read_bytes(path))
++    except (OSError, ValueError):
++        return None
++
++
++def qualification_problems(label, want_verdict):
++    """(F4'') The reader side of the publication protocol -> (identity, problems). A receipt qualifies only with: its
++    receipt (durable), its commit with a qualified decision (verdict == want_verdict, durable receipt, no signal
++    latched or pending at the decision, single-threaded driver), the completion record bound to that exact commit and
++    receipt sha256, NO item cancellation record, and the durable summary of the producing run (named by the receipt's
++    run_tag) with stopped_reason None, no signal at the summary, no run cancellation, and an entry for this label with
++    publication COMPLETE and the same receipt/commit/completion sha256. The early commit flag alone never qualifies."""
++    rec_dir = os.path.join(DESK, "receipts")
++    rpath = os.path.join(rec_dir, label + ".json")
++    cpath, kpath, xpath = rpath[:-5] + ".commit.json", rpath[:-5] + ".complete.json", rpath[:-5] + ".cancelled.json"
++    problems = []
++    try:
++        rraw = read_bytes(rpath)
++        r = json.loads(rraw)
++    except (OSError, ValueError):
++        return None, ["%s: receipt missing or not JSON" % label]
++    rsha = sha_bytes(rraw)
++    c, k = _load_json(cpath), _load_json(kpath)
++    csha = sha_file(cpath) if c is not None else None
++    ksha = sha_file(kpath) if k is not None else None
++    if os.path.lexists(xpath):
++        problems.append("item cancellation record exists")
++    if not (isinstance(c, dict) and c.get("schema") == COMMIT_SCHEMA and c.get("label") == label
++            and c.get("receipt_sha256") == rsha and c.get("qualified") is True and c.get("verdict") == want_verdict
++            and c.get("receipt_durable") is True and c.get("stop_signal_at_decision") is None
++            and c.get("pending_signals_at_decision") == [] and c.get("driver_threads_at_decision") == 1):
++        problems.append("commit missing, not bound to the receipt, or not a qualified decision")
++    if not (isinstance(k, dict) and k.get("schema") == COMPLETION_SCHEMA and k.get("label") == label
++            and k.get("receipt_sha256") == rsha and k.get("commit_sha256") == csha and csha is not None
++            and k.get("publication_completed") is True):
++        problems.append("completion record missing or not bound to this exact commit and receipt")
++    run_tag = r.get("run_tag") if isinstance(r, dict) else None
++    spath = os.path.join(DESK, "runs", "run-%s.json" % run_tag) if isinstance(run_tag, str) else None
++    s = _load_json(spath) if spath else None
++    if spath is None or s is None:
++        problems.append("durable run summary of the producing run missing")
++    else:
++        entries = [e for e in (s.get("items") or []) if isinstance(e, dict) and e.get("label") == label]
++        if os.path.lexists(spath[:-len(".json")] + ".cancelled.json"):
++            problems.append("run cancellation record exists")
++        if not (s.get("schema") == RUN_SCHEMA and s.get("stopped_reason") is None
++                and s.get("stop_latched_at_summary") is None and s.get("pending_signals_at_summary") == []):
++            problems.append("producing run stopped or signalled (stopped_reason %r)" % s.get("stopped_reason"))
++        if not (len(entries) == 1 and entries[0].get("publication_status") == "COMPLETE"
++                and entries[0].get("qualified") is True and entries[0].get("receipt_sha256") == rsha
++                and entries[0].get("commit_sha256") == csha and entries[0].get("completion_sha256") == ksha):
++            problems.append("run summary entry for the label is not a COMPLETE publication of these records")
++    ident = {"label": label, "receipt_sha256": rsha, "commit_sha256": csha, "completion_sha256": ksha,
++             "run_summary": rel(spath) if spath else None, "run_summary_sha256": sha_file(spath) if s else None}
++    return ident, problems
+ 
+ 
+ def rel(path):
+@@ -1311,8 +1517,8 @@
+ def validate_controls(script_sha):
+     """gb admission prerequisite: the seven control receipts of THIS script sha256 exist, each equal to its derived
+     control item, with its preregistered verdict, the pinned binaries, its PRE-EXEC and controls GO record re-hashed,
+-    no latched stop, and (F4) its commit record bound to the receipt's sha256 with qualified true. -> (identities,
+-    problems)."""
++    no latched stop, and (F4'') the complete qualification of qualification_problems(): qualified commit, bound
++    completion, no cancellation, clean durable run summary. -> (identities, problems)."""
+     out, problems = [], []
+     for name in CONTROLS:
+         label = LABEL_PREFIX + "ctl-" + name
+@@ -1321,19 +1527,13 @@
+             problems.append("%s: receipt missing" % label)
+             continue
+         raw = read_bytes(path)
+-        cpath = os.path.join(DESK, "receipts", label + ".commit.json")
+         try:
+             r = json.loads(raw)
+-            cm = json.loads(read_bytes(cpath)) if os.path.isfile(cpath) else None
+         except ValueError:
+-            problems.append("%s: receipt or commit record is not JSON" % label)
++            problems.append("%s: receipt is not JSON" % label)
+             continue
++        qident, qprobs = qualification_problems(label, CONTROLS[name]["verdict"])
+         try:
+-            commit_ok = (isinstance(cm, dict) and cm.get("schema") == COMMIT_SCHEMA and cm.get("label") == label
+-                         and cm.get("receipt_sha256") == sha_bytes(raw) and cm.get("qualified") is True
+-                         and cm.get("verdict") == CONTROLS[name]["verdict"] and cm.get("stop_signal_at_commit") is None
+-                         and cm.get("receipt_durable") is True and cm.get("pending_signals_at_commit") == []
+-                         and cm.get("driver_threads_at_commit") == 1)
+             pe, go, bins = r.get("pre_exec") or {}, r.get("go") or {}, r.get("binaries") or {}
+             pre_ok = (isinstance(pe.get("path"), str) and os.path.isfile(os.path.join(DESK, pe["path"]))
+                       and sha_file(os.path.join(DESK, pe["path"])) == pe.get("sha256"))
+@@ -1349,7 +1549,7 @@
+                 ("pre-exec binding", pre_ok),
+                 ("go binding", go_ok),
+                 ("stop latched", r.get("stop_latched") is None and r.get("stop_latched_after_evaluation") is None),
+-                ("qualified commit record", commit_ok),
++                ("qualification (%s)" % "; ".join(qprobs), not qprobs),
+             ) if not ok]
+         except (AttributeError, TypeError, ValueError, OSError) as e:  # a malformed receipt is refused, not trusted
+             bad = ["malformed receipt: %r" % e]
+@@ -1357,7 +1557,8 @@
+             problems.append("%s: %s" % (label, ", ".join(bad)))
+             continue
+         out.append({"label": label, "receipt": rel(path), "receipt_sha256": sha_bytes(raw), "verdict": r["verdict"],
+-                    "commit": rel(cpath), "commit_sha256": sha_file(cpath),
++                    "commit_sha256": qident["commit_sha256"], "completion_sha256": qident["completion_sha256"],
++                    "run_summary": qident["run_summary"], "run_summary_sha256": qident["run_summary_sha256"],
+                     "pre_exec": pe, "go": {"path": go.get("path"), "sha256": go.get("sha256")},
+                     "run_tag": r.get("run_tag")})
+     return out, problems
+@@ -2504,10 +2705,11 @@
+             problems.append("CNF parts re-hash %s/%d != expected %s/%d" % (h, n, exp[0], exp[1]))
+     if it["kind"] == "gb":
+         adm, probs = validate_controls(script_sha)
+-        now_ids = [(a["label"], a["receipt_sha256"], a["commit_sha256"]) for a in adm]
+-        pre_ids = [(a.get("label"), a.get("receipt_sha256"), a.get("commit_sha256"))
++        now_ids = [(a["label"], a["receipt_sha256"], a["commit_sha256"], a["completion_sha256"]) for a in adm]
++        pre_ids = [(a.get("label"), a.get("receipt_sha256"), a.get("commit_sha256"), a.get("completion_sha256"))
+                    for a in (pre.get("admission_controls") or [])]
+-        out["controls_revalidated"] = [{"label": a, "receipt_sha256": b, "commit_sha256": c} for a, b, c in now_ids]
++        out["controls_revalidated"] = [{"label": a, "receipt_sha256": b, "commit_sha256": c, "completion_sha256": d}
++                                       for a, b, c, d in now_ids]
+         out["controls_equal_pre_exec"] = not probs and now_ids == pre_ids and len(now_ids) == len(CONTROLS)
+         problems.extend(probs)
+         if not out["controls_equal_pre_exec"]:
+@@ -2539,6 +2741,9 @@
+ def artifact_paths(label):
+     return [os.path.join(DESK, "receipts", label + ".json"), os.path.join(DESK, "receipts", label + ".commit.json"),
+             os.path.join(DESK, "receipts", label + ".commit.json.prepare"),
++            os.path.join(DESK, "receipts", label + ".complete.json"),
++            os.path.join(DESK, "receipts", label + ".complete.json.prepare"),
++            os.path.join(DESK, "receipts", label + ".cancelled.json"),
+             os.path.join(DESK, "fifo", label + ".kissat.fifo"),
+             os.path.join(DESK, "logs", label + ".kissat.log"), os.path.join(DESK, "logs", label + ".drat.filtered.log"),
+             os.path.join(TMP, label)]
+@@ -2676,8 +2881,8 @@
+     remaining = list(items)
+     if items[0]["kind"] == "gb":
+         adm, probs = validate_controls(script_sha)
+-        same = ([(a["label"], a["receipt_sha256"], a["commit_sha256"]) for a in adm]
+-                == [(a.get("label"), a.get("receipt_sha256"), a.get("commit_sha256"))
++        same = ([(a["label"], a["receipt_sha256"], a["commit_sha256"], a["completion_sha256"]) for a in adm]
++                == [(a.get("label"), a.get("receipt_sha256"), a.get("commit_sha256"), a.get("completion_sha256"))
+                     for a in (pre.get("admission_controls") or [])])
+         if probs or not same:
+             summary["stopped_reason"] = ("gb admission re-validation failed: %s"
+@@ -2789,7 +2994,9 @@
+                    "solver_reported_sat": solver_reported_sat(rec),
+                    "stop_latched": rec["pre_evaluation_check"]["stop_signal"],  # the value evaluate() saw
+                    "stop_latched_after_evaluation": late,  # sampled after evaluate(); a signal here downgraded it
+-                   "qualification": "only the commit record receipts/%s.commit.json qualifies this receipt" % label,
++                   "qualification": ("this receipt qualifies only with receipts/%s.commit.json (qualified decision), "
++                                     "receipts/%s.complete.json bound to it, no receipts/%s.cancelled.json and a clean "
++                                     "durable run summary (qualification_problems)" % (label, label, label)),
+                    "written_at": now()}
+         durability_error = None
+         try:  # (F4') the receipt is synced (file and directory) before any qualification decision
+@@ -2810,11 +3017,16 @@
+                         "linearization point, no SIGTERM/SIGINT was pending there, and the driver was the only "
+                         "thread; published atomically and durably by publish_commit()"}
+         eligible = (verdict == want and durability_error is None and late is None and receipt["stop_latched"] is None)
+-        commit, csha, publish_error = publish_commit(os.path.join(DESK, "receipts", label + ".commit.json"), base,
+-                                                     eligible, stop)
+-        qualified = bool(commit is not None and commit.get("qualified") is True and publish_error is None)
++        stem = os.path.join(DESK, "receipts", label)
++        pub = publish_qualification({"commit": stem + ".commit.json", "complete": stem + ".complete.json",
++                                     "cancel": stem + ".cancelled.json"}, base, eligible, stop)
++        qualified = pub["status"] == "COMPLETE"
++        publish_error = "; ".join(pub["errors"]) or None
+         entry.update({"status": "RECEIPT", "verdict": verdict, "reasons": reasons, "receipt": rel(rpath),
+-                      "receipt_sha256": rsha, "commit_sha256": csha, "qualified": qualified,
++                      "receipt_sha256": rsha, "commit_sha256": pub["commit_sha256"],
++                      "completion_sha256": pub["completion_sha256"], "cancellation_sha256": pub["cancellation_sha256"],
++                      "publication_status": pub["status"], "publication_checks": pub["checks"],
++                      "cancel_reason": pub["cancel_reason"], "qualified": qualified,
+                       "receipt_durability_error": durability_error, "commit_publication_error": publish_error,
+                       "pipeline_seconds": rec.get("pipeline_seconds"),
+                       "gate_waited_seconds": g["waited_seconds"],
+@@ -2822,8 +3034,12 @@
+                       "safety_stop_reason": rec.get("safety_stop_reason"), "stop_latched": stop.get("signal")})
+         for ev in rec.get("events", []):
+             summary["events"].append(dict(ev, item=it["item"]))
+-        log("%s verdict %s reasons %s receipt sha256 %s commit qualified %s"
+-            % (label, verdict, reasons, rsha, qualified))
++        log("%s verdict %s reasons %s receipt sha256 %s publication %s"
++            % (label, verdict, reasons, rsha, pub["status"]))
++        if pub["status"] == "CANCELLED":
++            summary["stopped_reason"] = "publication of %s cancelled: %s; desk launches nothing more" % (
++                label, pub["cancel_reason"])
++            break
+         if durability_error or publish_error:
+             summary["stopped_reason"] = ("receipt durability / commit publication failed at %s: %s; desk launches "
+                                          "nothing more" % (label, durability_error or publish_error))
+@@ -2867,11 +3083,30 @@
+     summary["wait_used_seconds"] = round(budget["used"], 1)
+     summary["helper_survivors"] = list(HELPER_SURVIVORS)
+     summary["finished_at"] = now()
++    if stop.get("signal") and summary["stopped_reason"] is None:
++        summary["stopped_reason"] = "driver received %s (latched) after the last item" % stop["signal"]
+     log("run %s finished; stopped_reason %s" % (runtag, summary["stopped_reason"]))
+     logf.close()
+     summary["driver_log_sha256_at_close"] = sha_file(log_path)
+-    digest = write_json_x(os.path.join(DESK, "runs", "run-%s.json" % runtag), summary)
+-    print("RUN SUMMARY runs/run-%s.json sha256 %s" % (runtag, digest))
++    spath = os.path.join(DESK, "runs", "run-%s.json" % runtag)
++    digest, errors, cancelled = publish_run_summary(spath, summary, stop)  # (F4'') the run's terminal evidence
++    print("RUN SUMMARY runs/run-%s.json sha256 %s errors %s run cancelled %s" % (runtag, digest, errors, cancelled))
++
++
++def cmd_qualification(argv):
++    """Read-only: the full admission predicate of one receipt label (no write, no spawn). Prints JSON; exit 0 only if
++    the label qualifies."""
++    if len(argv) != 1 or not re.fullmatch(r"[A-Za-z0-9.\-]+", argv[0]):
++        die("qualification LABEL")
++    label = argv[0]
++    r = _load_json(os.path.join(DESK, "receipts", label + ".json")) or {}
++    item = r.get("item") if isinstance(r, dict) else None
++    want = "PASS" if (item or {}).get("kind") == "gb" else (item or {}).get("preregistered_verdict")
++    ident, problems = qualification_problems(label, want)
++    print(json.dumps({"label": label, "qualifying_verdict": want, "identity": ident, "problems": problems,
++                      "qualified": not problems}, indent=1))
++    if problems:
++        raise SystemExit(2)
+ 
+ 
+ def main(argv):
+@@ -2882,6 +3117,8 @@
+         cmd_preexec(rest)
+     elif cmd == "run":
+         cmd_run(rest)
++    elif cmd == "qualification":
++        cmd_qualification(rest)
+     else:
+         die("unknown subcommand " + cmd)
+ 

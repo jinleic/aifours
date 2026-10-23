@@ -1,0 +1,278 @@
+# Genuine P1-B3 interior two-frame channels and row capacities — CANDIDATE v1
+
+Frozen at 2026-10-19T13:53:50-0700 under `SCOPE-FREEZE-v1.json` (`7f7a8ea4b2009fb62adfd04faa0dce99d0c12fac66310abbe0ad35cfaafeba59`). Status: written CANDIDATE **NECESSARY_INTERIOR_CONSTRAINT**, plus a separately named one-cell partial extension of the old axis diagnostic. No genuine B3 exclusion is obtained. No full interior row is constructed; instead, an exact one-row feasibility criterion and proved necessary capacities are supplied. Nothing here proves Boolean UNSAT, UNSAT(H23/H24), A10/A11 or the full n=8 target. No source/CNF/binder/probe/enumeration/solver/checker/CLI or numerical work was used.
+
+## 1. Quantifiers, genuine hypotheses and notation
+
+The primary setting is EVERY genuine five-set Q_1,...,Q_5 of pairwise-orthogonal QLS(8), with the stated standard row 0, SB2 and exact P1-B3 template. A QLS has unit vectors at its cells and each row and column is an ONB; for s!=t, the 64 tensor vectors Q_s(x) tensor Q_t(x) form an ONB. These are [PRIM]'s definitions, not assertions about arbitrary Boolean models.
+
+Write q_s^r=Q_s(r,0), r=0,...,7. Each (q_s^0,...,q_s^7) is an ONB. Standard row 0 is Q_s(0,c)=w_{s,c} e_c, |w_{s,c}|=1; in particular q_s^0=w_{s,0}e_0. Define the 8x8 unitary A_s by its columns q_s^r in the common computational frame:
+
+    A_s(c,r)=<e_c,q_s^r>,  c,r in {0,...,7}.
+
+SB2 means supp(q_1^1)={1,2,3} and supp(q_s^1)={s+2} for s=2,...,5. The exact B3 template is
+
+| r | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+|---|---|---|---|---|---|---|---|
+| supp(q_1^r) | 123 | 67 | 67 | 45 | 45 | 23 | 123 |
+
+Here `123` abbreviates {1,2,3}, etc. Row 1 comes from SB2; rows 2..7 are template conditioning, as bound in [J]. ROWLEX follows from these fixed keys and is not an extra hypothesis.
+
+All allowed A_s and ALL their nonzero amplitudes and phases remain quantified. In particular, no square s>=2 is assumed globally classical. Section 2 rederives their column-0 block structure; it does not import the unaccepted previous sparsity candidate. The previous explicit datum is used ONLY in the named diagnostic of section 8.
+
+For a set S of common-coordinate indices, E_S is the coordinate span of {e_c:c in S}. For a set T of own-column-0 indices, F_T is the span of the corresponding coordinate vectors in the DOMAIN of A_s, so A_s F_T=span{q_s^r:r in T}. Write [8]={0,...,7}; complements S^c,T^c are taken in [8].
+
+Fix an interior cell (i,j), i,j in {1,...,7}, and put a_s=Q_s(i,j). Its common-frame coefficients are x_s=a_s and its own-column-0 coefficients are y_s=A_s^*a_s. Actual supports are S_s=supp(x_s) and T_s=supp(y_s).
+
+## 2. B3 axis blocks, rederived without the sparsity candidate
+
+Let X_s(r,c)=1 iff A_s(c,r)!=0 for r,c in {1,...,7}. These are supports of genuine 7x7 unitaries: remove the isolated q_s^0/e_0 component. For s!=t, X_s and X_t are entrywise disjoint, because tensor orthogonality between (0,c) and (r,0) gives
+
+    <Q_s(0,c),q_s^r><Q_t(0,c),q_t^r>=0.
+
+Thus the five supports occupy at most 49 cells. Every row and column of each X_s is nonempty, by unitarity.
+
+**Axis lemma.** For s=2,...,5, every connected component of X_s is an isolated entry or a full 2x2 block. Each X_s has at most ONE full 2x2 block, and among the four X_s there are at most TWO such blocks altogether. Consequently each X_s is a monomial-unitary support P or one dense 2x2 unitary block plus five isolated entries D1. This is about the COLUMN-0 basis only.
+
+*Proof.* For any row r, disjointness and the three other nonempty supports imply
+
+    degree_Xs(r) <= 7 - degree_X1(r) - 3.
+
+X_1 has degree 3 in rows 1,7 and degree 2 in rows 2..6. Hence X_s has row degree exactly 1 in rows 1,7 and at most 2 everywhere. The same count on columns gives degree exactly 1 in columns 2,3 and at most 2 everywhere, since X_1 has column degree 3 in columns 2,3 and degree 2 in the other columns.
+
+In an actual unitary, a singleton row isolates its column: orthogonality with that row makes all other entries in its column zero. The column version is identical. Remove these size-1 components. Any remaining row r has support {c,d}, and both columns have degree 2. Let r' be the other row meeting c. The two rows cannot intersect in exactly one column (their inner product would be one nonzero term), so r' also meets d. Row and column degrees are at most 2; thus {r,r',c,d} is a whole full 2x2 component. These arguments cover every component and use genuine unitarity, not a Boolean-model assumption.
+
+There are at least four DISTINCT isolated entries in each X_s. Row 1 is the singleton at c=s+2. Row 7 lies in the four free coordinates 4,5,6,7; four disjoint nonempty supports must each use exactly one, at c=tau_s. The tau_s form a bijection and tau_s!=s+2 because a singleton row/column is isolated. Column 2 has four free rows {2,3,4,5}, so each X_s has its unique isolated entry at (rho_s,2), with rho a bijection; likewise column 3 gives (rho'_s,3). The two rows rho_s,rho'_s differ, because one row cannot be two different singleton rows. Hence the isolated entries lie at distinct rows 1,7,rho_s,rho'_s and columns s+2,tau_s,2,3. Four isolated rows leave only three rows, allowing at most one 2x2 component.
+
+If t_s counts that component, nnz(X_s)=7+2t_s. X_1 has 16 ones, so 16+28+2*sum_s t_s<=49 and sum_s t_s<=2. QED
+
+This independently removes the old candidate's T possibility: no residual 3x3 one-zero core can have all row degrees <=2. It does not use the navigation observation or any review as authority. It also rederives the at-least-two permutation-support count. A monomial unitary has INDEPENDENT unit-modulus factors on its nonzero entries, not necessarily one common phase.
+
+For A_1 the template itself gives the following exact block decomposition, with arbitrary allowed unitary entries:
+
+| block b | common-coordinate set C_b | own-index set R_b | dimension m_b | shape |
+|---|---|---|---|---|
+| Z | {0} | {0} | 1 | one unit-modulus entry |
+| A | {1,2,3} | {1,6,7} | 3 | one zero, exactly at (c,r)=(1,6) |
+| B | {6,7} | {2,3} | 2 | all four entries nonzero |
+| C | {4,5} | {4,5} | 2 | all four entries nonzero |
+
+Each block is unitary: its columns vanish outside C_b, its rows outside R_b, and it is square with orthonormal columns. No particular amplitudes or phases are imposed. For s>=2 the origin is one more singleton component in addition to the P/D1 decomposition just proved.
+
+## 3. Exact per-cell two-frame intersection criterion
+
+**Theorem 1 (cell criterion).** Fix any B3 axis data consisting of actual column-0 ONBs and a standard row 0 with the stated template/SB2 and direct tensor-orthogonality equations on the axes. For a single interior cell (i,j), the direct QLS/tensor equations involving that cell and the axes hold iff there are pairwise-disjoint nonempty allowed sets S_1,...,S_5 in [8]\{j} and pairwise-disjoint nonempty allowed sets T_1,...,T_5 in [8]\{i} such that, for every s,
+
+    H_s(S_s,T_s) := E_{S_s} intersect A_s F_{T_s}
+
+is nonzero. The sets may contain unused coordinates; one may always shrink them to the actual supports.
+
+For every S,T,
+
+    d_s(S,T) := dim H_s(S,T)
+               = |T| - rank A_s[S^c,T]
+               = |S| - rank A_s[S,T^c].                 (1)
+
+Thus H_s!=0 is exactly a leakage-rank defect, not merely a counting heuristic. For nonempty S,T it is also equivalent to ||A_s[S,T]||_op=1, and implies
+
+    sum_{c in S,r in T} |A_s(c,r)|^2 >= 1.               (2)
+
+For actual or disjoint allowed sets, |S_s|<=3 and |T_s|<=3, because five nonempty disjoint sets lie in a seven-element set.
+
+*Proof.* Same-column QLS orthogonality gives a_s perpendicular to Q_s(0,j), hence x_s(j)=0. Same-row orthogonality to q_s^i gives y_s(i)=0. Tensor orthogonality against every (0,c) is, up to nonzero row-0 phases, x_s(c)x_t(c)=0 for all s!=t; against every (r,0) it is y_s(r)y_t(r)=0 (complex conjugation conventions do not change zeros). These are exactly the two disjoint-support requirements. Taking their actual supports proves necessity. Conversely, choose and normalize any nonzero a_s in each H_s; disjoint allowed sets give every axis tensor equation, and the exclusions j notin S_s and i notin T_s give both own-square orthogonalities. No further amplitude equation links DIFFERENT squares for a single cell versus the axes.
+
+For (1), a vector A_s y with y supported in T lies in E_S iff A_s[S^c,T]y_T=0. The map A_s is injective, giving the first nullity. Applying the same argument to A_s^* gives the second equality. Since A_s is unitary, the restricted block A_s[S,T] has norm at most 1. A nonzero kernel vector achieves norm 1. Conversely an attaining unit vector for a norm-1 restriction has no norm left outside S, hence is a kernel vector. Frobenius norm bounds operator norm, giving (2). QED
+
+There is no identification of the FIVE different own frames with the common frame: the common index r in the T_s means the common AXIS CELL (r,0), even though its physical vector is q_s^r in square s. At r=0, q_s^0 is a phase times e_0; accordingly actual membership of 0 in S_s and T_s agrees automatically.
+
+## 4. Phase-independent ranks for ALL B3 axis data
+
+For s>=2, let its singleton components be pairs (c,r) and its (possibly absent) dense 2x2 component have coordinate set C_D and own-index set R_D. For every S,T,
+
+    d_s(S,T) = #{singleton (c,r): c in S, r in T}
+               + sum_dense_2_blocks max(0,|S intersect C_D|+|T intersect R_D|-2).   (3)
+
+For A_1, put S_b=S intersect C_b, T_b=T intersect R_b, p_b=|S_b|, q_b=|T_b|. Then
+
+    d_1(S,T) = 1_{0 in S and 0 in T} + d_A(S_A,T_A)
+               + max(0,p_B+q_B-2) + max(0,p_C+q_C-2),                            (4)
+
+where the exact three-block formula is
+
+    d_A(S_A,T_A) = max(0,p_A+q_A-3)
+       + 1_{S_A={2,3}, T_A={6}}
+       + 1_{S_A={1}, T_A={1,7}}.                                                 (5)
+
+These dimensions depend ONLY on the axis zero pattern and the chosen sets, not on its allowed nonzero amplitudes or phases. The actual subspaces H_s and the full-row problem may still depend on those values.
+
+*Proof.* Every block has disjoint coordinate and own-index sets, so H_s splits as a direct sum of the block intersections. A singleton gives the indicated unit contribution. In a dense 2x2 unitary, leakage rank is min(2-p,q): every scalar is nonzero and every full row, full column or whole matrix has full possible rank. Its nullity is max(0,p+q-2).
+
+For the 3x3 unitary block A, let L=A[C_A\S_A,T_A], of size h by q, h=3-p_A. If h=0 or q=0 the rank is zero; if h=3 or q=3 it has full possible rank by unitarity. It remains to check h,q in {1,2}. A scalar vanishes exactly at (1,6); a 1x2 row or 2x1 column has a nonzero entry because the whole block has only ONE zero. A 2x2 minor vanishes iff its complementary scalar vanishes: by adj(A)=det(A) A^*, its determinant is a nonzero unit factor times the conjugate of that scalar. Thus the ONLY singular 2x2 submatrix has rows {2,3} and columns {1,7}, and has rank 1 (all its entries are nonzero). The only exceptional leakage nullities are therefore S_A={2,3},T_A={6} and S_A={1},T_A={1,7}; in each the nullity exceeds max(0,p_A+q_A-3) by exactly 1. These are every submatrix-size case, proving (5). QED
+
+**Corollary 2 (one-cell phase independence).** For a fixed admissible B3 axis ZERO PATTERN, feasibility of the direct equations for ONE interior cell is independent of the allowed amplitudes/phases in the axis ONBs. Indeed Theorem 1 is an existence statement over disjoint allowed S_s,T_s; each dimension in it is given by (3)-(5). The chosen interior vectors can vary with the phases. This does NOT extend the claim to a full row or grid.
+
+## 5. A forced Q1 two-block channel structure
+
+Let a_1 be any actual interior vector, with its actual supports S,T. Its common-frame block components and own-frame block components correspond under A_1. Each nonzero component in A, B or C costs at least three support indices in total (p_b+q_b>=3); a nonzero Z component costs two. This follows directly from (4)-(5), since no 1-by-1 intersection in a non-singleton block is nonzero.
+
+Since |S|+|T|<=6, **a_1 has nonzero components in at most TWO of Z,A,B,C**. If it has components in two of the nontrivial blocks A,B,C (and no Z), each costs exactly three and their orientations must be (p,q)=(1,2) and (2,1), in either order. Consequently the following are the exhaustive mixed-nontrivial-block forms, with nonzero complex alpha,beta (and normalization inherited):
+
+- **A with D=B or C:** either
+
+      alpha q_1^6 + beta e_c,  c in C_D,
+
+  with A support/own indices ({2,3},{6}) and D indices ({c},R_D), or
+
+      alpha e_1 + beta q_1^r,  r in R_D,
+
+  with A indices ({1},{1,7}) and D indices (C_D,{r}).
+
+- **B with C:** either
+
+      alpha e_c + beta q_1^r, c in C_B, r in R_C,
+
+  or
+
+      alpha q_1^r + beta e_c, r in R_B, c in C_C.
+
+*Proof.* A component with (p,q)=(2,1) is a multiple of one axis vector. In A the only axis vector with exactly two common coordinates is q_1^6, on {2,3}; in a dense 2x2 block either axis vector has two. A component with (p,q)=(1,2) is a multiple of one common coordinate vector. In A only e_1 has exactly two own-axis coefficients (indices 1,7); e_2,e_3 have three. In a dense 2x2 block both coordinate vectors have exactly two own coefficients. The support cost and the budgets force one orientation of each type, giving precisely the listed forms. The own-row exclusion i notin T and common-column exclusion j notin S can exclude further forms, but never add forms. QED
+
+This list is exhaustive ONLY for two nontrivial-block mixing. One-block vectors and Z-plus-one-block mixing are retained exactly by (3)-(5), not omitted. No enumeration of actual amplitudes is claimed.
+
+## 6. Coupling an entire interior row ONB
+
+Fix any i in {1,...,7}. Write a_{s,j}=Q_s(i,j), j=1,...,7, and R_{s,i}=I-|q_s^i><q_s^i|. The seven a_{s,j} must be an ONB of (q_s^i)^perp. The allowed support sets S_{s,j},T_{s,j} are disjoint ACROSS s for each fixed j as in Theorem 1; they need not be disjoint across j. Put H_{s,j}=E_{S_{s,j}} intersect A_s F_{T_{s,j}}. They lie in (q_s^i)^perp.
+
+**Theorem 3 (exact one-row criterion).** Fixed B3 axis data admit a partial extension consisting of ONE FULL row i, satisfying all direct QLS/tensor equations on the union of that row with row 0 and column 0, iff there are the disjoint allowed sets of Theorem 1 for every j and rank-one orthogonal projectors Z_{s,j}, for every s,j, such that
+
+    range Z_{s,j} subset H_{s,j},   sum_{j=1}^7 Z_{s,j}=R_{s,i}.                    (6)
+
+This is a quantified rank-one feasibility criterion, not a solution, numerical method or convex-relaxation certificate.
+
+*Proof.* For an actual partial row extension, Z_{s,j}=|a_{s,j}><a_{s,j}| gives (6). Conversely choose unit vectors generating the rank-one projectors. For fixed s,j, since Z_{s,j} lies in (q_s^i)^perp,
+
+    1=tr(Z_{s,j}R_{s,i})=1+sum_{k!=j} tr(Z_{s,j}Z_{s,k}).
+
+Each last term is |<a_{s,j},a_{s,k}>|^2>=0, so all vanish: the seven vectors are orthonormal. They complete q_s^i to a full row ONB. The sets ensure all axis/interior tensor equations and the column orthogonalities to row 0. Pairs of different interior cells IN THIS ROW have individual inner products zero in each square, so their tensor products are orthogonal automatically. These are all direct equations on the stated partial set of cells. No other interior row or completed column is supplied. QED
+
+**Necessary capacities.** For every subset J of {1,...,7},
+
+    |J| <= dim(sum_{j in J} H_{s,j}).                                             (7)
+
+For every positive semidefinite operator B on C^8,
+
+    tr(B R_{s,i}) <= sum_{j=1}^7 lambda_max(B compressed to H_{s,j}).                (8)
+
+The largest eigenvalue is zero for a zero subspace; a zero H already makes completion impossible. The operators/projections in these statements are mathematical quantities, not computed outputs.
+
+*Proof.* The vectors indexed by J in a full row are orthonormal and lie in the indicated sum, giving (7). Taking tr(B times (6)), each rank-one unit projector contributes at most the largest Rayleigh quotient of B on H_{s,j}, giving (8). QED
+
+Neither condition alone, nor their presentation here, is asserted sufficient. For example in a two-dimensional subspace, lines span(e_1) and span(e_1+e_2) pass the subset dimension test but cannot supply two orthogonal unit vectors; appending five fixed orthogonal lines gives the seven-dimensional version. This is an abstract warning, not a B3 countermodel.
+
+## 7. Explicit phase-free block capacities and a forced row-1 channel
+
+Let b range over the exact blocks of A_s (section 2). For s=1 these are Z,A,B,C; for s>=2 they are the actual singleton blocks and its possible dense 2x2 block. Write C_{s,b},R_{s,b},m_{s,b} for their coordinate sets, own-index sets and dimensions, and d_{s,b,j} for the corresponding contribution to (3)-(5).
+
+For any union L of blocks define
+
+    N_s(L)={j in {1,...,7}: sum_{b in L} d_{s,b,j}>0}.
+
+**Block-capacity corollary.** Every genuine full interior row satisfies, for EVERY set of blocks L,
+
+    |N_s(L)| >= sum_{b in L} m_{s,b} - 1_{i in union_{b in L} R_{s,b}}.             (9)
+
+*Proof.* H_{s,j} splits across the physical block-coordinate spaces. Their union projector Pi_L therefore commutes with the projector onto H_{s,j}; the largest Rayleigh quotient of Pi_L on H_{s,j} is 1 exactly for j in N_s(L), otherwise 0. Apply (8) with B=Pi_L. The axis vector q_s^i lies entirely in its own block, so tr(Pi_L R_{s,i}) is the right side of (9). QED
+
+For row i=1 of square 1, block demands are **Z:1, A:2, B:2, C:2**. Every union of blocks must have at least the sum of its demands many available interior columns. These conditions couple all SEVEN interior cells of a full row, not seven independent cell checks. They apply jointly with the cross-square disjoint-support conditions at each column. Their availability dimensions are phase-free, but (6) still retains the actual subspaces/amplitudes/phases.
+
+There is a further explicit row-1 necessity. Put u=q_1^7 and v=q_1^6, so (v,u) is an ONB of E_{123} intersect (q_1^1)^perp. If a_{1,j} mixes A with B or C, section 5's second A-channel has own index 1 and is forbidden in row 1. Its A component is therefore a multiple of v. Hence
+
+    <u,a_{1,j}>!=0  implies a_{1,j} belongs to E_{0,1,2,3}.                         (10)
+
+For the cell (1,1), column orthogonality gives its coordinate 1 equal to zero. In the A block, row-1 orthogonality removes the q_1^1 coefficient, and q_1^6 has coordinate 1 zero whereas q_1^7 has it nonzero. Thus
+
+    <q_1^7,Q_1(1,1)>=0.                                                           (11)
+
+Finally Parseval in the FULL row gives
+
+    sum_{j=2}^7 |<q_1^7,Q_1(1,j)>|^2 = 1.                                         (12)
+
+Thus at least one j in {2,...,7} must use the A-or-A-plus-Z channel of (10) with a nonzero q_1^7 coefficient. This is a necessary interior/row capacity statement for ALL genuine B3 axes, not a statement about the fixed diagnostic.
+
+The capacities are nonvacuous beyond independent cell feasibility: choosing S=T={0} for square 1 at all seven j gives H_{1,j}=span(e_0), nonzero at every cell, but violates (9) for L={A}. This is a one-square local-support illustration only, not an assignment for all five squares or an asserted B3 model.
+
+## 8. Named diagnostic D-axis: ONE interior cell extension only
+
+This reuses the fixed axis datum of the old sparsity candidate, read with its parent scope erratum [D,E]. It is NOT substituted for the universally quantified axes above. To make the partial claim self-contained, its literal data are repeated here and directly checked.
+
+Take Q_s(0,c)=e_c and q_s^0=e_0. For square 1, take
+
+    q_1^1 = e_1/sqrt2 + e_2/2 - e_3/2,
+    q_1^2 = (e_6+e_7)/sqrt2,   q_1^3 = (e_6-e_7)/sqrt2,
+    q_1^4 = (e_4+e_5)/sqrt2,   q_1^5 = (e_4-e_5)/sqrt2,
+    q_1^6 = (e_2+e_3)/sqrt2,
+    q_1^7 = e_1/sqrt2 - e_2/2 + e_3/2.
+
+The {q_1^1,q_1^6,q_1^7} block is orthonormal: each norm is one, q_1^6 has dot products (1/2-1/2)/sqrt2=0 with the other two, and <q_1^1,q_1^7>=1/2-1/4-1/4=0. The other two blocks are orthonormal +/- pairs. For s=2,...,5 take q_s^r=e_{pi_s(r)} with
+
+| r | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+|---|---|---|---|---|---|---|---|
+| pi_2(r) | 4 | 2 | 3 | 1 | 6 | 7 | 5 |
+| pi_3(r) | 5 | 3 | 2 | 7 | 1 | 6 | 4 |
+| pi_4(r) | 6 | 1 | 4 | 2 | 3 | 5 | 7 |
+| pi_5(r) | 7 | 5 | 1 | 3 | 2 | 4 | 6 |
+
+Each row of this table lists 1,...,7 once. At each fixed r its four values are distinct and avoid supp(q_1^r): respectively they are {4,5,6,7}, {1,2,3,5}, {1,2,3,4}, {1,2,3,7}, {1,2,3,6}, {4,5,6,7}, {4,5,6,7}, against q_1 supports 123,67,67,45,45,23,123. Thus all five axis ONBs have the required disjoint supports, template and SB2. This verifies their direct axis equations; it says nothing about extendability to a full grid.
+
+At the SINGLE cell (i,j)=(1,4), choose
+
+    a_1=q_1^7,   a_2=e_6,   a_3=e_7,   a_4=e_0,   a_5=e_5.
+
+Their two-frame supports are
+
+| s | S_s common | T_s own-column-0 |
+|---|---|---|
+| 1 | {1,2,3} | {7} |
+| 2 | {6} | {5} |
+| 3 | {7} | {4} |
+| 4 | {0} | {0} |
+| 5 | {5} | {2} |
+
+Both columns of sets are pairwise disjoint; every S_s omits 4 and every T_s omits 1. Each displayed a_s has norm 1 and exactly those supports: q_2^5=e_6, q_3^4=e_7, q_4^0=e_0, q_5^2=e_5. Theorem 1 therefore verifies ALL direct tensor/own-square equations for this cell versus the axes. This is a genuine ONE-CELL partial extension of D-axis, not a full interior row or full QLS five-set. It neither disproves a stronger axis condition derived by interior elimination nor proves existence, nonextension, or SAT of any full B3/GB system.
+
+## 9. What is proved and what is still missing
+
+Proved here, at CANDIDATE mathematical scope: an independent P/D1 refinement of the other column-0 bases; exact phase-free cell intersection dimensions; exhaustive Q1 mixed-nontrivial-block channels; an exact rank-one criterion for the DIRECT one-row partial extension; necessary dimension/operator/block capacities; the forced row-1 statements (10)-(12); and one explicit one-cell diagnostic extension.
+
+**Missing bridge:** no proof that all admissible B3 axis choices and support allocations violate (6) or the necessary capacities. No full-row solution of (6) is provided either. Even a one-row solution would still need compatibility with every other interior row and column to yield a full QLS five-set. Dimension/block Hall conditions are necessary only; they cannot be silently promoted to an orthonormal-selection theorem. No global support-placement enumeration or amplitude elimination was performed.
+
+The primary target, genuine B3 exclusion, is therefore OPEN. The fallback achieved is a separately named **B3 INTERIOR TWO-FRAME CHANNEL/CAPACITY NECESSITY**. This is not an exhaustive classification of all possible grids and is not an assertion that the approach cannot eventually exclude B3. No B2 work, UNSAT(H23/H24), GB count increase or full n=8 conclusion follows.
+
+## 10. Import/scope and exhaustiveness ledger
+
+| item | role/status |
+|---|---|
+| genuine QLS/MOQLS definitions [PRIM] | load-bearing definitions |
+| standard row0, SB2, B3 template [J] | exact conditioning hypotheses; U/T16 link to arbitrary nonclassical sets not re-proved |
+| previous sparsity candidate | NOT imported as a theorem; only credited source for the separately named D-axis diagnostic, fully rechecked in section 8 |
+| axis P/D1 refinement | rederived here from genuine unitarity, row/column capacities and singleton isolation; all components covered |
+| per-cell kernel criterion | exact for one-cell versus the direct axis equations; allowed sets can shrink to actual supports |
+| three-block leakage ranks | exhaustive over h,q in {0,1,2,3}; all exceptional minors explicitly identified |
+| Q1 channel list | exhaustive for two nontrivial-block mixing; remaining one-block/Z-mixed possibilities retained exactly by rank formulas |
+| row criterion (6) | exact for one full row plus direct axis equations, NOT a full-grid criterion |
+| capacities (7)-(12) | proved NECESSARY, never claimed sufficient |
+| all B3 axis amplitudes/phases | quantified throughout main theorems; none fixed or discarded at full-row stage |
+| D-axis one-cell extension | one named fixed diagnostic only; no full-row/grid extension |
+| actual grid exclusion / Boolean refutation | not achieved; OPEN |
+| GB15/18 and prior UNKNOWNs | separate parent-maintained metadata, unchanged, not authenticated by mathematical reviewers |
+
+Scope authorization: [SCOPE] and [TRANS]. Existing files remain unchanged. Any next scientific route requires a parent decision; no new code, formulas, computation or CLI review is authorized here. No novelty, priority, formal-kernel or human-referee claim.
+
+## 11. Exact sources
+
+- [PRIM] `/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261016/moqls8-problem16/sources/2607.12933v2.raw.txt`, SHA256 `265851e451cc30706b0a4ea1860c5f04568d99be85896c7b049f95c995108df9`.
+- [J] `/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-16/review/moqls8-gb-parent-binding-v1/GBBINDING.json`, SHA256 `d917203deb29a13e212c290e227a001a695765d080a897141d6dc154d79fc673`.
+- [D] `/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/moqls8/continuations/b3-support-sparsity/B3-COLUMN0-SUPPORT-SPARSITY-CANDIDATE-v1.md`, SHA256 `46288f4efae9815aa5e428cc74e7293b116e2d744a6d16b2e6fedf5c9ee8ac2e`.
+- [E] `/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/review/moqls8-B3-sparsity-parent-erratum-v1.md`, SHA256 `a9748009e403b953938f56189c83a2e8040bacbb44b314cbb28929116a3e0279`.
+- [TRANS] `/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/control/physics-slot-transition-moqls8-20261019-1337-v1.json`, SHA256 `804dd51a194e1d563cc536fea286dae0819dd996837619ad2bca8893449a4f57`.
+- [SCOPE] `/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/moqls8/continuations/b3-interior-two-frame/SCOPE-FREEZE-v1.json`, SHA256 `7f7a8ea4b2009fb62adfd04faa0dce99d0c12fac66310abbe0ad35cfaafeba59`.

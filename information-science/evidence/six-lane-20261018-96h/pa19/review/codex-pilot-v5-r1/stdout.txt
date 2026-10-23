@@ -1,0 +1,79 @@
+{
+  "verdict": "needs-rework",
+  "linesChecked": 885,
+  "summary": "NO-GO. Cancellation can still publish counted UNSAT, exception cleanup can abandon a live child, and settlement, reservation, and launch-admission requirements remain unenforced on several paths.",
+  "findings": [
+    {
+      "severity": "blocker",
+      "category": "correctness",
+      "location": "src/pilot_file_drat_v5.py:566; src/pilot_file_drat_v5.py:849-864",
+      "problem": "Cancellation can latch before publication while the item is still written as UNSAT/count=true.",
+      "evidence": "terminal_gate checks CANCEL before performing registry and filesystem operations. A SIGTERM during those operations is not rechecked before promotion. There is another blocking clock() call at line 855 before writing the counted record; cancellation during it is checked only at line 864, after publication.",
+      "suggestedFix": "Make publication a guarded commit: gather blocking metadata first, recheck cancellation after registry/disk checks, and ensure cancellation before commit preserves UNKNOWN/count=false."
+    },
+    {
+      "severity": "blocker",
+      "category": "safety",
+      "location": "src/pilot_file_drat_v5.py:370-375; src/pilot_file_drat_v5.py:416-421; src/pilot_file_drat_v5.py:509-510",
+      "problem": "Post-Popen cleanup is not exception-safe and can abandon an unreaped survivor.",
+      "evidence": "For a SIGTERM survivor, clock() and write_x() execute before wait(). Either failing skips reaping; run_kissat nevertheless calls sink.finish(), and main can exit through its exception handler. The summary then unconditionally claims every child was reaped. Separately, reader-thread startup failure uses an unbounded wait without the required 60-second quarantine transition.",
+      "suggestedFix": "Use one exception-safe ownership/settlement path after every successful Popen, including constructor failure. Receipt failures must retain ownership and capacity rather than escape cleanup; apply bounded SIGTERM polling and quarantine consistently."
+    },
+    {
+      "severity": "blocker",
+      "category": "safety",
+      "location": "src/pilot_file_drat_v5.py:421-435; src/pilot_file_drat_v5.py:637-643",
+      "problem": "Unsettled streams or process groups do not reliably block subsequent launches.",
+      "evidence": "Child.settle performs an unbounded reader.join() before checking the process group, so a descendant retaining stdout can prevent any quarantine/census result. When a nonempty group is observable, settle returns it to callers. Controls launch the C1 checker before examining solver/sink settlement and continue through later controls despite settlement defects; negative-control predicates can still accept their intended defect alongside a settlement defect.",
+      "suggestedFix": "Bound stream settlement and establish a persistent UNSETTLED state whenever streams or groups remain unobservably settled. Hold capacity and refuse every subsequent child, including controls, until disposition."
+    },
+    {
+      "severity": "blocker",
+      "category": "control",
+      "location": "src/pilot_file_drat_v5.py:460-475; src/pilot_file_drat_v5.py:825-868",
+      "problem": "Systemwide resource stops are not latched, allowing later scientific launches and even exit 0 after a safety trip.",
+      "evidence": "Disk-floor, RSS, unreadable-RSS, and monitor-exception trips only terminate the current child. The item safety flag checks quarantine, group emptiness, and sink-thread liveness, but excludes these trips. Once current conditions recover, the next item gate can admit another launch without parent disposition. A trip on the final item can fall through to EXIT_PLAN_COMPLETE with stopped=null.",
+      "suggestedFix": "Latch systemwide resource/guard failures independently of current conditions, block later launches until parent disposition, and return the explicit safety-stop outcome."
+    },
+    {
+      "severity": "blocker",
+      "category": "control",
+      "location": "src/pilot_file_drat_v5.py:449-455; src/pilot_file_drat_v5.py:482-486; src/pilot_file_drat_v5.py:796-840",
+      "problem": "Fresh admission and absolute chunk deadlines are not enforced at every child launch.",
+      "evidence": "The item gate precedes CNF construction, writing, and hashing; the checker has no fresh admission gate. Controls share one initial gate. run_child creates the process before even checking cancellation, and supervise checks elapsed time only, without the frozen absolute cutoff. Sleep/resume between admission and Popen can therefore launch beyond the admitted deadline or with stale stability/free-space evidence.",
+      "suggestedFix": "Centralize final admission immediately before each Popen, using fresh registry, stability, statvfs, reservation, cancellation, and per-child chunk-fit checks. Pass and enforce the frozen absolute cutoff during supervision."
+    },
+    {
+      "severity": "blocker",
+      "category": "resource",
+      "location": "src/pilot_file_drat_v5.py:97; src/pilot_file_drat_v5.py:637; src/pilot_file_drat_v5.py:653-656",
+      "problem": "CONTROL_RESERVE does not bound the retained control outputs.",
+      "evidence": "The reservation is 171,966,464 bytes, but C1 uses the default 1,258,291,200-byte proof cap. C3 retains a second copy plus one byte, permitting 2,516,582,401 proof bytes before logs and other artifacts. Calling these proofs tiny is not an enforced or proven bound. C3 can also exceed PROOF_CAP by one byte.",
+      "suggestedFix": "Give control proofs explicit smaller caps and reserve both retained copies, the mutation byte, C5 output, captures, and metadata; alternatively reserve their full enforced maxima."
+    },
+    {
+      "severity": "blocker",
+      "category": "safety",
+      "location": "src/pilot_file_drat_v5.py:364-369; src/pilot_file_drat_v5.py:430-435; src/pilot_file_drat_v5.py:727",
+      "problem": "Running native children lack the required parent-readable launch registration.",
+      "evidence": "The launch record contains the runner's PID/PGID. Native-child identity and argv remain in memory until settle returns, and are persisted only later in controls.json or the item record. During execution or after owner loss, the parent has no registered native PID/PGID/start identity and child-specific deadline to act on, contrary to control/launch-contract-tightening-v1.json:23.",
+      "suggestedFix": "Create an exclusive per-child launch record immediately after Popen with identity, pins, argv, deadline, outputs, and reservation, and expose its path before supervision continues. Registration failure must enter owned cleanup."
+    },
+    {
+      "severity": "major",
+      "category": "control",
+      "location": "src/pilot_file_drat_v5.py:651; src/pilot_file_drat_v5.py:660; src/pilot_file_drat_v5.py:669; src/pilot_file_drat_v5.py:687-693",
+      "problem": "Several controls can pass without demonstrating their intended reason.",
+      "evidence": "C2/C3 accept a missing consumed-count line even if the checker crashed before parsing. C4 accepts any qualification defect, including a crash or supervisor termination. C6 accepts an unsupervised signal death such as returncode=-11 because it only excludes rc20. C7 does not require the missing-input diagnostic or exclude supervisor trips.",
+      "suggestedFix": "Require healthy settlement independently of expected mutation rejection, and require each pinned binary's intended diagnostic/exit outcome. Treat unrelated crashes, capture failures, and supervision trips as failed controls."
+    },
+    {
+      "severity": "major",
+      "category": "control",
+      "location": "src/pilot_file_drat_v5.py:238-248",
+      "problem": "The monitor parser still accepts malformed complete records outside the explicit observer schema.",
+      "evidence": "Samples validate their key set, free, and timestamp, but accept floor_bytes=null and scope=[] unchanged. observer_start likewise accepts invalid pid, pgid, and cwd types. The real schema is shown in control/resource_observer_v3.py:29-30 and :46-47; P1 requires strict samples and only the known event schema.",
+      "suggestedFix": "Validate every field's type and required fixed value for both permitted schemas, refusing any malformed complete record."
+    }
+  ]
+}

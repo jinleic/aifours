@@ -1,0 +1,248 @@
+--- control/parent_release_identity_v6.py
++++ control/parent_release_identity_v7.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""parent_release_identity_v6: CP2 captured historical union and bound independent census; NOEXEC candidate.
++"""parent_release_identity_v7: CP2 captured historical union and bound independent census; NOEXEC candidate.
+ 
+ Scope RUN/control/parent-release-cp2-v5-joined-repair-scope-v1.json
+ f05d60f8faee5f1db7539991507352520fefb8dd3ea3b6135ff1bc2a5763f997 joins SR-6 and the v4 HOLD 0F/4M/4m review.
+@@ -13,6 +13,17 @@
+ BOTH the native primary and the completion-secondary objects and propagates a non-Exception native primary over
+ an ORDINARY completion secondary (bare re-raise; the primary's own context is not rewritten); otherwise the
+ secondary propagates. Every other v5 rule and interface is unchanged.
++
++V7 JOINED REPAIR (scope RUN/control/parent-release-cp2-v7-joined-repair-scope-v1.json
++c8bbb4770f8824248e326a3b18f0d2ed92252d937baaa62e208d32a43db2cab1 for the v6 three-part HOLD
++e5f323de2de930b12694904f7c743f0632bc529eac75b7fe5c2195e6b3dc84d7; exact delta frozen in
++RUN/control/parent-release-cp2-design-freeze-v7.json; v6
++a9b82a48548257782871404ed366ca2719abc2b081efa452c7e3907c0aecff5b stays immutable): M1 one explicit
++callback-admission predicate gates EVERY reader/deadline callback of the builder and the evaluator, including the
++final deadline check; M2 a nonsealing transaction recheck after the LAST external callback precedes any ENDED
++return; M3 type names are exact str or unavailable, never a str subclass; m4 per-pid identification errors are
++retained; m5 a main identity is usable only for the exact main-wait pid; m6 the retention stop precedes diagnostic
++formatting. H09 selection, binding/D8/retention/emergency interfaces and formats are unchanged.
+ 
+ ENDED depends on REBUILDING the union from frozen parent-captured supervisor19 histories with this module's builder,
+ then typed equality of PRT spec.identities with the rebuilt rows; no caller union or self-reported digest authenticates
+@@ -62,13 +73,13 @@
+ from types import MappingProxyType
+ 
+ SCOPE_SHA256 = '1f717bf944e6d5a524aa0a65776d39726cd251bcd006971ba322f328de6bd314'
+-DESIGN_FREEZE_SHA256 = '2135fc82e5acc80ae1122badcccd40e441824018190fca07d9158d777a266bf2'
++DESIGN_FREEZE_SHA256 = '5e020705027fceb039fcc678f93a8a8fc668e5094b0140083772ca79c99c27c9'
+ V1_DESIGN_FREEZE_SHA256 = '3d6f48ced0d07293a81f44936c3559571e4d4f98919c024a257f32761a7af027'
+ V1_SOURCE_SHA256 = 'd07548e2dbff4ef6b64a3a902d3b59ed7c4abbf8dc2115e8b08ed37ee2ec14d5'
+ REPAIR_SCOPE_SHA256 = 'afe35832c808cf3d6a482fb6549dc8957d57ae982b7e48e76dba5b5374bcfa98'
+ SUPERVISOR19_SHA256 = 'cb828a78367dc2023bfc6e330696745f186f186811752361472747e5fe547e93'
+ SUPERVISOR19_VERSION = 'owned_supervisor_v19'
+-MODULE = 'parent_release_identity_v6.py'
++MODULE = 'parent_release_identity_v7.py'
+ SCHEME = 'sv19-incarnation-v1'
+ REQUEST_FORMAT = 'parent-release-identity-request-v1'
+ UNION_FORMAT = 'parent-release-identity-union-v1'
+@@ -290,11 +301,13 @@
+ 
+ 
+ def _tname(obj):
+-    """Real type name via the type getset (no metaclass or instance attribute override)."""
++    """Real type name via the type getset (no metaclass or instance attribute override). V7 M3: only an EXACT str
++    is returned; a heap type may legally carry a str-subclass name, which is never concatenated/formatted/compared."""
+     try:
+-        return type.__dict__['__name__'].__get__(type(obj))
++        name = type.__dict__['__name__'].__get__(type(obj))
+     except Exception:
+         return _UNAVAILABLE
++    return name if type(name) is str else _UNAVAILABLE
+ 
+ 
+ def _ordinary(exc):
+@@ -579,11 +592,13 @@
+         self.late = False
+ 
+     def diagnose_completion(self, stage):
++        # V7 m6: the captured object is retained FIRST; no formatting/event construction after the retention stop.
+         if self.secondary is not None:
+             self.keep(self.secondary)
+-            self.event('deadline_check', 'EXCEPTION' if _ordinary(self.secondary) else 'BASE_EXCEPTION',
+-                       stage, ': ', _why(self.secondary))
+-        elif self.bad is not _NO_VALUE:
++            if not self.stopped:
++                self.event('deadline_check', 'EXCEPTION' if _ordinary(self.secondary) else 'BASE_EXCEPTION',
++                           stage, ': ', _why(self.secondary))
++        elif self.bad is not _NO_VALUE and not self.stopped:
+             self.event('deadline_check', 'BAD_RETURN', stage, ': ', _tname(self.bad))
+ 
+     def tick(self, stage):
+@@ -602,7 +617,9 @@
+         crossed. Both actual objects retained; raising secondary here stays inside primary's handler/context."""
+         if primary is not None:
+             self.keep(primary)
+-            self.event('read_bytes', 'EXCEPTION' if _ordinary(primary) else 'BASE_EXCEPTION', path, ': ', _why(primary))
++            if not self.stopped:  # V7 m6: no eager diagnostic formatting after the retention stop
++                self.event('read_bytes', 'EXCEPTION' if _ordinary(primary) else 'BASE_EXCEPTION', path, ': ',
++                           _why(primary))
+         self.diagnose_completion('read_bytes completion')
+         if self.secondary is not None and not _ordinary(self.secondary):
+             raise self.secondary
+@@ -661,6 +678,11 @@
+         return _FAILED
+ 
+ 
++def _detail(io, exc):
++    """V7 m6: no diagnostic formatting once retention admission stopped; the object itself was retained first."""
++    return 'retention admission stopped; description withheld' if io.stopped else _why(exc)
++
++
+ def _attach(exc, name, value):
+     """Exception's real instance dict, bypassing subclass __setattr__/__dict__/dict.__setitem__ overrides."""
+     try:
+@@ -930,6 +952,7 @@
+             try:
+                 rows.append(_identify(api, pid, state))
+             except _NativeError as exc:
++                state.keep(exc)  # V7 m4: bracket-consistency errors too (identity-deduplicated; threshold applies)
+                 if state.poisoned:
+                     raise
+                 work['missing_n'] += 1
+@@ -1753,8 +1776,13 @@
+                   or report['identity']['pid'] != report.get('pid')):
+                 details.append('helper_without_usable_identity pid=%r' % (report.get('pid'),))
+     main = recon['main_wait']
+-    if main is not None and not _identity_ok(recon['main_identity']):
+-        details.append('main_child_without_identity pid=%r' % (main.get('pid') if type(main) is dict else None,))
++    if main is not None:
++        # V7 m5: a main identity is usable ONLY with an exact positive main-wait pid equal to its own pid.
++        pid, ident = (main.get('pid') if type(main) is dict else None), recon['main_identity']
++        if not _identity_ok(ident):
++            details.append('main_child_without_identity pid=%r' % (pid,))
++        elif not _int(pid, True) or ident['pid'] != pid:
++            details.append('main_child_identity_pid_mismatch pid=%r identity_pid=%r' % (pid, ident['pid']))
+     return details
+ 
+ 
+@@ -1930,7 +1958,7 @@
+             return _union_report(st, io, item, analyses, members, unknowns, rows)
+         except Exception as exc:
+             io.keep(exc)
+-            st.fire('U_INTERNAL_ERROR', _why(exc))
++            st.fire('U_INTERNAL_ERROR', _detail(io, exc))
+     try:
+         return _minimal_report(st, item)
+     except Exception as secondary:
+@@ -1946,8 +1974,10 @@
+     try:
+         st, io = _State(U_CAUSES), _Io(read_bytes, deadline_check, retain)
+         item, analyses, members, unknowns, rows = None, [], [], [], None
++        # V7 M1: ONE explicit callback-admission predicate gates every reader/deadline callback incl. the final check.
++        admitted = type(retain) is list and callable(read_bytes) and callable(deadline_check)
+         try:
+-            if type(retain) is not list or not callable(read_bytes) or not callable(deadline_check):
++            if not admitted:
+                 st.fire('U_CALLBACKS_INVALID', 'exact retain list and callable reader/ORIGINAL deadline required')
+             elif not io.tick('union start'):
+                 st.fire('U_DEADLINE', 'ORIGINAL deadline unavailable at union start')
+@@ -1965,12 +1995,12 @@
+                     rows = None if built is _FAILED else built
+         except _Crossed as exc:
+             io.keep(exc)
+-            st.fire('U_DEADLINE', _why(exc))
++            st.fire('U_DEADLINE', _detail(io, exc))
+         except Exception as exc:
+             io.keep(exc)
+-            st.fire('U_INTERNAL_ERROR', _why(exc))
++            st.fire('U_INTERNAL_ERROR', _detail(io, exc))
+         report = _assemble_union(st, io, item, analyses, members, unknowns, rows)
+-        if callable(deadline_check) and not io.crossed and not io.stopped and not io.tick('union fully assembled and hashed'):
++        if admitted and not io.crossed and not io.stopped and not io.tick('union fully assembled and hashed'):
+             st.fire('U_DEADLINE', 'ORIGINAL deadline crossed after assembly')
+             report = _assemble_union(st, io, item, analyses, members, unknowns, rows)
+         return report, io
+@@ -2125,6 +2155,28 @@
+             'served_sha256': served['served_sha256'], 'observed_at_mono': served['observed_at_mono']}
+ 
+ 
++def _late_recheck(st, io, view):
++    """V7 M2: NONSEALING transaction recheck after the LAST external callback, immediately before any ENDED return.
++    No callback, no seal. A transaction that became unclean after the seal (e.g. a caught refused rebind or a
++    post-seal census call inside a reader/deadline callback) or whose census view changed refreshes the reported view
++    and fires E_CENSUS_TRANSACTION (HELD). Returns True only for an unchanged clean sealed transaction."""
++    try:
++        state, served = view['txn'], view['served']
++        fresh = _census_view(state, served)
++        clean = (state.sealed is True and state.active is False and state.poisoned is False
++                 and state.retention_failed is False and type(state.reentries) is int and state.reentries == 0
++                 and type(state.calls) is int and state.calls == 1 and type(state.served_n) is int
++                 and state.served_n == 1 and type(state.refusal_n) is int and state.refusal_n == 0
++                 and _exact(fresh, view['census']))
++        view['census'] = fresh
++    except Exception as exc:
++        io.keep(exc)
++        clean = False
++    if not clean:
++        st.fire('E_CENSUS_TRANSACTION', 'transaction unclean or changed after the last callback (nonsealing recheck)')
++    return clean
++
++
+ def _identities_copy(value):
+     """Exact JSON type preflight BEFORE any foreign dict-key hash/equality. Bounded detach eliminates live aliases.
+     Acyclic/shared-container-free, strings<=4096, int64 range, no float/subclasses, <=128MiB representation."""
+@@ -2201,6 +2253,7 @@
+                 served = _guard(io, st, 'E_CENSUS_EVIDENCE_INVALID', 'census evidence', None, _census_evidence, state)
+                 if served is not _FAILED:
+                     view['census'] = _census_view(state, served)
++                    view['txn'], view['served'] = state, served  # V7 M2: access kept for the late recheck
+     union, build = _build_union(request, read_bytes, deadline_check, retain)
+     view['union'] = union
+     if build is not None and build.stopped:
+@@ -2267,7 +2320,7 @@
+             return _endedness_body(st, io, view)
+         except Exception as exc:
+             io.keep(exc)
+-            st.fire('E_INTERNAL_ERROR', _why(exc))
++            st.fire('E_INTERNAL_ERROR', _detail(io, exc))
+     try:
+         return _endedness_minimal(st, io, view)
+     except Exception as secondary:
+@@ -2281,14 +2334,18 @@
+     Normal hashed dict, MINIMAL unhashed HELD dict or prebuilt immutable emergency HELD mapping; ordinary errors cannot
+     escape protected setup/body/assembly/finalization (interpreter failure boundary in module docstring). Callback
+     non-Exception BaseException propagates exactly, actual primary/secondary objects in retain/partial/log.exceptions.
++    V7: one admission predicate (exact retain list, callable reader and ORIGINAL deadline) gates EVERY callback incl.
++    the final check (M1); a nonsealing transaction recheck after the LAST callback precedes any ENDED return (M2).
+     """
+     st, io = None, None
+     try:
+         st, io = _State(E_CAUSES), _Io(None, deadline_check, retain)
+-        view = {'union': None, 'identities_match': False, 'census': None, 'release_token': None}
++        view = {'union': None, 'identities_match': False, 'census': None, 'release_token': None,
++                'txn': None, 'served': None}
++        admitted = type(retain) is list and callable(read_bytes) and callable(deadline_check)
+         try:
+-            if type(retain) is not list or not callable(deadline_check):
+-                st.fire('E_INTERNAL_ERROR', 'exact retain list and callable ORIGINAL deadline required')
++            if not admitted:
++                st.fire('E_INTERNAL_ERROR', 'exact retain list and callable reader/ORIGINAL deadline required')
+             elif not io.tick('endedness start'):
+                 st.fire('E_DEADLINE', 'ORIGINAL deadline unavailable at start')
+             else:
+@@ -2296,14 +2353,16 @@
+                            release_token, retain)
+         except _Crossed as exc:
+             io.keep(exc)
+-            st.fire('E_DEADLINE', _why(exc))
++            st.fire('E_DEADLINE', _detail(io, exc))
+         except Exception as exc:
+             io.keep(exc)
+-            st.fire('E_INTERNAL_ERROR', _why(exc))
++            st.fire('E_INTERNAL_ERROR', _detail(io, exc))
+         result = _endedness_result(st, io, view)
+-        if callable(deadline_check) and not io.crossed and not io.stopped and not io.tick('endedness fully assembled and hashed'):
++        if admitted and not io.crossed and not io.stopped and not io.tick('endedness fully assembled and hashed'):
+             st.fire('E_DEADLINE', 'ORIGINAL deadline crossed after assembly/hash')
+             result = _endedness_result(st, io, view)
++        if view['txn'] is not None and not io.stopped and not _late_recheck(st, io, view):
++            result = _endedness_result(st, io, view)  # M2: no callback after the late recheck
+         return result
+     except Exception as exc:
+         _retain(retain, exc)

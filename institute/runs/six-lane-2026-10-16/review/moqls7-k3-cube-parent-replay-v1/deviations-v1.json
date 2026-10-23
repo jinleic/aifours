@@ -1,0 +1,44 @@
+[
+  {
+    "id": "D1-wrapper-make-not-run",
+    "what": "k3_cubes.make() was not executed. It calls os.makedirs(<lane>/explore/scratch, exist_ok=True) (k3_cubes.py:108-110), refuses any existing output path (103-105; /dev/stdout and /dev/fd/N exist, so it cannot stream), writes OUT.cnf and OUT.json as files (128-140) and re-reads OUT.cnf to hash it (134). Running it would touch a lane path and retain a CNF file, both forbidden here.",
+    "instead": "scripts/compose_v1.py (desk, exclusive file) reads gram_enc.py and k3_cubes.py as bytes, checks their SHA-256 against the brief's pins, compiles and executes exactly those bytes as modules (gram_enc registered first, so k3_cubes' 'import gram_enc' binds the verified module; no import-system lookup, no bytecode), and calls the pinned functions unchanged: coverage(), variable_map(), gram_enc.build(3, None, True, True, None) with make's variable-map identity assertion, and cube_clauses(vmap, cube). Only make's encoder-A composition (k3_cubes.py:106-107, 111-116, 124-132) is restated: 'p cnf <nv> <nc+len(extra)>', the base body after its header line, then each extra clause as ' '.join(map(str, lits)) + ' 0'. The CNF goes to stdout (a pipe) and stays in driver memory.",
+    "evidence": "Regenerated SHA-256 equals the brief's value for both cubes (C321 d598507d...8388, C411 2b92f5b1...ddf2); base CNF d0d884f9...4388 equals the brief; support sets, 18 cube units, same-ray identities and extra-clause counts (88 / 158) equal the producer metadata."
+  },
+  {
+    "id": "D2-interpreter",
+    "what": "compose_v1.py ran under /Library/Developer/CommandLineTools/usr/bin/python3 (3.9.6, realpath .../Python3.framework/Versions/3.9/bin/python3.9, sha256 4c0dd940...6a60) with -I -B, env reset to PATH=/usr/bin:/bin:/usr/sbin:/sbin, TMPDIR=HOME=desk tmp/, LC_ALL=C, PYTHONDONTWRITEBYTECODE=1, cwd=desk tmp/. The producer's interpreter for the K3 cube make is not recorded in its metadata."
+  },
+  {
+    "id": "D3-native-limits",
+    "what": "cadical -q -t 5400 and drat-trim -i -t 7200 per the brief; the producer used -t 3600 for both."
+  },
+  {
+    "id": "D4-transport",
+    "what": "The CNF bytes stayed in driver memory and reached cadical and drat-trim through two separate anonymous pipes (/dev/fd/N); the producer gave both programs the lane CNF file path. The binary DRAT proof went cadical -> desk FIFO -> drat-trim stdin (-i), with a driver-held FIFO write end until the solver was reaped (the K2 template pattern). Proofs were neither retained nor hashed. The lane CNF copies were only hashed read-only (both equal the brief's values) and never given to a solver or checker. Zero-length FIFO nodes remain under fifo/ (nothing is deleted)."
+  },
+  {
+    "id": "D5-checker-binary",
+    "what": "The checker is the parent-built drat-trim (sha256 a46c0c71...8e37; source d834b649...c2ee, upstream marijnheule/drat-trim 2e3b2dc0, cc -O2), not the lane-built binary (111b0405...d5e4) named in the producer receipts. Both are built from the same source hash. Its controls (T1-T5, Cb1, Cb2, Cc and others) are cited from review/moqls7-k2-parent-v1/RESULT.r2.json, not rerun here."
+  },
+  {
+    "id": "D6-extra-prechecks",
+    "what": "Extra to the brief: (a) a regeneration-only precheck (receipts/v1-regen-A_C321.json, v1-regen-A_C411.json) regenerated and hashed both CNFs before any native launch and discarded them; it launched no native, and its script hashes are recorded in its post-run receipts (equal to those in the later pre-execution receipts) rather than in a separate pre-receipt. (b) Three tiny transport self-checks of the desk pipeline and verdict code (v1-X1 UNSAT4 -> PASS, v1-X2 SAT3 -> FAIL via solver rc 10, v1-X3 UNSAT4 proof vs SAT3 CNF -> FAIL via exact 's NOT VERIFIED' with solver rc 20), each with cadical -t 60 and drat-trim -t 60, behind their own pre-receipt, plus six in-memory status-line parser cases and two no-run verdict cases. They test this desk's plumbing only; they are not checker-soundness controls."
+  },
+  {
+    "id": "D7-gate-and-capacity",
+    "what": "Launch gate: fresh statvfs(desk) f_bavail*f_frsize >= 12,200,262,144 bytes (12.2e9 + 262,144 bytes projected retained growth for the whole remaining desk run) immediately before each native Popen (drat-trim first, then cadical); in-flight cooperative stop below 12e9 or aggregate RSS > 3.5 GiB (3,758,096,384), SIGTERM then bounded 120 s wait, no SIGKILL. No lane-capacity wait was used (unlike the K2 template); this desk ran at most its own two natives, sequential instances, and recorded an observational lane snapshot in each launch receipt."
+  },
+  {
+    "id": "D8-verdict-strictness",
+    "what": "The PASS test is stricter than line matching alone: besides an exact 's VERIFIED' line (only CR stripped), it requires that the bytes 'NOT VERIFIED' and 's TIMEOUT' occur nowhere in the checker log. A solver rc 10 is FAIL even under a safety stop."
+  },
+  {
+    "id": "D9-assembler-after-runs",
+    "what": "scripts/assemble_v1.py and this deviations file were created after both instance runs finished (02:32:52), so they are absent from the run-time script hash sets (compose_v1.py, k3lib_v1.py, replay_v1.py, identical in every pre-execution receipt and at each run's end). The assembler only reads desk receipts/logs and lane files, re-hashes them, and writes RESULT.json exclusively; it launches nothing. REPORT.md was written by hand from RESULT.json."
+  },
+  {
+    "id": "D10-no-retries",
+    "what": "No rerun of any kind: one regeneration precheck, one transport self-check batch, one run per instance (C321 then C411). No infrastructure fault occurred, so the allowed leaner rerun was not used."
+  }
+]

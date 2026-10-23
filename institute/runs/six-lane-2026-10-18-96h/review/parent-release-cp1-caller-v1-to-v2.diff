@@ -1,0 +1,83 @@
+--- control/parent_release_caller_v1.py
++++ control/parent_release_caller_v2.py
+@@ -14,6 +14,16 @@
+ lines, dispositions, receipts, result dicts and reports are never authority by themselves.
+ No scheduler or admission, no new deadline, no v1/v2 fallback. Native calls and callbacks can
+ stall: checks follow completion; there is no hard-real-time guarantee.
++
++V2: parent authorization control/written-slot-transitions-moq-cp1-20261019-1714-v1.json
++(5b34fc67..., key cp1_v2); exact replacement list frozen in review/parent-release-cp1-checkpoint-006-v1.json
++before editing; base parent_release_caller_v1.py 4072c50e... stays immutable. CP2 is re-pinned to v3:
++parent_release_identity_v3.py f21b4296..., design freeze 033cb30d... (recorded, never loaded here).
++Before ANY union status use the caller independently requires the union's self-reported module,
++design_freeze_sha256, scheme and producer_sha256 to equal the pinned v3 values; absence or mismatch
++is HELD with CP1_UNION_VERSION and PRT3 decide_and_commit is never invoked. These fields stop
++cross-version use, not forgery: union origin remains prerequisite identity_union_census_cp2.
++Apart from the module name and caller path, nothing else changed.
+ """
+ import hashlib
+ import json
+@@ -21,12 +31,12 @@
+ import os
+ import stat
+ 
+-MODULE = 'parent_release_caller_v1.py'
++MODULE = 'parent_release_caller_v2.py'
+ SCOPE_SHA256 = '1f717bf944e6d5a524aa0a65776d39726cd251bcd006971ba322f328de6bd314'
+ DESIGN_CHECKPOINT_SHA256 = '565a29ed61fb0c3f0d426330d55d516089e1de80e479a4cc396e9131008c291c'
+ AIFOURS_ROOT = '/Users/jinleic/repos/aifours'
+ RUN_ROOT = AIFOURS_ROOT + '/institute/runs/six-lane-2026-10-18-96h'
+-CALLER_PATH = RUN_ROOT + '/control/parent_release_caller_v1.py'
++CALLER_PATH = RUN_ROOT + '/control/parent_release_caller_v2.py'
+ READER_PATH = RUN_ROOT + '/control/beta_parent_reader_v1.py'
+ READER_SHA256 = '1fc8f00c08cd9f78885c9a38fa0797ce5b01aba8e8ad39a6d19d7b6ce3370ec6'
+ PRT3_PATH = RUN_ROOT + '/control/parent_release_v3.py'
+@@ -39,6 +49,11 @@
+ PRT_CONTRACT_SHA256 = '4d12287257f8bf74d9057a796a0c6f7a391387c411b95d5dcda1131aa4692d3e'
+ PRT_REPAIR_SCOPES = ['2fdf13b45e946df4f07881b0e6e2b5bc5452ea33d1df022afe896dded698b407',
+                      '1f9befdb4d012800a8e2160c0ce8e822d255e34c88496fd26cb8875aac894030']
++CP2_UNION_VERSION = (  # CP2 v3 parent_release_identity_v3.py f21b4296... (recorded pin; never loaded)
++    ('module', 'parent_release_identity_v3.py'),
++    ('design_freeze_sha256', '033cb30dcde31ec94acbb0f8576f436e14bfaae980c8bff34e76932dd894cb5a'),
++    ('scheme', 'sv19-incarnation-v1'),
++    ('producer_sha256', 'cb828a78367dc2023bfc6e330696745f186f186811752361472747e5fe547e93'))
+ RESULT_FORMAT = 'parent-release-result-v3'
+ DISPOSITION_FORMAT = 'parent-release-disposition-v3'
+ REGISTRY_FORMAT = 'parent-release-registry-v3'
+@@ -93,7 +108,7 @@
+ NEW_FILE_FLAGS = os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_NONBLOCK | CLOEXEC
+ CAUSES = (
+     'CP1_CALLBACKS_INVALID', 'CP1_READER_INVALID', 'CP1_OWNER_INVALID', 'CP1_SPEC_BINDING',
+-    'CP1_IDENTITY_UNION', 'CP1_PRT_SOURCE', 'CP1_SOURCE_PINS', 'CP1_PREREQUISITE_MISSING',
++    'CP1_UNION_VERSION', 'CP1_IDENTITY_UNION', 'CP1_PRT_SOURCE', 'CP1_SOURCE_PINS', 'CP1_PREREQUISITE_MISSING',
+     'CP1_DEADLINE_PRE_INVOKE', 'CP1_PRT_EXCEPTION', 'CP1_PRT_BASE_EXCEPTION', 'CP1_RESULT_INVALID',
+     'CP1_RESULT_NOT_RELEASED', 'CP1_ENDEDNESS', 'CP1_DEADLINE_POST_RESULT', 'CP1_DISPOSITION_READBACK',
+     'CP1_REGISTRY_READBACK',
+@@ -687,8 +702,27 @@
+     return value
+ 
+ 
++def _union_version(union):
++    """V2 (SF1): CP2 v3 version binding checked BEFORE any union status use. The union's
++    self-reported module, design_freeze_sha256, scheme and producer_sha256 must equal the pinned
++    v3 values exactly; returns None, else the refusal text. These fields stop cross-version use,
++    not forgery: union origin remains prerequisite identity_union_census_cp2."""
++    if type(union) is not dict:
++        return 'CP2 union is not an object; version fields absent'
++    for key, expected in CP2_UNION_VERSION:
++        value = union.get(key)
++        if type(value) is not str or value != expected:
++            shown = value[:80] if type(value) is str else type(value).__name__
++            return 'CP2 union %s %r is not the pinned v3 value %r' % (key, shown, expected)
++    return None
++
++
+ def _union(call, state, identity):
+     union = _detach(identity['union'], SPEC_CAP)[0]
++    version = _union_version(union)
++    if version is not None:  # before ANY status use: HELD, named caller cause; PRT3 never invoked
++        call.fire('CP1_UNION_VERSION', version)
++        return None
+     _require(type(union) is dict and union.get('format') == 'parent-release-identity-union-v1'
+              and union.get('state') == 'CLOSED_CONDITIONAL' and _hex(union.get('union_sha256')),
+              'CP2 union not CLOSED_CONDITIONAL v1 with digest')

@@ -1,0 +1,334 @@
+# Unified diff: scripts/gb_staged_v2.py (sha256 89db96359ba1a94c3c6a45f7386a34006178fd38d4653e9fefcd921c62532844, unchanged) -> scripts/gb_staged_v3.py (sha256 6f5b3a8adab95d41f609f31c59704592071be91124dbeba622a329ff541a0f14)
+# Scope: only the three MAJOR findings of review/n8-gb-staged-v2-source-codex-v1.note.md (f39a65cd...fe16): F3'
+# scalar single-descriptor acquisition, F4' protected/linearized publication and F4' receipt/commit durability;
+# plus the v3 names (gbs3- prefix, schema /3) and provenance pins of v2 and its audit note.
+--- a/scripts/gb_staged_v2.py
++++ b/scripts/gb_staged_v3.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Parent staged GB replay desk v2: the counted parent replay of the eighteen GB (gram_b_r2) inputs of the MOQLS(8) n8
++"""Parent staged GB replay desk v3: the counted parent replay of the eighteen GB (gram_b_r2) inputs of the MOQLS(8) n8
+ contract, implementing review/gb-parent-replay-brief-v1.md (sha256 d95f3a0b...27ed) exactly.
+ 
+ v2 = scripts/gb_staged_v1.py (b36fbb57...8151, kept unchanged) + DIFF-gb_staged_v1-to-v2.txt, which repairs only the
+@@ -19,6 +19,20 @@
+     exclusion itself, and the latch is checked at every completion break, before every spawn and at evaluation. F6
+     resources: other busy + 1 <= 4 is enforced in flight, and the launch threshold 12.2e9 + 10 MiB (not the 12e9
+     floor) is applied immediately before each spawn. Every v2 file name has the 'gbs2-' prefix.
++
++v3 = scripts/gb_staged_v2.py (89db9635...2844, kept unchanged) + DIFF-gb_staged_v2-to-v3.txt, which repairs only the
++three MAJOR findings of the Codex re-review review/n8-gb-staged-v2-source-codex-v1.note.md (f39a65cd...fe16):
++ F3' every single descriptor is acquired by acquire_open(): the scalar fd returned by os.open() is stored in the
++    helper's own cleanup scope before any other operation, and closed unless its registry insertion committed (no
++    wrapper tuple exists any more); pipes by acquire_pipe() (os.pipe() returns the pair itself).
++ F4' qualification publication is protected: the receipt and its directory are fsynced (+ F_FULLFSYNC) before the
++    commit is prepared; publish_commit() blocks SIGTERM/SIGINT, takes the final decision at an explicit
++    linearization point (latched signal, pending blocked signals, the driver being the only thread, durable receipt,
++    qualifying verdict), writes and fsyncs the commit under <label>.commit.json.prepare, publishes it atomically with
++    os.link() to <label>.commit.json (fails if the name exists; nothing is renamed or deleted), fsyncs the directory,
++    and only then restores the signal mask, so a signal arriving during publication is handled after it and stops
++    the desk. Any durability or publication failure fails closed (no qualified commit) and stops the desk.
++Every v3 file name has the 'gbs3-' prefix.
+ 
+ Desk: institute/runs/six-lane-2026-10-16/review/moqls8-gb-parent-staged-replay-v1 (parent-owned, created exclusively
+ 2026-10-18T10:08:20-07:00). Inputs, and no others: the twelve direct templates P1-B4, P0-B4, P0-B5, P0-B6, P1-B6, P2-C4,
+@@ -74,8 +88,8 @@
+ desk. A timeout, guard stop or deferral is never success; no retries.
+ 
+ Usage (/opt/homebrew/opt/python@3.14/bin/python3.14 -I -B, environment TMPDIR=<desk>/tmp/; absolute paths):
+-  gb_staged_v2.py preexec OUT ITEM...    ITEM = control:NAME | gb:ID:aN  (only controls, or exactly one gb item)
+-  gb_staged_v2.py run PREEXEC GO         GO = the parent-written release record required by validate_go()
++  gb_staged_v3.py preexec OUT ITEM...    ITEM = control:NAME | gb:ID:aN  (only controls, or exactly one gb item)
++  gb_staged_v3.py run PREEXEC GO         GO = the parent-written release record required by validate_go()
+ """
+ import ctypes
+ import datetime
+@@ -104,8 +118,8 @@
+ DESK = REVIEW + "/moqls8-gb-parent-staged-replay-v1"
+ DESK_REL = "review/moqls8-gb-parent-staged-replay-v1"  # relative to RUN; the parent GO record names it
+ SCRIPT = os.path.realpath(__file__)
+-SCRIPT_REL = "scripts/gb_staged_v2.py"
+-LABEL_PREFIX = "gbs2-"  # every receipt/log/FIFO/TMPDIR name of this version (v1 used gbs1-)
++SCRIPT_REL = "scripts/gb_staged_v3.py"
++LABEL_PREFIX = "gbs3-"  # every receipt/log/FIFO/TMPDIR name of this version (v1: gbs1-, v2: gbs2-)
+ TMP = DESK + "/tmp"
+ 
+ KISSAT = "/opt/homebrew/Cellar/kissat/4.0.4/bin/kissat"
+@@ -142,6 +156,10 @@
+                    "b36fbb57f279d1b622c1b1b111ad36a542e0ac85c7b9edce92e4c6c7733f8151"),
+     "codex_gbs1_source_audit": (REVIEW + "/n8-gb-staged-v1-source-codex-v1.note.md",
+                                 "480ef5418c85d2d2bc43fbddf6b5d0c8d6ca38337939570037b87adcc0ec24a6"),
++    "runtime_v2": (DESK + "/scripts/gb_staged_v2.py",
++                   "89db96359ba1a94c3c6a45f7386a34006178fd38d4653e9fefcd921c62532844"),
++    "codex_gbs2_source_audit": (REVIEW + "/n8-gb-staged-v2-source-codex-v1.note.md",
++                                "f39a65cda7eaf2a291f50e922501c8bc3b5a609418d3be39140e4c738ef4fe16"),
+ }
+ 
+ # --- the eighteen authorized inputs, in the brief's order (no other input or refinement)
+@@ -192,10 +210,11 @@
+ STABLE_RUNWAY_BASE, STABLE_RUNWAY_DIV = 13500000000, 12
+ STABLE_WINDOW, STABLE_MIN_DROP_CAP = 300.0, 300000000
+ STABLE_MAX_AGE, STABLE_MIN_SAMPLES, STABLE_MIN_SPAN = 30.0, 25, 290.0
+-RECEIPT_SCHEMA = "moqls8-gb-staged-replay-receipt/2"
+-COMMIT_SCHEMA = "moqls8-gb-staged-replay-commit/2"
+-PREEXEC_SCHEMA = "moqls8-gb-staged-replay-preexec/2"
+-RUN_SCHEMA = "moqls8-gb-staged-replay-run/2"
++RECEIPT_SCHEMA = "moqls8-gb-staged-replay-receipt/3"
++COMMIT_SCHEMA = "moqls8-gb-staged-replay-commit/3"
++PREEXEC_SCHEMA = "moqls8-gb-staged-replay-preexec/3"
++RUN_SCHEMA = "moqls8-gb-staged-replay-run/3"
++PUBLICATION_SIGNALS = (signal.SIGTERM, signal.SIGINT)  # (F4') blocked across the final decision and publication
+ GO_STATUS = "PARENT_GO"
+ 
+ # --- controls on this runtime identity (synthetic 3-variable formulas; exclusive separate outputs)
+@@ -341,8 +360,10 @@
+               "stopped; all five worker threads started and finished; no descriptor left and no close error; both "
+               "children reaped; no helper survivor. Anything else is UNKNOWN with reasons; a driver signal latched "
+               "during evaluation downgrades PASS to UNKNOWN. Qualification additionally needs the commit record "
+-              "receipts/<label>.commit.json, written after the receipt is durable, with qualified true (verdict PASS "
+-              "and no driver signal latched at commit). A SAT report, a safety stop or any settlement failure stops "
++              "receipts/<label>.commit.json with qualified true: the receipt is first synced (file + directory), "
++              "then the decision is taken with SIGTERM/SIGINT blocked (verdict PASS, durable receipt, no latched or "
++              "pending signal, the driver the only thread) and published durably and atomically (os.link of the "
++              "synced .prepare record). A SAT report, a safety stop or any settlement failure stops "
+               "the desk. No retries: a new attempt needs a new parent GO and a new attempt tag; old UNKNOWN receipts "
+               "are retained.")
+ GATE_RULE = ("Before each launch (stage 1; stage 2 is not a new admission): a fresh lane scan (native solver/checker "
+@@ -447,6 +468,70 @@
+         json.dump(obj, f, indent=1)
+         f.write("\n")
+     return sha_file(path)
++
++
++def full_sync(fd):
++    """(F4') fsync plus the macOS full flush; any failure raises (fail closed)."""
++    os.fsync(fd)
++    fcntl.fcntl(fd, fcntl.F_FULLFSYNC)
++
++
++def fsync_dir(path):
++    dfd = os.open(path, os.O_RDONLY)
++    try:
++        full_sync(dfd)
++    finally:
++        os.close(dfd)
++
++
++def write_json_durable(path, obj):
++    """(F4') Exclusive create, complete write, file sync, close, directory sync; the on-disk bytes must hash to the
++    serialized bytes. Any failure raises (fail closed). -> sha256 of the file."""
++    data = (json.dumps(obj, indent=1) + "\n").encode("utf-8")
++    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
++    try:
++        view, off = memoryview(data), 0
++        while off < len(view):
++            off += os.write(fd, view[off:])
++        full_sync(fd)
++    finally:
++        os.close(fd)
++    fsync_dir(os.path.dirname(path))
++    digest = sha_file(path)
++    if digest != sha_bytes(data):
++        raise OSError("durable write of %s: on-disk sha256 %s differs from the written bytes" % (path, digest))
++    return digest
++
++
++def publish_commit(cpath, base, eligible, stop):
++    """(F4') Protected, durable, atomic publication of the qualification record. SIGTERM/SIGINT are blocked first;
++    the qualification is then decided at one explicit linearization point from the latched driver signal, the blocked
++    signals already pending, the driver being the only thread (so no other thread can run the signal handler while the
++    mask is set) and eligible (qualifying verdict, durable receipt, no signal at pre-evaluation or after evaluation).
++    The decided record is written durably under cpath + '.prepare' and published atomically by os.link() to cpath
++    (fails if cpath exists; nothing is renamed or deleted), the directory is synced, and only then is the old mask
++    restored: a signal that arrived during the publication is delivered afterwards and stops the desk. Any failure
++    before the link leaves no commit (unqualified); a failure after it is reported. -> (commit, sha256, error)."""
++    tmp = cpath + ".prepare"
++    commit, digest, err = None, None, None
++    old = signal.pthread_sigmask(signal.SIG_BLOCK, PUBLICATION_SIGNALS)
++    try:
++        pending = sorted(signal.Signals(s).name for s in signal.sigpending() if s in PUBLICATION_SIGNALS)
++        threads_alive = threading.active_count()
++        latched = stop.get("signal")
++        commit = dict(base, stop_signal_at_commit=latched, pending_signals_at_commit=pending,
++                      driver_threads_at_commit=threads_alive, decided_at=now(),
++                      qualified=bool(eligible and latched is None and not pending and threads_alive == 1),
++                      linearization=("qualification decided with SIGTERM/SIGINT blocked at decided_at; any later "
++                                     "signal stays pending until after the atomic publication and stops the desk"))
++        digest = write_json_durable(tmp, commit)
++        os.link(tmp, cpath)  # the publication instant: the complete, durable record appears atomically
++        fsync_dir(os.path.dirname(cpath))
++    except Exception as e:  # fail closed: without the link no commit exists; every error is reported
++        err = "%s: %s" % (type(e).__name__, e)
++    finally:
++        signal.pthread_sigmask(signal.SIG_SETMASK, old)  # a pending SIGTERM/SIGINT is delivered (latched) now
++    return commit, digest, err
+ 
+ 
+ def rel(path):
+@@ -1246,7 +1331,9 @@
+         try:
+             commit_ok = (isinstance(cm, dict) and cm.get("schema") == COMMIT_SCHEMA and cm.get("label") == label
+                          and cm.get("receipt_sha256") == sha_bytes(raw) and cm.get("qualified") is True
+-                         and cm.get("verdict") == CONTROLS[name]["verdict"] and cm.get("stop_signal_at_commit") is None)
++                         and cm.get("verdict") == CONTROLS[name]["verdict"] and cm.get("stop_signal_at_commit") is None
++                         and cm.get("receipt_durable") is True and cm.get("pending_signals_at_commit") == []
++                         and cm.get("driver_threads_at_commit") == 1)
+             pe, go, bins = r.get("pre_exec") or {}, r.get("go") or {}, r.get("binaries") or {}
+             pre_ok = (isinstance(pe.get("path"), str) and os.path.isfile(os.path.join(DESK, pe["path"]))
+                       and sha_file(os.path.join(DESK, pe["path"])) == pe.get("sha256"))
+@@ -1639,24 +1726,37 @@
+     return threading.Thread(target=target, args=args, daemon=True), res
+ 
+ 
+-def acquire(fds, names, opener, rollback):
+-    """(F3) Run opener() (os.pipe, or a 1-tuple from os.open) and register its descriptors under names. A descriptor
+-    whose registry insertion did not commit is closed here before the exception propagates, so no failure (e.g. a
+-    MemoryError in the insertion) leaves an untracked descriptor; committed ones belong to the registry, whose
+-    cleanup closes any that no thread claims. rollback collects close errors of that rare path."""
++def acquire_open(fds, name, path, flags, mode, rollback):
++    """(F3') Open one descriptor and register it under name. All state exists before the open; the scalar fd returned
++    by os.open() is stored in this function's own cleanup scope before any other operation (no wrapper object is
++    allocated), and it is closed here unless its registry insertion committed, so no failure between the open and the
++    registration (e.g. a MemoryError in the insertion) leaves an untracked descriptor. Committed descriptors belong to
++    the registry, whose cleanup closes any that no thread claims. rollback collects close errors of that rare path."""
++    fd, committed = None, False
++    try:
++        fd = os.open(path, flags, mode)
++        fds.put(name, fd)
++        committed = True
++    finally:
++        if fd is not None and not committed:
++            _rollback_close(fd, rollback)
++
++
++def acquire_pipe(fds, rname, wname, rollback):
++    """(F3') os.pipe() and register both ends; an end whose insertion did not commit is closed here (os.pipe returns
++    the pair itself, so no wrapper is allocated by this script between the syscall and the bookkeeping)."""
+     got, first, second = None, False, False
+     try:
+-        got = opener()
+-        fds.put(names[0], got[0])
++        got = os.pipe()
++        fds.put(rname, got[0])
+         first = True
+-        if len(names) == 2:
+-            fds.put(names[1], got[1])
+-            second = True
++        fds.put(wname, got[1])
++        second = True
+     finally:
+         if got is not None:
+             if not first:
+                 _rollback_close(got[0], rollback)
+-            if len(names) == 2 and not second:
++            if not second:
+                 _rollback_close(got[1], rollback)
+ 
+ 
+@@ -1961,11 +2061,11 @@
+                 S["reason"] = why
+                 log("STOP before the kissat setup %s: %s" % (label, why))
+             else:
+-                acquire(fds, ("fifo_read",), lambda: (os.open(fifo, os.O_RDONLY | os.O_NONBLOCK),), rollback)
++                acquire_open(fds, "fifo_read", fifo, os.O_RDONLY | os.O_NONBLOCK, 0o644, rollback)
+                 fcntl.fcntl(fds.get("fifo_read"), fcntl.F_SETFL,
+                             fcntl.fcntl(fds.get("fifo_read"), fcntl.F_GETFL) & ~os.O_NONBLOCK)
+-                acquire(fds, ("keepalive",), lambda: (os.open(fifo, os.O_WRONLY),), rollback)
+-                acquire(fds, ("scr", "scw"), os.pipe, rollback)
++                acquire_open(fds, "keepalive", fifo, os.O_WRONLY, 0o644, rollback)
++                acquire_pipe(fds, "scr", "scw", rollback)
+                 res = {"ok": False}
+                 threads["collector"] = _thread(_collector, (fds, res, chunks), res)  # registered before start()
+                 threads["collector"][0].start()
+@@ -2021,11 +2121,10 @@
+                     S["reason"] = why
+                     log("STOP before the drat-trim setup %s: %s" % (label, why))
+                 else:
+-                    acquire(fds, ("ccr", "ccw"), os.pipe, rollback)
+-                    acquire(fds, ("cpr", "cpw"), os.pipe, rollback)
+-                    acquire(fds, ("cor", "cow"), os.pipe, rollback)
+-                    acquire(fds, ("dlog",), lambda: (os.open(dlog, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644),),
+-                            rollback)
++                    acquire_pipe(fds, "ccr", "ccw", rollback)
++                    acquire_pipe(fds, "cpr", "cpw", rollback)
++                    acquire_pipe(fds, "cor", "cow", rollback)
++                    acquire_open(fds, "dlog", dlog, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644, rollback)
+                     res = {"ok": False}
+                     threads["filter"] = _thread(_filter, (fds, res, (it["expected_checker_header_counts"] or
+                                                                      [None, None])[1]), res)
+@@ -2439,6 +2538,7 @@
+ 
+ def artifact_paths(label):
+     return [os.path.join(DESK, "receipts", label + ".json"), os.path.join(DESK, "receipts", label + ".commit.json"),
++            os.path.join(DESK, "receipts", label + ".commit.json.prepare"),
+             os.path.join(DESK, "fifo", label + ".kissat.fifo"),
+             os.path.join(DESK, "logs", label + ".kissat.log"), os.path.join(DESK, "logs", label + ".drat.filtered.log"),
+             os.path.join(TMP, label)]
+@@ -2691,19 +2791,31 @@
+                    "stop_latched_after_evaluation": late,  # sampled after evaluate(); a signal here downgraded it
+                    "qualification": "only the commit record receipts/%s.commit.json qualifies this receipt" % label,
+                    "written_at": now()}
+-        rsha = write_json_x(rpath, receipt)
+-        at_commit = stop.get("signal")  # (F4) sampled after the receipt is durable
++        durability_error = None
++        try:  # (F4') the receipt is synced (file and directory) before any qualification decision
++            rsha = write_json_durable(rpath, receipt)
++        except Exception as e:  # a receipt that is not durable can never be qualified
++            durability_error = "%s: %s" % (type(e).__name__, e)
++            try:
++                rsha = sha_file(rpath)
++            except OSError:
++                rsha = None
+         want = "PASS" if it["kind"] == "gb" else it["preregistered_verdict"]
+-        commit = {"schema": COMMIT_SCHEMA, "label": label, "receipt": rel(rpath), "receipt_sha256": rsha,
+-                  "verdict": verdict, "qualifying_verdict": want, "stop_signal_at_commit": at_commit,
+-                  "qualified": verdict == want and at_commit is None and late is None
+-                               and receipt["stop_latched"] is None,
+-                  "rule": "qualified iff the receipt's verdict is the qualifying verdict and no driver signal was "
+-                          "latched at the pre-evaluation check, after evaluation, or when the receipt was durable",
+-                  "written_at": now()}
+-        csha = write_json_x(os.path.join(DESK, "receipts", label + ".commit.json"), commit)
++        base = {"schema": COMMIT_SCHEMA, "label": label, "receipt": rel(rpath), "receipt_sha256": rsha,
++                "verdict": verdict, "qualifying_verdict": want, "receipt_durable": durability_error is None,
++                "receipt_durability_error": durability_error,
++                "stop_signal_at_pre_evaluation": receipt["stop_latched"], "stop_signal_after_evaluation": late,
++                "rule": "qualified iff the receipt's verdict is the qualifying verdict, the receipt is durable, no "
++                        "driver signal was latched at the pre-evaluation check, after evaluation or at the "
++                        "linearization point, no SIGTERM/SIGINT was pending there, and the driver was the only "
++                        "thread; published atomically and durably by publish_commit()"}
++        eligible = (verdict == want and durability_error is None and late is None and receipt["stop_latched"] is None)
++        commit, csha, publish_error = publish_commit(os.path.join(DESK, "receipts", label + ".commit.json"), base,
++                                                     eligible, stop)
++        qualified = bool(commit is not None and commit.get("qualified") is True and publish_error is None)
+         entry.update({"status": "RECEIPT", "verdict": verdict, "reasons": reasons, "receipt": rel(rpath),
+-                      "receipt_sha256": rsha, "commit_sha256": csha, "qualified": commit["qualified"],
++                      "receipt_sha256": rsha, "commit_sha256": csha, "qualified": qualified,
++                      "receipt_durability_error": durability_error, "commit_publication_error": publish_error,
+                       "pipeline_seconds": rec.get("pipeline_seconds"),
+                       "gate_waited_seconds": g["waited_seconds"],
+                       "peak_pipeline_aggregate_rss_bytes": rec.get("peak_pipeline_aggregate_rss_bytes"),
+@@ -2711,7 +2823,11 @@
+         for ev in rec.get("events", []):
+             summary["events"].append(dict(ev, item=it["item"]))
+         log("%s verdict %s reasons %s receipt sha256 %s commit qualified %s"
+-            % (label, verdict, reasons, rsha, commit["qualified"]))
++            % (label, verdict, reasons, rsha, qualified))
++        if durability_error or publish_error:
++            summary["stopped_reason"] = ("receipt durability / commit publication failed at %s: %s; desk launches "
++                                         "nothing more" % (label, durability_error or publish_error))
++            break
+         if rec.get("sigterm_grace_exceeded"):
+             summary["stopped_reason"] = "SIGTERM grace exceeded at %s; a child may still be alive" % label
+             break
+@@ -2731,9 +2847,9 @@
+         if vetoes:
+             summary["stopped_reason"] = "%s at %s; desk launches nothing more" % (", ".join(vetoes), label)
+             break
+-        if it["kind"] == "control" and not commit["qualified"]:
++        if it["kind"] == "control" and not qualified:
+             summary["stopped_reason"] = "control %s gave %s (expected %s), commit qualified %s" % (
+-                label, verdict, it["preregistered_verdict"], commit["qualified"])
++                label, verdict, it["preregistered_verdict"], qualified)
+             break
+         if solver_reported_sat(rec):
+             summary["stopped_reason"] = ("kissat reported SATISFIABLE at %s; its output is kept in %s; desk stopped"

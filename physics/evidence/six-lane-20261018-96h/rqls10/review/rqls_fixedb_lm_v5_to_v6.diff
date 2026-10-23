@@ -1,0 +1,47 @@
+--- code/rqls_fixedb_lm_v5.py	2026-10-19 06:23:35
++++ code/rqls_fixedb_lm_v6.py	2026-10-19 06:24:47
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""rqls_fixedb_lm_v5: float Levenberg-Marquardt assay of the FIXED-B UNITARY MODEL (no orbit symmetry) for 1-RQLS(v)
++"""rqls_fixedb_lm_v6: float Levenberg-Marquardt assay of the FIXED-B UNITARY MODEL (no orbit symmetry) for 1-RQLS(v)
+ (design note evidence/fixedb-unitary-model-proposal-v1.md). NOT a certificate; any target miss is a scoped UNKNOWN; a
+ qualifying endpoint is CANDIDATE_UNVERIFIED until independent exact or certified-interval verification.
+ 
+@@ -39,6 +39,9 @@
+     exact 0.0, which would have failed the gate).
+  8. Records: finiteness flags (res_finite, md_finite), U convention ("U_re/U_im hold U_1..U_{v-1}; prepend U_0 = I"),
+     WS parent endpoint identity (tag, seed).
++ v6 (= v5 draft, never run, plus): np.show_config(mode="dicts") is passed through a JSON round trip with default=str
++    (a non-serialisable value would otherwise crash the very first record); the first record also carries pid, pgid
++    and ppid.
+ Stages (deterministic seeds; stage ends absolute from the plan origin; a stage starts when the previous one ends):
+  S   gates S_runtime, S_single_thread, S_input_pins, S_jacobian (central differences, exact for bilinear M, < 1e-9;
+      block vs dense normal equations at v = 5, 7 < 1e-12; retraction unitarity < 1e-12), S_anchors (Huang-Li v = 7:
+@@ -55,7 +58,7 @@
+  S8  (full only, recorded) Cay(Z_8) x N8.  W Cay(Z_10) x NW.  WD Cay(D_5) x NWD.  WS up to NS seeded starts.
+ Immediate stops (after the endpoint record): v = 10 float-verified 100-ray endpoint with minsep_nonmerged > 1e-6 in
+ ANY stage -> exit 7; LM residual < 1e-10 with full deviation >= 1e-8 -> exit 8. Then TERMINATED -> exit 5.
+-Usage: rqls_fixedb_lm_v5.py OUT.jsonl WITNESS.json STOP_RECEIPT.json BUDGET_S MODE NN NC NKR NKR10 N8 NW NWD NS
++Usage: rqls_fixedb_lm_v6.py OUT.jsonl WITNESS.json STOP_RECEIPT.json BUDGET_S MODE NN NC NKR NKR10 N8 NW NWD NS
+ Protocol (supervisor): no computation and no NumPy import before the line "GO" on stdin (otherwise exit 6, no output).
+ Exit codes: 0 done, 2 exception, 3 gate failure, 4 output cap, 5 SIGTERM, 6 no GO, 7 maximal candidate (unverified),
+ 8 model defect, 9 witness or stop-receipt persistence failure. On every non-zero exit after GO an exclusive stop
+@@ -644,7 +647,7 @@
+     exe = sys.executable
+     real = os.path.realpath(exe)
+     try:
+-        cfgd = np.show_config(mode="dicts")
++        cfgd = json.loads(json.dumps(np.show_config(mode="dicts"), default=str))
+     except Exception as ex:
+         cfgd = {"error": repr(ex)}
+     return {"executable": exe, "realpath": real, "realpath_sha256": sha(real), "python": sys.version,
+@@ -688,7 +691,8 @@
+     for tag, b in (plan or []):
+         acc += b
+         ends[tag] = origin + acc
+-    W({"assay": "rqls_fixedb_lm_v5", "argv": sys.argv[1:], "mode": MODE, "budget_s": BUDGET,
++    W({"assay": "rqls_fixedb_lm_v6", "argv": sys.argv[1:], "mode": MODE, "budget_s": BUDGET,
++       "pid": os.getpid(), "pgid": os.getpgrp(), "ppid": os.getppid(),
+        "T0_go_mono": T0, "numpy_imported_mono": T_NUMPY, "plan_origin_mono": origin, "plan_s": plan,
+        "plan_end_mono": ends, "runtime": runtime_identity(), "cap": CAP, "reserve": RESERVE})
+     if plan is None:

@@ -1,0 +1,217 @@
+--- code/core7_engine_v2.py	2026-10-18 13:48:13.108792922 -0700
++++ code/core7_engine_v3.py	2026-10-18 14:06:25.639937660 -0700
+@@ -1,12 +1,18 @@
+ #!/usr/bin/env python3
+-"""core7_engine_v1 -- profile engine for rules-k7-v1 (lane sun-coset7). EXPLORATORY under the parent GO.
+-
++"""core7_engine_v3 -- profile engine for rules-k7-v1 + rules-k7-addendum-v1 (lane sun-coset7). EXPLORATORY.
++
++v3 = v2 + cooperative stop guard + memory-light output writer (search logic unchanged):
++  - every stop (self-budget, free disk < 12.0e9, peak RSS >= 0.9 GiB, SIGTERM) raises StopRun from
++    Guard.tick(), so the run ends UNKNOWN through write_outputs with its exact frontier (profiles_done,
++    profile_in_progress); SIGTERM only sets a flag that tick() reads; disk and peak RSS are read every 20 s;
++  - write_outputs streams the certificate files through a bounded in-memory gzip compressor (no joined
++    copy of the leaf text; no recomputation of the dual-key set).
+ Standard library only; deterministic; one process; self-budgeted (no external timeouts).
+ Usage:
+-  python3 core7_engine_v1.py UNIVERSE OUTDIR BUDGET_SECONDS
+-  UNIVERSE in: X1, MSP45, CORE5, K52, KII            (stages A and B)
+-               K53, K62, K63, K7                     (defined but NOT authorised to run)
+-  python3 core7_engine_v1.py CONTROLS OUTDIR BUDGET_SECONDS   (realisable-family soundness controls)
++  python3 core7_engine_v3.py UNIVERSE OUTDIR BUDGET_SECONDS
++  UNIVERSE in: X1, MSP45, CORE5, K52, KII, K62, K63    (program-level list; each run still needs a parent GO)
++               K53, K7                               (defined but NOT authorised to run)
++  python3 core7_engine_v3.py CONTROLS OUTDIR BUDGET_SECONDS   (realisable-family soundness controls)
+ 
+ Rules (rules-k7-v1): T (L1, general gamma/ell), K (L2/L3 with K1, also on partial assignments by
+ deletion), VFC-LP (Corollary VFC-count, on partial and complete stars by deletion; exact duals for
+@@ -18,19 +24,22 @@
+ (killed star signatures), lp_duals.json.gz (exact duals keyed by LP key), leaves.jsonl.gz (one line
+ per leaf orbit under the profile stabiliser: rule + witness, or SURVIVE), survivors.json.
+ """
+-import gzip
+ import hashlib
+ import itertools
+ import json
+ import os
+ import platform
++import resource
++import signal
+ import sys
+ import time
++import zlib
+ from fractions import Fraction as F
+ from math import gcd
+ 
+ DISK_FLOOR = 12_000_000_000
+ DISK_EVERY = 20.0
++RSS_CAP = int(0.9 * 1024 ** 3)  # bytes; peak resident set size that triggers a cooperative stop
+ PRIMES = (2, 3, 5)
+ 
+ 
+@@ -112,15 +121,29 @@
+     pass
+ 
+ 
++def peak_rss_bytes():
++    """Peak resident set size of this process (ru_maxrss is bytes on macOS, KiB on Linux)."""
++    r = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
++    return r if sys.platform == 'darwin' else r * 1024
++
++
+ class Guard:
++    """v3: no check raises outside tick(); tick() is the only place a stop is raised, and every stop ends
++    the run UNKNOWN through write_outputs (exact frontier). SIGTERM only sets self.term."""
++
+     def __init__(self, budget, outdir):
+         self.t0 = time.time()
+         self.budget = budget
+         self.outdir = outdir
+-        self.last_disk = 0.0
++        self.last_disk = 0.0  # so the first tick() reads disk and RSS at once
+         self.min_free = None
++        self.max_rss = None
++        self.term = False
+         self.reason = None
+-        self.check_disk(force=True)
++        signal.signal(signal.SIGTERM, self._on_term)
++
++    def _on_term(self, signum, frame):
++        self.term = True
+ 
+     def check_disk(self, force=False):
+         now = time.time()
+@@ -129,11 +152,19 @@
+             free = st.f_bavail * st.f_frsize
+             self.last_disk = now
+             self.min_free = free if self.min_free is None else min(self.min_free, free)
++            rss = peak_rss_bytes()
++            self.max_rss = rss
+             if free < DISK_FLOOR:
+                 self.reason = 'free disk %d < 12.0e9' % free
+                 raise StopRun()
++            if rss >= RSS_CAP:
++                self.reason = 'peak RSS %d >= 0.9 GiB (%d bytes)' % (rss, RSS_CAP)
++                raise StopRun()
+ 
+     def tick(self):
++        if self.term:
++            self.reason = 'SIGTERM received (cooperative stop)'
++            raise StopRun()
+         if time.time() - self.t0 > self.budget:
+             self.reason = 'self-budget %ds exceeded' % self.budget
+             raise StopRun()
+@@ -629,54 +660,70 @@
+     GUARD = Guard(budget, outdir)
+     profs = enumerate_profiles(roles, allowed)
+     stats = {'universe': name, 'profiles': len(profs), 'profiles_done': 0, 'nodes': 0, 'leaves': 0,
+-             'closed': {}, 'leaf_rule': {}, 'vfc_sigs_used': set()}
++             'closed': {}, 'leaf_rule': {}, 'vfc_sigs_used': set(), 'profile_in_progress': None}
+     leafmemo_all = 0
+     survivors, leaflines = [], []
+     status = 'COMPLETE'
+     try:
+         for prof in profs:
++            stats['profile_in_progress'] = [list(p) for p in prof]
+             eng = Engine(prof)
+             leafmemo = {}
+             run_tree(eng, roles, stats, leafmemo, survivors, leaflines)
+             leafmemo_all += len(leafmemo)
+             stats['profiles_done'] += 1
++        stats['profile_in_progress'] = None
+     except StopRun:
+         status = 'UNKNOWN'
+     stats['leaf_orbits'] = leafmemo_all
+     return status, profs, stats, survivors, leaflines
+ 
+ 
++def _gz_bounded(chunks, limit):
++    """v3: gzip-compress an iterable of byte chunks in memory without joining them; None if the
++    compressed size exceeds limit (nothing is kept then)."""
++    co = zlib.compressobj(9, zlib.DEFLATED, 31)
++    out, size = [], 0
++    for ch in chunks:
++        b = co.compress(ch)
++        if b:
++            out.append(b)
++            size += len(b)
++            if size > limit:
++                return None
++    b = co.flush()
++    out.append(b)
++    size += len(b)
++    return None if size > limit else b''.join(out)
++
++
+ def write_outputs(outdir, name, status, profs, stats, survivors, leaflines, extra=None):
+     sha = hashlib.sha256(open(os.path.abspath(__file__), 'rb').read()).hexdigest()
+     used = sorted(stats.pop('vfc_sigs_used', set()))
+     killed_sigs = [list(map(list, s)) for s in used]
+-    # duals for every LP key reachable from killed signatures
+-    duals = {}
+-    for s in used:
+-        for q in itertools.product(*[range(1, g - al + 1) for (g, al, _, _, _) in s]):
+-            key = lp_key_for(s, q)
+-            val, y = lp_solve(key)
+-            duals[key_str(key)] = {'value': str(val), 'y': [str(x) for x in y]}
+-    for line in leaflines:
+-        rec = json.loads(line)
+-        if rec['rule'] == 'RPLP':
+-            for cert in rec['witness'][1]:
+-                if cert[0] == 'R' and cert[1] not in duals:
+-                    pass
+-    for key, (val, y) in list(LPMEMO.items()):
+-        ks = key_str(key)
+-        if val >= 1 and ks not in duals:
+-            duals[ks] = {'value': str(val), 'y': [str(x) for x in y]}
+-    blob_leaves = ('\n'.join(leaflines) + '\n').encode()
++    limit = 15 * 1024 * 1024
++    # v3: duals for every memoised LP key of value >= 1, streamed in key-tuple order. This is exactly the
++    # v1/v2 key set: vfc_signature_killed evaluates and memoises every q of each signature it kills (all of
++    # value >= 1), and every RPLP "R" certificate cites a memoised key of value >= 1.
++    keys = sorted(k for k, (val, y) in LPMEMO.items() if val >= 1)
++
++    def dual_chunks():
++        yield b'{'
++        for i, key in enumerate(keys):
++            val, y = LPMEMO[key]
++            frag = json.dumps(key_str(key)) + ':' + json.dumps({'value': str(val), 'y': [str(x) for x in y]})
++            yield ((',' if i else '') + frag).encode()
++        yield b'}'
++
++    surv = json.dumps(survivors, indent=1).encode()
+     files = {
+-        'leaves.jsonl.gz': gzip.compress(blob_leaves, mtime=0),
+-        'vfc_killed.json.gz': gzip.compress(json.dumps(killed_sigs).encode(), mtime=0),
+-        'lp_duals.json.gz': gzip.compress(json.dumps(duals, sort_keys=True).encode(), mtime=0),
+-        'survivors.json': json.dumps(survivors, indent=1).encode(),
++        'leaves.jsonl.gz': _gz_bounded(((line + '\n').encode() for line in leaflines), limit),
++        'vfc_killed.json.gz': _gz_bounded([json.dumps(killed_sigs).encode()], limit),
++        'lp_duals.json.gz': _gz_bounded(dual_chunks(), limit),
++        'survivors.json': surv,
+     }
+-    total = sum(len(b) for b in files.values())
+-    if total > 15 * 1024 * 1024:
+-        files = {'survivors.json': files['survivors.json']}
++    if any(b is None for b in files.values()) or sum(len(b) for b in files.values()) > limit:
++        files = {'survivors.json': surv}
+         status_note = 'outputs truncated: certificate files exceed 15 MiB and were not written'
+     else:
+         status_note = None
+@@ -685,12 +732,14 @@
+         with open(os.path.join(outdir, fn), 'xb') as f:
+             f.write(b)
+         hashes[fn] = hashlib.sha256(b).hexdigest()
+-    run = {'engine': 'core7_engine_v1', 'engine_sha256': sha, 'universe': name, 'status': status,
++    run = {'engine': 'core7_engine_v3', 'engine_sha256': sha, 'universe': name, 'status': status,
+            'stop_reason': GUARD.reason, 'python': sys.version, 'platform': platform.platform(),
+            'seconds': round(time.time() - GUARD.t0, 1), 'min_free_disk_bytes': GUARD.min_free,
+            'profiles_total': len(profs), 'stats': stats, 'survivor_count': len(survivors),
+            'lp_memo_entries': len(LPMEMO), 'sig_memo_entries': len(SIGMEMO),
+-           'output_sha256': hashes, 'note': status_note, 'exploratory': True}
++           'output_sha256': hashes, 'note': status_note, 'exploratory': True,
++           'sigterm_received': GUARD.term, 'rss_cap_bytes': RSS_CAP,
++           'peak_rss_bytes_last_check': GUARD.max_rss, 'peak_rss_bytes_at_write': peak_rss_bytes()}
+     if extra:
+         run['extra'] = extra
+     with open(os.path.join(outdir, 'run.json'), 'x') as f:

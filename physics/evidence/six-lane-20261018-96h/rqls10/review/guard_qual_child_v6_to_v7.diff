@@ -1,0 +1,426 @@
+--- code/guard_qual_child_v6.py
++++ code/guard_qual_child_v7.py
+@@ -1,261 +1,191 @@
+ #!/usr/bin/env python3
+-"""guard_qual_child_v6: preregistered test children for the guard qualification package v5 of code/owned_supervisor_v9.py
+-(plan evidence/owned_supervisor_v9-guard-qualification-plan-v5.md). Supersedes guard_qual_child_v5.py (never run) after
+-the Codex review of package v4 (RUN/review/rqls10-guard-qualification-v4-codex-v1.prompt.stdout.txt, findings 3-5).
+-Standard library only, no science.
+-Lifetime: every process started here ends by itself by DEADLINE = (this child's start, taken BEFORE waiting for GO)
+-+ LIFE_S, measured on the shared monotonic clock: the GO wait is bounded (select), loops check DEADLINE, flood writes
+-are non-blocking, the double-fork grandchild execs /bin/sleep for the REMAINING time only. Descendant bodies exit 0 only
+-on success and 1 with a traceback on stderr otherwise (no masking). Intended descendants report their identities
+-(pid) through the child's stdout line "IDS {...}" or OUT, without extra workload processes.
+-Protocol: one line "GO" on stdin within LIFE_S (else exit 6). Usage: guard_qual_child_v6.py MODE OUT LIFE_S [TARGET]
+-  ok                 write OUT, print exactly "line 1", "line 2", "line 3", exit 0.
+-  rc_nonzero         write OUT, exit 3.
+-  no_output          print one line, exit 0 WITHOUT writing OUT (OUT is a required output in its config).
+-  mutate_pin         TARGET must be exactly <run>/pinned-scratch.txt (<run> = parent of OUT's directory): open without
+-                     create and without following symlinks, require a regular file with one link and exactly the
+-                     fixture bytes, append one byte b"x", write OUT, exit 0 (exit 2 without writing if any check fails).
+-  mutate_evidence    TARGET must be exactly <out>/launch.json (OUT's directory): open without create and without
+-                     following symlinks, require a regular non-empty file with one link, append one byte b"x", write
+-                     OUT, exit 0 (exit 2 without writing if any check fails).
+-  stray_file         write OUT, then create <out>/stray.txt exclusively (no symlink following), exit 0.
+-  flood              write 64 KiB lines to stdout (non-blocking) until SIGTERM (default action) or DEADLINE.
+-  sleep              sleep in 0.1 s steps until SIGTERM (default action) or DEADLINE, then write OUT, exit 0.
+-  ignore_term        ignore SIGTERM (records the arrival times), sleep until DEADLINE, write OUT, exit 0.
+-  escape_slow        fork a grandchild that calls setsid() and sleeps until DEADLINE; the child waits 3 s, writes OUT
+-                     {"grandchild": pid}, exits 0.
+-  escape_fast        as escape_slow but the child writes OUT and exits immediately after the fork.
+-  double_fork_escape fork an intermediate that calls setsid(), forks a grandchild, reports the grandchild's pid through
+-                     a pipe and exits at once (the child reaps it); the grandchild changes cwd to /, points fds 0-2 at
+-                     /dev/null, closes fds 3-255 and execs /bin/sleep for the remaining time; the child writes OUT
+-                     {"intermediate": pid, "grandchild": pid} and exits 0.
+-  zombie_hold        fork a holder in the child's group; the holder forks a process that exits at once and is NOT
+-                     reaped for 3 s (a zombie), reports its pid through a pipe, then exits (launchd reaps the zombie);
+-                     the child writes OUT {"holder": pid, "zombie": pid} after reaping the holder, exits 0.
+-  busy2              fork ONE CPU-bound grandchild in the same process group, print "IDS {"busy_pids": [child,
+-                     grandchild]}" and spin itself (two CPU-bound processes in total); both stop at DEADLINE or on
+-                     SIGTERM (default action).
+-  rss                allocate and touch 320 MiB, print "IDS {"rss_pid": pid}", sleep until SIGTERM (default action) or
+-                     DEADLINE.
++"""Single-process qualification child for supervisor v10 (parent narrowed scope e441d858...af22b).
++No fork, exec, subprocess or multiprocessing call. Supersedes frozen/unrun child v6. Busy control is one spinning
++process with the supervisor's TEST threshold zero; global lane busy cap remains 2. Fork/zombie/escape modes from the
++old generic package are removed, not silently qualified by this single-process contract.
++Usage: guard_qual_child_v7.py SCENARIO LIFE_S. All destinations are fixed beneath QROOT/SCENARIO, never argv-selected.
++GO waiting and flood writes are nonblocking and checked against a monotonic deadline from module entry (not a claim
++about interpreter startup). The parent also retains its independent supervisor/spawn deadline. Normal descendants do
++not exist. ignore/identity can outlive the supervisor; parent must verify this PID ended and audit its late output.
++Mutations use exact new scenario fixtures through retained no-follow directory descriptors; no create on append,
++regular file, link count one. The pin fixture's bytes are verified. No prior-run file is modified.
+ """
+-import json, os, select, signal, stat, sys, time, traceback
++import time
++START_MONO, START_EPOCH = time.monotonic(), time.time()
++import json
++import math
++import os
++import select
++import signal
++import stat
++import sys
+ 
+-T_START = time.monotonic()
++LANE = "/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10"
++QROOT = LANE + "/qual-pkg-v5-v10"
+ FIXTURE = b"pinned scratch file for the mutate_pin scenario\n"
+-try:
+-    MODE, OUT, LIFE = sys.argv[1], sys.argv[2], float(sys.argv[3])
+-    TARGET = sys.argv[4] if len(sys.argv) > 4 else None
+-except (IndexError, ValueError):
+-    sys.exit(2)
+-DEADLINE = T_START + LIFE
+-ready, _, _ = select.select([sys.stdin], [], [], max(0.0, DEADLINE - time.monotonic()))
+-if not ready or sys.stdin.readline().strip() != "GO":
+-    sys.exit(6)
+-OUT_DIR = os.path.dirname(os.path.abspath(OUT))
+-RUN_DIR = os.path.dirname(OUT_DIR)
++SCENARIOS = {"go_unlisted", "ok", "rc_nonzero", "missing_output", "mutate_pin", "mutate_evidence", "stray_file",
++             "deadline", "flood", "busy", "rss", "ignore", "identity"}
+ 
+ 
+-def alive():
+-    return time.monotonic() < DEADLINE
++def directory(path):
++    fd = os.open("/", os.O_RDONLY | os.O_DIRECTORY)
++    try:
++        for c in path.lstrip("/").split("/"):
++            if c in ("", ".", ".."):
++                raise ValueError("invalid directory component")
++            nxt = os.open(c, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
++            os.close(fd)
++            fd = nxt
++        return fd
++    except BaseException:
++        os.close(fd)
++        raise
+ 
+ 
+-def remaining():
+-    return max(0.0, DEADLINE - time.monotonic())
++def complete_write(fd, data):
++    view = memoryview(data)
++    while view:
++        n = os.write(fd, view)
++        if n <= 0:
++            raise OSError("zero-progress write")
++        view = view[n:]
+ 
+ 
+-def write_out(extra):
+-    fd = os.open(OUT, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
++def wait_go(deadline):
++    fd, old = 0, os.get_blocking(0)
++    data = b""
+     try:
+-        data = (json.dumps(dict({"mode": MODE, "pid": os.getpid(), "elapsed_s": time.monotonic() - T_START}, **extra))
+-                + "\n").encode("utf-8")
+-        view = memoryview(data)
+-        while view:
+-            k = os.write(fd, view)
+-            if k <= 0:
+-                raise OSError("zero-progress write")
+-            view = view[k:]
++        os.set_blocking(fd, False)
++        while time.monotonic() < deadline and len(data) <= 16:
++            ready, _, _ = select.select([fd], [], [], max(0, deadline - time.monotonic()))
++            if not ready:
++                return False
++            try:
++                b = os.read(fd, 17 - len(data))
++            except BlockingIOError:
++                continue
++            if not b:
++                return False
++            data += b
++            if b"\n" in data:
++                return data == b"GO\n"
++        return False
++    finally:
++        os.set_blocking(fd, old)
++
++
++def create_json(outfd, name, obj):
++    fd = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644, dir_fd=outfd)
++    try:
++        complete_write(fd, (json.dumps(obj, sort_keys=True, allow_nan=False) + "\n").encode())
++        os.fsync(fd)
+     finally:
+         os.close(fd)
+ 
+ 
+-def say_ids(obj):
+-    sys.stdout.write("IDS " + json.dumps(obj, sort_keys=True) + "\n")
+-    sys.stdout.flush()
+-
+-
+-def fork_bounded(body):
+-    pid = os.fork()
+-    if pid == 0:
+-        code = 0
+-        try:
+-            body()
+-        except BaseException:
+-            code = 1
+-            try:
+-                sys.stderr.write(traceback.format_exc()[-2000:])
+-                sys.stderr.flush()
+-            except BaseException:
+-                pass
+-        os._exit(code)
+-    return pid
+-
+-
+-def spin():
+-    x = 0
+-    while alive():
+-        x += 1
+-
+-
+-def escaped_sleep():
+-    os.setsid()
+-    while alive():
+-        time.sleep(0.1)
+-
+-
+-def append_exact(path, want_bytes):
+-    """append b"x" to an existing regular file with one link, opened without create or symlink following."""
+-    fd = os.open(path, os.O_RDWR | os.O_APPEND | os.O_NOFOLLOW)
++def append_fixture(fdroot, name, fixture=None):
++    fd = os.open(name, os.O_RDWR | os.O_APPEND | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=fdroot)
+     try:
+         st = os.fstat(fd)
+-        if not stat.S_ISREG(st.st_mode) or st.st_nlink != 1 or st.st_size == 0:
+-            raise OSError("target is not a regular non-empty file with one link")
+-        if want_bytes is not None and (st.st_size != len(want_bytes) or os.pread(fd, st.st_size, 0) != want_bytes):
+-            raise OSError("target content is not the expected fixture")
+-        if os.write(fd, b"x") != 1:
+-            raise OSError("append failed")
+-        return st.st_size
++        if not stat.S_ISREG(st.st_mode) or st.st_nlink != 1 or not 0 < st.st_size <= 1 << 20:
++            raise ValueError("mutation target is not a bounded single-link regular fixture")
++        if fixture is not None and (st.st_size != len(fixture) or os.pread(fd, len(fixture), 0) != fixture):
++            raise ValueError("wrong pin fixture")
++        complete_write(fd, b"x")
++        os.fsync(fd)
++        return {"target_inode": [st.st_dev, st.st_ino], "size_before": st.st_size}
+     finally:
+         os.close(fd)
+ 
+ 
+ def main():
+-    if MODE == "ok":
+-        write_out({})
+-        sys.stdout.write("line 1\nline 2\nline 3\n")
+-        sys.stdout.flush()
++    if len(sys.argv) != 3 or sys.argv[1] not in SCENARIOS:
++        return 2
++    name, life = sys.argv[1], float(sys.argv[2])
++    if not math.isfinite(life) or not 1 <= life <= 120:
++        return 2
++    deadline = START_MONO + life
++    if not wait_go(deadline):
++        return 6
++    run = QROOT + "/" + name
++    rfd, ofd = directory(run), None
++    try:
++        ofd = os.open("out", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=rfd)
++        def result(extra=None):
++            obj = {"scenario": name, "pid": os.getpid(), "pgid": os.getpgrp(), "ppid": os.getppid(),
++                   "mono_module_entry": START_MONO, "epoch_module_entry": START_EPOCH,
++                   "mono_output": time.monotonic(), "mono_life_deadline": deadline}
++            if extra:
++                obj.update(extra)
++            create_json(ofd, "child-out.json", obj)
++        if name in ("ok", "go_unlisted", "rc_nonzero"):
++            result()
++            if name == "ok":
++                complete_write(1, b"line 1\nline 2\nline 3\n")
++            return 3 if name == "rc_nonzero" else 0
++        if name == "missing_output":
++            complete_write(1, b"no output written\n")
++            return 0
++        if name == "mutate_pin":
++            info = append_fixture(rfd, "pinned-scratch.txt", FIXTURE)
++            result(info)
++            return 0
++        if name == "mutate_evidence":
++            info = append_fixture(ofd, "launch.json")
++            result(info)
++            return 0
++        if name == "stray_file":
++            result()
++            fd = os.open("stray.txt", os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644, dir_fd=ofd)
++            try:
++                complete_write(fd, b"undeclared file\n")
++                os.fsync(fd)
++            finally:
++                os.close(fd)
++            return 0
++        if name == "flood":
++            os.set_blocking(1, False)
++            line = b"x" * 65535 + b"\n"
++            view = memoryview(line)
++            while time.monotonic() < deadline:
++                try:
++                    n = os.write(1, view)
++                    if n <= 0:
++                        raise OSError("zero-progress flood write")
++                    view = view[n:] if n < len(view) else memoryview(line)
++                except BlockingIOError:
++                    time.sleep(0.005)
++            return 0
++        if name == "busy":
++            complete_write(1, ("IDS " + json.dumps({"busy_pid": os.getpid(), "mono_before_work": time.monotonic()}) + "\n").encode())
++            x = 0
++            while time.monotonic() < deadline:
++                x += 1
++            return 0
++        if name == "rss":
++            block = bytearray(320 * 1024 * 1024)
++            for i in range(0, len(block), 4096):
++                block[i] = 1
++            complete_write(1, ("IDS " + json.dumps({"rss_pid": os.getpid(), "allocated": len(block)}) + "\n").encode())
++            while time.monotonic() < deadline:
++                time.sleep(0.05)
++            return 0
++        arrivals = []
++        if name == "ignore":
++            signal.signal(signal.SIGTERM, lambda sig, frame: arrivals.append(time.monotonic()))
++        while time.monotonic() < deadline:
++            time.sleep(0.05)
++        result({"term_arrivals": arrivals})
+         return 0
+-    if MODE == "rc_nonzero":
+-        write_out({})
+-        return 3
+-    if MODE == "no_output":
+-        sys.stdout.write("no output written\n")
+-        sys.stdout.flush()
+-        return 0
+-    if MODE in ("mutate_pin", "mutate_evidence"):
+-        want_path = os.path.join(RUN_DIR, "pinned-scratch.txt") if MODE == "mutate_pin" else \
+-            os.path.join(OUT_DIR, "launch.json")
+-        if TARGET != want_path:
+-            return 2
+-        try:
+-            size = append_exact(TARGET, FIXTURE if MODE == "mutate_pin" else None)
+-        except OSError as ex:
+-            sys.stderr.write("MUTATION_REFUSED %r\n" % ex)
+-            return 2
+-        write_out({"mutated": TARGET, "size_before": size})
+-        return 0
+-    if MODE == "stray_file":
+-        write_out({})
+-        fd = os.open(os.path.join(OUT_DIR, "stray.txt"), os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
+-        try:
+-            os.write(fd, b"undeclared file\n")
+-        finally:
+-            os.close(fd)
+-        return 0
+-    if MODE == "flood":
+-        os.set_blocking(1, False)
+-        line = b"x" * 65535 + b"\n"
+-        view = memoryview(line)
+-        while alive():
+-            try:
+-                k = os.write(1, view)
+-                view = view[k:] if k < len(view) else memoryview(line)
+-            except BlockingIOError:
+-                time.sleep(0.01)
+-        return 0
+-    if MODE == "sleep":
+-        while alive():
+-            time.sleep(0.1)
+-        write_out({})
+-        return 0
+-    if MODE == "ignore_term":
+-        seen = []
+-        signal.signal(signal.SIGTERM, lambda s, f: seen.append(time.monotonic() - T_START))
+-        while alive():
+-            time.sleep(0.1)
+-        write_out({"sigterm_seen_at": seen})
+-        return 0
+-    if MODE in ("escape_slow", "escape_fast"):
+-        g = fork_bounded(escaped_sleep)
+-        if MODE == "escape_slow":
+-            time.sleep(min(3.0, remaining()))
+-        write_out({"grandchild": g})
+-        return 0
+-    if MODE == "double_fork_escape":
+-        r, w = os.pipe()
+-
+-        def intermediate():
+-            os.close(r)
+-            os.setsid()
+-            g = os.fork()
+-            if g == 0:
+-                try:
+-                    os.chdir("/")
+-                    fd = os.open("/dev/null", os.O_RDWR)
+-                    for k in (0, 1, 2):
+-                        os.dup2(fd, k)
+-                    os.closerange(3, 256)
+-                    os.execv("/bin/sleep", ["sleep", "%.3f" % remaining()])
+-                finally:
+-                    os._exit(1)
+-            os.write(w, b"%d\n" % g)
+-        i = fork_bounded(intermediate)
+-        os.close(w)
+-        ready_, _, _ = select.select([r], [], [], remaining())
+-        gpid = int(os.read(r, 32).decode().strip()) if ready_ else None
+-        os.close(r)
+-        _, status = os.waitpid(i, 0)
+-        write_out({"intermediate": i, "intermediate_status": status, "grandchild": gpid})
+-        return 0 if gpid is not None and status == 0 else 1
+-    if MODE == "zombie_hold":
+-        r, w = os.pipe()
+-
+-        def holder():
+-            os.close(r)
+-            z = os.fork()
+-            if z == 0:
+-                os._exit(0)
+-            os.write(w, b"%d\n" % z)
+-            time.sleep(min(3.0, remaining()))
+-        h = fork_bounded(holder)
+-        os.close(w)
+-        ready_, _, _ = select.select([r], [], [], remaining())
+-        zpid = int(os.read(r, 32).decode().strip()) if ready_ else None
+-        os.close(r)
+-        _, status = os.waitpid(h, 0)
+-        write_out({"holder": h, "holder_status": status, "zombie": zpid})
+-        return 0 if zpid is not None and status == 0 else 1
+-    if MODE == "busy2":
+-        kid = fork_bounded(spin)
+-        say_ids({"busy_pids": [os.getpid(), kid]})
+-        spin()
+-        os.waitpid(kid, 0)
+-        return 0
+-    if MODE == "rss":
+-        block = bytearray(320 * 1024 * 1024)
+-        for i in range(0, len(block), 4096):
+-            block[i] = 1
+-        say_ids({"rss_pid": os.getpid()})
+-        while alive():
+-            time.sleep(0.1)
+-        return 0
+-    return 2
++    finally:
++        if ofd is not None:
++            os.close(ofd)
++        os.close(rfd)
+ 
+ 
+ if __name__ == "__main__":
+     try:
+         sys.exit(main())
+-    except SystemExit:
+-        raise
+-    except BaseException:
+-        sys.stderr.write(traceback.format_exc()[-2000:])
++    except Exception as e:
++        sys.stderr.write("QUAL_CHILD_ERROR %r\n" % e)
+         sys.exit(2)

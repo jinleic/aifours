@@ -1,0 +1,803 @@
+--- code/test_pilot_stream_v3.py
++++ code/test_pilot_stream_v4.py
+@@ -1,29 +1,34 @@
+ #!/usr/bin/env python3
+-"""P-STREAM runner v2 offline tests, test v3 = code/test_pilot_stream_v2.py (de278c39..., preserved) adapted to runner v2
+-(code/pilot_stream_drat_ms06_v2.py / _ms09_v2.py) and to the parent-routed Codex review (af15a4e1...):
+-  - cooperative budget kept from v2 (monotonic deadline, sliced bounded joins, daemon helper threads, stamp-only
++"""P-STREAM runner v3 offline tests, test v4 = code/test_pilot_stream_v3.py (3747042f..., preserved) adapted to runner
++v3 (code/pilot_stream_drat_ms06_v3.py / _ms09_v3.py) and to the parent-routed Codex follow-up review (3da83be6...):
++  - cooperative budget kept (monotonic deadline, sliced bounded joins, daemon helper threads, stamp-only
+     SIGTERM/SIGINT, terminal result.json always written; no SIGALRM, kill, ulimit or tool deadline);
+-  - host timestamps only through the runner's OWNED, BOUNDED /bin/date Helper (R.clock), never after a stamped
+-    signal; a failed read is recorded as null (never invented);
+-  - the qualification matrix compares COMPLETE sorted defect-ID lists (R.defect_ids) per single-scenario mutation,
+-    including conflicting/duplicated canonical records and the C3/C4 intended-reason shapes;
+-  - new deterministic checks: V8 continuation after a flushed over-long line (scripted reader, adversarial and
+-    genuine-line alignments), V13 capture accounting, V5 proof-RAM charge while a feeder holds the tuple, V6
+-    abandon() error reporting, V1 libproc reads of this test process (identity fields, RSS, listings), V4 run-tree
+-    census / lane usage / out-dir ancestry on test-owned trees, V4 monitor provenance header, V12 item shapes,
+-    V1 helper refusal (unreaped owned process, stamped cancel) and V2 output guard;
++  - N11: a stamped signal is propagated into the runner's own cancel stamp (its helper/stop gates see it); host
++    clocks are read only through the runner's owned bounded helper and only if its whole allowance fits the
++    remaining budget; the terminal is decided AFTER closeout and is ALL_OK only if every test passed, no helper
++    thread is alive, the runner holds no latch, every runner helper settled and closeout raised nothing;
++  - the qualification matrix compares COMPLETE sorted defect-ID lists (incl. N4 SOLVER_TIMING / X.TIMING);
++  - new deterministic checks: N1 stop identity (patched KILLPG/bsd_identity/list_pids; no process is signalled),
++    N2 helper admission refusals (latch, cancel, unsettled owner, frozen cutoffs) and settlement, N3 parent
++    allocation/verified release (empty, UNSETTLED, symlinked, mismatched, unlisted, GO-reusing, quarantined,
++    missing attempts; reservation/out_dir/busy-slot mismatches), N4/N5 commit charging and late-commit UNKNOWN,
++    N6 deferred release of a live collector and creation-time ownership in run_kissat, N7 bounded no-follow
++    non-blocking metadata reads, N8 anchored writes and confinement refusal after a directory swap plus
++    same-size-rewrite census evidence, N9 closeout cancel race, N10 C6 timer predicate, N12 pid-buffer
++    validation, V6 abandon() close-error reporting (descriptor replaced by a never-open number, no fd reuse);
+   - constant/default pinning is not tested (not behavioral evidence); chunk fit is proven separately by a native
+     prestart-refusal scenario.
+-Preservation scope (T1:148 disposition by the parent): the only rename is of a FIFO this test created inside
+-OUT_DIR/work (moved, never deleted); the only permission change is chmod 000 -> 0755 of a directory this test
+-created inside OUT_DIR/work; no other path is created, changed, moved or deleted.
++Preservation scope: every created path lies inside OUT_DIR/work; the only moves are of test-created entries (a FIFO
++in t_buffer_fifo_replaced; the 'controls' directory of a test run tree in t_anchored_confinement), never deletions;
++the only permission change is chmod 000 -> 0755 of a test-created directory; the only in-place rewrite is of a
++test-created file (t_tree_census_and_usage, same size); test-created symlinks are made in fixtures only.
+ 
+ NOT TO BE RUN without a parent GO/WINDOW or parent supervision (small-probe rules: frozen source; receipt with PID
+-written before any work; <= 300 s; one process besides the bounded /bin/date helper; outputs only under
++written before any work; <= 300 s; one process besides the runner's bounded /bin/date helper; outputs only under
+ LANE/evidence/probes/).  No solver/checker binary is executed.
+ 
+-usage: test_pilot_stream_v3.py RUNNER.py RUNNER_SHA256 OUT_DIR
+-  RUNNER: code/pilot_stream_drat_ms06_v2.py or code/pilot_stream_drat_ms09_v2.py (identical transport code).
++usage: test_pilot_stream_v4.py RUNNER.py RUNNER_SHA256 OUT_DIR
++  RUNNER: code/pilot_stream_drat_ms06_v3.py or code/pilot_stream_drat_ms09_v3.py (identical transport code).
+   OUT_DIR must not exist; its parent must be LANE/evidence/probes.  Writes OUT_DIR/receipt.json first and
+   OUT_DIR/result.json last (both exclusive); FIFOs, pipes and fixture trees only inside OUT_DIR/work.
+ Exit 0 ALL_OK; 1 FAILURES or SETUP_FAILED; 2 BUDGET_EXHAUSTED; 3 CANCELLED; 70 refused start (no OUT_DIR);
+@@ -31,6 +36,7 @@
+ """
+ import copy
+ import datetime
++import errno
+ import hashlib
+ import importlib.util
+ import json
+@@ -47,7 +53,7 @@
+ PROV_SHA = "a46c0c717f702206a7fe345de5bcdc0b10112bca6bdbf04dd42cd9848ff08e37"
+ RESULT_RESERVE_S = 15                 # B1: kept free for the terminal result
+ SLICE_S = 0.2                         # B1: wait slice (cancel/budget noticed within this)
+-STATE = {"t0": None, "deadline": None, "signal": None}
++STATE = {"t0": None, "deadline": None, "signal": None, "runner": None}
+ 
+ 
+ class BudgetExhausted(Exception):
+@@ -59,9 +65,13 @@
+ 
+ 
+ def on_signal(signum, frame):
+-    """B2: lock-free; only stamps the first signal number."""
++    """B2/N11: lock-free; stamps the first signal number and propagates it into the runner's own cancel stamp, so the
++    runner's helper admission and stop gates see it."""
+     if STATE["signal"] is None:
+         STATE["signal"] = signum
++    R = STATE["runner"]
++    if R is not None and R.STATE["cancel_order"] is None:
++        R.STATE["cancel_order"] = next(R.ORDER)
+ 
+ 
+ def remaining():
+@@ -184,10 +194,57 @@
+ 
+ 
+ def host_clock(R):
+-    """Host clock through the runner's owned bounded helper; None after a stamped signal or without the runner."""
+-    if R is None or STATE["signal"] is not None:
++    """N11: host clock through the runner's owned bounded helper, only if no signal is stamped and the helper's whole
++    allowance fits the remaining budget less the result reserve; otherwise None (never invented)."""
++    if R is None or STATE["signal"] is not None or remaining() - RESULT_RESERVE_S < R.HELPER_ALLOW + 1:
+         return None
+     return R.clock()
++
++
++def anchored(R, path):
++    """N8 fixtures: anchor a test-created directory in the runner's TREE (ProofBuffer FIFOs are created there)."""
++    if path not in R.TREE:
++        R.anchor_existing_dir(path)
++    return path
++
++
++def restore_cancel(R, saved):
++    """Restore a test-set runner cancel stamp unless a real signal arrived meanwhile (then the stamp stays)."""
++    if STATE["signal"] is None:
++        R.STATE["cancel_order"] = saved
++
++
++class RunTreeFixture:
++    """A test-owned run tree created by the runner's own create_run_tree under W/<name>/pilot, plus the runner STATE
++    fields the code under test reads; restore() puts every touched STATE/TREE/WRITTEN entry back."""
++    KEYS = ("out", "mono0", "mono_end", "abs_end", "chunk_end", "mono_chunk_end", "output_limit", "written",
++            "reservation", "remaining_reserve", "pilot_entries", "last_ledger")
++
++    def __init__(self, R, W, name, limit=64 * 1024 * 1024, span=600):
++        self.R = R
++        self.saved = {k: R.STATE[k] for k in self.KEYS}
++        self.tree_keys, self.written_keys = set(R.TREE), set(R.WRITTEN)
++        pilot = os.path.join(W, name, "pilot")
++        os.makedirs(pilot)
++        self.out = os.path.join(pilot, "run-test")
++        R.create_run_tree(self.out, parent=pilot)
++        m, e = time.monotonic(), time.time()
++        R.STATE.update(out=self.out, mono0=m, mono_end=m + span, abs_end=e + span, chunk_end=e + span + 300,
++                       mono_chunk_end=m + span + 300, output_limit=limit, written=0, reservation=limit,
++                       remaining_reserve=limit, pilot_entries=[], last_ledger=None)
++
++    def restore(self):
++        R = self.R
++        for k, v in self.saved.items():
++            R.STATE[k] = v
++        for k in set(R.TREE) - self.tree_keys:
++            fd = R.TREE.pop(k)[0]
++            try:
++                os.close(fd)
++            except OSError:
++                pass
++        for k in set(R.WRITTEN) - self.written_keys:
++            R.WRITTEN.pop(k)
+ 
+ 
+ def t_buffer_roundtrip(R, W):
+@@ -503,7 +560,8 @@
+ 
+ 
+ def t_tree_census_and_usage(R, W):
+-    """V4/V2: complete census (every kind, hard links, symlink, FIFO) and lane usage on a test-owned tree."""
++    """V4/V2/N8: complete census (every kind, hard links, symlink, FIFO; dev/ino/size/mtime/ctime/mode/nlink) and lane
++    usage on a test-owned tree; an added entry and an in-place SAME-SIZE rewrite are both visible."""
+     root = os.path.join(W, "tree")
+     os.mkdir(root)
+     os.mkdir(os.path.join(root, "sub"))
+@@ -518,13 +576,20 @@
+     kinds = {os.path.relpath(p, root): v[0] for p, v in snap.items()}
+     assert kinds == {"sub": "dir", "a.txt": "file", "sub/b.bin": "file", "hl": "file", "ln": "symlink",
+                      "f.fifo": "fifo"}, kinds
+-    assert snap[os.path.join(root, "ln")][2] == len("a.txt") and snap[os.path.join(root, "f.fifo")][2] == 0
++    assert snap[os.path.join(root, "ln")][3] == len("a.txt") and snap[os.path.join(root, "f.fifo")][3] == 0
++    assert len(snap[os.path.join(root, "sub")]) == 4 and len(snap[os.path.join(root, "a.txt")]) == 8
+     assert R.lane_usage(root) == 10 + 20 + len("a.txt")
+     with open(os.path.join(root, "c.txt"), "xb") as fh:      # an added entry is visible to the comparison
+         fh.write(b"z")
+     snap2 = R.run_tree_census(root)
+     assert set(snap2) - set(snap) == {os.path.join(root, "c.txt")}
+-    return {"entries": len(snap2), "usage": R.lane_usage(root)}
++    time.sleep(0.01)
++    with open(os.path.join(root, "sub", "b.bin"), "r+b") as fh:   # same-size in-place rewrite of a test file
++        fh.write(b"y" * 20)
++    snap3 = R.run_tree_census(root)
++    b = os.path.join(root, "sub", "b.bin")
++    assert snap3[b][3] == snap2[b][3] == 20 and snap3[b] != snap2[b], (snap2[b], snap3[b])
++    return {"entries": len(snap3), "usage": R.lane_usage(root), "same_size_rewrite_visible": True}
+ 
+ 
+ def t_tree_census_fail_closed(R, W):
+@@ -619,38 +684,54 @@
+ 
+ 
+ def t_helper_refusals_and_clock(R, W):
+-    """V1: the helper is refused (no process) while an owned process is unreaped or a cancel is stamped; the normal
+-    path returns one /bin/date line through the owned bounded helper."""
+-    fake = types.SimpleNamespace(proc=types.SimpleNamespace(returncode=None))
++    """N2: the helper starts no process while the latch is held, a cancel is stamped, an owned process is unsettled
++    (this one latches) or its allowance does not fit the frozen cutoffs; the normal path returns one /bin/date line
++    from a SETTLED helper (verified identity, empty group, rc 0, exact output, within its bounds)."""
+     n_helpers, n_latch = len(R.HELPERS), len(R.LATCH)
+-    R.OWNED.append(fake)
+-    try:
+-        refused = False
++    outcomes = {}
++
++    def attempt(tag):
+         try:
+             R.Helper(R.DATE_ARGV).run()
++            outcomes[tag] = "ran"
+         except R.HelperRefused:
+-            refused = True
++            outcomes[tag] = "refused"
++
++    fake = types.SimpleNamespace(proc=types.SimpleNamespace(returncode=None), settled_rec=None)
++    R.OWNED.append(fake)
++    try:
++        attempt("unsettled_owner")
+     finally:
+         R.OWNED.remove(fake)
+-    latched = R.LATCH[n_latch:]
++    unsettled_latched = R.LATCH[n_latch:]
+     del R.LATCH[n_latch:]
+-    assert refused and len(R.HELPERS) == n_helpers and latched, (refused, latched)
+-    R.STATE["cancel_order"] = 1
+-    try:
+-        refused_cancel = False
+-        try:
+-            R.Helper(R.DATE_ARGV).run()
+-        except R.HelperRefused:
+-            refused_cancel = True
+-    finally:
+-        R.STATE["cancel_order"] = None
+-    assert refused_cancel and len(R.HELPERS) == n_helpers and len(R.LATCH) == n_latch
+-    check()
++    R.LATCH.append("test latch")
++    try:
++        attempt("latch")
++    finally:
++        R.LATCH.remove("test latch")
++    saved_co = R.STATE["cancel_order"]
++    R.STATE["cancel_order"] = next(R.ORDER)
++    try:
++        attempt("cancel")
++    finally:
++        restore_cancel(R, saved_co)
++    saved = (R.STATE["mono_end"], R.STATE["abs_end"])
++    R.STATE["mono_end"], R.STATE["abs_end"] = time.monotonic() + 1, time.time() + 1
++    try:
++        attempt("cutoff")
++    finally:
++        R.STATE["mono_end"], R.STATE["abs_end"] = saved
++    assert outcomes == {"unsettled_owner": "refused", "latch": "refused", "cancel": "refused", "cutoff": "refused"}, outcomes
++    assert len(R.HELPERS) == n_helpers and unsettled_latched and len(R.LATCH) == n_latch, (unsettled_latched, R.LATCH)
++    need(R.HELPER_ALLOW + 1, "helper")
+     stamp = R.clock()
+     assert isinstance(stamp, str) and R.DATE_RE.fullmatch((stamp + "\n").encode()), stamp
+     last = R.HELPERS[-1]
+-    assert last.proc is not None and last.proc.returncode == 0 and not last.quarantined
+-    return {"clock": stamp, "helpers": len(R.HELPERS)}
++    assert last.settled and last.record["unsettled"] == [] and last.record["invalid"] == []
++    assert last.identity_at_start is not None
++    assert last.proc.returncode == 0 and not last.quarantined and last.term_delivery is None
++    return {"clock": stamp, "helper_record": last.record}
+ 
+ 
+ def t_output_guard(R, W):
+@@ -674,28 +755,87 @@
+     return {"refused_at": 11}
+ 
+ 
+-def t_other_admitted_reservations(R, W):
+-    """V2: other admitted attempts = run dirs with a launch record and no summary; malformed records raise."""
+-    root = os.path.join(W, "pilot-ledger")
+-    for name, res, summ in (("run-a", 123, False), ("run-b", 456, True), ("run-c", 7, False)):
+-        os.makedirs(os.path.join(root, name))
+-        with open(os.path.join(root, name, "launch-record.json"), "xb") as fh:
+-            fh.write(json.dumps({"retained_output_reservation_bytes": res}).encode())
+-        if summ:
+-            with open(os.path.join(root, name, "summary.json"), "xb") as fh:
+-                fh.write(b"{}")
+-    total, names = R.other_admitted_reservations(root)
+-    assert (total, names) == (130, ["run-a", "run-c"]), (total, names)
+-    os.makedirs(os.path.join(root, "run-d"))
+-    with open(os.path.join(root, "run-d", "launch-record.json"), "xb") as fh:
+-        fh.write(json.dumps({"retained_output_reservation_bytes": True}).encode())
+-    raised = False
+-    try:
+-        R.other_admitted_reservations(root)
+-    except RuntimeError:
+-        raised = True
+-    assert raised
+-    return {"others": total}
++def _write_json(path, obj):
++    data = json.dumps(obj).encode()
++    with open(path, "xb") as fh:
++        fh.write(data)
++    return sha(data)
++
++
++def t_allocation_release(R, W):
++    """N3: only the parent's allocation admits.  Every existing attempt must be listed and verifiably released:
++    '{}', UNSETTLED, symlinked, digest-mismatched, unlisted, GO-reusing, quarantined and missing attempts release
++    nothing; reservation, out_dir and busy-slot mismatches refuse; an existing OUT_DIR refuses (one use); a fully
++    released root (v14 and v3 summaries) admits.  Each scenario uses its own fixture pilot root."""
++    go_sha = "f" * 64
++    v14 = {"schema": "PA19-96H-PILOT-SUMMARY-v14", "exit_code": 0, "all_children_settled": True,
++           "children": [{"seq": 1, "settled": True}]}
++    v3 = dict(v14, schema="PA19-96H-PSTREAM-SUMMARY-v3", all_helpers_settled=True, quarantine_receipts=[],
++              proof_ram_outstanding_bytes=0)
++
++    def attempt(root, name, summary, go="e" * 64, quarantine=False, link_summary=False):
++        d = os.path.join(root, name)
++        os.makedirs(os.path.join(d, "children"))
++        lr = _write_json(os.path.join(d, "launch-record.json"), {"go": {"sha256": go}})
++        if link_summary:
++            sm = _write_json(os.path.join(d, "summary.real.json"), summary)
++            os.symlink("summary.real.json", os.path.join(d, "summary.json"))
++        else:
++            sm = _write_json(os.path.join(d, "summary.json"), summary)
++        if quarantine:
++            _write_json(os.path.join(d, "children", "01-x.QUARANTINE.json"), {"pid": 1})
++        return {"dir": d, "launch_record_sha256": lr, "summary_sha256": sm}
++
++    def scenario(name, build, res=1000, **kw):
++        check()
++        root = os.path.join(W, "alloc-" + name)
++        os.mkdir(root)
++        rel = build(root)
++        out_dir = os.path.join(root, "run-new")
++        a = {"schema": R.ALLOCATION_SCHEMA, "allocation_id": name, "out_dir": out_dir, "reservation_bytes": res,
++             "lane_ceiling_bytes": R.LANE_CEILING, "busy_slots": R.BUSY_SLOTS, "released_attempts": rel}
++        a.update(kw)
++        return R.allocation_refusals({"allocation": a}, go_sha, out_dir, 1000, root=root)[0]
++
++    def good(root):
++        return [attempt(root, "run-a", v14), attempt(root, "run-b", v3)]
++
++    def mismatched(root):
++        r = attempt(root, "run-a", v14)
++        r["summary_sha256"] = "0" * 64
++        return [r]
++
++    def missing(root):
++        return [attempt(root, "run-a", v14), {"dir": os.path.join(root, "run-gone"), "launch_record_sha256": "1" * 64,
++                                              "summary_sha256": "2" * 64}]
++
++    def out_exists(root):
++        os.mkdir(os.path.join(root, "run-new"))
++        return [attempt(root, "run-a", v14)]
++
++    res = {
++        "admitted": scenario("admitted", good),
++        "no_allocation": R.allocation_refusals({}, go_sha, os.path.join(W, "x", "run-new"), 1000,
++                                               root=os.path.join(W, "x"))[0],
++        "small_reservation": scenario("small", good, res=999),
++        "wrong_out_dir": scenario("outdir", good, out_dir="/elsewhere/run-new"),
++        "busy_slots": scenario("busy", good, busy_slots=3),
++        "empty_summary": scenario("empty", lambda root: [attempt(root, "run-a", {})]),
++        "unsettled": scenario("unsettled", lambda root: [attempt(root, "run-a", dict(v14, all_children_settled=False))]),
++        "unsettled_child": scenario("child", lambda root: [attempt(root, "run-a", dict(v14, children=[{"settled": False}]))]),
++        "v3_helper_unsettled": scenario("helper", lambda root: [attempt(root, "run-a", dict(v3, all_helpers_settled=False))]),
++        "symlinked_summary": scenario("symlink", lambda root: [attempt(root, "run-a", v14, link_summary=True)]),
++        "digest_mismatch": scenario("mismatch", mismatched),
++        "unlisted": scenario("unlisted", lambda root: (attempt(root, "run-a", v14), [])[1]),
++        "go_reuse": scenario("reuse", lambda root: [attempt(root, "run-a", v14, go=go_sha)]),
++        "quarantine": scenario("quarantine", lambda root: [attempt(root, "run-a", v14, quarantine=True)]),
++        "missing": scenario("missing", missing),
++        "out_dir_exists": scenario("exists", out_exists),
++    }
++    assert res["admitted"] == [], res["admitted"]
++    refused = {k: v for k, v in res.items() if k != "admitted"}
++    assert all(refused.values()), {k: v for k, v in refused.items() if not v}
++    return {k: len(v) for k, v in res.items()}
+ 
+ 
+ def good_fixture(R):
+@@ -704,11 +844,11 @@
+             "unblocked_by_runner": False, "discarded": 0, "received": 100, "retained": 100,
+             "sha256_of_retained": S, "buffer_rehash": [S, 100], "thread_alive_after_join": False}
+     solver = {"returncode": 20, "stop": "self", "settled": True, "capture_over_cap": False, "seq": 1,
+-              "proof_sink": sink}
++              "proof_sink": sink, "exit_observed_by_deadline": True}
+ 
+     def chk(seq):
+         rec = {"returncode": 0, "stop": "self", "settled": True, "capture_over_cap": False, "seq": seq,
+-               "nondropped_bytes": 500,
++               "nondropped_bytes": 500, "exit_observed_by_deadline": True,
+                "stdin_feed": {"mode": "plain", "started": True, "fed_bytes": 100, "fed_sha256": S,
+                               "proof_bytes_fed": 100, "delivery_error": None, "exception": None, "close_error": None,
+                               "thread_alive_after_join": False},
+@@ -718,6 +858,7 @@
+         return [rec, lines]
+     return {"cnf_expect": ("c" * 64, 1000, "p cnf 10 20"), "solver": solver, "kl": ["s UNSATISFIABLE"], "cap": 1000,
+             "checks": [["A"] + chk(2), ["B"] + chk(3)], "cnf_post": ("c" * 64, 1000), "buf_post": [S, 100], "S": S}
++
+ 
+ 
+ def qualify(R, fx):
+@@ -764,6 +905,9 @@
+         ("solver no output", lambda fx: fx["kl"].clear(), ["SOLVER_OUTPUT"]),
+         ("solver unsettled", lambda fx: fx["solver"].update(settled=False), ["SOLVER_SETTLE"]),
+         ("solver capture over cap", lambda fx: fx["solver"].update(capture_over_cap=True), ["SOLVER_SETTLE"]),
++        ("solver exit observed after its deadline", lambda fx: fx["solver"].update(exit_observed_by_deadline=False),
++         ["SOLVER_TIMING"]),
++        ("solver timing evidence missing", lambda fx: fx["solver"].pop("exit_observed_by_deadline"), ["SOLVER_TIMING"]),
+         ("buffer no EOF", lambda fx: sink(fx).update(eof=False), ["BUFFER_INCOMPLETE"]),
+         ("buffer over cap", lambda fx: sink(fx).update(over_cap=True), ["BUFFER_INCOMPLETE"]),
+         ("buffer I/O error", lambda fx: sink(fx).update(error="OSError()"), ["BUFFER_INCOMPLETE"]),
+@@ -818,6 +962,9 @@
+         ("checker A nondropped bytes missing", lambda fx: A(fx).pop("nondropped_bytes"), ["A.FILTER"]),
+         ("checker A unsettled", lambda fx: A(fx).update(settled=False), ["A.SETTLE"]),
+         ("checker B capture over cap", lambda fx: B(fx).update(capture_over_cap=True), ["B.SETTLE"]),
++        ("checker B exit observed after its deadline", lambda fx: B(fx).update(exit_observed_by_deadline=False),
++         ["B.TIMING"]),
++        ("checker A timing evidence missing", lambda fx: A(fx).pop("exit_observed_by_deadline"), ["A.TIMING"]),
+         ("CNF post digest differs", lambda fx: fx.update(cnf_post=("d" * 64, 1000)), ["CNF_POST"]),
+         ("CNF post bytes differ", lambda fx: fx.update(cnf_post=("c" * 64, 999)), ["CNF_POST"]),
+         ("buffer post-check re-hash differs", lambda fx: fx.update(buf_post=[S2, 100]), ["BUFFER_POST"]),
+@@ -844,6 +991,7 @@
+     return m
+ 
+ 
++
+ def t_qualify_matrix(R, W):
+     """V10: complete sorted defect-ID list per scenario; the baseline must be exactly []."""
+     base = good_fixture(R)
+@@ -862,17 +1010,328 @@
+     return {"scenarios": len(rows), "all_complete_id_sets_exact": True}
+ 
+ 
++
++class FakeProc:
++    """A never-started stand-in for a retained Popen: no process exists behind it."""
++
++    def __init__(self, rc=None):
++        self.returncode = rc
++
++    def poll(self):
++        return self.returncode
++
++    def wait(self):
++        return self.returncode
++
++
++def t_stop_identity(R, W):
++    """N1: the stop primitive sends at most one group SIGTERM, only to an identity-verified owner, never to a reaped
++    or unverifiable one (KILLPG, bsd_identity and list_pids are patched; no process is signalled)."""
++    calls = []
++    saved = (R.KILLPG, R.bsd_identity, R.list_pids)
++    n_latch = len(R.LATCH)
++    me = os.getpid()
++    good = {"pid": 424242, "ppid": me, "pgid": 424242, "status": 2, "start": [7, 8], "comm": "x"}
++
++    def owner(identity, rc=None):
++        o = R.Owned()
++        o._owned_init()
++        o.argv, o.proc, o.pid, o.pgid, o.identity_at_start = ["fake"], FakeProc(rc), 424242, 424242, identity
++        return o
++
++    try:
++        R.KILLPG = lambda pgid, sig: calls.append((pgid, sig))
++        R.list_pids = lambda kind, value: []
++        R.bsd_identity = lambda pid: (dict(good), None)
++        a = owner(None)                            # no verified start identity: refused, no signal
++        a.term("t")
++        a.term("t")
++        R.bsd_identity = lambda pid: (dict(good, start=[9, 9]), None)
++        b = owner(dict(good))                      # a different process start: refused
++        b.term("t")
++        R.bsd_identity = lambda pid: (dict(good), None)
++        c = owner(dict(good))                      # verified: exactly one group SIGTERM, never a second
++        c.term("t")
++        c.term("t")
++        d = owner(dict(good), rc=0)                # reaped: never signalled
++        d.term("t")
++        R.bsd_identity = lambda pid: (None, {"bsd_bytes": 0, "errno": errno.ESRCH})
++        R.list_pids = lambda kind, value: [424242]
++        e = owner(dict(good))                      # exited, unreaped, still listed in its own group: verified
++        e.term("t")
++    finally:
++        R.KILLPG, R.bsd_identity, R.list_pids = saved
++    latched = R.LATCH[n_latch:]
++    del R.LATCH[n_latch:]
++    assert calls == [(424242, signal.SIGTERM), (424242, signal.SIGTERM)], calls
++    assert a.term_refused_mono is not None and a.term_sent_mono is None and b.term_refused_mono is not None
++    assert c.term_sent_mono is not None and c.term_delivery["delivered"] is True and d.term_delivery is None
++    assert e.term_sent_mono is not None and len(latched) == 2, latched
++    return {"signals_recorded": len(calls), "refusals_latched": len(latched)}
++
++
++def t_buffer_live_collector_release(R, W):
++    """N6: release() of a buffer whose collector still runs is deferred: the blocks stay and stay charged; after EOF
++    and finish() the release succeeds and the charge falls to zero."""
++    p = os.path.join(W, "t6.fifo")
++    b = R.ProofBuffer(p, 4 * R.FEED_BLOCK)
++    data = det_bytes(1000, 9)
++    gate = threading.Event()
++    res = {}
++
++    def writer():
++        try:
++            fd = os.open(p, os.O_WRONLY)
++            try:
++                mv = memoryview(data)
++                while mv:
++                    k = os.write(fd, mv)
++                    mv = mv[k:]
++                gate.wait(30)
++            finally:
++                os.close(fd)
++            res["ok"] = True
++        except Exception as exc:
++            res["error"] = repr(exc)
++
++    th = spawn(writer, (), "t6-writer")
++    end = time.monotonic() + 30
++    try:
++        while b.retained < len(data):
++            check()
++            assert time.monotonic() < end, "collector did not receive the bytes"
++            time.sleep(SLICE_S)
++        deferred = b.release()
++        still_list = isinstance(b.blocks, list)
++        charge_live = R.buffer_charge()
++    finally:
++        gate.set()
++    assert wait_thread(th, 60, "writer") and res.get("ok"), res
++    rec = buffer_finish(R, b, True)
++    released = b.release()
++    assert deferred is False and still_list and charge_live >= len(data) and b.release_requested
++    assert R.sink_complete(rec) and released is True and R.buffer_charge() == 0
++    return {"charged_while_live": charge_live}
++
++
++def t_run_kissat_owner_on_exception(R, W):
++    """N6: a ProofBuffer created by run_kissat is owned by the caller's list from creation, so it is released even when
++    run_child raises before run_kissat returns (run_child patched; no process is started)."""
++    fx = RunTreeFixture(R, W, "t-owner")
++    saved = R.run_child
++    owner = []
++    raised = False
++
++    def boom(*a, **k):
++        raise RuntimeError("injected run_child failure")
++
++    try:
++        R.run_child = boom
++        try:
++            R.run_kissat(os.path.join(fx.out, "x.cnf"), "T6", 1, 4096, 0, {}, owner)
++        except RuntimeError:
++            raised = True
++    finally:
++        R.run_child = saved
++    try:
++        assert raised and len(owner) == 1 and isinstance(owner[0], R.ProofBuffer), (raised, owner)
++        rec = buffer_finish(R, owner[0], False)    # never connected: the runner unblocks and joins it
++        assert owner[0].release() is True and R.buffer_charge() == 0 and rec["unblocked_by_runner"]
++    finally:
++        fx.restore()
++    return {"owned_at_creation": True}
++
++
++def t_commit_charging_and_cutoff(R, W):
++    """N5: an item commit is charged before its anchored O_EXCL creation (an over-limit commit creates nothing);
++    N4: a commit after the frozen cutoff latches and can only be UNKNOWN."""
++    fx = RunTreeFixture(R, W, "t-commit", limit=10)
++    n_latch = len(R.LATCH)
++    try:
++        p1 = os.path.join(fx.out, "a.record.json")
++        refused = False
++        try:
++            R.commit_record(p1, {"status": "UNKNOWN"}, {"status": "UNSAT"})
++        except RuntimeError:
++            refused = True
++        created = os.path.lexists(p1)
++        R.STATE["output_limit"] = R.STATE["reservation"] = 1 << 20
++        R.STATE["mono_end"] = time.monotonic() - 1  # the frozen elapsed cutoff has passed
++        p2 = os.path.join(fx.out, "b.record.json")
++        c = R.commit_record(p2, {"status": "UNKNOWN"}, {"status": "UNSAT"})
++        body = json.loads(R.read_tree(p2, R.RECORD_MAX))
++    finally:
++        fx.restore()
++        latched = R.LATCH[n_latch:]
++        del R.LATCH[n_latch:]
++    assert refused and not created
++    assert c["committed_unsat"] is False and body["status"] == "UNKNOWN" and any("cutoff" in x for x in latched), latched
++    return {"late_commit": body["status"], "latched": len(latched)}
++
++
++def t_bounded_metadata_reads(R, W):
++    """N7: metadata reads refuse a FIFO without blocking, a final symlink and an oversize file; hashing refuses a FIFO
++    too; a regular file within the bound is read exactly."""
++    fifo = os.path.join(W, "t7.fifo")
++    os.mkfifo(fifo, 0o600)
++    real = os.path.join(W, "t7.json")
++    with open(real, "xb") as fh:
++        fh.write(b"x" * 100)
++    link = os.path.join(W, "t7.link")
++    os.symlink("t7.json", link)
++    out = {}
++    for name, fn in (("fifo_read", lambda: R.read_regular_bounded(fifo, 1000)), ("fifo_hash", lambda: R.sha_file(fifo)),
++                     ("symlink_read", lambda: R.read_regular_bounded(link, 1000)),
++                     ("oversize", lambda: R.read_regular_bounded(real, 99))):
++        check()
++        try:
++            fn()
++            out[name] = "accepted"
++        except (OSError, RuntimeError) as exc:
++            out[name] = type(exc).__name__
++    assert all(v != "accepted" for v in out.values()), out
++    assert R.read_regular_bounded(real, 100) == b"x" * 100
++    return out
++
++
++def t_anchored_confinement(R, W):
++    """N8: after an anchored run-tree directory is moved aside and replaced by a symlink, confinement is refused and
++    anchored writes still land in the anchored (moved) directory, never in the symlink target.  Preservation scope:
++    the test-created 'controls' directory is moved (never deleted) and a test-created symlink is made."""
++    fx = RunTreeFixture(R, W, "t-confine")
++    try:
++        ctl = os.path.join(fx.out, "controls")
++        elsewhere = os.path.join(W, "t-confine", "elsewhere")
++        os.mkdir(elsewhere)
++        before = R.confinement_refusals()
++        os.rename(ctl, ctl + ".moved")
++        os.symlink(elsewhere, ctl)
++        why = R.confinement_refusals()
++        R.write_bytes_x(os.path.join(ctl, "probe.txt"), b"anchored")
++        landed = os.path.exists(os.path.join(ctl + ".moved", "probe.txt"))
++        leaked = os.path.exists(os.path.join(elsewhere, "probe.txt"))
++    finally:
++        fx.restore()
++    assert before == [], before
++    assert why and any("moved or replaced" in w for w in why), why
++    assert landed and not leaked
++    return {"refusals": why[:2]}
++
++
++def t_closeout_cancel_race(R, W):
++    """N9: a cancel stamped during closeout bookkeeping (before the closeout boundary) is seen: exit 40 and
++    cancel_before_closeout True (run_tree_census is patched to stamp the cancel after the closeout's own helper)."""
++    fx = RunTreeFixture(R, W, "t-closeout")
++    saved_census, saved_co = R.run_tree_census, R.STATE["cancel_order"]
++    n_latch = len(R.LATCH)
++
++    def census_and_cancel(root=None):
++        if R.STATE["cancel_order"] is None:
++            R.STATE["cancel_order"] = next(R.ORDER)
++        return saved_census(root)
++
++    try:
++        need(R.HELPER_ALLOW + 5, "closeout helper")
++        R.run_tree_census = census_and_cancel
++        code = R.final_code({"schema": "test"}, {"sat": False, "controls_failed": False, "refused": False,
++                                                 "exception": False, "complete": True})
++        summary = json.loads(R.read_tree(os.path.join(fx.out, "summary.json"), R.RECORD_MAX))
++    finally:
++        R.run_tree_census = saved_census
++        restore_cancel(R, saved_co)
++        fx.restore()
++        latched = R.LATCH[n_latch:]
++        del R.LATCH[n_latch:]
++    assert code == R.EXIT_CANCELLED and summary["cancel_before_closeout"] is True, (code, summary.get("closeout_defects"),
++                                                                                   latched)
++    assert summary["cancel_order"] < summary["closeout_boundary"] and summary["chunk_claim"] == "held"
++    return {"exit": code, "host_clock_end": summary.get("host_clock_end")}
++
++
++def t_c6_timer_predicate(R, W):
++    """N10: C6 accepts only a healthy rc-0 'exactly s UNKNOWN' exit whose monotonic runtime bounds lie in
++    [C6_MIN_RUN_S, C6_MAX_RUN_S]; cleanup time plays no role."""
++    def rec(started, last_alive, exit_obs, rc=0, **kw):
++        r = {"stop": "self", "settled": True, "capture_over_cap": False, "returncode": rc, "resource_diagnostics": [],
++             "exit_observed_by_deadline": True,
++             "timing": {"popen_call_s": started - 0.01, "started_s": started, "last_alive_s": last_alive,
++                        "exit_observed_s": exit_obs, "settle_done_s": exit_obs + 50.0}}
++        r.update(kw)
++        return r
++    ok = R.c6_timer_refusals(rec(10.0, 11.95, 12.02), ["s UNKNOWN"])
++    bad = {"immediate_exit_slow_cleanup": R.c6_timer_refusals(rec(10.0, 10.0, 10.05), ["s UNKNOWN"]),
++           "too_long": R.c6_timer_refusals(rec(10.0, 15.5, 15.6), ["s UNKNOWN"]),
++           "extra_output": R.c6_timer_refusals(rec(10.0, 11.95, 12.02), ["s UNKNOWN", "c extra"]),
++           "rc1": R.c6_timer_refusals(rec(10.0, 11.95, 12.02, rc=1), ["s UNKNOWN"]),
++           "late": R.c6_timer_refusals(rec(10.0, 11.95, 12.02, exit_observed_by_deadline=False), ["s UNKNOWN"]),
++           "no_timing": R.c6_timer_refusals(dict(rec(10.0, 11.95, 12.02), timing={}), ["s UNKNOWN"])}
++    assert ok == [] and all(bad.values()), (ok, bad)
++    return {"accepted": 1, "refused": len(bad)}
++
++
++def t_libproc_validation(R, W):
++    """N12: proc_listpids results are validated: partial entries, out-of-buffer counts and non-positive pids raise; a
++    well-formed result is deduplicated and sorted."""
++    good = R.parse_pid_buffer([5, 3, 5, 0, 0], 12)
++    bad = []
++    for vals, n in (([5, 3], 7), ([5, 3], 12), ([5, 0, 3], 12), ([5, -1], 8), ([5], -4)):
++        try:
++            R.parse_pid_buffer(vals, n)
++            bad.append("accepted")
++        except OSError:
++            bad.append("refused")
++    assert good == [3, 5] and bad == ["refused"] * 5, (good, bad)
++    return {"good": good}
++
++
++def t_feeder_abandon_close_error(R, W):
++    """V6: abandon() closes each endpoint independently and reports a close error; the fault is injected by closing
++    the read end and replacing its number with one that is never open (no descriptor-reuse hazard)."""
++    f = R.Feeder((b"a",), "plain", label="close-error-test")
++    os.close(f.rfd)
++    f.rfd = 999999
++    errs = f.abandon()
++    assert len(errs) == 1 and errs[0].startswith("rfd") and f.rfd is None and f.wfd is None and f.close_error, errs
++    return {"errors": errs}
++
++
++def decide_terminal(results, n_tests, alive_threads, runner_latch, helpers_unsettled, closeout_errors):
++    """N11: decided AFTER closeout: ALL_OK only if every test ran and passed, no helper thread is alive, the runner
++    holds no latch, every runner helper settled and closeout raised nothing."""
++    if len(results) == n_tests and all(r["ok"] for r in results) and not alive_threads and not runner_latch \
++            and not helpers_unsettled and not closeout_errors:
++        return "ALL_OK"
++    return "FAILURES"
++
++
++def t_terminal_rule(R, W):
++    """N11: the terminal rule refuses ALL_OK on a missing or failed test, a live thread, a runner latch, an unsettled
++    helper or a closeout error."""
++    ok = [{"ok": True}] * 3
++    cases = {"all_good": decide_terminal(ok, 3, [], [], [], []),
++             "missing_test": decide_terminal(ok[:2], 3, [], [], [], []),
++             "failed_test": decide_terminal(ok[:2] + [{"ok": False}], 3, [], [], [], []),
++             "live_thread": decide_terminal(ok, 3, ["t"], [], [], []),
++             "latch": decide_terminal(ok, 3, [], ["x"], [], []),
++             "helper": decide_terminal(ok, 3, [], [], [1], []),
++             "closeout": decide_terminal(ok, 3, [], [], [], ["e"])}
++    assert cases["all_good"] == "ALL_OK" and all(v == "FAILURES" for k, v in cases.items() if k != "all_good"), cases
++    return cases
++
+ TESTS = [t_buffer_roundtrip, t_buffer_cap, t_buffer_never_connected, t_buffer_fifo_replaced,
+-         t_feeder_plain, t_feeder_suffix, t_feeder_hold_epipe, t_feeder_midstream_close, t_feeder_guards,
+-         t_feeder_holder_charge, t_filter, t_filter_long_line, t_filter_continuation_adversarial,
+-         t_filter_continuation_genuine_line, t_capture_accounting, t_libproc_self, t_tree_census_and_usage,
+-         t_tree_census_fail_closed, t_out_dir_ancestry, t_monitor_provenance_header, t_item_shapes,
+-         t_helper_refusals_and_clock, t_output_guard, t_other_admitted_reservations, t_qualify_matrix]
++         t_buffer_live_collector_release, t_feeder_plain, t_feeder_suffix, t_feeder_hold_epipe,
++         t_feeder_midstream_close, t_feeder_guards, t_feeder_holder_charge, t_feeder_abandon_close_error, t_filter,
++         t_filter_long_line, t_filter_continuation_adversarial, t_filter_continuation_genuine_line,
++         t_capture_accounting, t_libproc_self, t_libproc_validation, t_tree_census_and_usage,
++         t_tree_census_fail_closed, t_out_dir_ancestry, t_bounded_metadata_reads, t_monitor_provenance_header,
++         t_item_shapes, t_stop_identity, t_helper_refusals_and_clock, t_output_guard, t_allocation_release,
++         t_run_kissat_owner_on_exception, t_commit_charging_and_cutoff, t_anchored_confinement,
++         t_c6_timer_predicate, t_terminal_rule, t_qualify_matrix, t_closeout_cancel_race]
+ 
+ 
+ def main():
+     if len(sys.argv) != 4:
+-        print("usage: test_pilot_stream_v3.py RUNNER.py RUNNER_SHA256 OUT_DIR", flush=True)
++        print("usage: test_pilot_stream_v4.py RUNNER.py RUNNER_SHA256 OUT_DIR", flush=True)
+         return 70
+     runner, runner_sha, out = os.path.abspath(sys.argv[1]), sys.argv[2], os.path.abspath(sys.argv[3])
+     if os.path.dirname(out) != LANE + "/evidence/probes" or os.path.lexists(out):
+@@ -908,6 +1367,8 @@
+         spec = importlib.util.spec_from_file_location("pstream_runner_under_test", runner)
+         R = importlib.util.module_from_spec(spec)
+         spec.loader.exec_module(R)
++        STATE["runner"] = R                         # N11: signals now also stamp the runner's cancel order
++        anchored(R, work)                           # N8: test FIFOs are created through the anchored work dir
+         start_clock = host_clock(R)
+     except BudgetExhausted as exc:
+         terminal, setup_error = "BUDGET_EXHAUSTED", repr(exc)
+@@ -941,19 +1402,26 @@
+                 results.append({"test": t.__name__, "ok": False, "error": repr(exc)[:4000],
+                                 "traceback": traceback.format_exc()[-4000:],
+                                 "seconds": round(time.monotonic() - started, 3)})
+-        if terminal is None:
+-            terminal = "ALL_OK" if all(r["ok"] for r in results) and len(results) == len(TESTS) else "FAILURES"
++    closeout_errors, end_clock = [], None           # N11: closeout first, the terminal afterwards
++    try:
++        end_clock = host_clock(R)
++    except BaseException as exc:
++        closeout_errors.append(repr(exc)[:4000])
+     alive = sorted(th.name for th in threading.enumerate() if th is not threading.main_thread() and th.is_alive())
+-    final = {"start_host_clock": start_clock, "end_host_clock": host_clock(R), "terminal": terminal,
++    runner_latch = [] if R is None else list(R.LATCH)
++    helpers_unsettled = [] if R is None else [h.launch_order for h in R.HELPERS if not h.settled]
++    if terminal is None:
++        terminal = decide_terminal(results, len(TESTS), alive, runner_latch, helpers_unsettled, closeout_errors)
++    final = {"start_host_clock": start_clock, "end_host_clock": end_clock, "terminal": terminal,
+              "all_ok": terminal == "ALL_OK", "results": results,
+              "in_flight": in_flight, "not_started": not_started, "setup_error": setup_error,
+              "threads_alive_at_result": alive, "elapsed_s": round(time.monotonic() - STATE["t0"], 3),
+-             "budget_s": BUDGET_S, "signal": STATE["signal"],
+-             "runner_latch_after_tests": None if R is None else list(R.LATCH),
++             "budget_s": BUDGET_S, "signal": STATE["signal"], "runner_latch_after_tests": runner_latch,
++             "runner_helpers_unsettled": helpers_unsettled, "closeout_errors": closeout_errors,
+              "runner_helper_log": None if R is None else R.HELPER_LOG,
+-             "preservation_scope": "only test-created entries under OUT_DIR/work were created; one test-created "
+-                                   "FIFO was moved (never deleted) and one test-created directory was chmod 000 "
+-                                   "then 0755",
++             "preservation_scope": "only test-created entries under OUT_DIR/work were created; test-created entries "
++                                   "were moved (never deleted), one test-created directory was chmod 000 then 0755 "
++                                   "and one test-created file was rewritten in place at the same size",
+              "runner": [runner, runner_sha], "test_source_sha256": self_sha}
+     try:
+         write_x(os.path.join(out, "result.json"), final)
+@@ -964,5 +1432,6 @@
+     return {"ALL_OK": 0, "FAILURES": 1, "SETUP_FAILED": 1, "BUDGET_EXHAUSTED": 2, "CANCELLED": 3}[terminal]
+ 
+ 
++
+ if __name__ == "__main__":
+     sys.exit(main())

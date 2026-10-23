@@ -1,0 +1,313 @@
+#!/usr/bin/env python3
+"""supervise_r1.py: minimal single-threaded supervisor for one command and its process group (macOS libproc).
+
+Replaces stage_guard_r1.py (2d945ed0...0fba, never run), following the parent source review of 2026-10-18.
+Scope, stated exactly. The command starts as a new session and process-group leader. The supervisor watches the
+members of that process group, and nothing else. Members keep the group when they are re-parented. A descendant that
+leaves the group (setsid/setpgid) is detected only while it is still a child of a live member; detection trips the
+run and quarantines capacity. Nothing outside the group is ever signalled. The production commands (lane python
+drivers, gram_encB.py, cadical, kissat, drat-trim) do not leave the group.
+
+Every 0.25 s, in the one thread, it probes itself, the leader and every member through proc_pidinfo. Each probe is
+one of four states:
+  - alive: full BSD info, not a zombie, full task info with RSS > 0;
+  - zombie: BSD status SZOMB;
+  - gone: ESRCH;
+  - unknown: any other short, failed or zero-RSS read.
+Alive RSS is summed, including the supervisor's own.
+
+Trips:
+  - RSS above the cap, free bytes below the floor, elapsed time above the wall cap;
+  - SIGTERM or SIGINT to the supervisor (recorded by a flag and handled in the loop);
+  - uncertain conditions: an unknown probe, a failed listing, a leader gone while unreaped, or a process that left
+    the group;
+  - a member still alive after the leader exited.
+The leader is never reaped before the stop sequence ends. Its zombie keeps the group ID reserved, so killpg(group,
+SIGTERM) cannot reach an unrelated process. After the signal the supervisor waits at most `grace` seconds for every
+member to become a zombie or gone. Survivors, or any uncertain trip, produce an exclusive-create quarantine record
+of process identities (pid, ppid, pgid, start time). Code never removes it, and the supervisor refuses to start while
+it exists.
+
+Completion: once the leader is a zombie, one final synchronous sample (members, RSS, floor, wall) runs before the
+leader is reaped. There is no SIGKILL, no thread and no subprocess timeout. The child environment gets
+K3_SUPERVISOR_PID, K3_SUPERVISOR_SCRIPT and K3_SUPERVISOR_RECORD so that workers can refuse to run unsupervised.
+Usage: /usr/bin/python3 -I -B supervise_r1.py --name N --wall S --rss-cap B --floor B --lane DIR
+                                              --record OUT.json --quarantine Q.json [--grace 30] -- COMMAND [ARGS...]
+"""
+import argparse
+import ctypes
+import datetime
+import errno
+import hashlib
+import json
+import os
+import signal
+import struct
+import subprocess
+import sys
+import time
+
+LIBPROC = ctypes.CDLL("/usr/lib/libproc.dylib", use_errno=True)
+LIBPROC.proc_pidinfo.argtypes = (ctypes.c_int, ctypes.c_int, ctypes.c_uint64, ctypes.c_void_p, ctypes.c_int)
+LIBPROC.proc_pidinfo.restype = ctypes.c_int
+LIBPROC.proc_listpids.argtypes = (ctypes.c_uint32, ctypes.c_uint32, ctypes.c_void_p, ctypes.c_int)
+LIBPROC.proc_listpids.restype = ctypes.c_int
+PROC_PGRP_ONLY, PROC_PPID_ONLY = 2, 6
+PROC_PIDTBSDINFO, BSD_SIZE = 3, 136
+PROC_PIDTASKINFO, TASK_SIZE = 4, 96
+SZOMB = 5
+PERIOD = 0.25
+LIST_SLOTS = 4096
+
+
+def now():
+    return datetime.datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+def sha(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _read(pidinfo, pid, flavor, size):
+    buf = ctypes.create_string_buffer(size)
+    ctypes.set_errno(0)
+    n = pidinfo(pid, flavor, 0, buf, size)
+    return n, ctypes.get_errno(), buf.raw
+
+
+def _identity(raw):
+    status, _xstatus, pid, ppid = struct.unpack_from("=IIII", raw, 4)
+    return {"pid": pid, "ppid": ppid, "pgid": struct.unpack_from("=I", raw, 100)[0], "status": status,
+            "start": list(struct.unpack_from("=QQ", raw, 120)),
+            "comm": raw[48:64].split(b"\0")[0].decode("ascii", "replace")}
+
+
+def probe(pid, pidinfo=None):
+    """Return (state, rss, identity) with state alive, zombie, gone or unknown. Never maps a failed read to zero."""
+    pidinfo = pidinfo or LIBPROC.proc_pidinfo
+    n, err, raw = _read(pidinfo, pid, PROC_PIDTBSDINFO, BSD_SIZE)
+    if n != BSD_SIZE:
+        state = "gone" if n == 0 and err == errno.ESRCH else "unknown"
+        return state, 0, {"pid": pid, "bsd_bytes": n, "errno": err}
+    ident = _identity(raw)
+    if ident["pid"] != pid:
+        return "unknown", 0, dict(ident, reason="pid mismatch")
+    if ident["status"] == SZOMB:
+        return "zombie", 0, ident
+    m, terr, traw = _read(pidinfo, pid, PROC_PIDTASKINFO, TASK_SIZE)
+    if m == TASK_SIZE:
+        rss = struct.unpack_from("=Q", traw, 8)[0]
+        if rss > 0:
+            return "alive", rss, ident
+        return "unknown", 0, dict(ident, reason="zero resident size")
+    n2, err2, raw2 = _read(pidinfo, pid, PROC_PIDTBSDINFO, BSD_SIZE)
+    if n2 == 0 and err2 == errno.ESRCH:
+        return "gone", 0, ident
+    if n2 == BSD_SIZE and _identity(raw2)["status"] == SZOMB and _identity(raw2)["start"] == ident["start"]:
+        return "zombie", 0, ident
+    return "unknown", 0, dict(ident, task_bytes=m, task_errno=terr)
+
+
+def list_pids(kind, value, listpids=None):
+    listpids = listpids or LIBPROC.proc_listpids
+    buf = (ctypes.c_int * LIST_SLOTS)()
+    ctypes.set_errno(0)
+    n = listpids(kind, value, buf, ctypes.sizeof(buf))
+    err = ctypes.get_errno()
+    if n < 0 or (n == 0 and err != 0) or n >= ctypes.sizeof(buf):
+        raise OSError(err, "proc_listpids(%d, %d) returned %d" % (kind, value, n))
+    return sorted({p for p in buf if p > 0})
+
+
+def sample(pgid, leader, probe_fn, observed):
+    """One strict sample of the supervisor and the group. Problems are (reason, uncertain) pairs."""
+    problems, total, alive_others = [], 0, []
+    state, rss, ident = probe_fn(os.getpid())
+    if state != "alive":
+        problems.append(("unknown probe of the supervisor itself: %r" % (ident,), True))
+    total += rss
+    try:
+        members = list_pids(PROC_PGRP_ONLY, pgid)
+    except OSError as exc:
+        problems.append(("process-group listing failed: %r" % (exc,), True))
+        members = []
+    leader_state = None
+    for pid in sorted(set(members) | {leader}):
+        state, rss, ident = probe_fn(pid)
+        if state in ("alive", "zombie"):
+            observed.setdefault(str(pid), ident)
+        if pid == leader:
+            leader_state = state
+            if state == "gone":
+                problems.append(("leader gone while unreaped", True))
+        if state == "unknown":
+            problems.append(("unknown probe of pid %d: %r" % (pid, ident), True))
+        if state != "alive":
+            continue
+        total += rss
+        if pid != leader:
+            alive_others.append(pid)
+        try:
+            kids = list_pids(PROC_PPID_ONLY, pid)
+        except OSError as exc:
+            problems.append(("child listing failed for pid %d: %r" % (pid, exc), True))
+            continue
+        for kid in kids:
+            kstate, _, kident = probe_fn(kid)
+            if kstate == "unknown":
+                problems.append(("unknown probe of pid %d: %r" % (kid, kident), True))
+            elif kstate == "alive" and kident.get("pgid") != pgid:
+                observed.setdefault(str(kid), kident)
+                problems.append(("pid %d left the supervised process group" % kid, True))
+    return {"total_rss": total, "leader_state": leader_state, "members": members, "alive_others": alive_others,
+            "problems": problems}
+
+
+def stop_group(pgid, grace, probe_fn, observed):
+    """SIGTERM the whole group (leader still unreaped, so the group ID is reserved); wait at most `grace` seconds."""
+    sent = True
+    try:
+        os.killpg(pgid, signal.SIGTERM)
+    except ProcessLookupError:
+        sent = False
+    deadline = time.monotonic() + grace
+    while True:
+        remaining = []
+        try:
+            members = list_pids(PROC_PGRP_ONLY, pgid)
+            listing_ok = True
+        except OSError:
+            members, listing_ok = [], False
+        for pid in members:
+            state, _, ident = probe_fn(pid)
+            if state in ("alive", "unknown"):
+                observed.setdefault(str(pid), ident)
+                remaining.append({"pid": pid, "state": state, "identity": ident})
+        if listing_ok and not remaining:
+            return {"sigterm_sent": sent, "survivors": [], "listing_ok": True}
+        if time.monotonic() > deadline:
+            return {"sigterm_sent": sent, "survivors": remaining, "listing_ok": listing_ok}
+        time.sleep(0.1)
+
+
+def supervise(command, name, wall, rss_cap, floor, lane, record_path, quarantine_path, grace=30.0, probe_fn=probe):
+    if os.path.exists(quarantine_path):
+        raise SystemExit("quarantine record %s exists; admission refused" % quarantine_path)
+    if os.path.exists(record_path):
+        raise FileExistsError(record_path)
+    flag = {}
+
+    def on_signal(signum, frame):
+        flag.setdefault("signal", signal.Signals(signum).name)
+    previous = {s: signal.signal(s, on_signal) for s in (signal.SIGTERM, signal.SIGINT)}
+    env = dict(os.environ, K3_SUPERVISOR_PID=str(os.getpid()), K3_SUPERVISOR_SCRIPT=os.path.abspath(__file__),
+               K3_SUPERVISOR_RECORD=os.path.abspath(record_path))
+    rec = {"name": name, "started_at": now(), "command": command,
+           "command_files_sha256": {a: sha(a) for a in command if os.path.isfile(a)},
+           "supervisor_sha256": sha(os.path.abspath(__file__)), "supervisor_pid": os.getpid(),
+           "limits": {"wall_seconds": wall, "rss_cap_bytes": rss_cap, "floor_bytes": floor, "grace_seconds": grace,
+                      "period_seconds": PERIOD},
+           "scope": "the command's process group only; members keep it across re-parenting; leaving the group is "
+                    "detected while still a child of a live member; nothing outside the group is signalled"}
+    t0 = time.monotonic()
+    child = subprocess.Popen(command, start_new_session=True, stdin=subprocess.DEVNULL, env=env)
+    pgid, observed, samples, peak = child.pid, {}, 0, 0
+    reason, uncertain, final = None, False, None
+    rec["leader_identity_at_start"] = probe_fn(child.pid)[2]
+    while True:
+        s = sample(pgid, child.pid, probe_fn, observed)
+        samples += 1
+        peak = max(peak, s["total_rss"])
+        st = os.statvfs(lane)
+        free, elapsed = st.f_bavail * st.f_frsize, time.monotonic() - t0
+        if s["problems"]:
+            reason, uncertain = s["problems"][0]
+        elif s["total_rss"] > rss_cap:
+            reason = "aggregate RSS %d above %d" % (s["total_rss"], rss_cap)
+        elif free < floor:
+            reason = "free bytes %d below floor %d" % (free, floor)
+        elif elapsed > wall:
+            reason = "wall cap %s s" % wall
+        elif "signal" in flag:
+            reason = "external %s" % flag["signal"]
+        elif s["leader_state"] == "zombie" and s["alive_others"]:
+            reason = "group member alive after leader exit: %r" % (s["alive_others"],)
+        elif s["leader_state"] == "zombie":
+            final = sample(pgid, child.pid, probe_fn, observed)
+            st = os.statvfs(lane)
+            free, elapsed = st.f_bavail * st.f_frsize, time.monotonic() - t0
+            peak = max(peak, final["total_rss"])
+            if final["problems"]:
+                reason, uncertain = final["problems"][0]
+            elif final["alive_others"]:
+                reason = "group member alive at completion: %r" % (final["alive_others"],)
+            elif final["total_rss"] > rss_cap:
+                reason = "aggregate RSS %d above %d at completion" % (final["total_rss"], rss_cap)
+            elif free < floor:
+                reason = "free bytes %d below floor %d at completion" % (free, floor)
+            elif elapsed > wall:
+                reason = "wall cap %s s at completion" % wall
+            break
+        if reason is not None:
+            break
+        time.sleep(PERIOD)
+    stop = None
+    if reason is not None:
+        stop = stop_group(pgid, grace, probe_fn, observed)
+    child.poll()
+    quarantined = None
+    if uncertain or (stop and (stop["survivors"] or not stop["listing_ok"])):
+        record = {"at": now(), "name": name, "reason": reason, "uncertain": uncertain,
+                  "survivors": stop["survivors"] if stop else [], "observed_identities": observed,
+                  "rule": "no SIGKILL sent; refuse every later admission while this record exists"}
+        try:
+            with open(quarantine_path, "x") as f:
+                json.dump(record, f, indent=2)
+                f.write("\n")
+            quarantined = quarantine_path
+        except FileExistsError:
+            quarantined = quarantine_path + " (already present)"
+    rec.update({"finished_at": now(), "seconds": round(time.monotonic() - t0, 3), "samples": samples,
+                "peak_sampled_rss_bytes": peak, "trip_reason": reason, "uncertain": uncertain,
+                "final_check": final and {"problems": final["problems"], "members": final["members"],
+                                          "alive_others": final["alive_others"]},
+                "stop": stop, "leader_returncode": child.returncode, "observed_identities": observed,
+                "quarantine_record": quarantined,
+                "completed_cleanly": reason is None and child.returncode == 0})
+    with open(record_path, "x") as f:
+        json.dump(rec, f, indent=2)
+        f.write("\n")
+    for s_, handler in previous.items():
+        signal.signal(s_, handler)
+    return rec
+
+
+def main():
+    if "--" not in sys.argv:
+        raise SystemExit("usage: supervise_r1.py OPTIONS -- COMMAND [ARGS...]")
+    split = sys.argv.index("--")
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--name", required=True)
+    ap.add_argument("--wall", type=float, required=True)
+    ap.add_argument("--rss-cap", type=int, required=True)
+    ap.add_argument("--floor", type=int, required=True)
+    ap.add_argument("--lane", required=True)
+    ap.add_argument("--record", required=True)
+    ap.add_argument("--quarantine", required=True)
+    ap.add_argument("--grace", type=float, default=30.0)
+    a = ap.parse_args(sys.argv[1:split])
+    command = sys.argv[split + 1:]
+    if not command:
+        raise SystemExit("empty command")
+    rec = supervise(command, a.name, a.wall, a.rss_cap, a.floor, a.lane, a.record, a.quarantine, a.grace)
+    print(json.dumps({k: rec[k] for k in ("name", "completed_cleanly", "trip_reason", "uncertain", "leader_returncode",
+                                          "quarantine_record", "seconds")}), flush=True)
+    raise SystemExit(0 if rec["completed_cleanly"] else 3)
+
+
+if __name__ == "__main__":
+    main()

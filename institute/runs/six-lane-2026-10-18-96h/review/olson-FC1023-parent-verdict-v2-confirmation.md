@@ -1,0 +1,5 @@
+# Olson FC1023 — parent verdict v2 (second-family confirmation)
+
+Recorded 2026-10-21T03:16:40-0700 (`/bin/date`). Confirms the provisional verdict olson-FC1023-parent-verdict-v1.md (b85b13c93364108b02011d9b65a9782b0dba46c14a86271244c7eff23a72c4ea). Claude second family /Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/review/olson-FC1023-claude-v2.prompt.note.md returned **0F/0M/0m** with three editorial notes only (G7 threshold argument identical to G6; Xi definition inside the count is not the identity; q+q′=42 used in the type split). Receipt `3932804b25d7f56ed8d30cf0ff4208004095536cde69c2484939598cd1f5f93b`.
+
+**Final status: CORRECTNESS_ACCEPTED_SCOPED.** No wording erratum required; the editorial notes are recorded here. The composed p=23 terminal consequence is recorded in olson-terminal-frontier-v2-erratum-v1.md (bec9cfbf2a0213a16acdec3cfa8f3eab761b74a56d5a298dd7c0d2efa8d498df). No other cell, uniform-range, full ordered Olson, novelty, human/Lean or runtime claim.

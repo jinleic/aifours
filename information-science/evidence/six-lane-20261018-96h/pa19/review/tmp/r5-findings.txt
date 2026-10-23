@@ -1,0 +1,28 @@
+STATUS REVIEW_RETURNED_UNVERIFIED needs-rework ['blocker', 'blocker', 'blocker', 'major'] {'model': 'gpt-6.1-sol', 'provider': 'openai', 'reasoning effort': 'max', 'sandbox': 'read-only'} 436.6
+SUMMARY R4#1 UNRESOLVED: cleanup still has escape, signal-delivery and quarantine-publication holes (src/pilot_file_drat_v12.py:592-636,812-816).
+R4#2 RESOLVED: the exact unit-stack allocation diagnostic matches RESOURCE_DIAG and latches during settlement (src/pilot_file_drat_v12.py:149,703-713).
+R4#3 RESOLVED: census precedes admission, followed by final latch/cancel/deadline checks immediately before Popen (src/pilot_file_drat_v12.py:520-540).
+R4#4 RESOLVED: cwd creation is inside the cleanup guard; an injected mkdir failure reached sink.finish() (src/pilot_file_drat_v12.py:791-818).
+R4#5 RESOLVED: each child receives its cwd as TMPDIR, and the census excludes shared LANE/tmp (src/pilot_file_drat_v12.py:281,521,539-540).
+The supplied SHA-256 matches. Verification used snapshot source and in-memory fault probes; no native solver/checker was launched.
+LINES 1326
+
+#1 [blocker/safety] src/pilot_file_drat_v12.py:803-805; src/pilot_file_drat_v12.py:812-816
+PROBLEM: R4#1 UNRESOLVED: The settle-all finally can escape before terminating or reaping an owned child.
+EVIDENCE: The newly added c.proc.poll() executes outside the protected reaper. If supervision escapes and latch() fails before termination is requested, stop remains None. A subsequent poll exception then escapes the finally before c.settle(). An in-memory probe injecting latch and final-poll MemoryErrors observed zero termination requests, zero settlement calls and returncode=None. main proceeds to closeout without another cleanup attempt.
+FIX: Set the emergency stop state without polling first, then enter the protected reaper. Keep fallible polling inside its retry guard.
+
+#2 [blocker/control] src/pilot_file_drat_v12.py:592-597; src/pilot_file_drat_v12.py:607-609
+PROBLEM: R4#1 UNRESOLVED: The revised delivery bookkeeping can send SIGTERM twice.
+EVIDENCE: Both paths call time.time() after send_signal() succeeds but before recording term_sent_at. If that timestamp allocation raises MemoryError, the delivery marker remains None and the next attempt sends again. In-memory probes reproduced two deliveries through both term() and reap_robust(); the corresponding v11 term() probe delivered once. This violates the single-SIGTERM rule.
+FIX: Compute the timestamp before sending, then assign the delivery marker immediately after successful send_signal() return, with no intervening fallible call.
+
+#3 [blocker/evidence] src/pilot_file_drat_v12.py:200-205; src/pilot_file_drat_v12.py:618-627
+PROBLEM: R4#1 UNRESOLVED: Receipt retry accepts a partial quarantine file as successful publication.
+EVIDENCE: write_x() exclusively creates the file before writing, flushing and syncing it. A failure after creation leaves that pathname behind. The next retry gets FileExistsError and unconditionally clears receipt_pending without validating the file. An in-memory probe retained only three JSON bytes, then accepted FileExistsError and stopped retrying. A surviving child can consequently remain without the required complete quarantine record.
+FIX: Treat an existing file as success only after validating a complete matching receipt. Otherwise explicitly report publication failure while retaining quarantine and capacity; preserve the partial artifact.
+
+#4 [major/resource] src/pilot_file_drat_v12.py:618-631
+PROBLEM: NEW: Persistent quarantine-publication failure prevents closeout even after the child is reaped.
+EVIDENCE: If receipt creation keeps failing before a file exists, receipt_pending remains true. poll() can reap the child, but the return condition still fails, so the loop retries forever and never reaches the remaining settlement work. A recovery probe observed repeated publication attempts with returncode=0 and no wait() call until publication recovered. Permanent failure makes that delay unbounded.
+FIX: Once the child is reaped, carry publication failure into explicit UNSETTLED closeout with the latch held. Bound receipt retries instead of making successful publication a permanent condition for leaving the reaper.

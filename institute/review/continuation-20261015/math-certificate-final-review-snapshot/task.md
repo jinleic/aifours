@@ -1,0 +1,6 @@
+# Final focused replay-validation re-review
+Read only this snapshot. No modifications, delegation, network, or reads elsewhere. previous-review.md identified one residual bug: replay could accept id=false, start=8.0 or a collision coordinate=true because Python equality equates these with ints.
+
+The new code/receipt_checks.py is the one strict rule set imported by both code/certify.py and code/check_coverage.py; replay validates stored blocks/witnesses first and compares canonical JSON afterward. Inspect the helper, both integration paths, provenance pins and evidence/regressions-validation-fix-v3.json. The original producer bytes and all446 original receipts are preserved; no full production rerun is called for. Confirm the original three defects (modular aliases, fractional factors, bad replay stride) and the residual bool/float gap are all closed without weakening authentic arithmetic. Check helper-source pin verification and that unknown stamps fail closed.
+
+Return ACCEPT, ACCEPT-WITH-FIXES or REJECT; report only real correctness issues with concrete examples, not incidental style. Explicitly limit acceptance to validation/provenance: the full authentic receipt set is not in this snapshot, so do not certify the final endpoint from it alone.

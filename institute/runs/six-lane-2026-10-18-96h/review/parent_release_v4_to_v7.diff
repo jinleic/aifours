@@ -1,0 +1,866 @@
+--- control/parent_release_v4.py
++++ control/parent_release_v7.py
+@@ -1,7 +1,7 @@
+-"""SOURCE ONLY, UNTESTED. Independent parent five-part release transaction v4.
++"""SOURCE ONLY, UNTESTED. Independent parent five-part release transaction v7.
+ 
+-Base contract 4d122872; repair scopes 2fdf13b4 (v2), 1f9befdb (v3) and 32d161b0 key prt_v4 (v4);
+-checkpoints001-007 govern.
++Base contract 4d122872; repair scopes 2fdf13b4 (v2), 1f9befdb (v3), 32d161b0 (v4), ef0ab41a (v5),
++b08a12dd (v6), 7d6588a0 (v7); checkpoints001-018 govern (v5 SELF_HOLD; v6 parent HOLD 684f0fc5).
+ Definitions only at import: no I/O, environment, clock, process or signal operations.
+ The parent supplies a qualified raw adapter, authentic authority/execution observations,
+ exclusive immutable publication freeze and COMPLETE historical identity-union binding.
+@@ -10,7 +10,7 @@
+ Caps bound bytes/memory, NOT synchronous syscall time. A detected original-deadline crossing
+ starts no further callback/I/O; only cleanup of already-owned descriptors/iterators remains.
+ Every native blocking operation is checked before the call and after success or Exception.
+-V1/V2/V3 stay immutable/HOLD. No v1/v2/v3 import, alias, compatibility path or shim.
++V1-V6 stay immutable/HOLD. No v1-v6 import, alias, compatibility path or shim.
+ """
+ import copy
+ import datetime
+@@ -24,6 +24,9 @@
+ REPAIR_SCOPE_SHA256 = '2fdf13b45e946df4f07881b0e6e2b5bc5452ea33d1df022afe896dded698b407'
+ V3_REPAIR_SCOPE_SHA256 = '1f9befdb4d012800a8e2160c0ce8e822d255e34c88496fd26cb8875aac894030'
+ V4_REPAIR_SCOPE_SHA256 = '32d161b0408bc297f0e95516980142d741eb219dc882e40bd93df9c79cd59f12'
++V5_REPAIR_SCOPE_SHA256 = 'ef0ab41a6e6e5ec2357f2f5022a611e99f1e4d4a05ab2001699572232e6fb2f3'
++V6_REPAIR_SCOPE_SHA256 = 'b08a12dd36d52a020a3927e64d28d483886505b4d02df4407142aaae3393e27e'
++V7_REPAIR_SCOPE_SHA256 = '7d6588a070661331474453fc40bdd12d841c65f2764b6beb64d18f1b30d6b167'
+ AIFOURS_ROOT = '/Users/jinleic/repos/aifours'
+ RUN_ROOT = AIFOURS_ROOT + '/institute/runs/six-lane-2026-10-18-96h'
+ CAP = 16 << 20
+@@ -86,6 +89,12 @@
+                   'CP1 caller receipt remains an external integration prerequisite, not implemented here.')
+ BOUNDARY = ('Reservation release only under trusted-parent preconditions; no next admission, '
+             'runtime authority, scientific PASS, publication authority or raw supervisor acceptance.')
++FALLBACK_UNCERTAINTY = ('Report assembly failed after commit or registry effects may exist: state forced HELD; '
++                        'causes, parts and counts may predate the failure; RELEASED registry bytes, if any, are '
++                        'not authority; keep reservation HELD and preserve every partial object.')
++_CONTEXT = BaseException.__dict__['__context__']
++_EXC_DICT = BaseException.__dict__['__dict__']
++_TYPE_NAME = type.__dict__['__name__']
+ 
+ 
+ class ReleaseRefusal(ValueError):
+@@ -109,14 +118,14 @@
+     return text[:MAX_TEXT] if len(text) > MAX_TEXT else text
+ 
+ 
+-def _why(exc):
+-    try:
+-        text = type(exc).__name__ + ': ' + str(exc)
+-    except BaseException:
+-        text = type(exc).__name__ + ': <description unavailable>'
+-    return _short(text)
++def _ordinary(exc):
++    return issubclass(type(exc), Exception)  # real type; never consult exc.__class__
+ 
+ 
++def _type_name(value):
++    return str.__str__(_TYPE_NAME.__get__(type(value)))
++
++
+ def _text(value, maximum=MAX_TEXT):
+     _require(type(value) is str and 0 < len(value) <= maximum
+              and '\x00' not in value and '\n' not in value and '\r' not in value, 'text type/length')
+@@ -210,7 +219,7 @@
+         nodes += 1
+         _require(nodes <= MAX_SPEC_NODES, 'spec node cap')
+         kind = type(current)
+-        if kind in (dict, list):
++        if kind is dict or kind is list:  # identity only: never a metaclass __eq__ of a supplied type
+             _require(id(current) not in active, 'cyclic spec')
+             _require(len(current) <= MAX_SPEC_NODES and len(stack) + 2 * len(current) <= 2 * MAX_SPEC_NODES,
+                      'spec container cap')
+@@ -285,7 +294,9 @@
+         self.callback_digest = hashlib.sha256()
+         self.opened, self.closed, self.live, self.unresolved = 0, 0, {}, []
+         self.unresolved_total = 0
+-        self.base_exceptions = []  # every recorded BaseException object, oldest first
++        self.base_exceptions = []  # original non-Exception objects, identity-unique, first-retention order
++        self.latest_base, self.base_revision = None, 0  # newest ACTUAL origin; separate from retention order
++        self.degraded = False  # set when an exception escaped the commit phase: never an effective release
+         self.streamed_bytes, self.hashed_files = 0, 0
+ 
+     def fire(self, cause, detail):
+@@ -297,6 +308,37 @@
+             values.append(_short(detail))
+         else:
+             self.suppressed[cause] = self.suppressed.get(cause, 0) + 1
++
++    def keep(self, exc, origin=False):
++        """Retain a non-Exception BaseException at encounter, before cleanup can replace it.
++
++        Retention is identity-unique in first-retention order (the prior tuple). Selection is
++        separate: every raise caught at an ORIGIN handler (origin=True), including a repeated raise
++        of an already-retained object, and every first sighting anywhere make that object the
++        newest. A propagation-only catch of an already-retained object never reorders selection.
++        """
++        if _ordinary(exc):
++            return
++        seen = any(item is exc for item in self.base_exceptions)
++        if seen and not origin:
++            return
++        self.latest_base, self.base_revision = exc, self.base_revision + 1  # selection before append
++        if not seen:
++            self.base_exceptions.append(exc)
++        self.fire('P%d_BASE_EXCEPTION' % self.part,
++                  ('raised again at origin: ' if seen else 'retained at encounter: ') + _type_name(exc))
++
++    def why(self, exc):
++        """Bound description; failures in object code are retained, never silently swallowed."""
++        name = _type_name(exc)
++        try:
++            text = name + ': ' + str.__str__(str(exc))
++        except BaseException as failure:
++            self.keep(failure, True)  # origin: the description call raised
++            if _ordinary(failure):
++                self.fire('P%d_INTERNAL_ERROR' % self.part, 'exception description failed: ' + _type_name(failure))
++            text = name + ': <description unavailable>'
++        return _short(text)
+ 
+     def event(self, name, state, detail):
+         row = {'callback': name, 'state': state, 'detail': _short(detail)}
+@@ -311,8 +353,9 @@
+         try:
+             return function(*args)
+         except BaseException as exc:
+-            if not isinstance(exc, Exception):
++            if not _ordinary(exc):
+                 self.unsafe.add(name)
++            self.keep(exc, True)  # origin: the callback raised
+             raise
+ 
+     def tick(self, stage, after_ack=False):
+@@ -322,13 +365,14 @@
+             _require(self.call('deadline_check') is None, 'deadline_check returned non-None')
+         except Exception as exc:
+             self.crossed = True
+-            self.event('deadline_check', 'EXCEPTION_OR_BAD_RETURN', stage + ': ' + _why(exc))
++            self.event('deadline_check', 'EXCEPTION_OR_BAD_RETURN', stage + ': ' + self.why(exc))
+             cause = 'P5_DEADLINE_AFTER_ACK' if after_ack or self.ack_done else 'P%d_DEADLINE' % self.part
+-            self.fire(cause, stage + ': ' + _why(exc))
++            self.fire(cause, stage + ': ' + self.why(exc))
+             return False
+         except BaseException as exc:
+             self.crossed = True  # original deadline unavailable: no further callback or new I/O
+-            self.event('deadline_check', 'BASE_EXCEPTION', stage + ': ' + _why(exc))
++            self.keep(exc)
++            self.event('deadline_check', 'BASE_EXCEPTION', stage + ': ' + self.why(exc))
+             raise
+         return True
+ 
+@@ -347,18 +391,19 @@
+         try:
+             value = self.call(name, *args)
+         except Exception as primary:
+-            self.event(name, 'EXCEPTION', _why(primary))
++            self.event(name, 'EXCEPTION', self.why(primary))
+             try:
+                 self.tick(name + ' Exception completion', after_ack)
+             except BaseException as secondary:
+-                if secondary is not primary and secondary.__context__ is None:
+-                    secondary.__context__ = primary
++                self.keep(secondary)
++                _link(self, secondary, primary)
+                 raise
+             raise  # primary preserved even when the original deadline also crossed
+         except BaseException as primary:
+-            self.event(name, 'BASE_EXCEPTION', _why(primary))
++            self.keep(primary)
++            self.event(name, 'BASE_EXCEPTION', self.why(primary))
+             raise
+-        self.event(name, 'RETURNED', type(value).__name__)
++        self.event(name, 'RETURNED', _type_name(value))  # protected exact-str name; no metaclass hook
+         self.tick(name + ' successful completion', after_ack)
+         return value
+ 
+@@ -367,8 +412,8 @@
+         try:
+             self.tick(stage + ' Exception completion', after_ack)
+         except BaseException as secondary:
+-            if secondary is not primary and secondary.__context__ is None:
+-                secondary.__context__ = primary
++            self.keep(secondary)
++            _link(self, secondary, primary)
+             raise
+ 
+     def native(self, stage, function, *args, retain=None, after_ack=False):
+@@ -383,11 +428,12 @@
+         try:
+             value = function(*args)
+         except Exception as primary:
+-            self.event(stage, 'NATIVE_EXCEPTION', _why(primary))
++            self.event(stage, 'NATIVE_EXCEPTION', self.why(primary))
+             self.failed(stage, primary, after_ack)
+             raise
+         except BaseException as primary:
+-            self.event(stage, 'NATIVE_BASE_EXCEPTION', _why(primary))
++            self.keep(primary, True)  # origin: the native function raised
++            self.event(stage, 'NATIVE_BASE_EXCEPTION', self.why(primary))
+             raise
+         if retain is not None:
+             retain(value)
+@@ -405,7 +451,7 @@
+ 
+     def read(self, path, cap):
+         data = self.observe('read_bytes', path, cap)
+-        row = {'path': path, 'cap': cap, 'type': type(data).__name__, 'late': self.crossed}
++        row = {'path': path, 'cap': cap, 'type': _type_name(data), 'late': self.crossed}
+         if type(data) is bytes and len(data) <= cap:
+             row.update({'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest()})
+         self.read_count += 1
+@@ -428,7 +474,8 @@
+         try:
+             return self.native('open ' + _short(name), function,
+                                retain=lambda fd: acquired.append(self.own(fd, 'fd', name)))
+-        except BaseException:
++        except BaseException as exc:
++            self.keep(exc)
+             self.release(acquired, 'P%d_INTERNAL_ERROR' % self.part)  # late completion: retained fd closed once
+             raise
+ 
+@@ -443,13 +490,14 @@
+             else:
+                 handle.close()
+         except BaseException as exc:
++            self.keep(exc, True)  # origin: the destructive close raised
+             self.unresolved_total += 1
+             if len(self.unresolved) < 64:
+                 self.unresolved.append({'kind': record['kind'], 'fd': handle if record['kind'] == 'fd' else None,
+-                                        'path': record['path'], 'error': _why(exc)})
++                                        'path': record['path'], 'error': self.why(exc)})
+             if cause is not None:
+-                self.fire(cause, 'unresolved close ' + _short(record['path']) + ': ' + _why(exc))
+-            if not isinstance(exc, Exception):
++                self.fire(cause, 'unresolved close ' + _short(record['path']) + ': ' + self.why(exc))
++            if not _ordinary(exc):
+                 raise
+             self.failed('close ' + _short(record['path']), exc)
+             return False
+@@ -460,19 +508,24 @@
+     def release(self, owned, cause):
+         """One close attempt for EVERY owned handle (reverse order), even after a BaseException.
+ 
+-        Returns True only when each close completed cleanly. The first BaseException is
+-        re-raised after all attempts; every failure stays in the unresolved ledger/event log.
++        Returns True only when each close completed cleanly. The newest non-Exception
++        BaseException among these attempts propagates locally after all attempts; every object
++        stays retained and final selection uses the transaction's newest actual origin. If none
++        occurred, the newest escaping ordinary Exception propagates. No close is retried.
+         """
+-        clean, first = True, None
++        clean, newest, newest_base = True, None, None
+         for handle in reversed(owned):
+             try:
+                 clean = self.close(handle, cause) and clean
+             except BaseException as exc:
+-                clean = False
+-                if first is None:
+-                    first = exc
+-        if first is not None:
+-            raise first
++                self.keep(exc)
++                clean, newest = False, exc
++                if not _ordinary(exc):
++                    newest_base = exc
++        if newest_base is not None:
++            raise newest_base
++        if newest is not None:
++            raise newest
+         return clean
+ 
+     def directory(self, parts, cause):
+@@ -485,7 +538,8 @@
+                 previous, fd = fd, nxt
+                 self.close(previous, cause)
+             return fd
+-        except BaseException:
++        except BaseException as exc:
++            self.keep(exc)
+             self.close(fd, cause)
+             raise
+ 
+@@ -511,7 +565,7 @@
+     except _Crossed:
+         raise
+     except Exception as exc:
+-        txn.fire('P5_ACCOUNTING_UNAVAILABLE' if isinstance(exc, AccountingRefusal) else cause, _why(exc))
++        txn.fire('P5_ACCOUNTING_UNAVAILABLE' if issubclass(type(exc), AccountingRefusal) else cause, txn.why(exc))
+         if txn.crossed:
+             raise _Crossed('callback primary retained; deadline also failed') from exc
+         return None
+@@ -660,7 +714,7 @@
+         _require(key in source, 'missing ' + key)
+         ctx.f[target] = validator(source[key])
+     except Exception as exc:
+-        txn.fire(cause, key + ': ' + _why(exc))
++        txn.fire(cause, key + ': ' + txn.why(exc))
+ 
+ 
+ def _shape_captures(txn, ctx, source, prefix, cause_stdout, cause_stderr):
+@@ -680,12 +734,12 @@
+     for name, function in txn.callbacks.items():
+         if not callable(function):
+             txn.fire('P1_CALLBACKS_INVALID', name + ' not callable')
+-    candidate = None  # ctx.commit_dir stays None on EVERY interrupted/incomplete shaping path
++    candidate = None  # ctx.commit_dir stays None on EVERY interrupted, incomplete or failed shaping path
+     try:
+         _mutation_parts(commit_dir)
+         candidate = commit_dir
+     except Exception as exc:
+-        txn.fire('P5_COMMIT_DIR_INVALID', _why(exc))
++        txn.fire('P5_COMMIT_DIR_INVALID', txn.why(exc))
+     source = {}
+     try:
+         _preflight(spec)
+@@ -697,7 +751,7 @@
+         if len(raw) <= EMBED_CAP:
+             ctx.spec_embed = source
+     except Exception as exc:
+-        txn.fire('P1_SPEC_INVALID', _why(exc))
++        txn.fire('P1_SPEC_INVALID', txn.why(exc))
+         source = source if type(source) is dict else {}
+     fields = (('item', 'P1_ITEM_INVALID', _text), ('go', 'P1_GO_INVALID', _v_ref),
+               ('allocation', 'P1_ALLOCATION_INVALID', _v_allocation), ('gate', 'P1_GATE_INVALID', _v_ref),
+@@ -729,9 +783,10 @@
+         try:
+             _require(not _under(candidate, [_job_dir(source)]), 'commit_dir is artifact job_dir or below it')
+         except Exception as exc:
+-            txn.fire('P5_COMMIT_DIR_INVALID', 'independent destination exclusion: ' + _why(exc))
++            txn.fire('P5_COMMIT_DIR_INVALID', 'independent destination exclusion: ' + txn.why(exc))
+         else:
+-            ctx.commit_dir = candidate  # sole assignment: last shaping step, after exclusion succeeded
++            if not txn.fired:  # fresh transaction: ANY shaping failure is a permanent commit-ineligible latch
++                ctx.commit_dir = candidate  # sole assignment: all shaping complete AND independent exclusion succeeded
+ 
+ 
+ def _load(txn, ref, cap=DOC_CAP):
+@@ -813,7 +868,7 @@
+ 
+ 
+ def _held_for(row, item, allocation_sha):
+-    return (row.get('format') == 'parent-release-registry-v4' and row.get('state') == 'HELD'
++    return (row.get('format') == 'parent-release-registry-v7' and row.get('state') == 'HELD'
+             and _exact(row.get('item'), item) and row.get('allocation_line_sha256') == allocation_sha)
+ 
+ 
+@@ -827,7 +882,7 @@
+             row = _json(line)
+             _require(type(row) is dict, 'registry line object')
+         except Exception as exc:
+-            raise ReleaseRefusal('registry line %d: %s' % (number, _why(exc))) from exc
++            raise ReleaseRefusal('registry line %d: %s' % (number, txn.why(exc))) from exc
+         rows.append(row)
+         if hashlib.sha256(line).hexdigest() == ref['line_sha256']:
+             matches.append(number - 1)
+@@ -845,7 +900,7 @@
+             txn.fire('P1_ALLOCATION_BINDING', 'allocation item/reservation/GO/launch mismatch')
+     for later in rows[index + 1:]:
+         if _exact(later.get('item'), record['item']) and not _held_for(later, record['item'], ref['line_sha256']):
+-            txn.fire('P1_ALLOCATION_NOT_CURRENT', 'later non-v4-HELD/same-allocation entry for item')
++            txn.fire('P1_ALLOCATION_NOT_CURRENT', 'later non-v7-HELD/same-allocation entry for item')
+ 
+ 
+ def _part1(txn, ctx):
+@@ -926,6 +981,9 @@
+                 break
+             names.append(entry.name)
+             _require(len(names) <= cap, 'directory entry cap: ' + path)
++    except BaseException as exc:
++        txn.keep(exc)
++        raise
+     finally:
+         txn.release(owned, cause)  # one iterator close; unresolved history retained even on BaseException
+     _require(_stat_key(before) == _stat_key(txn.native('fstat ' + path, os.fstat, fd)),
+@@ -952,7 +1010,7 @@
+             except _Crossed:
+                 raise
+             except Exception as exc:
+-                txn.fire(cause, name + ': ' + _why(exc))
++                txn.fire(cause, name + ': ' + txn.why(exc))
+             try:
+                 data = txn.read(path, declared['bytes'])
+                 _require(len(data) == declared['bytes'] and hashlib.sha256(data).hexdigest() == declared['sha256'],
+@@ -960,7 +1018,7 @@
+             except _Crossed:
+                 raise
+             except Exception as exc:
+-                txn.fire('P2_ARTIFACT_DIGEST', name + ': ' + _why(exc))
++                txn.fire('P2_ARTIFACT_DIGEST', name + ': ' + txn.why(exc))
+                 if txn.crossed:
+                     raise _Crossed('artifact callback primary retained; deadline also failed') from exc
+             if before is not None:
+@@ -970,11 +1028,14 @@
+                 except _Crossed:
+                     raise
+                 except Exception as exc:
+-                    txn.fire(cause, name + ': ' + _why(exc))
++                    txn.fire(cause, name + ': ' + txn.why(exc))
+     except _Crossed:
+         raise
+     except Exception as exc:
+-        txn.fire('P2_ARTIFACT_SET_MISMATCH', _why(exc))
++        txn.fire('P2_ARTIFACT_SET_MISMATCH', txn.why(exc))
++    except BaseException as exc:
++        txn.keep(exc)
++        raise
+     finally:
+         if fd is not None:
+             txn.close(fd, cause)
+@@ -1146,6 +1207,9 @@
+         result['sha256'] = digest.hexdigest()
+         txn.hashed_files += 1
+         return result
++    except BaseException as exc:
++        txn.keep(exc)
++        raise
+     finally:
+         txn.close(fd, 'P5_LATE_CENSUS_INCOMPLETE')
+ 
+@@ -1157,6 +1221,7 @@
+     txn.must_tick('late directory name census')
+     for name in names:
+         full = path + '/' + name
++        _parts(full)  # same consumer path predicate BEFORE I/O, hashing, insertion or descent
+         info = _lstat(txn, fd, name, 'lstat ' + full)
+         row = _metadata(info)
+         txn.must_tick('late entry lstat completion')
+@@ -1171,6 +1236,9 @@
+                 opened = txn.native('fstat ' + full, os.fstat, child)
+                 _require(_stat_key(opened) == _stat_key(info), 'directory replaced/changed before descent')
+                 _scan(txn, child, full, device, depth + 1, entries)
++            except BaseException as exc:
++                txn.keep(exc)
++                raise
+             finally:
+                 txn.close(child, 'P5_LATE_CENSUS_INCOMPLETE')
+     _require(_stat_key(before) == _stat_key(txn.native('fstat ' + path, os.fstat, fd)),
+@@ -1211,6 +1279,9 @@
+             _require(len(entries) <= MAX_TREE_ENTRIES, 'late tree entry cap (root insertion)')
+             _require(entries[root]['kind'] == 'dir', 'late root must be actual directory')
+             _scan(txn, fd, root, info.st_dev, 0, entries)
++        except BaseException as exc:
++            txn.keep(exc)
++            raise
+         finally:
+             txn.close(fd, 'P5_LATE_CENSUS_INCOMPLETE')
+     accounting = _account(entries, roots)
+@@ -1228,6 +1299,9 @@
+                      and type(native.f_frsize) is int and native.f_frsize > 0, 'native free-byte fields unavailable')
+             result[root] = native.f_bavail * native.f_frsize
+             txn.must_tick('fstatvfs completion')
++        except BaseException as exc:
++            txn.keep(exc)
++            raise
+         finally:
+             txn.close(fd, 'P5_FREE_BYTES_LOW')
+     return result
+@@ -1307,7 +1381,7 @@
+         except _Crossed:
+             return
+         except Exception as exc:
+-            txn.fire('P%d_INTERNAL_ERROR' % number, _why(exc))
++            txn.fire('P%d_INTERNAL_ERROR' % number, txn.why(exc))
+         txn.evaluated.add(number)
+ 
+ 
+@@ -1332,14 +1406,14 @@
+     try:
+         value = txn.observe('owned_date')
+     except Exception as exc:
+-        txn.fire('P5_OWNED_DATE_FAILED', _why(exc))
++        txn.fire('P5_OWNED_DATE_FAILED', txn.why(exc))
+         return
+     if txn.crossed:
+         return
+     try:
+         ctx.date_text, ctx.date_child = _owned_reading(value)
+     except Exception as exc:
+-        txn.fire('P5_OWNED_DATE_FAILED', _why(exc))
++        txn.fire('P5_OWNED_DATE_FAILED', txn.why(exc))
+ 
+ 
+ def _statuses(txn):
+@@ -1351,9 +1425,10 @@
+ def _record(txn, ctx, decision, reduced=False):
+     causes = [cause for cause in CAUSES if cause in txn.fired]
+     evidence = {cause: values[:1] if reduced else values for cause, values in txn.evidence.items()}
+-    return {'format': 'parent-release-disposition-v4', 'module': 'parent_release_v4.py',
++    return {'format': 'parent-release-disposition-v7', 'module': 'parent_release_v7.py',
+             'scope_contract_sha256': CONTRACT_SHA256,
+-            'repair_scope_sha256s': [REPAIR_SCOPE_SHA256, V3_REPAIR_SCOPE_SHA256, V4_REPAIR_SCOPE_SHA256],
++            'repair_scope_sha256s': [REPAIR_SCOPE_SHA256, V3_REPAIR_SCOPE_SHA256, V4_REPAIR_SCOPE_SHA256,
++                                     V5_REPAIR_SCOPE_SHA256, V6_REPAIR_SCOPE_SHA256, V7_REPAIR_SCOPE_SHA256],
+             'item': ctx.f.get('item'), 'state': decision, 'causes': causes,
+             'evidence': evidence, 'suppressed_evidence_counts': txn.suppressed, 'parts': _statuses(txn),
+             'recorded_at': ctx.date_text, 'timestamp_source': 'owned bounded /bin/date only',
+@@ -1438,6 +1513,9 @@
+         actual = txn.native('fstat new disposition', os.fstat, fd)
+         _require(actual.st_dev == original.st_dev and actual.st_ino == original.st_ino
+                  and actual.st_nlink == 1 and actual.st_size == len(data), 'created inode changed')
++    except BaseException as exc:
++        txn.keep(exc)
++        raise
+     finally:
+         closed = txn.close(fd, 'P5_COMMIT_WRITE_FAILED')
+     _require(closed, 'new disposition close unresolved')
+@@ -1453,7 +1531,7 @@
+         back = txn.observe('read_bytes', retained['path'], len(data), after_ack=True)
+     except Exception as exc:
+         result['ack'] = 'ACK_FAILED'
+-        txn.fire('P5_ACK_FAILED', _why(exc))
++        txn.fire('P5_ACK_FAILED', txn.why(exc))
+         return False
+     if txn.crossed:
+         result['ack'] = 'ACK_UNPROVED_DEADLINE'
+@@ -1470,7 +1548,7 @@
+         result['ack'] = 'ACK_UNPROVED_DEADLINE'
+         return False
+     except Exception as exc:
+-        txn.fire('P5_ACK_FAILED', _why(exc))
++        txn.fire('P5_ACK_FAILED', txn.why(exc))
+         result['ack'] = 'ACK_FAILED'
+         return False
+     if not txn.tick('ACK original-inode identity completion', after_ack=True):
+@@ -1486,7 +1564,7 @@
+         return False
+     _mutation_parts(ctx.commit_dir)
+     digest = hashlib.sha256(data).hexdigest()
+-    name = 'prt-v4-' + _slug(ctx.f.get('item')) + '-' + digest + '.json'
++    name = 'prt-v7-' + _slug(ctx.f.get('item')) + '-' + digest + '.json'
+     retained = {'path': ctx.commit_dir + '/' + name, 'sha256': digest, 'bytes': len(data),
+                 'create_attempted': False, 'created': False, 'bytes_written': 0, 'line_complete': False,
+                 'identity': None, 'file_fsync': False, 'directory_fsync': False}
+@@ -1504,10 +1582,13 @@
+             result['uncertainty'] = 'deadline crossed in exclusive commit; unacknowledged object may exist; no ACK/registry'
+         return False
+     except Exception as exc:
+-        txn.fire('P5_COMMIT_WRITE_FAILED', _why(exc))
++        txn.fire('P5_COMMIT_WRITE_FAILED', txn.why(exc))
+         if retained['create_attempted']:
+             result['uncertainty'] = 'exclusive commit failed after O_EXCL attempt; partial object may exist; no ACK/registry'
+         return False
++    except BaseException as exc:
++        txn.keep(exc)
++        raise
+     finally:
+         if dfd is not None:
+             txn.close(dfd, 'P5_COMMIT_WRITE_FAILED')
+@@ -1538,7 +1619,7 @@
+     allocation, owned = ctx.f['allocation'], []
+     _mutation_parts(allocation['registry_path'])
+     state = 'RELEASED' if releasable else 'HELD'
+-    row = {'format': 'parent-release-registry-v4', 'owner': 'parent_release_v4.py', 'item': ctx.f['item'],
++    row = {'format': 'parent-release-registry-v7', 'owner': 'parent_release_v7.py', 'item': ctx.f['item'],
+            'state': state, 'decision_in_disposition': result['decision'],
+            'disposition': result['disposition']['path'], 'disposition_sha256': result['disposition']['sha256'],
+            'allocation_line_sha256': allocation['line_sha256'], 'causes': [c for c in CAUSES if c in txn.fired],
+@@ -1565,8 +1646,11 @@
+     except _Crossed:
+         retained['status'] = 'DEADLINE_CROSSED'
+     except Exception as exc:
+-        txn.fire('P5_REGISTRY_APPEND_FAILED', _why(exc))
+-        retained['status'], retained['detail'] = 'FAILED', _why(exc)
++        txn.fire('P5_REGISTRY_APPEND_FAILED', txn.why(exc))
++        retained['status'], retained['detail'] = 'FAILED', txn.why(exc)
++    except BaseException as exc:
++        txn.keep(exc)
++        raise
+     finally:
+         retained['closed'] = False
+         retained['closed'] = txn.release(owned, 'P5_REGISTRY_APPEND_FAILED')  # every owned fd once, even on BaseException
+@@ -1575,7 +1659,7 @@
+ 
+ 
+ def _new_result():
+-    return {'format': 'parent-release-result-v4', 'state': 'HELD', 'decision': 'HELD',
++    return {'format': 'parent-release-result-v7', 'state': 'HELD', 'decision': 'HELD',
+             'release_effective': False, 'ack': 'ACK_NOT_ATTEMPTED', 'disposition': None,
+             'registry': {'status': 'NOT_ATTEMPTED', 'bytes_written': 0, 'line_complete': False,
+                          'fsync': False, 'closed': False, 'state': None, 'line_sha256': None},
+@@ -1600,12 +1684,14 @@
+         return
+     if txn.crossed:
+         return
++    _final(txn, ctx, result)  # complete conservative report BEFORE any registry I/O; a failure skips every append
+     releasable = decision == 'RELEASED' and not txn.fired
+     _append_registry(txn, ctx, releasable, result)
+ 
+ 
+ def _final(txn, ctx, result):
+     effective = (result['decision'] == 'RELEASED' and not txn.fired and not txn.crossed
++                 and not txn.base_exceptions and not txn.degraded
+                  and result['ack'] == 'ACK_OK' and result['registry']['status'] == 'APPENDED'
+                  and result['registry']['state'] == 'RELEASED' and result['registry']['fsync'] is True
+                  and result['registry']['closed'] is True and not txn.live and not txn.unresolved_total)
+@@ -1623,49 +1709,97 @@
+     return result
+ 
+ 
+-def _link(exc, prior):
+-    """Attach `prior` as implicit context only when free and provably acyclic; never overwrites/raises."""
+-    if prior is None or exc is prior or exc.__context__ is not None:
+-        return
+-    node = prior
+-    for _ in range(64):
+-        if node is None:
+-            exc.__context__ = prior
++def _link(txn, exc, prior):
++    """Optional free/acyclic context link, using the BASE descriptor, never subclass metadata."""
++    try:
++        if prior is None or exc is prior or _CONTEXT.__get__(exc) is not None:
+             return
+-        if node is exc:
+-            return
+-        node = node.__context__
++        node = prior
++        for _ in range(64):
++            if node is None:
++                _CONTEXT.__set__(exc, prior)
++                return
++            if node is exc:
++                return
++            node = _CONTEXT.__get__(node)
++    except BaseException as failure:
++        txn.keep(failure, True)  # origin: the optional link raised
++        if _ordinary(failure):
++            txn.fire('P%d_INTERNAL_ERROR' % txn.part, 'optional exception context link failed: ' + _type_name(failure))
+ 
+ 
+-def _absorb(txn, exc, pending):
+-    """Record an evaluation/stamp exception and return the selected pending one; NEVER raises.
++def _absorb(txn, exc, stage):
++    """Retain at a phase boundary before describing/firing; bookkeeping must not replace it.
+ 
+-    Exception: internal error, pending unchanged. BaseException: cause fired, object retained,
+-    and it becomes the selected pending exception (newest wins, as for an exception raised while
+-    handling another); every earlier one stays reachable (free acyclic __context__ and the
+-    parent_release_prior_exceptions attachment). Normal attachment paths decide propagation.
++    The arriving object is propagation: an already-retained object is never reordered and a
++    first sighting becomes newest. A bookkeeping failure raised here is a new origin.
+     """
+-    if isinstance(exc, Exception):
+-        txn.fire('P%d_INTERNAL_ERROR' % txn.part, _why(exc))
+-        return pending
+-    txn.fire('P%d_BASE_EXCEPTION' % txn.part, _why(exc))
+-    txn.base_exceptions.append(exc)
+-    _link(exc, pending)
+-    return exc
++    txn.keep(exc)
++    try:
++        cause = 'P%d_INTERNAL_ERROR' % txn.part if _ordinary(exc) else 'P%d_BASE_EXCEPTION' % txn.part
++        txn.fire(cause, stage + ': ' + txn.why(exc))
++    except BaseException as failure:
++        txn.keep(failure, True)  # origin: absorption bookkeeping raised
++        if _ordinary(failure):
++            txn.fire('P%d_INTERNAL_ERROR' % txn.part, 'exception absorption failed: ' + _type_name(failure))
+ 
+ 
+ def _commit_safe(txn):
+     return not txn.crossed and not txn.unsafe.intersection(('deadline_check', 'read_bytes', 'owned_date'))
+ 
+ 
+-def _attach_and_raise(exc, result, txn):
+-    prior = tuple(item for item in txn.base_exceptions if item is not exc)
+-    for name, value in (('parent_release_result', result), ('parent_release_prior_exceptions', prior)):
++def _attach_and_raise(txn, ctx, result):
++    """Raise the newest ACTUAL-ORIGIN object; bounded guarded direct-dict attachment, no I/O.
++
++    Selection is txn.latest_base, never retention order (A, B, then the same A again selects A).
++    Each round: remove both parent_release_* entries from the selected object; re-assemble the
++    report in place (a failure forces HELD by constant stores; the report is complete since
++    construction); build the prior tuple and link; if any origin event occurred since the round's
++    snapshot, reselect WITHOUT writing; remove both entries from every prior member; write prior,
++    then result. Only the propagated object carries entries written by this call, and no prior
++    member carries either entry. The tuple is authoritative retention; __context__ is optional.
++    ctx=None is the observation-only baseline helper: attach priors only, never a release report.
++    Call outside except clauses. Persistent memory/async failure can prevent any attachment;
++    after eight rounds the newest-origin object still propagates, never a normal return.
++    """
++    rounds = 0
++    while rounds < 8:  # small-int counter: no range/iterator allocation outside the guards
++        rounds += 1
++        revision, exc = txn.base_revision, txn.latest_base
+         try:
+-            setattr(exc, name, value)
+-        except Exception:
+-            pass
+-    raise exc
++            namespace = _EXC_DICT.__get__(exc)
++            dict.pop(namespace, 'parent_release_result', None)
++            dict.pop(namespace, 'parent_release_prior_exceptions', None)
++            if ctx is not None:
++                try:
++                    _final(txn, ctx, result)
++                except Exception as broken:
++                    result['state'] = 'HELD'  # constant stores on keys present since construction
++                    result['release_effective'] = False
++                    result['uncertainty'] = FALLBACK_UNCERTAINTY
++                    txn.fire('P5_INTERNAL_ERROR', 'attached report assembly: ' + _type_name(broken))
++            prior = tuple(item for item in txn.base_exceptions if item is not exc)
++            _link(txn, exc, prior[-1] if prior else None)
++            if txn.base_revision != revision:
++                continue  # an origin occurred while preparing: reselect before writing anything
++            for item in prior:
++                stale = _EXC_DICT.__get__(item)
++                dict.pop(stale, 'parent_release_result', None)
++                dict.pop(stale, 'parent_release_prior_exceptions', None)
++            dict.__setitem__(namespace, 'parent_release_prior_exceptions', prior)
++            if ctx is not None:
++                dict.__setitem__(namespace, 'parent_release_result', result)
++        except BaseException as failure:
++            try:
++                txn.keep(failure, True)  # origin: attachment bookkeeping raised
++                if _ordinary(failure):
++                    txn.fire('P5_INTERNAL_ERROR', 'exception report attachment failed: ' + _type_name(failure))
++            except Exception:
++                pass  # recording an allocation failure can itself fail; the bounded rounds continue
++            continue
++        if txn.base_revision == revision:
++            raise exc
++    raise txn.latest_base
+ 
+ 
+ def decide_and_commit(spec, read_bytes, census, owned_date, commit_dir, deadline_check):
+@@ -1674,55 +1808,85 @@
+     Only caller-observed returned state RELEASED with final_deadline_check PASSED is effective,
+     conditional on the authentic parent authority/immutable freeze/full identity-union and
+     caller-integration prerequisites. Any other outcome/exception holds the allocation.
++    ANY shaping failure makes commit unavailable, including caught ordinary field errors.
+     BaseException in evaluation attempts HELD only while the ORIGINAL deadline/reader/date
+     remain safe; a commit BaseException propagates after one-close cleanup with a HELD report.
+-    Several BaseExceptions: each is recorded, the newest propagates with the HELD report, and
+-    earlier ones stay in exc.parent_release_prior_exceptions (plus free acyclic __context__).
++    Every primary/cleanup non-Exception BaseException is retained at encounter; the object of the
++    newest ACTUAL origin event propagates (a repeated raise of an already-retained object counts;
++    propagation-only catches never reorder), and every other retained object stays in
++    parent_release_prior_exceptions.
++    Construction assembles a complete conservative HELD report before any callback or I/O, so a
++    construction failure precedes every record. Once commit or registry effects may exist, no
++    ordinary exception (allocation failures included) escapes: a failed assembly returns this
++    call's complete report with state forced HELD and FALLBACK_UNCERTAINTY, and a retained object
++    propagates with that report attached. Only the propagated object's base-dict entries are a report.
+     The COMPLETE assembled result receives a final ORIGINAL-deadline check before return.
+-    No new clock, process or signal. No v1/v2/v3 compatibility. Schemas/controls: v2 notes as
+-    amended by v3 and v4 design notes.
++    No new clock, process or signal. No v1-v6 compatibility. Schemas/controls: v2 notes as
++    amended by v3, v4, v5, v6 and v7 design notes. Result contains only pure JSON data, never exceptions.
+     """
+-    txn, ctx, result, pending = _Txn(read_bytes, census, owned_date, deadline_check), _Ctx(), _new_result(), None
++    txn, ctx, result = _Txn(read_bytes, census, owned_date, deadline_check), _Ctx(), _new_result()
++    _final(txn, ctx, result)  # construction: complete conservative HELD report BEFORE any callback or I/O
+     try:
+         _evaluate(txn, ctx, spec, commit_dir)
+     except _Crossed:
+         pass
+     except BaseException as exc:
+-        pending = _absorb(txn, exc, pending)
+-    if pending is not None and not _commit_safe(txn):
+-        _attach_and_raise(pending, _final(txn, ctx, result), txn)
++        _absorb(txn, exc, 'evaluation')
++    if txn.base_exceptions and not _commit_safe(txn):
++        _attach_and_raise(txn, ctx, result)
+     if not txn.crossed:
+         try:
+             _stamp(txn, ctx)
+         except BaseException as exc:
+-            pending = _absorb(txn, exc, pending)
+-    if pending is not None and not _commit_safe(txn):
+-        _attach_and_raise(pending, _final(txn, ctx, result), txn)
++            _absorb(txn, exc, 'stamp')
++    if txn.base_exceptions and not _commit_safe(txn):
++        _attach_and_raise(txn, ctx, result)
+     try:
+-        _finish(txn, ctx, result)
++        _finish(txn, ctx, result)  # the only phase that can create disposition or registry records
+     except _Crossed:
+         pass
+-    except Exception as exc:
+-        txn.fire('P5_INTERNAL_ERROR', _why(exc))
+     except BaseException as exc:
+-        txn.fire('P5_BASE_EXCEPTION', 'commit phase: ' + _why(exc))
+-        txn.base_exceptions.append(exc)
+-        _link(exc, pending)
+-        _attach_and_raise(exc, _final(txn, ctx, result), txn)  # in-memory HELD report only; no further I/O
+-    result = _final(txn, ctx, result)
+-    if pending is not None:
+-        _attach_and_raise(pending, result, txn)
+-    already = txn.crossed
++        txn.degraded = True  # constant store first: nothing after an escape from _finish can be effective
++        try:
++            _absorb(txn, exc, 'commit phase')
++        except Exception:
++            pass  # recording an allocation failure can itself fail; the latch already forces HELD
++    if txn.base_exceptions:
++        _attach_and_raise(txn, ctx, result)
++    already, timely = txn.crossed, False
+     try:
++        _final(txn, ctx, result)  # complete assembly after every commit/registry effect; no I/O
++    except Exception as exc:
++        result['state'] = 'HELD'  # constant stores on keys present since construction: no allocation
++        result['release_effective'] = False
++        result['uncertainty'] = FALLBACK_UNCERTAINTY
++        try:
++            txn.fire('P5_INTERNAL_ERROR', 'result assembly: ' + txn.why(exc))
++        except Exception:
++            pass  # recording an allocation failure can itself fail; the returned report is already HELD
++        return result  # no final check without a complete assembly: final_deadline_check NOT_PERFORMED
++    try:
+         timely = txn.tick('final assembled result completion')  # after COMPLETE assembly; no I/O follows
+     except BaseException as exc:
+-        txn.fire('P5_BASE_EXCEPTION', 'final result check: ' + _why(exc))
+-        txn.base_exceptions.append(exc)
+-        result = _final(txn, ctx, result)
++        txn.crossed = True  # the original check did not complete: the original deadline is unavailable
++        try:
++            _absorb(txn, exc, 'final result check')
++        except Exception:
++            pass  # recording failed; the crossing latch already forces HELD
++    if txn.base_exceptions:
+         result['final_deadline_check'] = 'BASE_EXCEPTION'
+-        _attach_and_raise(exc, result, txn)
++        _attach_and_raise(txn, ctx, result)
+     if not timely:
+-        result = _final(txn, ctx, result)  # in-memory HELD only
++        try:
++            _final(txn, ctx, result)  # in-memory HELD only
++        except Exception as exc:
++            result['state'] = 'HELD'
++            result['release_effective'] = False
++            result['uncertainty'] = FALLBACK_UNCERTAINTY
++            try:
++                txn.fire('P5_INTERNAL_ERROR', 'held re-assembly: ' + txn.why(exc))
++            except Exception:
++                pass  # the returned report is already HELD
+     result['final_deadline_check'] = 'PASSED' if timely else 'NOT_PERFORMED_ALREADY_CROSSED' if already else 'CROSSED'
+     return result
+ 
+@@ -1734,8 +1898,11 @@
+     all applicable lane-root coverage remains parent-authenticated. No v1 schema accepted.
+     No partial baseline or unavailable accounting returns as success. No generated timestamp.
+     Every native operation is original-deadline checked; root insertion counts toward the cap.
++    Every generated path passes the SAME consumer path predicate before I/O or insertion.
+     The 200000-entry cap is a count predicate only: a complete baseline must ALSO fit the 16MiB
+     canonical cap below, so far fewer entries can actually be produced or loaded (T106 limit).
++    A BaseException (newest actual origin selected) gets only prior-exception attachment,
++    never a parent release report.
+     """
+     selected = _roots(roots)
+     txn = _Txn(None, None, None, deadline_check)
+@@ -1749,7 +1916,10 @@
+         _require(len(_canonical(result)) <= CAP, 'baseline exceeds16MiB cap')
+         txn.must_tick('baseline-v2 assembly')
+         return result
+-    except Exception as exc:
+-        if txn.crossed:
+-            raise ReleaseRefusal('original deadline crossed; no baseline returned') from exc
+-        raise
++    except BaseException as exc:
++        txn.keep(exc)
++        if not txn.base_exceptions:
++            if txn.crossed:
++                raise ReleaseRefusal('original deadline crossed; no baseline returned') from exc
++            raise
++    _attach_and_raise(txn, None, None)

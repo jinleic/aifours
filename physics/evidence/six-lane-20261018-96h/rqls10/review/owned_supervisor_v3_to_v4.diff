@@ -1,0 +1,758 @@
+--- code/owned_supervisor_v3.py	2026-10-19 06:07:45
++++ code/owned_supervisor_v4.py	2026-10-19 06:11:51
+@@ -1,54 +1,61 @@
+ #!/usr/bin/env python3
+-"""owned_supervisor_v3: run ONE child process under a fail-closed guard; launch record and GO boundary; bounded
++"""owned_supervisor_v4: run ONE child process under a fail-closed guard; launch record and GO boundary; bounded
+ observation; full owned-descendant and lane accounting; settlement only with complete evidence. Standard library only
+-(ctypes for read-only macOS libproc/sysctl process metadata). code/owned_supervisor_v2.py is untouched and superseded.
++(ctypes for read-only macOS libproc/sysctl process metadata). code/owned_supervisor_v2.py is untouched. v4 supersedes
++the never-run first draft code/owned_supervisor_v3.py (same design; corrections listed under "v4 corrections").
+ 
+-v3 changes (parent HOLD 2026-10-19 on v2; review RUN/review/rqls10-fixedB-v4-source-codex-v1.prompt.stdout.txt):
++Design (parent HOLD 2026-10-19 on v2; review RUN/review/rqls10-fixedB-v4-source-codex-v1.prompt.stdout.txt):
+  1. Stop request is a latched event with a monotonic time. The bounded observation grace (settle_s) starts at the FIRST
+     stop request (trip or supervisor cancel) whether or not a signal could be sent. After the grace the supervisor stops
+     observing and reports UNSETTLED if anything is unresolved. No SIGKILL, no escalation, no subprocess timeouts, no
+     ulimit, no deletion.
+- 2. Signals: at most one SIGTERM, to the child's process group, and only if the child is not yet reaped (so its pid and
+-    group id cannot have been reused) AND libproc shows the same pgid, uid and start time (tvsec, tvusec) as recorded at
+-    launch. Otherwise no signal is sent (identity_unverified) and the grace still runs. Escaped descendants (other
+-    groups) are never signalled; they are recorded and keep the run UNSETTLED while alive.
+- 3. Census (every sample, libproc only, no ps/lsof): all pids; owned set = child plus every process whose parent is
+-    owned (identities pid + start time, accumulated over time) plus every member of the child's process group; lane set
+-    = processes of this uid whose cwd or any argv element lies under a lane root, plus the owned set. Whole-lane RSS
+-    (sum, deduplicated) and busy count (CPU >= busy_cpu_fraction of wall time between consecutive samples; a process
+-    first seen in a sample counts as busy) are enforced. Any unreadable live process of this uid, or an unreadable
+-    owned process, is a census failure (fail-closed trip CENSUS_FAILED); zombies are counted, never read.
++ 2. Signals: at most one SIGTERM, to the child's process group, and only if the child is not yet reaped (its pid and group
++    id cannot have been reused) AND libproc shows the recorded pgid, uid and start time (tvsec, tvusec). Otherwise no
++    signal is sent (IDENTITY_UNVERIFIED) and the grace still runs. Escaped descendants (other groups) are never
++    signalled; they are recorded and keep the run UNSETTLED while alive.
++ 3. Census (every sample, libproc and sysctl only, no ps/lsof): all pids; owned set = child plus every process whose
++    parent is a LIVE owned process (identities pid + start time, accumulated) plus every member of the child's process
++    group; lane set = processes of this uid whose cwd or any argv element lies under a lane root, plus the owned set.
++    Whole-lane RSS (sum, deduplicated) and busy count (CPU >= busy_cpu_fraction of wall time between consecutive
++    samples; a process first seen in a sample counts as busy; trip only when the limit is exceeded on two consecutive
++    samples) are enforced. Any unreadable live process of this uid, or an unreadable owned process, is a census failure
++    (trip CENSUS_FAILED, latched, run UNSETTLED); zombies are counted, never read.
+  4. Disk: fresh statvfs floor; child output bytes; hard-capped stdout/stderr (reader threads write at most the cap and
+     discard the rest, latching STREAM_CAP); bounded samples file (SAMPLES_CAP); lane cumulative bytes (walk of
+-    lane_disk_root every lane_walk_s, regular files by lstat, symlinks not followed) plus outstanding lane reservations
+-    must stay <= lane_disk_ceiling_bytes (default 10 GiB).
++    lane_disk_root every lane_walk_s, regular files by lstat, symlinks not followed, entries vanishing during the walk
++    count 0) plus outstanding lane reservations must stay <= lane_disk_ceiling_bytes.
+  5. Admission (all must pass, else NOT_LAUNCHED with receipt): config schema; pins (regular, non-symlink, sha256);
+-    output preflight (no output exists; every ancestor a real directory, no symlink; under an output root); parent GO
+-    file sha256; fresh stability-gate receipt (sha256, verdict PASS, age <= stability_max_age_s by /bin/date); listed
+-    prior settlement records SETTLED; fresh free - outstanding reservations - own reservation >= 12e9 and free >=
+-    launch_free_min_bytes + reservation; lane bytes + lane outstanding + reservation <= ceiling; chunk fit; a complete
+-    census twice 2 s apart with lane busy + 1 <= busy_limit and lane RSS + rss_projection_bytes <= rss_trip_bytes; a
+-    working /bin/date helper; no cancel.
++    output preflight (no output exists; every ancestor a real directory; under an output root); parent GO file sha256;
++    fresh stability-gate receipt (sha256, verdict PASS, age by /bin/date within stability_max_age_s); listed prior
++    settlement records SETTLED; free >= launch_free_min_bytes + reservation and free - outstanding reservations -
++    reservation >= 12e9; lane bytes + lane outstanding + reservation <= ceiling; chunk fit; two complete censuses 2 s
++    apart with lane busy + 1 <= busy_limit and lane RSS + rss_projection_bytes <= rss_trip_bytes; a working /bin/date
++    helper; libproc setup; no cancel.
+  6. GO is written to the child's stdin only after its identity was captured and the launch record was published and
+     verified by re-reading its sha256. Identity or launch-record failure: no GO, stdin closed, stop request, observe,
+     UNSETTLED (blocks new launches until parent disposition).
+  7. Metadata helper policy: the only helper is /bin/date (formatted timestamps; null if unavailable, never invented),
+-    run as an owned direct child with its own session, at most helper_budget.max_calls calls, each observed for
+-    call_budget_s, then at most one identity-checked SIGTERM and term_grace_s; a helper still alive is HELPER_UNSETTLED
+-    (run UNSETTLED). Numeric clock readings (time.monotonic, time.time) are recorded as raw clock values, labelled so.
++    run as an owned direct child in its own session with cwd /, at most helper_budget.max_calls calls, each observed
++    for call_budget_s, then at most one identity-checked SIGTERM and term_grace_s; a helper still alive is
++    HELPER_UNSETTLED (run UNSETTLED). Helpers are not lane processes (cwd /, argv without lane paths) and are accounted
++    in helper_log. Numeric clock readings (time.monotonic, time.time) are recorded as raw values, labelled so.
+  8. SETTLED requires: child reaped with a return code; owned census clear (no live owned identity, no live member of
+     the child's group); both stream reader threads finished and sink files closed without error; every helper reaped;
+-    pins unchanged; every output and evidence file hashed without error and every required output present; samples
+-    complete (no cap); no census/identity/helper failure latched; the receipt published (exclusive create, flush,
+-    fsync, re-read sha256 equal). The settlement record (a second exclusive file) is the authoritative final statement
+-    and names the receipt sha256.
++    pins unchanged; every evidence directory still a real directory chain; every output and evidence file hashed
++    without error and every required output present; samples complete; no census, identity, helper or capture failure
++    latched; the receipt published (exclusive create, write, fsync, close, re-read sha256 equal). The settlement record
++    (second exclusive file, same publication rule) is the authoritative final statement and names the receipt sha256.
++v4 corrections to the v3 draft: lane walk tolerates entries vanishing during the walk; argv reads copy only the
++returned bytes; CPU baselines are kept across admission and launch; a failed spawn is NOT_LAUNCHED, never SETTLED; the
++owned set extends only from LIVE identity-matched owned processes; DEADLINE is latched once; evidence directory chains
++are rechecked at settlement.
+ Exit codes: 0 SETTLED, 10 NOT_LAUNCHED, 11 UNSETTLED, 12 receipt publication failed, 13 settlement record failed,
+ 2 unusable config (nothing written).
+-Config keys (JSON, argv[1]): see CONFIG_KEYS below and the frozen example evidence/owned_supervisor_v3.config-example-v1.json.
++Config keys: CONFIG_KEYS, ADMISSION_KEYS, HELPER_KEYS below; example evidence/owned_supervisor_v4.config-example-v1.json.
+ """
+-import ctypes, errno, hashlib, json, os, re, signal, stat, struct, subprocess, sys, threading, time
++import ctypes, datetime, errno, hashlib, json, os, re, signal, stat, struct, subprocess, sys, threading, time
+ 
+-VERSION = "owned_supervisor_v3"
++VERSION = "owned_supervisor_v4"
+ CANCEL = [None]
+ CONFIG_KEYS = {
+     "item": str, "owner": str, "purpose": str, "lane": str, "argv": list, "env": dict, "stdout": str, "stderr": str,
+@@ -66,6 +73,8 @@
+ HELPER_KEYS = {"max_calls": int, "call_budget_s": (int, float), "term_grace_s": (int, float)}
+ FAULTS = ("identity_check_fails", "date_helper_fails")
+ DATE_RE = re.compile(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d[+-]\d{4}$")
++FAIL_FLAGS = ("SAMPLES_CAP", "HELPER_UNSETTLED", "HELPER_SPAWN_FAILED", "HELPER_BUDGET_EXHAUSTED", "IDENTITY_UNVERIFIED",
++              "CENSUS_FAILED", "IDENTITY_CAPTURE_FAILED", "LAUNCH_RECORD_FAILED")
+ 
+ 
+ def _cancel(signum, frame):
+@@ -85,11 +94,12 @@
+ _LC.sysctl.restype = ctypes.c_int
+ _LC.mach_timebase_info.argtypes = (ctypes.c_void_p,)
+ _LC.mach_timebase_info.restype = ctypes.c_int
+-# sys/proc_info.h: PROC_PIDTBSDINFO 3 (struct proc_bsdinfo, 136 bytes; pbi_pgid uint32 at 100, pbi_start_tvsec and
+-# pbi_start_tvusec uint64 at 120 and 128), PROC_PIDTASKINFO 4 (struct proc_taskinfo, 96 bytes; pti_resident_size
+-# uint64 at 8, pti_total_user and pti_total_system uint64 at 16 and 24, mach time units), PROC_PIDVNODEPATHINFO 9
+-# (struct proc_vnodepathinfo, 2352 bytes; pvi_cdir.vip_path char[1024] at 152), PROC_PIDT_SHORTBSDINFO 13 (struct
+-# proc_bsdshortinfo, 64 bytes; pid, ppid, pgid, status uint32 at 0, 4, 8, 12, comm char[16] at 16, uid uint32 at 36).
++# sys/proc_info.h: PROC_PIDTBSDINFO 3 (struct proc_bsdinfo, 136 bytes; pbi_uid uint32 at 20, pbi_pgid uint32 at 100,
++# pbi_start_tvsec and pbi_start_tvusec uint64 at 120 and 128), PROC_PIDTASKINFO 4 (struct proc_taskinfo, 96 bytes;
++# pti_resident_size uint64 at 8, pti_total_user and pti_total_system uint64 at 16 and 24 in mach time units),
++# PROC_PIDVNODEPATHINFO 9 (struct proc_vnodepathinfo, 2352 bytes; pvi_cdir.vip_path char[1024] at 152),
++# PROC_PIDT_SHORTBSDINFO 13 (struct proc_bsdshortinfo, 64 bytes; pid, ppid, pgid, status uint32 at 0, 4, 8, 12,
++# comm char[16] at 16, uid uint32 at 36). sysctl {CTL_KERN, KERN_PROCARGS2, pid}: int argc, exec path, argv strings.
+ PROC_PIDTBSDINFO, PROC_PIDTASKINFO, PROC_PIDVNODEPATHINFO, PROC_PIDT_SHORTBSDINFO = 3, 4, 9, 13
+ BSD_SIZE, TASK_SIZE, VNP_SIZE, SHORT_SIZE = 136, 96, 2352, 64
+ SZOMB = 5
+@@ -147,10 +157,10 @@
+     raw, e = _pidinfo(pid, PROC_PIDTBSDINFO, BSD_SIZE)
+     if raw is None:
+         return None, e
+-    pgid = struct.unpack_from("=I", raw, 100)[0]
+     uid = struct.unpack_from("=I", raw, 20)[0]
++    pgid = struct.unpack_from("=I", raw, 100)[0]
+     s, us = struct.unpack_from("=QQ", raw, 120)
+-    return {"start_tvsec": s, "start_tvusec": us, "pgid": pgid, "uid": uid}, 0
++    return {"start": [s, us], "pgid": pgid, "uid": uid}, 0
+ 
+ 
+ def task_info(pid):
+@@ -178,7 +188,7 @@
+     if _LC.sysctl(mib, 3, _ARGBUF, ctypes.byref(size), None, 0) != 0:
+         e = ctypes.get_errno()
+         return None, (e if e else -1)
+-    data = _ARGBUF.raw[:size.value]
++    data = ctypes.string_at(_ARGBUF, size.value)
+     if len(data) < 4:
+         return None, -3
+     argc = struct.unpack_from("=i", data, 0)[0]
+@@ -224,11 +234,9 @@
+ 
+ 
+ def real_dir_chain(d):
+-    """every ancestor of d (inclusive) is a real directory, not a symlink."""
+     d = os.path.abspath(d)
+-    parts = d.split("/")
+     cur = ""
+-    for comp in parts[1:]:
++    for comp in d.split("/")[1:]:
+         cur = cur + "/" + comp
+         try:
+             st = os.lstat(cur)
+@@ -240,12 +248,24 @@
+ 
+ 
+ def walk_bytes(root):
++    """regular-file bytes under root by lstat; symlinks not followed; entries vanishing during the walk count 0."""
+     total, stack = 0, [root]
++    first = True
+     while stack:
+         d = stack.pop()
+-        with os.scandir(d) as it:
++        try:
++            it = os.scandir(d)
++        except FileNotFoundError:
++            if first:
++                raise
++            continue
++        first = False
++        with it:
+             for ent in it:
+-                st = ent.stat(follow_symlinks=False)
++                try:
++                    st = ent.stat(follow_symlinks=False)
++                except FileNotFoundError:
++                    continue
+                 if stat.S_ISDIR(st.st_mode):
+                     stack.append(ent.path)
+                 elif stat.S_ISREG(st.st_mode):
+@@ -259,7 +279,7 @@
+ 
+ 
+ def write_json_published(path, obj):
+-    """exclusive create, flush, fsync, close, re-read; returns sha256 of the published bytes or raises."""
++    """exclusive create, write, fsync, close, re-read; returns sha256 of the published bytes or raises."""
+     data = (json.dumps(obj, indent=1, sort_keys=True) + "\n").encode("utf-8")
+     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+     try:
+@@ -280,14 +300,15 @@
+ class Sup:
+     def __init__(self, cfg, cfg_path):
+         self.cfg = cfg
+-        self.cfg_path = cfg_path
+         self.rec = {"supervisor": VERSION, "supervisor_path": os.path.abspath(__file__),
+                     "supervisor_sha256": sha_file(os.path.abspath(__file__)), "config": cfg_path,
+                     "config_sha256": sha_file(cfg_path), "supervisor_pid": MY_PID, "uid": MY_UID,
+-                    "clock_note": "mono_* = time.monotonic() seconds, epoch_* = time.time() seconds (raw clock values); "
+-                                  "*_date = /bin/date output or null"}
++                    "timebase": TIMEBASE, "argmax": ARGMAX,
++                    "clock_note": "mono_* = time.monotonic() s, epoch_* = time.time() s (raw clock values); *_date = "
++                                  "/bin/date output or null (never invented)"}
+         self.flags = set()
+         self.trips = []
++        self.latched = set()
+         self.helper_calls = 0
+         self.helper_log = []
+         self.helper_open = []
+@@ -304,15 +325,12 @@
+         self.samples_bytes = 0
+         self.samples_n = 0
+         self.streams = {}
+-        self.last_census = None
+         self.lane_bytes = None
+         self.next_walk = 0.0
+ 
+     def fault(self, name):
+-        fi = self.cfg.get("fault_injection") or {}
+-        return self.cfg.get("purpose") == "guard-qualification" and bool(fi.get(name))
++        return self.cfg.get("purpose") == "guard-qualification" and bool(self.cfg["fault_injection"].get(name))
+ 
+-    # ------------------------------------------------ owned /bin/date helper
+     def date_now(self):
+         hb = self.cfg["helper_budget"]
+         entry = {"n": self.helper_calls + 1, "mono_start": time.monotonic()}
+@@ -367,21 +385,16 @@
+             return None
+         txt = out.decode("utf-8", "replace").strip()
+         entry.update({"rc": p.returncode, "mono_end": time.monotonic()})
+-        if p.returncode == 0 and DATE_RE.match(txt):
+-            entry["outcome"] = "OK"
+-            self._log_helper(entry)
+-            return txt
+-        entry["outcome"] = "BAD_OUTPUT"
++        entry["outcome"] = "OK" if p.returncode == 0 and DATE_RE.match(txt) else "BAD_OUTPUT"
+         self._log_helper(entry)
+-        return None
++        return txt if entry["outcome"] == "OK" else None
+ 
+     def _log_helper(self, entry):
+         if len(self.helper_log) < 256:
+             self.helper_log.append(entry)
+ 
+-    # ------------------------------------------------ census
+     def census(self, child_pgid):
+-        """one complete scan. Returns a summary dict; raises RuntimeError on any failure (fail-closed)."""
++        """one complete scan; raises RuntimeError on any failure (fail-closed)."""
+         pids = list_pids()
+         if pids is None:
+             raise RuntimeError("LISTPIDS_FAILED")
+@@ -395,54 +408,59 @@
+                     continue
+                 raise RuntimeError("SHORTINFO pid %d errno %d" % (pid, e))
+             info[pid] = si
+-        roots = self.cfg["lane_roots"]
+-        # extend the owned set: children of owned pids, members of the child's group
++        live = set()
++        for pid, o in self.owned.items():
++            si = info.get(pid)
++            if si is None:
++                continue
++            if si["status"] == SZOMB:
++                live.add(pid)
++                continue
++            sid, e = start_ident(pid)
++            if sid is None:
++                if e == errno.ESRCH:
++                    continue
++                raise RuntimeError("OWNED_RECHECK pid %d errno %d" % (pid, e))
++            if sid["start"] == o["start"]:
++                live.add(pid)
+         changed = True
+         while changed:
+             changed = False
+             for pid, si in info.items():
+-                if pid in self.owned:
++                if pid in live:
+                     continue
+-                if si["ppid"] in self.owned or (child_pgid is not None and si["pgid"] == child_pgid):
+-                    sid, e = start_ident(pid)
+-                    if sid is None:
+-                        if e == errno.ESRCH:
+-                            continue
+-                        if si["status"] == SZOMB:
+-                            sid = {"start_tvsec": None, "start_tvusec": None, "pgid": si["pgid"], "uid": si["uid"]}
+-                        else:
++                if si["ppid"] in live or (child_pgid is not None and si["pgid"] == child_pgid):
++                    if si["status"] == SZOMB:
++                        start = None
++                    else:
++                        sid, e = start_ident(pid)
++                        if sid is None:
++                            if e == errno.ESRCH:
++                                continue
+                             raise RuntimeError("OWNED_IDENT pid %d errno %d" % (pid, e))
+-                    self.owned[pid] = {"start": [sid["start_tvsec"], sid["start_tvusec"]], "first_seen_mono": time.monotonic(),
+-                                       "ppid": si["ppid"], "pgid": si["pgid"], "comm": si["comm"]}
++                        start = sid["start"]
++                    self.owned[pid] = {"start": start, "first_seen_mono": time.monotonic(), "ppid": si["ppid"],
++                                       "pgid": si["pgid"], "comm": si["comm"]}
++                    live.add(pid)
+                     changed = True
+-        owned_live = []
+-        for pid, o in self.owned.items():
+-            si = info.get(pid)
+-            if si is None:
+-                continue
+-            sid, e = start_ident(pid)
+-            if sid is None and e != errno.ESRCH and si["status"] != SZOMB:
+-                raise RuntimeError("OWNED_RECHECK pid %d errno %d" % (pid, e))
+-            if sid is None or [sid["start_tvsec"], sid["start_tvusec"]] == o["start"] or o["start"][0] is None:
+-                if sid is not None or si["status"] == SZOMB:
+-                    owned_live.append(pid)
+-        group_live = [pid for pid, si in info.items() if child_pgid is not None and si["pgid"] == child_pgid]
++        group_live = sorted(pid for pid, si in info.items() if child_pgid is not None and si["pgid"] == child_pgid)
++        roots = self.cfg["lane_roots"]
+         lane, unresolved = {}, []
++        now = time.monotonic()
+         for pid, si in info.items():
+-            if si["uid"] != MY_UID:
++            if si["uid"] != MY_UID and pid not in live:
+                 continue
+             if si["status"] == SZOMB:
+-                if pid in owned_live:
+-                    lane[pid] = {"rss": 0, "busy": False, "zombie": True, "comm": si["comm"]}
++                if pid in live:
++                    lane[pid] = {"rss": 0, "busy": False, "zombie": True, "comm": si["comm"], "owned": True}
+                 continue
+-            is_owned = pid in owned_live or pid in group_live
+-            member = is_owned
++            member = pid in live
+             if not member:
+                 cw, e1 = cwd_of(pid)
+                 av, e2 = argv_of(pid)
+-                if cw is None and e1 == errno.ESRCH:
+-                    continue
+                 if cw is None and av is None:
++                    if e1 == errno.ESRCH or e2 == errno.ESRCH:
++                        continue
+                     unresolved.append([pid, si["comm"], e1, e2])
+                     continue
+                 member = (cw is not None and under(cw, roots)) or \
+@@ -455,8 +473,7 @@
+                     continue
+                 raise RuntimeError("TASKINFO lane pid %d errno %d" % (pid, e))
+             sid, _ = start_ident(pid)
+-            key = (pid, (sid or {}).get("start_tvsec"), (sid or {}).get("start_tvusec"))
+-            now = time.monotonic()
++            key = "%d:%s" % (pid, None if sid is None else sid["start"])
+             prev = self.prev_cpu.get(key)
+             self.prev_cpu[key] = (now, ti["cpu_ticks"])
+             if prev is None or TIMEBASE is None or now <= prev[0]:
+@@ -464,21 +481,20 @@
+             else:
+                 ns = (ti["cpu_ticks"] - prev[1]) * TIMEBASE[0] / TIMEBASE[1]
+                 busy = ns >= self.cfg["busy_cpu_fraction"] * (now - prev[0]) * 1e9
+-            lane[pid] = {"rss": ti["rss"], "busy": busy, "zombie": False, "comm": si["comm"], "owned": is_owned}
++            lane[pid] = {"rss": ti["rss"], "busy": busy, "zombie": False, "comm": si["comm"], "owned": pid in live}
+         if unresolved:
+             raise RuntimeError("UNRESOLVED_LIVE_PROCESSES %s" % json.dumps(unresolved[:20]))
+-        lane_rss = sum(v["rss"] for v in lane.values())
+-        lane_busy = sum(1 for v in lane.values() if v["busy"] and not v["zombie"])
+-        return {"pids": len(info), "owned_live": sorted(owned_live), "group_live": sorted(group_live),
+-                "lane_pids": sorted(lane), "lane_rss": lane_rss, "lane_busy": lane_busy,
+-                "escaped_owned_live": sorted(p for p in owned_live if child_pgid is None or info[p]["pgid"] != child_pgid)}
++        return {"pids": len(info), "owned_live": sorted(live), "group_live": group_live, "lane_pids": sorted(lane),
++                "lane_rss": sum(v["rss"] for v in lane.values()),
++                "lane_busy": sum(1 for v in lane.values() if v["busy"] and not v["zombie"]),
++                "escaped_owned_live": sorted(p for p in live if child_pgid is None or info[p]["pgid"] != child_pgid)}
+ 
+-    # ------------------------------------------------ stop request and signalling
+     def request_stop(self, reason):
+         if self.stop is not None:
+             return
+-        self.stop = {"reason": reason, "mono": time.monotonic(), "epoch": time.time(), "date": self.date_now()}
++        self.stop = {"reason": reason, "mono": time.monotonic(), "epoch": time.time()}
+         self.try_signal()
++        self.stop["date"] = self.date_now()
+ 
+     def try_signal(self):
+         ch = self.child
+@@ -494,12 +510,13 @@
+             si, e1 = short_info(ch.pid)
+             sid, e2 = start_ident(ch.pid)
+             ok = (ch.poll() is None and si is not None and sid is not None and si["pgid"] == self.ident["pgid"]
+-                  and si["uid"] == MY_UID and [sid["start_tvsec"], sid["start_tvusec"]] == self.ident["start"])
++                  and si["uid"] == MY_UID and sid["start"] == self.ident["start"])
+             res["identity_ok"] = ok
+             if ok:
+                 try:
+                     os.killpg(self.ident["pgid"], signal.SIGTERM)
+                     res["sent"] = True
++                    res["mono_sent"] = time.monotonic()
+                 except OSError as ex:
+                     res["error"] = repr(ex)
+             else:
+@@ -508,19 +525,21 @@
+         self.signal = res
+ 
+     def trip(self, name, detail=None):
++        if name in self.latched:
++            return
++        if name in ("DEADLINE", "STREAM_CAP", "SAMPLES_CAP") or name.startswith("SUPERVISOR_CANCEL"):
++            self.latched.add(name)
+         if len(self.trips) < 64:
+             self.trips.append({"trip": name, "detail": detail, "mono": time.monotonic(), "epoch": time.time()})
+         self.request_stop(name)
+ 
+-    # ------------------------------------------------ samples (bounded)
+     def write_sample(self, obj):
+         if self.samples_fh is None:
+             return
+         line = (json.dumps(obj, sort_keys=True) + "\n").encode("utf-8")
+         if self.samples_bytes + len(line) > self.cfg["samples_cap_bytes"]:
+-            if "SAMPLES_CAP" not in self.flags:
+-                self.flags.add("SAMPLES_CAP")
+-                self.trip("SAMPLES_CAP")
++            self.flags.add("SAMPLES_CAP")
++            self.trip("SAMPLES_CAP")
+             return
+         self.samples_fh.write(line)
+         self.samples_fh.flush()
+@@ -528,7 +547,6 @@
+         self.samples_n += 1
+ 
+ 
+-# ---------------------------------------------------------------- stream sinks (hard caps)
+ def sink_thread(name, pipe, path, cap, sup):
+     st = {"bytes_seen": 0, "bytes_written": 0, "overflow": False, "closed": False, "error": None, "eof": False}
+     sup.streams[name] = st
+@@ -538,7 +556,7 @@
+         try:
+             fh = open(path, "xb")
+             while True:
+-                chunk = pipe.read1(65536) if hasattr(pipe, "read1") else pipe.read(65536)
++                chunk = pipe.read1(65536)
+                 if not chunk:
+                     st["eof"] = True
+                     break
+@@ -553,6 +571,11 @@
+                     st["overflow"] = True
+         except Exception as ex:
+             st["error"] = repr(ex)
++            try:
++                while pipe.read1(65536):
++                    st["overflow"] = True
++            except Exception:
++                pass
+         finally:
+             try:
+                 if fh is not None:
+@@ -568,13 +591,12 @@
+     return t
+ 
+ 
+-# ---------------------------------------------------------------- config and admission
+ def check_types(d, spec, where):
+     bad = []
+     for k, ty in spec.items():
+         if k not in d:
+             bad.append("%s missing %s" % (where, k))
+-        elif not isinstance(d[k], ty) or isinstance(d[k], bool) and ty in (int, (int, float)):
++        elif not isinstance(d[k], ty) or (isinstance(d[k], bool) and ty in (int, (int, float))):
+             bad.append("%s bad type %s" % (where, k))
+     return bad
+ 
+@@ -597,10 +619,15 @@
+         for p in cfg["pins"]:
+             if not isinstance(p, dict) or not isinstance(p.get("path"), str) or not isinstance(p.get("sha256"), str):
+                 bad.append("pins entries need path and sha256")
++        for s in cfg["admission"]["require_settled"] if isinstance(cfg["admission"].get("require_settled"), list) else []:
++            if not isinstance(s, dict) or not isinstance(s.get("path"), str) or not isinstance(s.get("sha256"), str):
++                bad.append("require_settled entries need path and sha256")
+         if not cfg["argv"] or not all(isinstance(a, str) for a in cfg["argv"]):
+             bad.append("argv must be a non-empty list of strings")
+         if not all(isinstance(k, str) and isinstance(v, str) for k, v in cfg["env"].items()):
+             bad.append("env must map str to str")
++        if not cfg["lane_roots"] or not all(isinstance(r, str) and r.startswith("/") for r in cfg["lane_roots"]):
++            bad.append("lane_roots must be absolute paths")
+     if bad:
+         raise ValueError("; ".join(bad))
+     return cfg
+@@ -617,12 +644,14 @@
+     R["date"] = sup.date_now()
+     if R["date"] is None:
+         reasons.append("DATE_HELPER_UNAVAILABLE")
++    if TIMEBASE is None or ARGMAX is None:
++        reasons.append("LIBPROC_SETUP_FAILED")
+     pins = []
+     for p in cfg["pins"]:
+         try:
+             st = os.lstat(p["path"])
+             ok = stat.S_ISREG(st.st_mode) and sha_file(p["path"]) == p["sha256"]
+-        except OSError as ex:
++        except OSError:
+             ok = False
+         pins.append([p["path"], ok])
+         if not ok:
+@@ -645,7 +674,8 @@
+     except OSError as ex:
+         reasons.append("GO_UNREADABLE %r" % ex)
+     try:
+-        sraw = open(adm["stability_receipt_path"], "rb").read()
++        with open(adm["stability_receipt_path"], "rb") as fh:
++            sraw = fh.read()
+         sr = json.loads(sraw.decode("utf-8"))
+         R["stability_sha256_actual"] = hashlib.sha256(sraw).hexdigest()
+         if R["stability_sha256_actual"] != adm["stability_receipt_sha256"]:
+@@ -656,22 +686,22 @@
+         if R["date"] is None or not isinstance(nd, str) or not DATE_RE.match(nd):
+             reasons.append("STABILITY_AGE_UNVERIFIABLE")
+         else:
+-            import datetime
+             age = (datetime.datetime.strptime(R["date"], "%Y-%m-%dT%H:%M:%S%z")
+                    - datetime.datetime.strptime(nd, "%Y-%m-%dT%H:%M:%S%z")).total_seconds()
+             R["stability_age_s"] = age
+             if not (0 <= age <= adm["stability_max_age_s"]):
+                 reasons.append("STABILITY_STALE")
+-    except (OSError, ValueError) as ex:
++    except (OSError, ValueError, AttributeError) as ex:
+         reasons.append("STABILITY_UNREADABLE %r" % ex)
+     for s in adm["require_settled"]:
+         try:
+-            raw = open(s["path"], "rb").read()
++            with open(s["path"], "rb") as fh:
++                raw = fh.read()
+             okh = hashlib.sha256(raw).hexdigest() == s["sha256"]
+             oks = json.loads(raw.decode("utf-8")).get("settlement") == "SETTLED"
+             if not (okh and oks):
+                 reasons.append("PRIOR_NOT_SETTLED %s" % s["path"])
+-        except (OSError, ValueError, KeyError, TypeError) as ex:
++        except (OSError, ValueError, AttributeError) as ex:
+             reasons.append("PRIOR_UNREADABLE %r" % ex)
+     res = adm["reservation_bytes"]
+     try:
+@@ -691,10 +721,9 @@
+     except OSError as ex:
+         reasons.append("LANE_WALK_FAILED %r" % ex)
+     w0 = time.time()
+-    abs_end = w0 + cfg["max_wall_s"]
+     fit_limit = min(w0 + cfg["max_chunk_seconds"] - 120, cfg["owned_compute_settled_by_epoch"] - 180)
+-    R.update({"epoch_admission": w0, "abs_end_epoch_if_now": abs_end, "fit_limit_epoch": fit_limit})
+-    if abs_end > fit_limit:
++    R.update({"epoch_admission": w0, "abs_end_epoch_if_now": w0 + cfg["max_wall_s"], "fit_limit_epoch": fit_limit})
++    if w0 + cfg["max_wall_s"] > fit_limit:
+         reasons.append("CHUNK_FIT")
+     try:
+         sup.census(None)
+@@ -707,19 +736,14 @@
+             reasons.append("LANE_RSS")
+     except RuntimeError as ex:
+         reasons.append("CENSUS_FAILED %s" % ex)
+-    if TIMEBASE is None or ARGMAX is None:
+-        reasons.append("LIBPROC_SETUP_FAILED")
+     if CANCEL[0] is not None:
+         reasons.append("CANCELLED %d" % CANCEL[0])
+-    sup.prev_cpu = {}
+     R["reasons"] = reasons
+     return R
+ 
+ 
+-# ---------------------------------------------------------------- finalisation
+ def finalize(sup, status_note):
+-    cfg = sup.cfg
+-    R = sup.rec
++    cfg, R = sup.cfg, sup.rec
+     reasons = []
+     ch = sup.child
+     rc = ch.poll() if ch is not None else None
+@@ -738,12 +762,13 @@
+             reasons.append("OWNED_LIVE %s %s" % (c["owned_live"], c["group_live"]))
+     except RuntimeError as ex:
+         reasons.append("FINAL_CENSUS_FAILED %s" % ex)
+-    for name, st in sorted(sup.streams.items()):
+-        if not st["closed"] or st["error"] is not None:
+-            reasons.append("STREAM_%s_NOT_CLOSED_CLEANLY" % name.upper())
+-    if ch is not None and len(sup.streams) != 2:
+-        reasons.append("STREAMS_MISSING")
+     R["streams"] = sup.streams
++    if ch is not None:
++        if len(sup.streams) != 2:
++            reasons.append("STREAMS_MISSING")
++        for name, st in sorted(sup.streams.items()):
++            if not st["closed"] or st["error"] is not None:
++                reasons.append("STREAM_%s_NOT_CLOSED_CLEANLY" % name.upper())
+     if sup.samples_fh is not None:
+         try:
+             sup.samples_fh.flush()
+@@ -760,6 +785,9 @@
+     R["pins_at_end"] = pins_end
+     if not all(ok for _, ok in pins_end):
+         reasons.append("PIN_CHANGED_OR_UNREADABLE")
++    for p in evidence_paths(cfg):
++        if not real_dir_chain(os.path.dirname(os.path.abspath(p))):
++            reasons.append("EVIDENCE_DIR_CHAIN_CHANGED %s" % p)
+     arts = {}
+     for p in [cfg["stdout"], cfg["stderr"], cfg["launch_record"], cfg["samples"]] + [o["path"] for o in cfg["outputs"]]:
+         try:
+@@ -782,37 +810,37 @@
+             if arts.get(p) is None:
+                 reasons.append("EVIDENCE_MISSING %s" % p)
+     for f in sorted(sup.flags):
+-        if f in ("SAMPLES_CAP", "HELPER_UNSETTLED", "HELPER_SPAWN_FAILED", "IDENTITY_UNVERIFIED", "CENSUS_FAILED",
+-                 "IDENTITY_CAPTURE_FAILED", "LAUNCH_RECORD_FAILED", "HELPER_BUDGET_EXHAUSTED"):
++        if f in FAIL_FLAGS:
+             reasons.append("FLAG_" + f)
+     R.update({"trips": sup.trips, "stop_request": sup.stop, "signal": sup.signal, "flags": sorted(sup.flags),
+               "helper_calls": sup.helper_calls, "helper_log": sup.helper_log, "max": sup.max, "min_free": sup.min_free,
+-              "samples_written": sup.samples_n, "samples_bytes": sup.samples_bytes, "owned_identities": sup.owned,
+-              "status_note": status_note, "mono_end": time.monotonic(), "epoch_end": time.time(),
+-              "end_date": sup.date_now()})
++              "samples_written": sup.samples_n, "samples_bytes": sup.samples_bytes,
++              "owned_identities": {str(k): v for k, v in sup.owned.items()}, "status_note": status_note,
++              "mono_end": time.monotonic(), "epoch_end": time.time(), "end_date": sup.date_now()})
+     if R["end_date"] is None:
+         reasons.append("END_DATE_UNAVAILABLE")
+-    if status_note == "NOT_LAUNCHED":
++    if ch is None:
+         settlement = "NOT_LAUNCHED"
+     else:
+         settlement = "SETTLED" if not reasons else "UNSETTLED"
+     R["settlement_reasons"] = reasons
+     R["settlement_before_publication"] = settlement
+-    code = 0 if settlement == "SETTLED" else (10 if settlement == "NOT_LAUNCHED" else 11)
++    code = {"SETTLED": 0, "NOT_LAUNCHED": 10}.get(settlement, 11)
+     try:
+         rsha = write_json_published(cfg["receipt"], R)
+     except Exception as ex:
+         sys.stderr.write("RECEIPT_PUBLICATION_FAILED %r\n" % ex)
+         try:
+             write_json_published(cfg["settlement_record"], {"settlement": "UNSETTLED", "receipt": cfg["receipt"],
+-                                                             "receipt_sha256": None,
++                                                             "receipt_sha256": None, "supervisor": VERSION,
+                                                              "reasons": reasons + ["RECEIPT_PUBLICATION_FAILED %r" % ex]})
+         except Exception as ex2:
+             sys.stderr.write("SETTLEMENT_RECORD_FAILED %r\n" % ex2)
+             return 13
+         return 12
+     final = {"settlement": settlement, "receipt": cfg["receipt"], "receipt_sha256": rsha, "reasons": reasons,
+-             "supervisor": VERSION, "config_sha256": R["config_sha256"], "child_returncode": rc}
++             "supervisor": VERSION, "config_sha256": R["config_sha256"], "child_returncode": rc,
++             "status_note": status_note}
+     try:
+         write_json_published(cfg["settlement_record"], final)
+     except Exception as ex:
+@@ -823,12 +851,11 @@
+     return code
+ 
+ 
+-# ---------------------------------------------------------------- main
+ def main():
+     for s in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+         signal.signal(s, _cancel)
+     if len(sys.argv) != 2:
+-        sys.stderr.write("usage: owned_supervisor_v3.py CONFIG.json\n")
++        sys.stderr.write("usage: owned_supervisor_v4.py CONFIG.json\n")
+         return 2
+     cfg_path = os.path.abspath(sys.argv[1])
+     try:
+@@ -842,10 +869,9 @@
+     if adm["reasons"]:
+         return finalize(sup, "NOT_LAUNCHED")
+     try:
+-        fo_err = None
+         sup.samples_fh = open(cfg["samples"], "xb")
+     except OSError as ex:
+-        sup.rec["admission"]["reasons"].append("SAMPLES_OPEN_FAILED %r" % ex)
++        adm["reasons"].append("SAMPLES_OPEN_FAILED %r" % ex)
+         return finalize(sup, "NOT_LAUNCHED")
+     start_date = sup.date_now()
+     mono0, epoch0 = time.monotonic(), time.time()
+@@ -856,20 +882,18 @@
+                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True, close_fds=True)
+     except OSError as ex:
+         sup.rec["spawn_error"] = repr(ex)
+-        sup.flags.add("SPAWN_FAILED")
+-        return finalize(sup, "SPAWN_FAILED")
++        adm["reasons"].append("SPAWN_FAILED %r" % ex)
++        return finalize(sup, "NOT_LAUNCHED")
+     sup.child = child
+-    sink_thread("stdout", child.stdout, cfg["stdout"], cfg["stdout_cap_bytes"], sup)
+-    sink_thread("stderr", child.stderr, cfg["stderr"], cfg["stderr_cap_bytes"], sup)
+-    threads = [t for t in threading.enumerate() if t.name.startswith("sink-")]
++    t_out = sink_thread("stdout", child.stdout, cfg["stdout"], cfg["stdout_cap_bytes"], sup)
++    t_err = sink_thread("stderr", child.stderr, cfg["stderr"], cfg["stderr_cap_bytes"], sup)
+     try:
+         si, e1 = short_info(child.pid)
+         sid, e2 = start_ident(child.pid)
+         if child.poll() is not None or si is None or sid is None or si["pgid"] != child.pid or si["uid"] != MY_UID:
+             raise RuntimeError("identity capture failed %r %r" % (e1, e2))
+-        sup.ident = {"pid": child.pid, "pgid": si["pgid"], "start": [sid["start_tvsec"], sid["start_tvusec"]],
+-                     "comm": si["comm"]}
+-        sup.owned[child.pid] = {"start": sup.ident["start"], "first_seen_mono": time.monotonic(), "ppid": MY_PID,
++        sup.ident = {"pid": child.pid, "pgid": si["pgid"], "start": sid["start"], "comm": si["comm"]}
++        sup.owned[child.pid] = {"start": sid["start"], "first_seen_mono": time.monotonic(), "ppid": MY_PID,
+                                 "pgid": si["pgid"], "comm": si["comm"]}
+     except Exception as ex:
+         sup.flags.add("IDENTITY_CAPTURE_FAILED")
+@@ -879,8 +903,8 @@
+               "argv_sha256": hashlib.sha256(json.dumps(cfg["argv"]).encode()).hexdigest(),
+               "argv0_realpath": os.path.realpath(cfg["argv"][0]), "cwd": cfg["lane"], "env": cfg["env"],
+               "start_date": start_date, "mono_start": mono0, "epoch_start": epoch0, "abs_end_epoch": abs_end,
+-              "max_wall_s": cfg["max_wall_s"], "settle_s": cfg["settle_s"], "pins": cfg["pins"],
+-              "admission": adm, "go": {"path": cfg["admission"]["go_path"], "sha256": cfg["admission"]["go_sha256"]},
++              "max_wall_s": cfg["max_wall_s"], "settle_s": cfg["settle_s"], "pins": cfg["pins"], "admission": adm,
++              "go": {"path": cfg["admission"]["go_path"], "sha256": cfg["admission"]["go_sha256"]},
+               "reservation_bytes": cfg["admission"]["reservation_bytes"], "outputs": cfg["outputs"],
+               "evidence": {"stdout": cfg["stdout"], "stderr": cfg["stderr"], "samples": cfg["samples"],
+                            "receipt": cfg["receipt"], "settlement_record": cfg["settlement_record"]},
+@@ -904,8 +928,8 @@
+         go = False
+     sup.rec["go_sent"] = go
+     if not go:
+-        sup.request_stop("NO_GO_" + ("IDENTITY" if sup.ident is None else "LAUNCH_RECORD" if "LAUNCH_RECORD_FAILED"
+-                                      in sup.flags else "CANCEL"))
++        why = "IDENTITY" if sup.ident is None else "LAUNCH_RECORD" if "LAUNCH_RECORD_FAILED" in sup.flags else "CANCEL_OR_PIPE"
++        sup.trip("NO_GO_" + why)
+     child_pgid = sup.ident["pgid"] if sup.ident else None
+     exit_mono = None
+     status = "RUNNING"
+@@ -919,7 +943,6 @@
+             sup.trip("SUPERVISOR_CANCEL_%d" % CANCEL[0])
+         try:
+             c = sup.census(child_pgid)
+-            sup.last_census = c
+             sup.max["lane_rss"] = max(sup.max["lane_rss"], c["lane_rss"])
+             sup.max["lane_busy"] = max(sup.max["lane_busy"], c["lane_busy"])
+             sup.max["owned_live"] = max(sup.max["owned_live"], len(c["owned_live"]))
+@@ -970,10 +993,10 @@
+                                                                               "escaped_owned_live")},
+                           "streams": {k: [v["bytes_seen"], v["bytes_written"], v["overflow"], v["closed"]]
+                                       for k, v in sup.streams.items()},
+-                          "stop": None if sup.stop is None else sup.stop["reason"],
+-                          "trips_n": len(sup.trips)})
+-        clear = c is not None and not c["owned_live"] and not c["group_live"] and \
+-            all(st["closed"] for st in sup.streams.values()) and len(sup.streams) == 2
++                          "stop": None if sup.stop is None else sup.stop["reason"], "trips_n": len(sup.trips),
++                          "signal_sent": bool(sup.signal and sup.signal.get("sent"))})
++        clear = c is not None and not c["owned_live"] and not c["group_live"] and len(sup.streams) == 2 and \
++            all(st["closed"] for st in sup.streams.values())
+         if rc is not None and clear:
+             status = "EXITED"
+             break
+@@ -984,9 +1007,8 @@
+             status = "GRACE_EXPIRED_AFTER_CHILD_EXIT"
+             break
+         time.sleep(cfg["sample_s"])
+-    for t in threads:
+-        t.join(timeout=0.0)
+     sup.rec["loop_status"] = status
++    sup.rec["sink_threads_alive"] = [t_out.is_alive(), t_err.is_alive()]
+     return finalize(sup, status)
+ 
+ 

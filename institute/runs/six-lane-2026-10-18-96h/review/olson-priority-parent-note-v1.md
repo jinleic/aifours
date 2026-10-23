@@ -1,0 +1,8 @@
+# Ordered Olson lane: priority / import note (bounded)
+
+Recorded at 2026-10-19T03:08:38-0700. Source: [scout audit](../screening/olson-zero-sum-priority-audit-v1.json) `28e9e5678e958d5339912b110ba2bfbe493bf7fdaaf36c0bc8d729d9cc64d93c`; parent independently read Peng–Sun arXiv:1409.1970v1 §1 (Theorem 1.3 restating Xia–Yuan 2010 Thm 3.1, the splittable index-1 remark, Theorem 1.5 proof mechanism).
+
+1. **S(p) is a corollary of published results (not new):** Xia–Yuan, Discrete Math. 310 (2010), Thm 3.1 classifies unsplittable minimal zero-sum sequences of length I(C_n)−1=⌊n/2⌋+1; for even n both families contain an even element (2g or (1+n/2)g). Splittable ones have index1 because splitting cannot lower any g-norm and length ⌊n/2⌋+2 has index1 (Savchev–Chen/Yuan). Hence every all-odd minimal zero-sum of length p+1 over C_2p (p≥5) has index1, equivalently every odd zero-sum-free sequence of length p is SC. Trust: Xia–Yuan primary text not read (403); statement via Peng–Sun's verbatim restatement and Yuan's 2016 slides. This makes KPS-cond's hypothesis an imported classical theorem, pending a parent-reviewed import note.
+2. **S1-sharp:** its Steps 4/6/7 overlap the k=2 case of Zeng–Yuan, Eur. J. Combin. 32 (2011) (abstract read): partially routine. No located source states S1-sharp or an equivalent window statement (bounded).
+3. **FB:** no located equivalent (bounded). **Ordered dihedral criteria:** no located primary result implies them; located dihedral E(G) results are unordered.
+4. A search miss is not novelty; significance remains specialist partial progress, not a solution of ordered Olson.

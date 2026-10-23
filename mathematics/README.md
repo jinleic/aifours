@@ -138,3 +138,59 @@ OPT + 1 bin-packing algorithm.
 
 Not precisely posed: numerical-method programs, statistical-modelling directions and multiscale
 modelling items.
+
+## Difficult-problem visit (2026-10-15)
+
+The owner requested one difficult mathematics problem with a six-hour total ceiling, alongside one
+information-science and one physics visit. The [hard-problem catalog](evidence/mathematics-hard-20261015/catalog.md)
+records candidates, status sources, budget classes, feasibility probes and parent-review restrictions.
+
+Selected `math-p0039`, **凯莱 (Cayley) 图和相关的问题** (李才恒, book pp. 39–40; PDF pp. 55–56):
+the geometric nonexistence of non-Desarguesian flag-transitive projective planes explicitly discussed
+in the article. The printed diameter-two graph claim and its unspecified-generator equivalence are
+inconsistent; the target is instead formalized using Kantor and Thas–Zagier, with those premises declared.
+A finite range extension remains partial, and sampled independent checks do not certify the whole range.
+
+The [institute run](../institute/runs/hard-2026-10-15/README.md) first ran at 04:03 PT and closed
+**unverified**: its key production logs were absent from the replay snapshot. With owner approval it
+resumed at 12:02 PT from the attack stage with a fresh six-hour allocation and the recovered logs.
+Authority for those engine visits: [`record.json`](../institute/runs/hard-2026-10-15/problems/math-p0039/record.json).
+Its batch 03 continuation closed **unverified** (accept-with-fixes) at 17:35 PT with a partial,
+conditional result. Assuming the Kantor, Thas–Zagier and Feit premises, a sandbox-replayed exact
+recomputation then excluded orders `n < 251,539,607,552`; the larger C-run ranges were empirical reports.
+The all-orders conjecture remains open. See the [outcome ledger](../institute/review/hard-2026-10-15-outcomes.md).
+
+### Authorized continuation (2026-10-16)
+
+The [new exact replay](evidence/hard-continuation-20261015/README.md) reaches
+**n < 2,582,236,504,064**, under the same Kantor/CFSG, Thas–Zagier reduction and valid Feit
+premises. It recomputed `[8,2e11)` from scratch, removing dependence on Thas–Zagier's unreplayed
+low-range search; the earlier exact Python prefix is imported through pinned records.
+The new segments cover 105,445,704,021 progression members. Every rejection has a checked proper
+factor, a full non-one modular residue, or an explicit difference collision. Libmpdec cross-checks
+and parent GMP samples are separate evidence; samples do not certify the whole interval.
+
+A reviewed Sidon theorem shows why forced-subgroup difference-collision searches cannot exclude
+power-of-two orders; it does not prescribe every possible successful method. No novelty is asserted
+for that observation. The all-orders conjecture remains open. See the
+[continuation ledger](../institute/review/continuation-20261015/outcomes.md) for coverage, premises,
+review limits and attribution. The original engine record is unchanged.
+
+
+## Six-lane round (2026-10-16)
+
+**LKTS(57) and LKTS(87) now exist as explicit, independently verified certificates** (book pp. 428–429, Yanxun Chang). Both finite existence statements also have reviewed Lean 4.34.1 proofs, replayed by a fresh process of the same kernel; this is not the universal theorem. Wang (arXiv:2607.21521v1, 23 July 2026) had named 57 and 87 as the only admissible orders below 200 without a known LKTS. The book's question for every admissible order remains open, and priority is unresolved. Constructions use prescribed groups G513=(Z19⋊Z9)×Z3 and G903=Z43⋊Z21. Evidence: [lane package](evidence/six-lane-20261016/kirkman57/README.md), [parent verdict](../institute/runs/six-lane-2026-10-16/review/lkts-57-87-parent-verdict.md), [priority audit](../institute/runs/six-lane-2026-10-16/review/lkts57-87-priority-audit.md).
+
+**RDSQS(52) now exists as an explicit, independently verified certificate.** It is an SQS(52) invariant under Z52⋊⟨23⟩ whose derived triple system at every point is resolvable. Tan–Zhou (arXiv:2503.11934v1 §4(1)) named 52 as the smallest unknown RDSQS(6n+4). It gives an OLKTS(51) and, by that paper's Corollary 1.4(2), q′₀(3,4,52)=26. Independent checkers, controls, byte-exact seed/producer replay, the parent action audit and construction review pass. Its existence theorem also passed a parent-authored unfolded Lean statement and fresh replay, standard axioms only. NOVELTY-UNCLEAR after a bounded audit ([verdict](../institute/runs/six-lane-2026-10-16/review/rdsqs52-parent-verdict.md)).
+
+**An mcDSQS(38) now exists**, the other example named in Tan–Zhou §4(1) (the smallest unknown mcDSQS(6n+2)). All 38 derived STS(37) of an explicit SQS(38) are coloured with 19 partial parallel classes, the counting minimum, so χ′(37) = 19 and every derived design is minimum colourable. Parent, Codex and prompt-only checkers, controls, a group audit, byte-exact full-producer replay and a parent-replayed Lean proof (including `sInf` over all STS(37) colourings = 19) pass. The underlying SQS(38) was already published as record 143 of the Kiermaier–Krčadinac–Wassermann dataset (Sept 2025); the certified colourings are the contribution. It settles the n = 38 case of Shi–Xia–Krotov Conjecture 2 and gives q′₀(3,4,38) = 20. NOVELTY-UNCLEAR after a bounded audit ([parent verdict](../institute/runs/six-lane-2026-10-16/review/mcdsqs38-parent-verdict.md)). A uniform mcDSQS(2p) construction for primes p≥19, p≡7 mod 12 was investigated and closed without a family theorem; an mcDSQS(62) probe passes the parent checker only.
+
+**A gcDCQS(20⁴:0) now exists**, settling the v = 20 component of Tan–Zhou §4(2). Two explicit 80-point certificates have 19,400 blocks and good colourings of all 80 derived incomplete STS(79,19): 40 partial parallel classes, exactly 10 avoiding the hole. Parent, Codex and Claude-written checkers, controls, a symmetry audit and parent seed/producer replays pass. With Tan–Zhou's published Corollary 2.6 and the known mcDSQS(20), this gives **mcDSQS(5·4ⁿ) for every n ≥ 3**; Construction 2.1 separately gives an explicitly verified **mcDSQS(80)**. Certificate A, explicit mcDSQS(80) and χ′(79)=40 now have parent-replayed Lean kernel proofs with independent raw binding; the family imports published constructions ([direct verdict](../institute/runs/six-lane-2026-10-16/review/gcdcqs20-parent-verdict.md), [Lean verdict](../institute/runs/six-lane-2026-10-16/review/gcdcqs20-lean-parent-verdict.md)).
+
+**A gcDCQS(32⁴:0) now exists**, settling the v = 32 component, so both parts of §4(2) are answered. One explicit 128-point certificate (80,384 blocks; built by Construction 2.3 from an AG(2,4) fan, a gcDCQS(8⁴:0) and a Kirkman-framed FDGDD(3,4,5{8})) has good colourings of all 128 derived STS(127,31): 64 partial parallel classes, exactly 16 avoiding the hole. Parent, Codex and Claude-written checkers, controls, parent assembler and ingredient replays and two bridge reviews pass. An explicit **mcDSQS(128)** is directly verified; with Corollary 2.6 and its imports, **mcDSQS(2^{2n+1}) exists for every n ≥ 2**. Not Lean-checked ([verdict](../institute/runs/six-lane-2026-10-16/review/gcdcqs32-parent-verdict.md)). Active next: Tan–Zhou §4(3) ([contract](../institute/runs/six-lane-2026-10-16/screening/math-1-tz43-contract.json)).
+
+**Tan–Zhou §4(3) gate met:** explicit **gcDCQS(18⁴:2)** and **FDGDD(3,4,5{18})** now pass three separately authored definition-level checkers, intended-reason controls and independent seed/block replays. The direct **mcDSQS(74)** consequence is verified, with37 colours at every derived STS(73). Both CLI bridge reviews accept the construction. Importing Constructions2.1/2.3, Lemma3.8 and mcDSQS(20) yields **mcDSQS(18·4^t+2) for every integer t≥1**. Higher orders are an imported written consequence, not generated certificates or Lean proofs. The bounded priority screen found no earlier equivalent; important primary-source access holes remain ([parent verdict](../institute/runs/six-lane-2026-10-16/review/tz43-parent-verdict.md), [review dispositions](../institute/runs/six-lane-2026-10-16/review/tz43-parent-review-dispositions-v1.md)).
+
+**Minimal phase-type representation (book p.544, 位相型分布的最小表示; He–Zhang): one published special family answered.** Commault–Mocanu 2003 Conjecture 1 holds: for every a>c>0, b>0, the minimum PH order of c(a²+b²)/[(s+c)((s+a)²+b²)] is exactly n*=min{n≥3 : b≤(a−c)cot(π/n)}. The lower bound covers every representation; the upper bound is an explicit cycle with a coefficient-positivity proof. Both CLI hostile reviews found no FATAL or MAJOR issue, and the parent checked it independently. Mocanu's 1999 thesis (Theorem 50, Lemma 51) already gives n*+1 and every boundary case, and Verbeken–Ginis 2026 the spectral-angle mechanism. Novelty is unclear, there is no Lean proof, and the book's general question is unsolved ([parent verdict](../institute/runs/six-lane-2026-10-16/review/phase-type-complex3-parent-verdict-v2.md), [lane](evidence/six-lane-20261016/phase-type-complex3/README.md)).
+
+**Ordered Olson: restricted dihedral theorem accepted, full conjecture still open.** For every prime p≥5, each word of length4p−1 in D₂ₚ whose rotations lie in one pair {ρ_x,ρ_−x}, x≠0, and whose maximal cyclic reflection runs are each constant has an identity2p-subword in original index order. RUNS(p), INV_Res(p), NMH(p), MIX_DEF_HIGH/MIX_DEF and RGR-LONG(p) now have an accepted written dependency chain: two assembly-review families, a targeted foundation audit, parent hypothesis/branch checks and finite arithmetic aids ([verdict](../institute/runs/six-lane-2026-10-16/review/olson-runs-parent-verdict-v1.md)). Classical EGZ and Davenport-constant results are imported; no Lean or novelty claim. This is PARTIAL, not a gate. Both INV*(p) halves—restricting arbitrary rotations and forcing each reflection run constant—remain open. Round ledger: [outcomes](../institute/runs/six-lane-2026-10-16/outcomes.md).

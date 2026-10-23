@@ -1,0 +1,3 @@
+# UPAR first-family review — literal-source reading qualification
+
+Recorded 2026-10-21T05:24:55-0700 (`/bin/date`). Codexv1 returned mathematical0F/0M/0m at05:22:12, output SHA2563ef7ce19971ff676869f917987c0a7fea384bdc7bee5a6561042e7eeae6a4e98. Its LF7 refers to literal UMR LF202, but that primary range was NOT pasted in the original packet. The candidate's stated data/citations were pasted; a citation is not the omitted primary text. Do not credit that sentence as an actual literal-source inspection. The derivation review is retained under its supplied candidate-data statements. A focused actual-source binding gate is required, and full-primary Claude is running. No acceptance yet; no source or launched prompt edited.

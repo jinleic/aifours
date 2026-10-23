@@ -1,0 +1,22 @@
+# Lane log (host clock, PDT, 2026-10-17)
+
+- 16:52 parent assignment received (M(7) target, contract 21b1b38b…d372). 16:59:37 lane created; sources copied (SHAs equal pins).
+- 17:00:21 README §0 frozen (protocol) before any computation.
+- 17:23:33 process-cap slip: launched 5 numeric scans at once (cap 4); class-4 scan stopped with SIGTERM within seconds, to be rerun after the others. Its partial output file explore/onb/many_c4_s11_ap200.json is void.
+- 17:26 CORRECTION to the 17:23:33 entry: the 5 detached scans never ran (the detached subshells ended with the tool call; all 5 output files are empty). No process ran beyond the cap. Scans relaunched as one async job, at most 4 at a time.
+- 17:20:57 nets7 classification rerun complete: evidence/nets7_classes.json (78d1728f…0d67), 7 classes, orbit sums 342480 / 341880 = Egan–Wanless totals.
+- 17:25:17 exploration: 300-start alternating-projection + L-BFGS scans on the 5 maximal nets: no zero (minima 9.6–22.4), explore/onb/.
+- 17:27–17:28 exploration: weight-push search on Desarguesian nets (exact-gradient rerun): no zero; first run had an inexact penalty gradient (superseded, explore/onb/push_c*_s21.json).
+- 17:29:51 K1 pattern SAT (encoder A, F1–F4): maximal nets UNSAT; harmonic SAT (classical); equianharmonic SAT incl. a weight-≥3 model.
+- 17:32–17:33 enumeration: harmonic 4 models (all classical), equianharmonic 5 (4 classical + all-weight-4).
+- 17:38:57 exploration: weight-4 pattern numerically unrealizable with coefficients ≥0.1 (explore/k1/c6_w4pattern_delta*.json); equivariant ansatz only classical.
+- 17:40–17:44 exact: two-overlap phase relations of the weight-4 pattern are inconsistent (97 contradictions; minimum 7-relation cycle by MILP).
+- 17:46:25 evidence/k1A (encoder A, CaDiCaL DRAT, drat-trim s VERIFIED for all 7 final CNFs), summary 3f5843c9…af2a.
+- 17:47:20 evidence/k1B (independent encoder B, kissat DRAT, all s VERIFIED), identical model sets; summaryB c9ac0158…387f.
+- 17:48 phase certificate evidence/k1A/phase_cycle_certificate.json (efd6a51b…1e7c), checker k1_phase_cert.py.
+- 17:50 controls evidence/k1A/pattern_controls.json (abfd2a94…38fa); first C1 run void (unshifted f, not a QLS) retired to archive/void-2026-10-17/.
+- 17:51:49 review/K1-THEOREM.r1.md frozen (b702b021…8767): Theorem K1 (no set with exactly one non-classical square) + reduction of K2/K3 to weight-≥3 squares. Draft archived as archive/K1-THEOREM.draft-2026-10-17T1751.md (first archived under a wrong guessed label T1803, renamed at once).
+- 17:53 note: LOG entries above written with minute-only labels (17:48, 17:50) are bracketed by the host-clock readings 17:47:20 and 17:51:49; they are not exact.
+- 17:52:20 correction: the line labelled '17:53 note' was written before 17:52:12 host clock (label guessed); from now on every LOG label is taken from date in the same command.
+- 17:57:15 parent steering: until parent verification of K1 finishes, lane cap is <=2 busy processes and <=4 GiB RSS. The K2 no-w3 control solve (explore/k2/k2A.cnf, pid 50124) was stopped with SIGTERM after 2:09 and ended within 1 s; its result is void/UNKNOWN. Still running: K2 w3 (explore/k2/k2A_w3.cnf) and K3 w3+sym (explore/k3/k3A_w3sym.cnf), 1800 s caps. Controls so far: explore/k2/k2_controls_v1.json (classical triple SAT, 15/15 mutations UNSAT, genuine Psi(f) SAT with drop-psi2, tensor families pass on the genuine pair).
+- 18:26:28 single-frame K2 (w3) and K3 (w3+sym) CaDiCaL runs ended UNKNOWN at their 1800 s caps (explore/k2/k2A_w3.out, explore/k3/k3A_w3sym.out). Gram-support encoder code/gram_enc.py written; controls explore/gram/gram_controls_v1.json: classical triple SAT, genuine (Psi(f),Phi(m)) pair SAT, Psi(f) on its 3-net heavy SAT, 6/40 single-bit mutations rejected.

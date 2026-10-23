@@ -1,0 +1,112 @@
+--- code/core7_engine_v3.py	2026-10-18 14:06:25.639937660 -0700
++++ code/core7_engine_v4.py	2026-10-18 14:23:19.681288967 -0700
+@@ -1,18 +1,23 @@
+ #!/usr/bin/env python3
+-"""core7_engine_v3 -- profile engine for rules-k7-v1 + rules-k7-addendum-v1 (lane sun-coset7). EXPLORATORY.
++"""core7_engine_v4 -- profile engine for rules-k7-v1 + rules-k7-addendum-v1 (lane sun-coset7). EXPLORATORY.
+ 
+-v3 = v2 + cooperative stop guard + memory-light output writer (search logic unchanged):
+-  - every stop (self-budget, free disk < 12.0e9, peak RSS >= 0.9 GiB, SIGTERM) raises StopRun from
+-    Guard.tick(), so the run ends UNKNOWN through write_outputs with its exact frontier (profiles_done,
+-    profile_in_progress); SIGTERM only sets a flag that tick() reads; disk and peak RSS are read every 20 s;
+-  - write_outputs streams the certificate files through a bounded in-memory gzip compressor (no joined
+-    copy of the leaf text; no recomputation of the dual-key set).
++v4 = v3 + terminal-SIGTERM coercion at publication (search logic unchanged):
++  - write_outputs (and the CONTROLS publication) block SIGTERM while publishing; a SIGTERM latched before
++    publication (Guard.term) or pending during it coerces the published status to UNKNOWN with the reason
++    preserved (status_before_publication recorded); a SIGTERM that becomes pending after the status was
++    decided is recorded in post_publication_sigterm.json and the process exits with status 3.
++v3 (unchanged here): cooperative stop guard (self-budget, free disk < 12.0e9, peak RSS >= 0.9 GiB, SIGTERM
++flag read by Guard.tick(); disk and RSS read every 20 s) and a memory-light writer (bounded in-memory gzip,
++dual keys = memoised keys of value >= 1, no write-time q re-enumeration).
++Frontier scope: profiles_done + profile_in_progress is a COMPLETED-PROFILE frontier (profiles before
++profile_in_progress in the deterministic enumeration order are complete); the unfinished alpha-prefix inside
++profile_in_progress is not recorded, and that profile is never counted complete.
+ Standard library only; deterministic; one process; self-budgeted (no external timeouts).
+ Usage:
+-  python3 core7_engine_v3.py UNIVERSE OUTDIR BUDGET_SECONDS
++  python3 core7_engine_v4.py UNIVERSE OUTDIR BUDGET_SECONDS
+   UNIVERSE in: X1, MSP45, CORE5, K52, KII, K62, K63    (program-level list; each run still needs a parent GO)
+                K53, K7                               (defined but NOT authorised to run)
+-  python3 core7_engine_v3.py CONTROLS OUTDIR BUDGET_SECONDS   (realisable-family soundness controls)
++  python3 core7_engine_v4.py CONTROLS OUTDIR BUDGET_SECONDS   (realisable-family soundness controls)
+ 
+ Rules (rules-k7-v1): T (L1, general gamma/ell), K (L2/L3 with K1, also on partial assignments by
+ deletion), VFC-LP (Corollary VFC-count, on partial and complete stars by deletion; exact duals for
+@@ -698,6 +703,8 @@
+ 
+ 
+ def write_outputs(outdir, name, status, profs, stats, survivors, leaflines, extra=None):
++    # v4: publication runs with SIGTERM blocked, so a SIGTERM arriving from here on stays pending.
++    signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGTERM})
+     sha = hashlib.sha256(open(os.path.abspath(__file__), 'rb').read()).hexdigest()
+     used = sorted(stats.pop('vfc_sigs_used', set()))
+     killed_sigs = [list(map(list, s)) for s in used]
+@@ -732,18 +739,33 @@
+         with open(os.path.join(outdir, fn), 'xb') as f:
+             f.write(b)
+         hashes[fn] = hashlib.sha256(b).hexdigest()
+-    run = {'engine': 'core7_engine_v3', 'engine_sha256': sha, 'universe': name, 'status': status,
++    # v4: terminal-SIGTERM coercion. A SIGTERM latched before publication (GUARD.term) or pending during it
++    # makes the published status UNKNOWN; an earlier stop reason is preserved.
++    term = GUARD.term or signal.SIGTERM in signal.sigpending()
++    status_before = status
++    if term:
++        status = 'UNKNOWN'
++        if GUARD.reason is None:
++            GUARD.reason = 'SIGTERM received after the search loop (status coerced to UNKNOWN at publication)'
++    run = {'engine': 'core7_engine_v4', 'engine_sha256': sha, 'universe': name, 'status': status,
++           'status_before_publication': status_before,
+            'stop_reason': GUARD.reason, 'python': sys.version, 'platform': platform.platform(),
+            'seconds': round(time.time() - GUARD.t0, 1), 'min_free_disk_bytes': GUARD.min_free,
+            'profiles_total': len(profs), 'stats': stats, 'survivor_count': len(survivors),
+            'lp_memo_entries': len(LPMEMO), 'sig_memo_entries': len(SIGMEMO),
+            'output_sha256': hashes, 'note': status_note, 'exploratory': True,
+-           'sigterm_received': GUARD.term, 'rss_cap_bytes': RSS_CAP,
++           'sigterm_received': term, 'rss_cap_bytes': RSS_CAP,
+            'peak_rss_bytes_last_check': GUARD.max_rss, 'peak_rss_bytes_at_write': peak_rss_bytes()}
+     if extra:
+         run['extra'] = extra
+     with open(os.path.join(outdir, 'run.json'), 'x') as f:
+         json.dump(run, f, indent=1, default=str)
++    # v4: a SIGTERM that became pending after the status was decided is recorded and reported (exit 3).
++    if not term and signal.SIGTERM in signal.sigpending():
++        with open(os.path.join(outdir, 'post_publication_sigterm.json'), 'x') as f:
++            json.dump({'note': 'SIGTERM became pending after the published status was decided; run.json alone '
++                               'is not acceptance evidence for this run', 'epoch': time.time()}, f)
++        run['post_publication_sigterm'] = True
+     return run
+ 
+ 
+@@ -858,20 +880,29 @@
+             res = controls()
+         except StopRun:
+             status, res = 'UNKNOWN', {}
++        signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGTERM})  # v4: same publication rule as write_outputs
++        term = GUARD.term or signal.SIGTERM in signal.sigpending()
++        if term:
++            status = 'UNKNOWN'
++            if GUARD.reason is None:
++                GUARD.reason = 'SIGTERM received after the controls ran (status coerced to UNKNOWN at publication)'
+         rec = {'engine_sha256': hashlib.sha256(open(os.path.abspath(__file__), 'rb').read()).hexdigest(),
+                'status': status, 'stop_reason': GUARD.reason, 'seconds': round(time.time() - GUARD.t0, 1),
+-               'min_free_disk_bytes': GUARD.min_free, 'controls': res, 'exploratory': True}
++               'min_free_disk_bytes': GUARD.min_free, 'controls': res, 'exploratory': True,
++               'sigterm_received': term}
+         with open(os.path.join(outdir, 'controls.json'), 'x') as f:
+             json.dump(rec, f, indent=1, default=str)
+         print(json.dumps({'status': status, 'families': list(res.keys())}))
+         return
+     status, profs, stats, survivors, leaflines = run_universe(name, outdir, budget)
+     run = write_outputs(outdir, name, status, profs, stats, survivors, leaflines)
+-    print(json.dumps({'universe': name, 'status': status, 'profiles': len(profs),
++    print(json.dumps({'universe': name, 'status': run['status'], 'profiles': len(profs),
+                       'profiles_done': run['stats']['profiles_done'], 'nodes': run['stats']['nodes'],
+                       'leaves': run['stats']['leaves'], 'leaf_orbits': run['stats']['leaf_orbits'],
+                       'closed': run['stats']['closed'], 'leaf_rule': run['stats']['leaf_rule'],
+                       'survivors': len(survivors), 'seconds': run['seconds']}))
++    if run.get('post_publication_sigterm'):
++        sys.exit(3)
+ 
+ 
+ if __name__ == '__main__':

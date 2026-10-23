@@ -1,0 +1,415 @@
+# Unified diff: scripts/gb_staged_v4.py (sha256 b9f9d562ca2640185c57f1aeded895f0159feef156f73391acb9c73fba339cdf, unchanged)
+#   -> scripts/gb_staged_v5.py (sha256 a0e59977c3bd2e97ca0a39c33f5af11302e001d5f3ec22c5b4fc0b67f79c353a)
+# Scope: only the two MAJOR findings of review/n8-gb-staged-v4-delta-codex-v1.note.md (f16308334743870ede85dd1dbd1fbd3b893edd8fa615c6119b895c3556214bc2), by the parent's
+# conservative cutover: (1) admission requires the EXTERNAL parent end/release attestation of the producing run
+# (RELEASE_RULE; no producer bytes alone, no new producer completion file); (2) run refuses an inherited blocked
+# SIGTERM/SIGINT mask, latch_signals() latches pending signals at settlement and after each mask restore, and
+# terminal_exit() makes any signal before the actual process end yield a non-zero exit status; plus the stale
+# commit rule text, gbs5- names and pins.
+--- a/scripts/gb_staged_v4.py
++++ b/scripts/gb_staged_v5.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Parent staged GB replay desk v4: the counted parent replay of the eighteen GB (gram_b_r2) inputs of the MOQLS(8) n8
++"""Parent staged GB replay desk v5: the counted parent replay of the eighteen GB (gram_b_r2) inputs of the MOQLS(8) n8
+ contract, implementing review/gb-parent-replay-brief-v1.md (sha256 d95f3a0b...27ed) exactly.
+ 
+ v2 = scripts/gb_staged_v1.py (b36fbb57...8151, kept unchanged) + DIFF-gb_staged_v1-to-v2.txt, which repairs only the
+@@ -50,6 +50,21 @@
+ durable receipt, the qualified commit, the completion bound to both, no item cancellation, and the durable summary of
+ the producing run with no stop, no signal at the summary, no run cancellation and an entry for the label with
+ publication COMPLETE and the same digests. Every v4 file name has the 'gbs4-' prefix.
++
++v5 = scripts/gb_staged_v4.py (b9f9d562...9cdf, kept unchanged) + DIFF-gb_staged_v4-to-v5.txt, which repairs only the
++two MAJOR findings of the Codex delta review review/n8-gb-staged-v4-delta-codex-v1.note.md (f1630833...4bc2) by the
++parent's conservative cutover, adding no further producer-side completion file and keeping the previous cancellation
++semantics (every SIGTERM/SIGINT before the actual terminal exit vetoes). (1) No receipt is ever admitted from producer
++bytes alone: qualification_problems() also requires the EXTERNAL parent end/release attestation of the producing run,
++review/moqls8-gb-staged-release-gbs5-run-<run_tag>.json (RELEASE_RULE), bound to this script, the run's PRE-EXEC,
++run summary and receipt sha256 and to the parent-observed exit status 0, no owned child and no stop or signal; the
++parent writes it only after observing the run fully returned and a raw audit. (2) run refuses an inherited mask that
++blocks SIGTERM/SIGINT (the caller's mask is never changed silently); latch_signals() latches a pending SIGTERM/SIGINT
++at each settlement and after each mask restore; terminal_exit() is the finite terminal boundary: after every child
++was reaped and every record published, both signals are blocked, switched to their default terminating action, the
++latch and the pending set inspected, the mask restored and os._exit() called, so a signal received at any time before
++the process actually ends makes its exit status non-zero even if no veto file can be written. Every v5 file name has
++the 'gbs5-' prefix.
+ 
+ Desk: institute/runs/six-lane-2026-10-16/review/moqls8-gb-parent-staged-replay-v1 (parent-owned, created exclusively
+ 2026-10-18T10:08:20-07:00). Inputs, and no others: the twelve direct templates P1-B4, P0-B4, P0-B5, P0-B6, P1-B6, P2-C4,
+@@ -105,9 +120,10 @@
+ desk. A timeout, guard stop or deferral is never success; no retries.
+ 
+ Usage (/opt/homebrew/opt/python@3.14/bin/python3.14 -I -B, environment TMPDIR=<desk>/tmp/; absolute paths):
+-  gb_staged_v4.py preexec OUT ITEM...    ITEM = control:NAME | gb:ID:aN  (only controls, or exactly one gb item)
+-  gb_staged_v4.py run PREEXEC GO         GO = the parent-written release record required by validate_go()
+-  gb_staged_v4.py qualification LABEL    read-only: the full admission predicate for one receipt label (JSON)
++  gb_staged_v5.py preexec OUT ITEM...    ITEM = control:NAME | gb:ID:aN  (only controls, or exactly one gb item)
++  gb_staged_v5.py run PREEXEC GO         GO = the parent-written release record required by validate_go()
++  gb_staged_v5.py qualification LABEL    read-only: the full admission predicate for one receipt label (JSON)
++  exit status of run: 0 only for a clean run with no SIGTERM/SIGINT before the process ended (terminal_exit)
+ """
+ import ctypes
+ import datetime
+@@ -136,8 +152,8 @@
+ DESK = REVIEW + "/moqls8-gb-parent-staged-replay-v1"
+ DESK_REL = "review/moqls8-gb-parent-staged-replay-v1"  # relative to RUN; the parent GO record names it
+ SCRIPT = os.path.realpath(__file__)
+-SCRIPT_REL = "scripts/gb_staged_v4.py"
+-LABEL_PREFIX = "gbs4-"  # every receipt/log/FIFO/TMPDIR name of this version (v1-v3: gbs1-, gbs2-, gbs3-)
++SCRIPT_REL = "scripts/gb_staged_v5.py"
++LABEL_PREFIX = "gbs5-"  # every receipt/log/FIFO/TMPDIR name of this version (v1-v4: gbs1- ... gbs4-)
+ TMP = DESK + "/tmp"
+ 
+ KISSAT = "/opt/homebrew/Cellar/kissat/4.0.4/bin/kissat"
+@@ -182,6 +198,10 @@
+                    "6f5b3a8adab95d41f609f31c59704592071be91124dbeba622a329ff541a0f14"),
+     "codex_gbs3_delta_audit": (REVIEW + "/n8-gb-staged-v3-delta-codex-v1.note.md",
+                                "eb8f8ac40ebe8ad023b6f2ddf36da1299f9661b4a8524d4f1f2977840a90be17"),
++    "runtime_v4": (DESK + "/scripts/gb_staged_v4.py",
++                   "b9f9d562ca2640185c57f1aeded895f0159feef156f73391acb9c73fba339cdf"),
++    "codex_gbs4_delta_audit": (REVIEW + "/n8-gb-staged-v4-delta-codex-v1.note.md",
++                               "f16308334743870ede85dd1dbd1fbd3b893edd8fa615c6119b895c3556214bc2"),
+ }
+ 
+ # --- the eighteen authorized inputs, in the brief's order (no other input or refinement)
+@@ -232,12 +252,15 @@
+ STABLE_RUNWAY_BASE, STABLE_RUNWAY_DIV = 13500000000, 12
+ STABLE_WINDOW, STABLE_MIN_DROP_CAP = 300.0, 300000000
+ STABLE_MAX_AGE, STABLE_MIN_SAMPLES, STABLE_MIN_SPAN = 30.0, 25, 290.0
+-RECEIPT_SCHEMA = "moqls8-gb-staged-replay-receipt/4"
+-COMMIT_SCHEMA = "moqls8-gb-staged-replay-commit/4"
+-COMPLETION_SCHEMA = "moqls8-gb-staged-replay-completion/4"
+-CANCELLATION_SCHEMA = "moqls8-gb-staged-replay-cancellation/4"
+-PREEXEC_SCHEMA = "moqls8-gb-staged-replay-preexec/4"
+-RUN_SCHEMA = "moqls8-gb-staged-replay-run/4"
++RECEIPT_SCHEMA = "moqls8-gb-staged-replay-receipt/5"
++COMMIT_SCHEMA = "moqls8-gb-staged-replay-commit/5"
++COMPLETION_SCHEMA = "moqls8-gb-staged-replay-completion/5"
++CANCELLATION_SCHEMA = "moqls8-gb-staged-replay-cancellation/5"
++PREEXEC_SCHEMA = "moqls8-gb-staged-replay-preexec/5"
++RUN_SCHEMA = "moqls8-gb-staged-replay-run/5"
++RELEASE_SCHEMA = "moqls8-gb-staged-parent-release/5"  # (F4''') written by the parent only, never by this desk
++RELEASE_STATUS = "PARENT_RELEASE"
++EXIT_STOPPED, EXIT_SIGNALLED, EXIT_TERMINAL_FAILURE = 3, 4, 5  # run exit statuses; 0 only for a clean run
+ PUBLICATION_SIGNALS = (signal.SIGTERM, signal.SIGINT)  # (F4') blocked across the final decision and publication
+ GO_STATUS = "PARENT_GO"
+ 
+@@ -389,9 +412,10 @@
+               "pending signal, the driver the only thread) and published durably and atomically (os.link of the "
+               "synced .prepare record); the item qualifies only when the completion record bound to that commit "
+               "is published with no signal through the whole publication, no cancellation veto exists and the "
+-              "run's durable summary shows no stop or signal. A SAT report, a safety stop or any settlement failure "
+-              "stops the desk. No retries: a new attempt needs a new parent GO and a new attempt tag; old UNKNOWN "
+-              "receipts are retained.")
++              "run's durable summary shows no stop or signal; (F4''') it is admitted only once the parent release "
++              "attestation of the producing run exists (RELEASE_RULE). A SAT report, a safety stop or any "
++              "settlement failure stops the desk. No retries: a new attempt needs a new parent GO and a new "
++              "attempt tag; old UNKNOWN receipts are retained.")
+ GATE_RULE = ("Before each launch (stage 1; stage 2 is not a new admission): a fresh lane scan (native solver/checker "
+              "processes plus python processes whose cwd or argv lies in the lane or a review/moqls8-* desk, "
+              "excluding this driver and its children; python counts as busy if its CPU use over a 2 s libproc window "
+@@ -449,6 +473,18 @@
+            "'PARENT_GO', desk '%s', script_sha256 = this script's sha256, pre_exec_sha256 = the PRE-EXEC's sha256, "
+            "scope 'controls' (control PRE-EXEC) or 'science' (gb PRE-EXEC) and items = the PRE-EXEC item specs in "
+            "order. Its sha256 is recorded and re-checked at every identity check." % DESK_REL)
++RELEASE_RULE = ("(F4''') No receipt is admitted from producer bytes alone. qualification_problems() (used by "
++                "validate_controls() for every science PRE-EXEC and run, and by the read-only 'qualification' "
++                "subcommand) also requires the parent end/release attestation of the producing run: the regular file "
++                "review/moqls8-gb-staged-release-%srun-<run_tag>.json directly under review/ outside this desk (this "
++                "desk never writes there), a JSON object with exactly schema %r, status %r, desk %r, scope 'controls' "
++                "or 'science' (the item kind), script_sha256 = this script, pre_exec_sha256 = the receipt's PRE-EXEC, "
++                "run_tag, run_summary_sha256 = runs/run-<run_tag>.json, receipts = {label: receipt sha256} listing "
++                "the label, driver_exit_code 0 (the exit status the parent observed after the run fully returned), "
++                "owned_children_after_exit [], stop_or_signal_observed null and raw_audit 'PASS'. The parent writes it "
++                "only after observing the run's process exit status 0, no surviving owned child and no stop or signal, "
++                "and after its raw audit of the records; a non-zero exit status is never released."
++                % (LABEL_PREFIX, RELEASE_SCHEMA, RELEASE_STATUS, DESK_REL))
+ 
+ 
+ def die(msg):
+@@ -615,7 +651,7 @@
+                 out["errors"].append("cancellation: %s: %s" % (type(e).__name__, e))
+     finally:
+         signal.pthread_sigmask(signal.SIG_SETMASK, old)  # a pending SIGTERM/SIGINT is delivered (latched) now
+-    late = _latched_after_unmask(stop)
++    late = latch_signals(stop)
+     if qualified and out["cancel_reason"] is None and late is not None:
+         out["cancel_reason"] = "signal %s delivered when the publication mask was restored" % late
+         try:
+@@ -636,10 +672,49 @@
+     return out
+ 
+ 
+-def _latched_after_unmask(stop):
+-    """A Python-level call boundary after the mask is restored, so a signal delivered by the restore has run its
+-    (latching) handler before the caller reads the latch."""
++def latch_signals(stop):
++    """A Python-level call boundary after a mask restore or a settlement, so a signal delivered there has run its
++    (latching) handler before the caller reads the latch; (F4''') a SIGTERM/SIGINT still pending (blocked) is latched
++    too, never hidden. -> the latched signal or None."""
++    pending = pending_publication_signals()
++    if pending and stop.get("signal") is None:
++        stop["signal"] = pending[0]
++        stop["pending_when_latched"] = pending
+     return stop.get("signal")
++
++
++def refuse_inherited_mask():
++    """(F4''') run entry: an inherited mask blocking SIGTERM or SIGINT could keep a signal pending past every later
++    latch read, so the run is refused before any record, log or spawn; the caller's mask is never changed."""
++    blocked = sorted(signal.Signals(s).name for s in signal.pthread_sigmask(signal.SIG_UNBLOCK, [])
++                     if s in PUBLICATION_SIGNALS)
++    if blocked:
++        die("the inherited signal mask blocks %s: refused before any record, log or spawn (start the driver with "
++            "SIGTERM and SIGINT unblocked; this driver never changes the caller's mask)" % ", ".join(blocked))
++
++
++def terminal_exit(code, stop):
++    """(F4''') The run's finite terminal boundary, reached after every child was reaped, every record published and the
++    summary printed: the console is flushed; SIGTERM/SIGINT are blocked (pthread_sigmask runs any tripped handler,
++    which latches), switched to their default terminating action, the latch, the pending set, the thread count and
++    the saved mask are inspected, both signals are unblocked - a pending one now terminates the process by that
++    signal, as does one arriving at any later instant - and os._exit(code) ends the process. Exit status 0 therefore
++    means a clean run (code 0) during which no SIGTERM/SIGINT was received before the process ended, whether or not
++    any veto file could be written; it is the only terminal evidence a parent release may attest (RELEASE_RULE)."""
++    try:
++        sys.stdout.flush()
++        sys.stderr.flush()
++    except Exception:
++        code = code or EXIT_TERMINAL_FAILURE
++    old = signal.pthread_sigmask(signal.SIG_BLOCK, PUBLICATION_SIGNALS)
++    signal.signal(signal.SIGTERM, signal.SIG_DFL)
++    signal.signal(signal.SIGINT, signal.SIG_DFL)
++    if stop.get("signal") is not None or pending_publication_signals():
++        code = code or EXIT_SIGNALLED
++    if threading.active_count() != 1 or any(s in PUBLICATION_SIGNALS for s in old):
++        code = code or EXIT_TERMINAL_FAILURE
++    signal.pthread_sigmask(signal.SIG_UNBLOCK, PUBLICATION_SIGNALS)
++    os._exit(code)
+ 
+ 
+ def publish_run_summary(path, summary, stop):
+@@ -670,7 +745,7 @@
+                 errors.append("run cancellation: %s: %s" % (type(e).__name__, e))
+     finally:
+         signal.pthread_sigmask(signal.SIG_SETMASK, old)
+-    late = _latched_after_unmask(stop)
++    late = latch_signals(stop)
+     if reason is None and late is not None and not summary.get("stop_latched_at_summary"):
+         reason = "signal %s delivered when the run-summary mask was restored" % late
+         try:
+@@ -688,13 +763,56 @@
+         return None
+ 
+ 
+-def qualification_problems(label, want_verdict):
++def release_path(run_tag):
++    """(F4''') The parent end/release attestation of one producing run: a parent-written file directly under review/,
++    outside this desk (this desk never writes there)."""
++    return os.path.join(REVIEW, "moqls8-gb-staged-release-%srun-%s.json" % (LABEL_PREFIX, run_tag))
++
++
++def release_problems(label, r, rsha, run_tag, ssha, script_sha):
++    """(F4''') RELEASE_RULE for one receipt -> (identity or None, problems). Only the parent's attestation, written
++    after it observed the producing run's exit status 0, no owned child and no stop or signal, completes admission."""
++    if not (isinstance(run_tag, str) and re.fullmatch(r"[0-9]{8}T[0-9]{6}", run_tag)):
++        return None, ["parent release: receipt run_tag %r invalid" % (run_tag,)]
++    path = release_path(run_tag)
++    if not os.path.lexists(path):
++        return None, ["parent release attestation missing: %s" % path]
++    real = os.path.realpath(path)
++    if (os.path.islink(path) or not os.path.isfile(path) or os.path.dirname(real) != os.path.realpath(REVIEW)
++            or real.startswith(DESK + "/")):
++        return None, ["parent release attestation is not a regular parent file under review/ outside this desk"]
++    try:
++        raw = read_bytes(path)
++        a = json.loads(raw)
++    except (OSError, ValueError):
++        return None, ["parent release attestation unreadable or not JSON"]
++    if not isinstance(a, dict):
++        return None, ["parent release attestation is not a JSON object"]
++    kind = ((r.get("item") or {}).get("kind") if isinstance(r, dict) else None)
++    want = {"schema": RELEASE_SCHEMA, "status": RELEASE_STATUS, "desk": DESK_REL,
++            "scope": "controls" if kind == "control" else "science", "script_sha256": script_sha,
++            "pre_exec_sha256": ((r.get("pre_exec") or {}).get("sha256") if isinstance(r, dict) else None),
++            "run_tag": run_tag, "run_summary_sha256": ssha, "owned_children_after_exit": [],
++            "stop_or_signal_observed": None, "raw_audit": "PASS"}
++    problems = ["parent release field %s = %r, required %r" % (k, a.get(k), v) for k, v in want.items()
++                if k not in a or a[k] != v or (v is None and k != "stop_or_signal_observed")]
++    exit_code = a.get("driver_exit_code")
++    if not (type(exit_code) is int and exit_code == 0):
++        problems.append("parent release driver_exit_code = %r, required the observed exit status 0" % (exit_code,))
++    if not (isinstance(a.get("receipts"), dict) and a["receipts"].get(label) == rsha and rsha is not None):
++        problems.append("parent release does not list %s with this receipt sha256" % label)
++    return {"path": path, "sha256": sha_bytes(raw)}, problems
++
++
++def qualification_problems(label, want_verdict, script_sha):
+     """(F4'') The reader side of the publication protocol -> (identity, problems). A receipt qualifies only with: its
+     receipt (durable), its commit with a qualified decision (verdict == want_verdict, durable receipt, no signal
+     latched or pending at the decision, single-threaded driver), the completion record bound to that exact commit and
+     receipt sha256, NO item cancellation record, and the durable summary of the producing run (named by the receipt's
+     run_tag) with stopped_reason None, no signal at the summary, no run cancellation, and an entry for this label with
+-    publication COMPLETE and the same receipt/commit/completion sha256. The early commit flag alone never qualifies."""
++    publication COMPLETE and the same receipt/commit/completion sha256. The early commit flag alone never qualifies.
++    (F4''') No producer bytes alone qualify: the receipt's script is this script and the parent release attestation
++    of the producing run (RELEASE_RULE) exists and binds this script, PRE-EXEC, run summary and receipt."""
+     rec_dir = os.path.join(DESK, "receipts")
+     rpath = os.path.join(rec_dir, label + ".json")
+     cpath, kpath, xpath = rpath[:-5] + ".commit.json", rpath[:-5] + ".complete.json", rpath[:-5] + ".cancelled.json"
+@@ -735,8 +853,13 @@
+                 and entries[0].get("qualified") is True and entries[0].get("receipt_sha256") == rsha
+                 and entries[0].get("commit_sha256") == csha and entries[0].get("completion_sha256") == ksha):
+             problems.append("run summary entry for the label is not a COMPLETE publication of these records")
++    ssha = sha_file(spath) if s is not None else None
++    if not (isinstance(r, dict) and (r.get("script") or {}).get("sha256") == script_sha):
++        problems.append("receipt script sha256 is not this script")
++    release, rprobs = release_problems(label, r, rsha, run_tag, ssha, script_sha)
++    problems.extend(rprobs)
+     ident = {"label": label, "receipt_sha256": rsha, "commit_sha256": csha, "completion_sha256": ksha,
+-             "run_summary": rel(spath) if spath else None, "run_summary_sha256": sha_file(spath) if s else None}
++             "run_summary": rel(spath) if spath else None, "run_summary_sha256": ssha, "release": release}
+     return ident, problems
+ 
+ 
+@@ -1532,7 +1655,7 @@
+         except ValueError:
+             problems.append("%s: receipt is not JSON" % label)
+             continue
+-        qident, qprobs = qualification_problems(label, CONTROLS[name]["verdict"])
++        qident, qprobs = qualification_problems(label, CONTROLS[name]["verdict"], script_sha)
+         try:
+             pe, go, bins = r.get("pre_exec") or {}, r.get("go") or {}, r.get("binaries") or {}
+             pre_ok = (isinstance(pe.get("path"), str) and os.path.isfile(os.path.join(DESK, pe["path"]))
+@@ -1559,6 +1682,7 @@
+         out.append({"label": label, "receipt": rel(path), "receipt_sha256": sha_bytes(raw), "verdict": r["verdict"],
+                     "commit_sha256": qident["commit_sha256"], "completion_sha256": qident["completion_sha256"],
+                     "run_summary": qident["run_summary"], "run_summary_sha256": qident["run_summary_sha256"],
++                    "release": qident["release"]["path"], "release_sha256": qident["release"]["sha256"],
+                     "pre_exec": pe, "go": {"path": go.get("path"), "sha256": go.get("sha256")},
+                     "run_tag": r.get("run_tag")})
+     return out, problems
+@@ -2705,11 +2829,12 @@
+             problems.append("CNF parts re-hash %s/%d != expected %s/%d" % (h, n, exp[0], exp[1]))
+     if it["kind"] == "gb":
+         adm, probs = validate_controls(script_sha)
+-        now_ids = [(a["label"], a["receipt_sha256"], a["commit_sha256"], a["completion_sha256"]) for a in adm]
+-        pre_ids = [(a.get("label"), a.get("receipt_sha256"), a.get("commit_sha256"), a.get("completion_sha256"))
+-                   for a in (pre.get("admission_controls") or [])]
+-        out["controls_revalidated"] = [{"label": a, "receipt_sha256": b, "commit_sha256": c, "completion_sha256": d}
+-                                       for a, b, c, d in now_ids]
++        now_ids = [(a["label"], a["receipt_sha256"], a["commit_sha256"], a["completion_sha256"], a["release_sha256"])
++                   for a in adm]
++        pre_ids = [(a.get("label"), a.get("receipt_sha256"), a.get("commit_sha256"), a.get("completion_sha256"),
++                    a.get("release_sha256")) for a in (pre.get("admission_controls") or [])]
++        out["controls_revalidated"] = [{"label": a, "receipt_sha256": b, "commit_sha256": c, "completion_sha256": d,
++                                        "release_sha256": e} for a, b, c, d, e in now_ids]
+         out["controls_equal_pre_exec"] = not probs and now_ids == pre_ids and len(now_ids) == len(CONTROLS)
+         problems.extend(probs)
+         if not out["controls_equal_pre_exec"]:
+@@ -2807,6 +2932,7 @@
+            "run_kind": "controls" if items[0]["kind"] == "control" else "science",
+            "items": items, "admission_controls": admission, "acceptance": ACCEPTANCE, "gate": GATE_RULE,
+            "in_flight_stops": STOPS, "transport": TRANSPORT, "sequencing": SEQUENCING, "parent_go": GO_RULE,
++           "parent_release": RELEASE_RULE,
+            "limits": {"kissat_seconds": KISSAT_SECONDS, "drat_trim_seconds": DRAT_SECONDS,
+                       "stage_margin_seconds": STAGE_MARGIN, "launch_floor_bytes": LAUNCH_FLOOR,
+                       "floor_bytes": FLOOR, "lane_rss_limit_bytes": LANE_RSS_LIMIT, "lane_busy_cap": LANE_BUSY_CAP,
+@@ -2832,6 +2958,8 @@
+ 
+ 
+ def cmd_run(argv):
++    """-> (exit code, latched stop); main() ends the process through terminal_exit()."""
++    refuse_inherited_mask()  # (F4''') before any record, log or spawn
+     check_env()
+     if len(argv) != 2:
+         die("run PREEXEC GO")
+@@ -2881,9 +3009,10 @@
+     remaining = list(items)
+     if items[0]["kind"] == "gb":
+         adm, probs = validate_controls(script_sha)
+-        same = ([(a["label"], a["receipt_sha256"], a["commit_sha256"], a["completion_sha256"]) for a in adm]
+-                == [(a.get("label"), a.get("receipt_sha256"), a.get("commit_sha256"), a.get("completion_sha256"))
+-                    for a in (pre.get("admission_controls") or [])])
++        same = ([(a["label"], a["receipt_sha256"], a["commit_sha256"], a["completion_sha256"], a["release_sha256"])
++                 for a in adm]
++                == [(a.get("label"), a.get("receipt_sha256"), a.get("commit_sha256"), a.get("completion_sha256"),
++                     a.get("release_sha256")) for a in (pre.get("admission_controls") or [])])
+         if probs or not same:
+             summary["stopped_reason"] = ("gb admission re-validation failed: %s"
+                                          % ("; ".join(probs) or "control receipts differ from the PRE-EXEC record"))
+@@ -2974,8 +3103,9 @@
+             log("EXCEPTION at %s: %s" % (label, rec["exception"]))
+         s_parts = c_parts = None  # the regenerated CNF is released after the item
+         rec["pre_launch_identity"] = pre_launch
+-        # the latched stop, scanner failure and survivors are checked again immediately before evaluation
+-        rec["pre_evaluation_check"] = {"checked": True, "at": now(), "stop_signal": stop.get("signal"),
++        # the latched stop, scanner failure and survivors are checked again immediately before evaluation;
++        # (F4''') settlement: the children are reaped here and a pending SIGTERM/SIGINT is latched, never hidden
++        rec["pre_evaluation_check"] = {"checked": True, "at": now(), "stop_signal": latch_signals(stop),
+                                        "scanner_failed": (rec.get("lane_scanner") or {}).get("failed"),
+                                        "scanner_exclusion": (rec.get("lane_scanner") or {}).get("exclusion"),
+                                        "helper_survivors": list(HELPER_SURVIVORS)}
+@@ -2995,8 +3125,10 @@
+                    "stop_latched": rec["pre_evaluation_check"]["stop_signal"],  # the value evaluate() saw
+                    "stop_latched_after_evaluation": late,  # sampled after evaluate(); a signal here downgraded it
+                    "qualification": ("this receipt qualifies only with receipts/%s.commit.json (qualified decision), "
+-                                     "receipts/%s.complete.json bound to it, no receipts/%s.cancelled.json and a clean "
+-                                     "durable run summary (qualification_problems)" % (label, label, label)),
++                                     "receipts/%s.complete.json bound to it, no receipts/%s.cancelled.json, a clean "
++                                     "durable run summary and the parent release attestation %s "
++                                     "(qualification_problems, RELEASE_RULE)"
++                                     % (label, label, label, os.path.relpath(release_path(runtag), REVIEW))),
+                    "written_at": now()}
+         durability_error = None
+         try:  # (F4') the receipt is synced (file and directory) before any qualification decision
+@@ -3012,10 +3144,12 @@
+                 "verdict": verdict, "qualifying_verdict": want, "receipt_durable": durability_error is None,
+                 "receipt_durability_error": durability_error,
+                 "stop_signal_at_pre_evaluation": receipt["stop_latched"], "stop_signal_after_evaluation": late,
+-                "rule": "qualified iff the receipt's verdict is the qualifying verdict, the receipt is durable, no "
+-                        "driver signal was latched at the pre-evaluation check, after evaluation or at the "
+-                        "linearization point, no SIGTERM/SIGINT was pending there, and the driver was the only "
+-                        "thread; published atomically and durably by publish_commit()"}
++                "rule": "a qualified decision iff the receipt's verdict is the qualifying verdict, the receipt is "
++                        "durable, no driver signal was latched at the pre-evaluation check, after evaluation or at "
++                        "the decision in publish_qualification(), no SIGTERM/SIGINT was pending there, and the "
++                        "driver was the only thread; a decision record only: admission (qualification_problems) also "
++                        "needs the bound completion record, no cancellation, a clean durable run summary and the "
++                        "parent release attestation of this run (RELEASE_RULE)"}
+         eligible = (verdict == want and durability_error is None and late is None and receipt["stop_latched"] is None)
+         stem = os.path.join(DESK, "receipts", label)
+         pub = publish_qualification({"commit": stem + ".commit.json", "complete": stem + ".complete.json",
+@@ -3091,6 +3225,12 @@
+     spath = os.path.join(DESK, "runs", "run-%s.json" % runtag)
+     digest, errors, cancelled = publish_run_summary(spath, summary, stop)  # (F4'') the run's terminal evidence
+     print("RUN SUMMARY runs/run-%s.json sha256 %s errors %s run cancelled %s" % (runtag, digest, errors, cancelled))
++    clean = (summary["stopped_reason"] is None and digest is not None and not errors and not cancelled
++             and latch_signals(stop) is None)
++    code = 0 if clean else (EXIT_SIGNALLED if stop.get("signal") else EXIT_STOPPED)
++    print("DRIVER EXIT CODE %d (terminal_exit: non-zero if any SIGTERM/SIGINT arrives before the process ends); "
++          "parent release attestation expected at %s" % (code, release_path(runtag)), flush=True)
++    return code, stop
+ 
+ 
+ def cmd_qualification(argv):
+@@ -3102,7 +3242,7 @@
+     r = _load_json(os.path.join(DESK, "receipts", label + ".json")) or {}
+     item = r.get("item") if isinstance(r, dict) else None
+     want = "PASS" if (item or {}).get("kind") == "gb" else (item or {}).get("preregistered_verdict")
+-    ident, problems = qualification_problems(label, want)
++    ident, problems = qualification_problems(label, want, sha_file(SCRIPT))
+     print(json.dumps({"label": label, "qualifying_verdict": want, "identity": ident, "problems": problems,
+                       "qualified": not problems}, indent=1))
+     if problems:
+@@ -3116,7 +3256,8 @@
+     if cmd == "preexec":
+         cmd_preexec(rest)
+     elif cmd == "run":
+-        cmd_run(rest)
++        code, stop = cmd_run(rest)
++        terminal_exit(code, stop)  # (F4''') the finite terminal boundary; never returns
+     elif cmd == "qualification":
+         cmd_qualification(rest)
+     else:

@@ -1,0 +1,26 @@
+--- controller051f9464
++++ /Users/jinleic/repos/aifours/physics/evidence/six-lane-20261016/moqls8-problem16/code/run_n8_fone_refine.py
+@@ -142,9 +142,12 @@
+         raise RuntimeError('parent admission changed/revoked; no native launch')
+     grant = json.loads(raw)
+     if (grant.get('status') != 'DRAINED_RESERVED' or grant.get('owner') != 'PhysDepolarizing'
+-            or grant.get('lane') != str(ROOT) or grant.get('held_until_explicit_release') is not True
+-            or not grant.get('parent_process_markers')):
++            or grant.get('lane_path') != str(ROOT) or grant.get('held_until_explicit_release') is not True
++            or not grant.get('parent_process_markers') or not grant.get('family_scope')):
+         raise RuntimeError('not a parent native-idle/reserved admission for this lane')
++    release = grant.get('released_if_this_file_exists')
++    if not release or Path(release).exists():
++        raise RuntimeError('parent admission released or lacks immutable release-marker binding')
+     return {'path': str(Path(path).resolve()), 'sha256': expected, 'grant': grant}
+ 
+ 
+@@ -186,6 +189,8 @@
+     a = ap.parse_args()
+     step_start = time.monotonic()
+     admission = read_admission(a.admission, a.admission_sha256)
++    if a.template not in admission['grant']['family_scope']:
++        raise RuntimeError('this parent reservation does not cover the requested family')
+     shared_markers = [str(ROOT)] + admission['grant']['parent_process_markers']
+     B = load('n8_fone_refine_bytes')
+     C = load('k5_cover', C_SHA)

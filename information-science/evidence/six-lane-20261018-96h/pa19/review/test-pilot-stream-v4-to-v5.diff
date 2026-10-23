@@ -1,0 +1,299 @@
+--- code/test_pilot_stream_v4.py
++++ code/test_pilot_stream_v5.py
+@@ -1,6 +1,9 @@
+ #!/usr/bin/env python3
+-"""P-STREAM runner v3 offline tests, test v4 = code/test_pilot_stream_v3.py (3747042f..., preserved) adapted to runner
+-v3 (code/pilot_stream_drat_ms06_v3.py / _ms09_v3.py) and to the parent-routed Codex follow-up review (3da83be6...):
++"""P-STREAM runner v4 offline tests, test v5 = code/test_pilot_stream_v4.py (609016c4..., preserved) adapted to runner
++v4 (code/pilot_stream_drat_ms06_v4.py / _ms09_v4.py; B1: bounded reap, irreversible UNSETTLED record, bounded
++settle_all, NEW parent disposition for UNSETTLED/summary-less attempts) - new: t_reap_bounded_survivor,
++t_settle_all_bounded and the disposition scenarios of t_allocation_release.  Test v4 notes follow (runner v3 ->
++v4, test v4 -> v5 where named):
+   - cooperative budget kept (monotonic deadline, sliced bounded joins, daemon helper threads, stamp-only
+     SIGTERM/SIGINT, terminal result.json always written; no SIGALRM, kill, ulimit or tool deadline);
+   - N11: a stamped signal is propagated into the runner's own cancel stamp (its helper/stop gates see it); host
+@@ -27,8 +30,8 @@
+ written before any work; <= 300 s; one process besides the runner's bounded /bin/date helper; outputs only under
+ LANE/evidence/probes/).  No solver/checker binary is executed.
+ 
+-usage: test_pilot_stream_v4.py RUNNER.py RUNNER_SHA256 OUT_DIR
+-  RUNNER: code/pilot_stream_drat_ms06_v3.py or code/pilot_stream_drat_ms09_v3.py (identical transport code).
++usage: test_pilot_stream_v5.py RUNNER.py RUNNER_SHA256 OUT_DIR
++  RUNNER: code/pilot_stream_drat_ms06_v4.py or code/pilot_stream_drat_ms09_v4.py (identical transport code).
+   OUT_DIR must not exist; its parent must be LANE/evidence/probes.  Writes OUT_DIR/receipt.json first and
+   OUT_DIR/result.json last (both exclusive); FIFOs, pipes and fixture trees only inside OUT_DIR/work.
+ Exit 0 ALL_OK; 1 FAILURES or SETUP_FAILED; 2 BUDGET_EXHAUSTED; 3 CANCELLED; 70 refused start (no OUT_DIR);
+@@ -763,21 +766,37 @@
+ 
+ 
+ def t_allocation_release(R, W):
+-    """N3: only the parent's allocation admits.  Every existing attempt must be listed and verifiably released:
+-    '{}', UNSETTLED, symlinked, digest-mismatched, unlisted, GO-reusing, quarantined and missing attempts release
+-    nothing; reservation, out_dir and busy-slot mismatches refuse; an existing OUT_DIR refuses (one use); a fully
+-    released root (v14 and v3 summaries) admits.  Each scenario uses its own fixture pilot root."""
++    """N3/B1: only the parent's allocation admits.  Every existing attempt must be listed and verifiably released:
++    '{}', UNSETTLED-without-disposition, symlinked, digest-mismatched, unlisted, GO-reusing, quarantined and missing
++    attempts release nothing; reservation, out_dir and busy-slot mismatches refuse; an existing OUT_DIR refuses
++    (one use).  B1: an UNSETTLED v4 attempt (or a summary-less attempt) is released only with a NEW parent
++    disposition whose digest, attempt, summary digest, all_processes_ended and identity coverage match and whose
++    identities libproc finds ended; a disposition naming a live identity (this test process) refuses.  Clean v14 and
++    v4 summaries admit with the plain entry.  Each scenario uses its own fixture pilot root."""
+     go_sha = "f" * 64
++    me = os.getpid()
++    me_ident, _err = R.bsd_identity(me)
++    gone_pid = 1 << 30                              # beyond every pid: libproc reports ESRCH
+     v14 = {"schema": "PA19-96H-PILOT-SUMMARY-v14", "exit_code": 0, "all_children_settled": True,
+            "children": [{"seq": 1, "settled": True}]}
+-    v3 = dict(v14, schema="PA19-96H-PSTREAM-SUMMARY-v3", all_helpers_settled=True, quarantine_receipts=[],
+-              proof_ram_outstanding_bytes=0)
+-
+-    def attempt(root, name, summary, go="e" * 64, quarantine=False, link_summary=False):
++    v4 = dict(v14, schema="PA19-96H-PSTREAM-SUMMARY-v4", all_helpers_settled=True, quarantine_receipts=[],
++              unsettled_owners=[], proof_ram_outstanding_bytes=0)
++
++    def unsettled_summary(pid, start):
++        return dict(v4, exit_code=50, all_children_settled=False, children=[{"seq": 1, "settled": False}],
++                    quarantine_receipts=["x"], unsettled_owners=[{"pid": pid, "identity_at_start": {"pid": pid,
++                                                                                                 "start": start}}])
++
++    def attempt(root, name, summary, go="e" * 64, quarantine=False, link_summary=False, child_pid=None):
+         d = os.path.join(root, name)
+         os.makedirs(os.path.join(d, "children"))
+         lr = _write_json(os.path.join(d, "launch-record.json"), {"go": {"sha256": go}})
+-        if link_summary:
++        sm = None
++        if child_pid is not None:
++            _write_json(os.path.join(d, "children", "01-x.launch.json"), {"pid": child_pid, "identity": {"pid": child_pid}})
++        if summary is None:
++            pass
++        elif link_summary:
+             sm = _write_json(os.path.join(d, "summary.real.json"), summary)
+             os.symlink("summary.real.json", os.path.join(d, "summary.json"))
+         else:
+@@ -786,54 +805,107 @@
+             _write_json(os.path.join(d, "children", "01-x.QUARANTINE.json"), {"pid": 1})
+         return {"dir": d, "launch_record_sha256": lr, "summary_sha256": sm}
+ 
++    def disposition(root, rel, identities, tag, **kw):
++        body = {"schema": R.DISPOSITION_SCHEMA, "attempt_dir": rel["dir"], "summary_sha256": rel["summary_sha256"],
++                "all_processes_ended": True, "identities": identities}
++        body.update(kw)
++        p = os.path.join(root, "disposition-%s.json" % tag)
++        rel["disposition"] = {"path": p, "sha256": _write_json(p, body)}
++        return rel
++
+     def scenario(name, build, res=1000, **kw):
+         check()
+-        root = os.path.join(W, "alloc-" + name)
+-        os.mkdir(root)
+-        rel = build(root)
++        base = os.path.join(W, "alloc-" + name)
++        root = os.path.join(base, "pilot")
++        os.makedirs(root)
++        rel = build(root, base)
+         out_dir = os.path.join(root, "run-new")
+         a = {"schema": R.ALLOCATION_SCHEMA, "allocation_id": name, "out_dir": out_dir, "reservation_bytes": res,
+              "lane_ceiling_bytes": R.LANE_CEILING, "busy_slots": R.BUSY_SLOTS, "released_attempts": rel}
+         a.update(kw)
+         return R.allocation_refusals({"allocation": a}, go_sha, out_dir, 1000, root=root)[0]
+ 
+-    def good(root):
+-        return [attempt(root, "run-a", v14), attempt(root, "run-b", v3)]
+-
+-    def mismatched(root):
++    def good(root, base):
++        return [attempt(root, "run-a", v14), attempt(root, "run-b", v4)]
++
++    def mismatched(root, base):
+         r = attempt(root, "run-a", v14)
+         r["summary_sha256"] = "0" * 64
+         return [r]
+ 
+-    def missing(root):
++    def missing(root, base):
+         return [attempt(root, "run-a", v14), {"dir": os.path.join(root, "run-gone"), "launch_record_sha256": "1" * 64,
+                                               "summary_sha256": "2" * 64}]
+ 
+-    def out_exists(root):
++    def out_exists(root, base):
+         os.mkdir(os.path.join(root, "run-new"))
+         return [attempt(root, "run-a", v14)]
+ 
++    def unsettled_no_disp(root, base):
++        return [attempt(root, "run-a", unsettled_summary(gone_pid, [1, 2]), quarantine=True)]
++
++    def unsettled_disp(root, base):
++        r = attempt(root, "run-a", unsettled_summary(gone_pid, [1, 2]), quarantine=True)
++        return [disposition(base, r, [{"pid": gone_pid, "start": [1, 2]}], "ok")]
++
++    def unsettled_disp_alive(root, base):
++        r = attempt(root, "run-a", unsettled_summary(me, me_ident["start"]), quarantine=True)
++        return [disposition(base, r, [{"pid": me, "start": me_ident["start"]}], "alive")]
++
++    def unsettled_disp_uncovered(root, base):
++        r = attempt(root, "run-a", unsettled_summary(gone_pid, [1, 2]), quarantine=True)
++        return [disposition(base, r, [{"pid": gone_pid, "start": [9, 9]}], "uncovered")]
++
++    def unsettled_disp_digest(root, base):
++        r = disposition(base, attempt(root, "run-a", unsettled_summary(gone_pid, [1, 2]), quarantine=True),
++                        [{"pid": gone_pid, "start": [1, 2]}], "digest")
++        r["disposition"]["sha256"] = "3" * 64
++        return [r]
++
++    def unsettled_disp_not_ended(root, base):
++        r = attempt(root, "run-a", unsettled_summary(gone_pid, [1, 2]), quarantine=True)
++        return [disposition(base, r, [{"pid": gone_pid, "start": [1, 2]}], "notended", all_processes_ended=False)]
++
++    def summaryless_disp(root, base):
++        r = attempt(root, "run-a", None, child_pid=gone_pid)
++        return [disposition(base, r, [{"pid": gone_pid, "start": None}], "nosummary")]
++
++    def summaryless_no_disp(root, base):
++        return [attempt(root, "run-a", None, child_pid=gone_pid)]
++
+     res = {
+         "admitted": scenario("admitted", good),
++        "admitted_unsettled_with_disposition": scenario("disp-ok", unsettled_disp),
++        "admitted_summaryless_with_disposition": scenario("nosum-ok", summaryless_disp),
+         "no_allocation": R.allocation_refusals({}, go_sha, os.path.join(W, "x", "run-new"), 1000,
+                                                root=os.path.join(W, "x"))[0],
+         "small_reservation": scenario("small", good, res=999),
+         "wrong_out_dir": scenario("outdir", good, out_dir="/elsewhere/run-new"),
+         "busy_slots": scenario("busy", good, busy_slots=3),
+-        "empty_summary": scenario("empty", lambda root: [attempt(root, "run-a", {})]),
+-        "unsettled": scenario("unsettled", lambda root: [attempt(root, "run-a", dict(v14, all_children_settled=False))]),
+-        "unsettled_child": scenario("child", lambda root: [attempt(root, "run-a", dict(v14, children=[{"settled": False}]))]),
+-        "v3_helper_unsettled": scenario("helper", lambda root: [attempt(root, "run-a", dict(v3, all_helpers_settled=False))]),
+-        "symlinked_summary": scenario("symlink", lambda root: [attempt(root, "run-a", v14, link_summary=True)]),
++        "empty_summary": scenario("empty", lambda root, base: [attempt(root, "run-a", {})]),
++        "unsettled_v14": scenario("unsettled", lambda root, base: [
++            attempt(root, "run-a", dict(v14, all_children_settled=False))]),
++        "unsettled_child_v14": scenario("child", lambda root, base: [
++            attempt(root, "run-a", dict(v14, children=[{"settled": False}]))]),
++        "v4_helper_unsettled_no_disposition": scenario("helper", lambda root, base: [
++            attempt(root, "run-a", dict(v4, all_helpers_settled=False))]),
++        "unsettled_without_disposition": scenario("disp-none", unsettled_no_disp),
++        "disposition_alive_identity": scenario("disp-alive", unsettled_disp_alive),
++        "disposition_uncovered_identity": scenario("disp-uncovered", unsettled_disp_uncovered),
++        "disposition_digest_mismatch": scenario("disp-digest", unsettled_disp_digest),
++        "disposition_not_ended": scenario("disp-notended", unsettled_disp_not_ended),
++        "summaryless_without_disposition": scenario("nosum-none", summaryless_no_disp),
++        "symlinked_summary": scenario("symlink", lambda root, base: [attempt(root, "run-a", v14, link_summary=True)]),
+         "digest_mismatch": scenario("mismatch", mismatched),
+-        "unlisted": scenario("unlisted", lambda root: (attempt(root, "run-a", v14), [])[1]),
+-        "go_reuse": scenario("reuse", lambda root: [attempt(root, "run-a", v14, go=go_sha)]),
+-        "quarantine": scenario("quarantine", lambda root: [attempt(root, "run-a", v14, quarantine=True)]),
++        "unlisted": scenario("unlisted", lambda root, base: (attempt(root, "run-a", v14), [])[1]),
++        "go_reuse": scenario("reuse", lambda root, base: [attempt(root, "run-a", v14, go=go_sha)]),
++        "quarantine_v14": scenario("quarantine", lambda root, base: [attempt(root, "run-a", v14, quarantine=True)]),
+         "missing": scenario("missing", missing),
+         "out_dir_exists": scenario("exists", out_exists),
+     }
+-    assert res["admitted"] == [], res["admitted"]
+-    refused = {k: v for k, v in res.items() if k != "admitted"}
++    admitted = {k: v for k, v in res.items() if k.startswith("admitted")}
++    refused = {k: v for k, v in res.items() if not k.startswith("admitted")}
++    assert all(v == [] for v in admitted.values()), admitted
+     assert all(refused.values()), {k: v for k, v in refused.items() if not v}
+     return {k: len(v) for k, v in res.items()}
+ 
+@@ -1295,6 +1367,83 @@
+     return {"errors": errs}
+ 
+ 
++
++def t_reap_bounded_survivor(R, W):
++    """B1: a survivor of the bounded stop grace is recorded UNSETTLED irreversibly and reap_owned returns None within
++    the grace (plus one slice): exactly one group SIGTERM for a verified identity, none for an unverifiable one; the
++    record carries exact identities, a live census and the late obligations; a second reap returns at once without
++    waiting or signalling again.  (A never-started FakeProc stands in for the survivor; KILLPG, bsd_identity and
++    list_pids are patched; no process is signalled.)"""
++    calls = []
++    saved = (R.KILLPG, R.bsd_identity, R.list_pids)
++    n_latch = len(R.LATCH)
++    me = os.getpid()
++    good = {"pid": 434343, "ppid": me, "pgid": 434343, "status": 2, "start": [3, 4], "comm": "x"}
++
++    def survivor(identity):
++        o = R.Owned()
++        o._owned_init()
++        o.argv, o.proc, o.pid, o.pgid, o.identity_at_start = ["fake"], FakeProc(None), 434343, 434343, identity
++        return o
++
++    grace = 0.3
++    try:
++        R.KILLPG = lambda pgid, sig: calls.append((pgid, sig))
++        R.bsd_identity = lambda pid: (dict(good), None)
++        R.list_pids = lambda kind, value: [434343]
++        a = survivor(dict(good))
++        t0 = time.monotonic()
++        rc_a = a.reap_owned(grace)
++        took_a = time.monotonic() - t0
++        t1 = time.monotonic()
++        rc_a2 = a.reap_owned(grace)                # recorded UNSETTLED: no second wait, no second signal
++        took_a2 = time.monotonic() - t1
++        b = survivor(None)                         # unverifiable identity: no signal at all, still bounded
++        t2 = time.monotonic()
++        rc_b = b.reap_owned(grace)
++        took_b = time.monotonic() - t2
++    finally:
++        R.KILLPG, R.bsd_identity, R.list_pids = saved
++    latched = R.LATCH[n_latch:]
++    del R.LATCH[n_latch:]
++    assert rc_a is None and rc_a2 is None and rc_b is None, (rc_a, rc_a2, rc_b)
++    assert calls == [(434343, signal.SIGTERM)], calls
++    assert took_a < grace + 1.0 and took_a2 < 0.2 and took_b < grace + 1.0, (took_a, took_a2, took_b)
++    assert a.quarantined and b.quarantined and a.unsettled and b.unsettled
++    assert a.unsettled["pid"] == 434343 and a.unsettled["live_census"]["leader_pid"] == 434343
++    assert a.unsettled["late_obligations"] and a.quarantine_receipt_state.startswith("unpublishable")
++    assert b.term_delivery and b.term_delivery["delivered"] is False and any("UNSETTLED" in x for x in latched), latched
++    return {"reap_seconds": [round(took_a, 3), round(took_a2, 3), round(took_b, 3)], "signals": len(calls)}
++
++
++def t_settle_all_bounded(R, W):
++    """B1: settle_all makes one bounded pass: a child whose settle() always raises is recorded UNSETTLED (not
++    synthesized as settled) after SETTLE_ALL_ATTEMPTS attempts with the latch held, and the pass returns."""
++    n_latch = len(R.LATCH)
++
++    class StuckChild:
++        def __init__(self):
++            self.proc, self.settled_rec, self.stop, self.unsettled = FakeProc(None), None, None, None
++            self.seq, self.label, self.pid, self.attempts = 99, "stuck", 454545, 0
++
++        def settle(self):
++            self.attempts += 1
++            raise RuntimeError("injected settlement failure")
++
++    c = StuckChild()
++    R.OWNED.append(c)
++    t0 = time.monotonic()
++    try:
++        R.settle_all()
++    finally:
++        R.OWNED.remove(c)
++    took = time.monotonic() - t0
++    latched = R.LATCH[n_latch:]
++    del R.LATCH[n_latch:]
++    assert c.attempts == R.SETTLE_ALL_ATTEMPTS and c.settled_rec and c.settled_rec["settled"] is False, c.settled_rec
++    assert c.stop == "runner_escape_cleanup" and latched and took < 5.0, (latched, took)
++    return {"attempts": c.attempts, "seconds": round(took, 3)}
++
+ def decide_terminal(results, n_tests, alive_threads, runner_latch, helpers_unsettled, closeout_errors):
+     """N11: decided AFTER closeout: ALL_OK only if every test ran and passed, no helper thread is alive, the runner
+     holds no latch, every runner helper settled and closeout raised nothing."""
+@@ -1326,12 +1475,13 @@
+          t_tree_census_fail_closed, t_out_dir_ancestry, t_bounded_metadata_reads, t_monitor_provenance_header,
+          t_item_shapes, t_stop_identity, t_helper_refusals_and_clock, t_output_guard, t_allocation_release,
+          t_run_kissat_owner_on_exception, t_commit_charging_and_cutoff, t_anchored_confinement,
+-         t_c6_timer_predicate, t_terminal_rule, t_qualify_matrix, t_closeout_cancel_race]
++         t_c6_timer_predicate, t_terminal_rule, t_reap_bounded_survivor, t_settle_all_bounded, t_qualify_matrix,
++         t_closeout_cancel_race]
+ 
+ 
+ def main():
+     if len(sys.argv) != 4:
+-        print("usage: test_pilot_stream_v4.py RUNNER.py RUNNER_SHA256 OUT_DIR", flush=True)
++        print("usage: test_pilot_stream_v5.py RUNNER.py RUNNER_SHA256 OUT_DIR", flush=True)
+         return 70
+     runner, runner_sha, out = os.path.abspath(sys.argv[1]), sys.argv[2], os.path.abspath(sys.argv[3])
+     if os.path.dirname(out) != LANE + "/evidence/probes" or os.path.lexists(out):

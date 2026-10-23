@@ -1,0 +1,1344 @@
+--- control/beta_consumer_controls_v1.py
++++ control/beta_consumer_controls_v2.py
+@@ -2 +2 @@
+-"""SOURCE ONLY, UNEXECUTED. Finite negative/boundary controls, NOT qualification.
++"""SOURCE ONLY, UNEXECUTED. Consumer-visible finite negative/boundary controls.
+@@ -4,5 +4,4 @@
+-Operative oracle: beta-consumer-controls-plan-v2.json, pinned below. V1 plan is
+-superseded and never executed. No private-validator/source-text/wiring/default
+-or dummy-prefix position tests. Every genuine baseline, seven frozen negatives,
+-C1-C4, twenty full-prefix positions and derivation-success path remains deferred.
+-Exit 0 means only that the executable negative/boundary expectations matched.
++Oracle: beta-consumer-controls-plan-v3.json, frozen before this source. V1 source
++and plans v1/v2 remain immutable, unexecuted historical records. SC19 is retired,
++not renamed. No private-validator/source-text/wiring/default/mock-success oracle,
++fixed ledger IDs/cardinality, persistence counts or production-message assertions.
+@@ -10,5 +9,4 @@
+-Nothing is loaded, compiled, read, written or launched by importing this harness.
+-All work is inside run(), after external independent review, exact parent GO and
+-fresh stability gate. Those are external preconditions, not granted by this file.
+-Run only with -I -B; no arguments. One process, stdlib, no subprocess/network/
+-threads/signals/date helper. Parent owns timestamps, captures, exit and endedness.
++All genuine baseline/seven negatives/C1-C4/twenty positions/derivation successes
++remain deferred. Exit0 is NOT_QUALIFIED. No execution authority is granted here.
++Nothing loads/compiles/reads/writes at import; run() is the explicit future entry.
++Require independent review, separate exact parent GO, fresh gate and -I -B.
+@@ -17 +14,0 @@
+-import errno
+@@ -28,2 +25,2 @@
+-PLAN_PATH = RUN + '/control/beta-consumer-controls-plan-v2.json'
+-PLAN_SHA = '4eaff62de8996e69c03f48499e40ba8d0bac3c855407276fed34dbbe29dcd4b8'
++PLAN_PATH = RUN + '/control/beta-consumer-controls-plan-v3.json'
++PLAN_SHA = 'd0bed613c1e169ef4b984e0101908ef3d7f23907de3eeacebc725586e2be3c54'
+@@ -45 +42 @@
+-          'RD10A', 'RD10B', 'RD10C', 'RD10D', 'RD10E', 'RD11A', 'RD11B')
++          'RD10A', 'RD10B', 'RD10C', 'RD10D', 'RD11A', 'RD11B')
+@@ -53 +50 @@
+-SC_IDS = ('SC01', 'SC04', 'SC05', 'SC06', 'SC19', 'SC32', 'SC33')
++SC_IDS = ('SC32', 'SC33')
+@@ -55 +52 @@
+-          'AD16', 'AD18', 'AD20', 'AD22', 'AD23', 'AD24', 'AD25', 'AD26', 'AD27',
++          'AD16', 'AD18', 'AD22', 'AD23', 'AD24', 'AD25', 'AD26', 'AD27',
+@@ -62,7 +59,2 @@
+-ARMED_MESSAGE = 'LABELLED_ARMED original deadline expired (event-armed, never renewed)'
+-REAL_MESSAGE = 'LABELLED_REAL_MONOTONIC original deadline crossed after harness-induced sleep at the armed boundary'
+-MAX_STDOUT = 1 << 20
+-MAX_RETAINED = 20 << 20
+-MAX_CASE_LINE = 4096
+-MAX_SUMMARY = 16384
+-MAX_DETAIL = 65536
++MAX_STDOUT, MAX_RETAINED = 1 << 20, 20 << 20
++MAX_CASE_LINE, MAX_SUMMARY, MAX_DETAIL = 4096, 16384, 65536
+@@ -161,2 +153,3 @@
+-def _prefix(value):
+-    return value.split('(', 1)[0] if type(value) is str else None
++def _error_type(retained_repr):
++    # Stable exception TYPE only, never production diagnostic wording.
++    return retained_repr.split('(', 1)[0] if type(retained_repr) is str else None
+@@ -166 +158,0 @@
+-    """Contain ordinary exceptions and ONLY our labelled BaseException sentinel."""
+@@ -177,2 +169,2 @@
+-def _pair(exc):
+-    return [type(exc).__name__, str(exc)] if exc is not None else None
++def _exception_type(exc):
++    return type(exc).__name__ if exc is not None else None
+@@ -186,2 +178,2 @@
+-def _rel(value, length):
+-    if value == length:
++def _relative_bytes(value, initial_length):
++    if value == initial_length:
+@@ -189 +181 @@
+-    if value == length + 1:
++    if value == initial_length + 1:
+@@ -194,6 +186,4 @@
+-def _obs_probe(row, length):
+-    return {'bytes_seen_rel': _rel(row['bytes_seen'], length), 'eof': row['eof'],
+-            'before_present': row['before'] is not None,
+-            'after_present': row['after'] is not None,
+-            'sha256_present': row['sha256'] is not None,
+-            'completed': row['completed'], 'error_prefix': _prefix(row['error'])}
++def _observation(row, length):
++    return {'bytes': _relative_bytes(row['bytes_seen'], length), 'eof': row['eof'],
++            'before': row['before'] is not None, 'after': row['after'] is not None,
++            'completed': row['completed']}
+@@ -207,2 +197,40 @@
+-class _Owned:
+-    """Harness-only descriptor registry. Mark before close; never retry a close."""
++def _settled(report):
++    return all(row['state'] in ('CLOSED', 'NOT_ACQUIRED') for row in report['resources'])
++
++
++def _state(report):
++    if type(report) is not dict or type(report.get('unresolved')) is not list:
++        return 'UNAVAILABLE'
++    return 'PRESENT' if report['unresolved'] else 'EMPTY'
++
++
++def _file_observation(report, path, completed=None):
++    for row in reversed(report['observations']):
++        if row['kind'] == 'file' and row['path'] == path and (completed is None or row['completed'] is completed):
++            return row
++    return None
++
++
++def _unknown_target(report, path, kind='fd'):
++    # IDs are only dynamic relational joins to the public report's unresolved set.
++    # No numeric ID or position/cardinality is an oracle.
++    for row in report['resources']:
++        if (row['path'] == path and row['kind'] == kind and row['state'] == 'UNKNOWN'
++                and row['id'] in report['unresolved']):
++            return row
++    return None
++
++
++def _same_unknown(report, prior):
++    return prior is not None and any(row['id'] == prior['id'] and row['path'] == prior['path']
++                                    and row['state'] == 'UNKNOWN' and row['id'] in report['unresolved']
++                                    for row in report['resources'])
++
++
++class _Owned:
++    """Harness-owned fds: retain before observations; one close attempt, never retry.
++
++    Cleanup records all failures without replacing an already propagating module
++    BaseException. Every cleanup error latches final failure; ambiguity is never
++    labelled closure. Failed close numbers remain retained, never blindly retried.
++    """
+@@ -210,2 +238 @@
+-        self.rows = []
+-        self.errors = []
++        self.rows, self.errors = [], []
+@@ -216 +243 @@
+-        self.rows.append(row)  # retain returned fd before any fstat/clock
++        self.rows.append(row)
+@@ -242,2 +269 @@
+-        if first is not None:
+-            raise first
++        return first
+@@ -247,2 +273 @@
+-    mark = len(owned.rows)
+-    selected = None
++    mark, selected = len(owned.rows), None
+@@ -261 +285,0 @@
+-    """Only for the reader source; actual NOFOLLOW parent walk and cap+1 read."""
+@@ -265,2 +289 @@
+-        parent_path = '/' + '/'.join(parts[:-1])
+-        parent = _open_dir(parent_path, owned)
++        parent = _open_dir('/' + '/'.join(parts[:-1]), owned)
+@@ -292,2 +315,2 @@
+-def _load_verified(source, path, expected_sha, name):
+-    if type(source) is not bytes or _sha(source) != expected_sha:
++def _load_verified(source, path, digest, name):
++    if type(source) is not bytes or _sha(source) != digest:
+@@ -301 +323,0 @@
+-    """Labelled event arming; never clears/renews its armed deadline."""
+@@ -303,5 +325,2 @@
+-        self.base, self.calls, self.armed = base, 0, False
+-        self.real_deadline = None
+-        self.hook = None
+-        self.once = None
+-        self.real_hook_ran = False
++        self.base, self.armed = base, False
++        self.real_deadline, self.real_hook_ran = None, False
+@@ -314,10 +333,2 @@
+-        self.calls += 1
+-        if self.hook is not None:
+-            self.hook(self)
+-        if self.once is not None:
+-            exc, self.once = self.once, None
+-            raise exc
+-        if self.real_deadline is not None and time.monotonic() > self.real_deadline:
+-            raise ControlDeadlineExpired(REAL_MESSAGE)
+-        if self.armed:
+-            raise ControlDeadlineExpired(ARMED_MESSAGE)
++        if self.armed or (self.real_deadline is not None and time.monotonic() > self.real_deadline):
++            raise ControlDeadlineExpired('LABELLED original deadline expiry')
+@@ -327 +338 @@
+-    """Tracks explicit close only; trusted scandir may internally close at EOF."""
++    """Only explicit owning close is tracked; trusted scandir may close at EOF."""
+@@ -342 +353 @@
+-    """LABELLED boundary instrumentation; never modifies the process-wide os module.
++    """Separate verified reader namespace instrumentation, never process-wide os.
+@@ -344,5 +355,3 @@
+-    Rule dicts: op, phase, target (basename or '/'; None means any), occurrence,
+-    optional condition ('data'/'eof'), action (callable). Native fd acquisition
+-    is retained before a post-call rule. Orphans are closed using their retained
+-    dev/ino identity, not inferred descriptor-number ownership. Iterator cleanup
+-    uses the original retained native object, never an inferred internal fd.
++    Native identities are retained before post-call rules. Handles withheld by an
++    acquisition fault are cleared using exact retained fd dev/ino or original
++    iterator object identity. Ledger record IDs are never expected constants.
+@@ -351,4 +360 @@
+-        self.rules = rules
+-        self.rows = []
+-        self.violations = []
+-        self.orphans_cleared = 0
++        self.rules, self.rows, self.violations = rules, [], []
+@@ -365,2 +371 @@
+-            condition = rule.get('condition')
+-            if condition == 'data' and not result:
++            if rule.get('condition') == 'data' and not result:
+@@ -368 +373 @@
+-            if condition == 'eof' and result != b'':
++            if rule.get('condition') == 'eof' and result != b'':
+@@ -380,2 +385,2 @@
+-        self.violations.append('untracked/already-closed descriptor requested')
+-        raise RuntimeError('LABELLED proxy refused an untracked/already-closed fd')
++        self.violations.append('untracked/already-closed descriptor')
++        raise RuntimeError('LABELLED proxy refuses untracked descriptor')
+@@ -388,2 +393,3 @@
+-               'native_closes': 0, 'harness_closes': 0, 'orphan': False, 'identity': None}
+-        self.rows.append(rec)  # before fstat and rule
++               'owning_close_attempted': False, 'native_closes': 0, 'harness_closes': 0,
++               'orphan': False, 'identity': None}
++        self.rows.append(rec)
+@@ -400,0 +407,3 @@
++        if rec['owning_close_attempted']:
++            self.violations.append('second owning close attempt')
++            raise RuntimeError('LABELLED duplicate owning close refused')
+@@ -405,0 +415 @@
++        rec['owning_close_attempted'] = True
+@@ -430 +440,2 @@
+-               'closed': False, 'native_closes': 0, 'harness_closes': 0, 'orphan': False}
++               'closed': False, 'owning_close_attempted': False,
++               'native_closes': 0, 'harness_closes': 0, 'orphan': False}
+@@ -440 +451 @@
+-        if rec['closed']:
++        if rec['owning_close_attempted']:
+@@ -442 +453,2 @@
+-            raise RuntimeError('LABELLED proxy refused second iterator close')
++            raise RuntimeError('LABELLED duplicate iterator close refused')
++        rec['owning_close_attempted'] = True
+@@ -448 +460 @@
+-            if rec['closed'] or not rec['orphan']:
++            if rec['closed'] or not rec['orphan'] or rec['owning_close_attempted']:
+@@ -450,11 +462,17 @@
+-            if rec['kind'] == 'fd':
+-                info = os.fstat(rec['fd'])
+-                if rec['identity'] != (info.st_dev, info.st_ino):
+-                    self.violations.append('orphan identity mismatch; no close attempted')
+-                    continue
+-                os.close(rec['fd'])
+-            else:
+-                if id(rec['handle']) != rec['object_id']:
+-                    self.violations.append('iterator object identity mismatch; no close attempted')
+-                    continue
+-                rec['handle'].close()
++            try:
++                if rec['kind'] == 'fd':
++                    info = os.fstat(rec['fd'])
++                    if rec['identity'] != (info.st_dev, info.st_ino):
++                        self.violations.append('orphan identity mismatch; no close')
++                        continue
++                    rec['owning_close_attempted'] = True
++                    os.close(rec['fd'])
++                else:
++                    if id(rec['handle']) != rec['object_id']:
++                        self.violations.append('iterator identity mismatch; no close')
++                        continue
++                    rec['owning_close_attempted'] = True
++                    rec['handle'].close()
++            except Exception as exc:
++                self.violations.append('orphan cleanup uncertain: ' + type(exc).__name__)
++                continue  # retained; never retry an attempted destructive close
+@@ -463 +480,0 @@
+-            self.orphans_cleared += 1
+@@ -464,0 +482,3 @@
++    def closed_once(self, rec):
++        return rec is not None and rec['closed'] and rec['native_closes'] + rec['harness_closes'] == 1
++
+@@ -466,2 +486 @@
+-        return (not self.violations and all(row['closed'] and
+-                row['native_closes'] + row['harness_closes'] == 1 for row in self.rows))
++        return not self.violations and all(self.closed_once(row) for row in self.rows)
+@@ -469,2 +488,2 @@
+-    def native_closes(self, target):
+-        return sum(row['native_closes'] for row in self.rows if row['target'] == target)
++    def native(self, target, kind='fd'):
++        return next((row for row in self.rows if row['target'] == target and row['kind'] == kind), None)
+@@ -473 +492 @@
+-def _raise(exception_class, message):
++def _raise_instance(exc):
+@@ -475 +494 @@
+-        raise exception_class(message)
++        raise exc
+@@ -499 +518 @@
+-        os.mkdir(name, 0o700, dir_fd=self.fd)  # exclusive: never exist_ok
++        os.mkdir(name, 0o700, dir_fd=self.fd)
+@@ -527 +546 @@
+-                'ino': info.st_ino, 'nlink': info.st_nlink, 'data': data}
++                'ino': info.st_ino, 'nlink': info.st_nlink, 'data': data, 'metadata': _meta(info)}
+@@ -530 +548,0 @@
+-        """Only the two labelled RD11 own fixtures use this additive mutation."""
+@@ -545 +563 @@
+-                raise OSError('short labelled growth append')
++                raise OSError('short growth append')
+@@ -552 +569,0 @@
+-        os.symlink(target, name, dir_fd=self.fd)
+@@ -553,0 +571 @@
++        os.symlink(target, name, dir_fd=self.fd)
+@@ -574 +592 @@
+-    def __init__(self, owned, check, sources, namespaces):
++    def __init__(self, owned, check, sources, namespaces, input_metadata):
+@@ -576 +594 @@
+-        self.sources, self.ns = sources, namespaces
++        self.sources, self.ns, self.input_metadata = sources, namespaces, input_metadata
+@@ -579,3 +597,2 @@
+-        self.ca = None
+-        self.last_reader = None
+-        self.retained_exception_readers = []
++        self.ca, self.last_reader = None, None
++        self.retained_exception_readers, self.proxies = [], []
+@@ -588 +605 @@
+-        self.retained += count  # conservative even if a later write partially fails
++        self.retained += count
+@@ -592,2 +609 @@
+-        proxy = None
+-        namespace = self.ns['reader']
++        proxy, namespace = None, self.ns['reader']
+@@ -598,0 +615 @@
++            self.proxies.append(proxy)
+@@ -624,3 +641,2 @@
+-    os.mkdir('beta-consumer-controls-v1', 0o700, dir_fd=parent['fd'])  # one exclusive attempt
+-    root = ctx.owned.retain(os.open('beta-consumer-controls-v1',
+-                                  os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
++    os.mkdir('beta-consumer-controls-v1', 0o700, dir_fd=parent['fd'])
++    root = ctx.owned.retain(os.open('beta-consumer-controls-v1', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+@@ -631,2 +647 @@
+-    ctx.fx = ctx.root.mkdir('fx')
+-    ctx.reports = ctx.root.mkdir('reports')
++    ctx.fx, ctx.reports = ctx.root.mkdir('fx'), ctx.root.mkdir('reports')
+@@ -668,0 +684,4 @@
++def _identity_matches(native, metadata):
++    return native is not None and native['identity'] == (metadata['dev'], metadata['ino'])
++
++
+@@ -677 +695,0 @@
+-        empty_last = r.last_file(empty['path'])
+@@ -679,9 +697,6 @@
+-        return {'read_equals_written': got == DATA_BYTES, 'last_file_completed': last['completed'],
+-                'last_file_sha_matches': last['sha256'] == data['sha256'],
+-                'last_file_ino_matches_lstat': last['after']['ino'] == d.lstat('data.bin').st_ino,
+-                'last_file_nlink': last['after']['nlink'],
+-                'last_file_bytes_seen_rel': _rel(last['bytes_seen'], len(DATA_BYTES)),
+-                'last_file_eof': last['eof'], 'empty_cap0_returns_empty': empty_got == b'',
+-                'empty_last_file_bytes_seen_rel': _rel(empty_last['bytes_seen'], 0),
+-                'calls': report['calls'], 'resource_count': len(report['resources']),
+-                'all_closed': _all_closed(report), 'unresolved': report['unresolved']}
++        return {'read_equals_written': got == DATA_BYTES, 'exact_cap_completed': last['completed'],
++                'actual_hash_matches': last['sha256'] == data['sha256'],
++                'actual_metadata_matches_fixture': _exact(last['after'], data['metadata']),
++                'actual_bytes_and_eof_retained': last['bytes_seen'] == len(DATA_BYTES) and last['eof'] is True,
++                'empty_cap0_returns_empty': empty_got == b'',
++                'all_resources_closed': _all_closed(report), 'unresolved_empty': not report['unresolved']}
+@@ -689 +704 @@
+-        d.write('target.bin', DATA_BYTES)
++        target = d.write('target.bin', DATA_BYTES)
+@@ -699,0 +715,3 @@
++        ordinary = r.read_bytes(target['path'], len(DATA_BYTES))
++        report = r.report()
++        rows = [_file_observation(report, path) for path in paths]
+@@ -701,5 +719,2 @@
+-        report, counts = r.report(), {}
+-        for row in report['resources']:
+-            counts[row['state']] = counts.get(row['state'], 0) + 1
+-        return {'symlink_leaf_native_oserror': isinstance(failures[0], OSError) and not isinstance(failures[0], refusal),
+-                'symlink_leaf_errno_eloop': getattr(failures[0], 'errno', None) == errno.ELOOP,
++        return {'ordinary_target_readable': ordinary == DATA_BYTES,
++                'symlink_leaf_native_oserror': isinstance(failures[0], OSError) and not isinstance(failures[0], refusal),
+@@ -707,3 +722,7 @@
+-                'fifo_leaf': _pair(failures[2]), 'hardlinked_leaf': _pair(failures[3]),
+-                'last_file_all_none': all(r.last_file(path) is None for path in paths),
+-                'state_counts': counts, 'unresolved': report['unresolved']}
++                'fifo_exception_type': _exception_type(failures[2]),
++                'hardlink_exception_type': _exception_type(failures[3]),
++                'failing_paths_publish_no_success': all(r.last_file(path) is None for path in paths),
++                'failing_reads_accept_no_file_bytes': all(row is not None and row['bytes_seen'] == 0 for row in rows),
++                'fifo_actual_metadata_matches_fixture': _exact(rows[2]['before'], _meta(d.lstat('fifo'))),
++                'hardlink_actual_metadata_matches_fixture': _exact(rows[3]['before'], _meta(d.lstat('hl-a.bin'))),
++                'known_resources_settled': _settled(report), 'unresolved_empty': not report['unresolved']}
+@@ -716 +735 @@
+-        low = _attempt(lambda: r.read_bytes(data['path'], 9))[1]
++        below = _attempt(lambda: r.read_bytes(data['path'], 9))[1]
+@@ -721 +740 @@
+-        retained = len(r.report()['observations'][-1]['names'])
++        failed = r.report()['observations'][-1]
+@@ -725,4 +744,7 @@
+-        return {'cap_below_size': _pair(low), 'cap_exact_read_ok': exact == b'0123456789',
+-                'cap_bool': _pair(boolean), 'census_names': names, 'census_cap2': _pair(cap2),
+-                'census_cap2_names_retained': retained, 'census_cap3_names': names3,
+-                'census_cap257': _pair(cap257), 'calls': report['calls'], 'unresolved': report['unresolved']}
++        return {'below_cap_exception_type': _exception_type(below), 'exact_cap_bytes_match': exact == b'0123456789',
++                'bool_cap_exception_type': _exception_type(boolean), 'census_names': names,
++                'entry_cap_exception_type': _exception_type(cap2),
++                'entry_cap_retains_actual_names': sorted(failed['names']) == ['a', 'b', 'c'],
++                'failed_census_not_completed': failed['completed'] is False,
++                'exact_entry_cap_names': names3, 'over_max_entry_cap_exception_type': _exception_type(cap257),
++                'known_resources_settled': _settled(report), 'unresolved_empty': not report['unresolved']}
+@@ -734,5 +756,5 @@
+-        return {'bytes_equal': av == bv, 'sha_equal': am['sha256'] == bm['sha256'],
+-                'ino_distinct': am['after']['ino'] != bm['after']['ino'],
+-                'ino_each_matches_lstat': am['after']['ino'] == d.lstat('same-a.bin').st_ino and
+-                                         bm['after']['ino'] == d.lstat('same-b.bin').st_ino,
+-                'unresolved': r.report()['unresolved']}
++        report = r.report()
++        return {'bytes_equal': av == bv, 'hashes_equal': am['sha256'] == bm['sha256'],
++                'actual_inodes_distinct': am['after']['ino'] != bm['after']['ino'],
++                'actual_identities_match_fixtures': _exact(am['after'], a['metadata']) and _exact(bm['after'], b['metadata']),
++                'all_resources_closed': _all_closed(report), 'unresolved_empty': not report['unresolved']}
+@@ -760 +782 @@
+-            count = len(report['observations'])
++            native_before = tuple(id(row) for row in proxy.rows)
+@@ -763,8 +785,7 @@
+-                raise InconclusivePrecondition('real monotonic deadline crossed before native-read sleep hook')
+-            observed = {'exception': type(exc).__name__,
+-                        'deadline_kind': 'REAL_MONOTONIC' if str(exc) == REAL_MESSAGE else 'ARMED',
+-                        'observation': _obs_probe(report['observations'][-1], len(DATA_BYTES)),
+-                        'all_closed': _all_closed(report), 'unresolved': report['unresolved'],
+-                        'last_file_none': r.last_file(data['path']) is None,
+-                        'second_call_exception': type(second).__name__,
+-                        'second_call_added_observation': len(r.report()['observations']) != count}
++                raise InconclusivePrecondition('real deadline crossed before native-return hook')
++            observed = {'exception_type': _exception_type(exc),
++                        'observation': _observation(_file_observation(report, data['path']), len(DATA_BYTES)),
++                        'all_resources_closed': _all_closed(report), 'unresolved_empty': not report['unresolved'],
++                        'no_success_snapshot': r.last_file(data['path']) is None,
++                        'second_exception_type': _exception_type(second),
++                        'second_attempt_acquires_no_native_handle': tuple(id(row) for row in proxy.rows) == native_before}
+@@ -772 +793 @@
+-                observed['hook_slept_past_deadline'] = clock.real_hook_ran
++                observed['real_crossing_after_native_return'] = clock.real_hook_ran and time.monotonic() > clock.real_deadline
+@@ -775 +796 @@
+-        observed['proxy_accounting_ok'] = proxy.accounting_ok()
++        observed['all_native_handles_closed_once'] = proxy.accounting_ok()
+@@ -779,2 +800 @@
+-        data = d.write('close.bin', DATA_BYTES)
+-        nxt = d.write('next.bin', DATA_BYTES)
++        data, nxt = d.write('close.bin', DATA_BYTES), d.write('next.bin', DATA_BYTES)
+@@ -782 +802 @@
+-        action = _raise(InjectedCloseFault, 'LABELLED close fault') if case_id == 'RD06A' else clock.arm
++        action = _raise_instance(InjectedCloseFault('LABELLED close fault')) if case_id == 'RD06A' else clock.arm
+@@ -787,5 +807,5 @@
+-            observed = {'exception': _pair(exc) if case_id == 'RD06A' else type(exc).__name__,
+-                        'unresolved': report['unresolved'],
+-                        'observation': _obs_probe(report['observations'][-1], len(DATA_BYTES)),
+-                        'last_file_none': r.last_file(data['path']) is None,
+-                        'leaf_native_closes': proxy.native_closes('close.bin')}
++            row = _file_observation(report, data['path'])
++            retained = row is not None and row['bytes_seen'] == len(DATA_BYTES) and row['eof'] is True and _exact(row['after'], data['metadata'])
++            native = proxy.native('close.bin')
++            observed = {'exception_type': _exception_type(exc), 'actual_bytes_eof_metadata_retained': retained,
++                        'no_success_snapshot': r.last_file(data['path']) is None}
+@@ -793,5 +813,6 @@
+-                leaf = report['resources'][-1]
+-                observed.update(leaf_state=leaf['state'], leaf_close_attempted=leaf['close_attempted'],
+-                                leaf_close_error_prefix=_prefix(leaf['close_error']),
+-                                next_read_ok=r.read_bytes(nxt['path'], 64) == DATA_BYTES,
+-                                unresolved_after_next_read=r.report()['unresolved'])
++                unknown = _unknown_target(report, data['path'])
++                observed.update(unknown_leaf_retained=unknown is not None,
++                                native_leaf_identity_matches_fixture=_identity_matches(native, data['metadata']),
++                                unresolved_present=bool(report['unresolved']),
++                                next_read_bytes_match=r.read_bytes(nxt['path'], 64) == DATA_BYTES,
++                                same_unknown_leaf_persists=_same_unknown(r.report(), unknown))
+@@ -799 +820 @@
+-                observed.update(deadline_kind='ARMED', all_closed=_all_closed(report))
++                observed.update(all_resources_closed=_all_closed(report), unresolved_empty=not report['unresolved'])
+@@ -802 +823,2 @@
+-        observed.update(proxy_accounting_ok=proxy.accounting_ok(), orphans_cleared=proxy.orphans_cleared)
++        observed.update(original_leaf_closed_once=proxy.closed_once(native),
++                        all_native_handles_closed_once=proxy.accounting_ok())
+@@ -808,2 +830,3 @@
+-        action = _raise(InjectedAcquisitionFault, 'LABELLED unexpected acquisition exception')
+-        rule = _rule('open', 'after', 'acq.bin', action) if case_id == 'RD07A' else _rule('scandir', 'after', 'dir', action)
++        primary = InjectedAcquisitionFault('LABELLED unexpected acquisition exception')
++        rule = (_rule('open', 'after', 'acq.bin', _raise_instance(primary)) if case_id == 'RD07A'
++                else _rule('scandir', 'after', 'dir', _raise_instance(primary)))
+@@ -816,5 +839,2 @@
+-                leaf = report['resources'][-1]
+-                observed = {'exception': type(exc).__name__, 'leaf_state': leaf['state'],
+-                            'leaf_fd_recorded': leaf['fd'] is not None,
+-                            'leaf_acquisition_error_prefix': _prefix(leaf['acquisition_error']),
+-                            'unresolved': report['unresolved']}
++                unknown = _unknown_target(report, data['path'])
++                native = proxy.native('acq.bin')
+@@ -822,2 +842,6 @@
+-                observed.update(next_read_ok=r.read_bytes(nxt['path'], 64) == DATA_BYTES,
+-                                unresolved_after_next_read=r.report()['unresolved'])
++                observed = {'exception_type': _exception_type(exc), 'unknown_leaf_retained': unknown is not None,
++                            'native_leaf_identity_matches_fixture': _identity_matches(native, data['metadata']),
++                            'withheld_handle_cleared_once': native is not None and native['harness_closes'] == 1 and proxy.closed_once(native),
++                            'unresolved_present': bool(report['unresolved']),
++                            'next_read_bytes_match': r.read_bytes(nxt['path'], 64) == DATA_BYTES,
++                            'same_unknown_leaf_persists': _same_unknown(r.report(), unknown)}
+@@ -825,2 +849,7 @@
+-                observed = {'exception': _pair(exc), 'exception_context': type(exc.__context__).__name__,
+-                            'scandir_state': report['resources'][-1]['state'], 'unresolved': report['unresolved']}
++                iterator = proxy.native('dir', 'iterator')
++                observed = {'exception_type': _exception_type(exc),
++                            'primary_exception_preserved': exc.__context__ is primary and report['observations'][-1]['error'] == repr(primary),
++                            'unknown_iterator_retained': _unknown_target(report, scan.path, 'scandir') is not None,
++                            'native_anchor_identity_matches_fixture': iterator is not None and iterator['anchor_identity'] ==
++                                (os.fstat(scan.fd).st_dev, os.fstat(scan.fd).st_ino),
++                            'unresolved_present': bool(report['unresolved'])}
+@@ -829 +858,3 @@
+-        observed.update(proxy_accounting_ok=proxy.accounting_ok(), orphans_cleared=proxy.orphans_cleared)
++        if case_id == 'RD07C':
++            observed['original_iterator_cleared_once'] = iterator is not None and iterator['harness_closes'] == 1 and proxy.closed_once(iterator)
++        observed['all_native_handles_closed_once'] = proxy.accounting_ok()
+@@ -834,3 +865,3 @@
+-        primary = InjectedReadFault if case_id == 'RD08A' else InjectedBaseInterrupt
+-        message = 'LABELLED primary read fault' if primary is InjectedReadFault else 'LABELLED base interrupt'
+-        rules = [_rule('read', 'before', 'rw.bin', _raise(primary, message))]
++        primary = (InjectedReadFault('LABELLED primary read fault') if case_id == 'RD08A'
++                   else InjectedBaseInterrupt('LABELLED base interrupt'))
++        rules = [_rule('read', 'before', 'rw.bin', _raise_instance(primary))]
+@@ -838 +869 @@
+-            rules.append(_rule('close', 'after', 'rw.bin', _raise(InjectedCloseFault, 'LABELLED close fault')))
++            rules.append(_rule('close', 'after', 'rw.bin', _raise_instance(InjectedCloseFault('LABELLED close fault'))))
+@@ -843,3 +874,4 @@
+-            observed = {'exception': type(exc).__name__ if case_id == 'RD08C' else _pair(exc),
+-                        'observation_error_prefix': _prefix(report['observations'][-1]['error']),
+-                        'unresolved': report['unresolved']}
++            row = _file_observation(report, data['path'])
++            native = proxy.native('rw.bin')
++            observed = {'exception_type': _exception_type(exc),
++                        'primary_error_preserved': row is not None and row['error'] == repr(primary)}
+@@ -848 +880,2 @@
+-                observed.update(report_available_after=type(report) is dict, all_closed=_all_closed(report))
++                observed.update(same_primary_exception=exc is primary, reader_report_available=type(report) is dict,
++                                all_resources_closed=_all_closed(report), unresolved_empty=not report['unresolved'])
+@@ -850,3 +883,5 @@
+-                observed.update(exception_context=type(exc.__context__).__name__,
+-                                leaf_close_error_prefix=_prefix(report['resources'][-1]['close_error']),
+-                                leaf_native_closes=proxy.native_closes('rw.bin'))
++                unknown = _unknown_target(report, data['path'])
++                observed.update(exception_context_is_primary=exc.__context__ is primary,
++                                cleanup_error_type=_error_type(unknown['close_error']) if unknown else None,
++                                unresolved_present=bool(report['unresolved']),
++                                native_leaf_identity_matches_fixture=_identity_matches(native, data['metadata']))
+@@ -855 +890,3 @@
+-        observed.update(proxy_accounting_ok=proxy.accounting_ok(), orphans_cleared=proxy.orphans_cleared)
++        if case_id != 'RD08C':
++            observed['original_leaf_closed_once'] = proxy.closed_once(native)
++        observed['all_native_handles_closed_once'] = proxy.accounting_ok()
+@@ -866,6 +903,9 @@
+-        return {'first_read_ok': first == DATA_BYTES, 'second_read': _pair(exc),
+-                'last_file_unchanged_after_failure': _exact(stale, r.last_file(data['path'])),
+-                'stale_last_file_nlink': stale['after']['nlink'], 'current_lstat_nlink': d.lstat('stale.bin').st_nlink,
+-                'latest_observation_completed': report['observations'][-1]['completed'],
+-                'latest_observation_before_nlink': report['observations'][-1]['before']['nlink'],
+-                'unresolved': report['unresolved']}
++        latest = _file_observation(report, data['path'])
++        actual = _meta(d.lstat('stale.bin'))
++        return {'first_read_matches': first == DATA_BYTES, 'second_exception_type': _exception_type(exc),
++                'stale_snapshot_unchanged': _exact(stale, r.last_file(data['path'])),
++                'stale_snapshot_one_link': stale['after']['nlink'] == 1,
++                'current_file_multiple_links': actual['nlink'] > 1,
++                'failed_read_not_completed': latest['completed'] is False,
++                'failed_read_metadata_matches_current_file': _exact(latest['before'], actual),
++                'known_resources_settled': _settled(report), 'unresolved_empty': not report['unresolved']}
+@@ -874 +914 @@
+-        return {'check_none': _pair(exc)}
++        return {'exception_type': _exception_type(exc)}
+@@ -876 +916 @@
+-        failures, reports = [], []
++        failures, evidence = [], []
+@@ -878 +918 @@
+-            r, _ = ctx.reader(lambda v=value: v)
++            r, proxy = ctx.reader(lambda v=value: v, rules=[])
+@@ -880,4 +920,4 @@
+-            reports.append(r.report())
+-        return {'returns_true': _pair(failures[0]), 'returns_false': _pair(failures[1]),
+-                'calls_each': [row['calls'] for row in reports],
+-                'observations_each': [len(row['observations']) for row in reports]}
++            evidence.append((r.report(), proxy))
++        return {'true_exception_type': _exception_type(failures[0]), 'false_exception_type': _exception_type(failures[1]),
++                'no_native_acquisition': all(not proxy.rows for _, proxy in evidence),
++                'no_success_observation': all(not any(row['completed'] for row in report['observations']) for report, _ in evidence)}
+@@ -885,5 +925,7 @@
+-        r, _ = ctx.reader()
+-        paths = {'relative': 'relative/x', 'dotdot': '/a/../b', 'components_129': '/' + '/'.join(['a'] * 129)}
+-        observed = {key: _pair(_attempt(lambda p=path: r.read_bytes(p, 64))[1]) for key, path in paths.items()}
+-        observed['calls'] = r.report()['calls']
+-        return observed
++        r, proxy = ctx.reader(rules=[])
++        paths = ('relative/x', '/a/../b', '/' + '/'.join(['a'] * 129))
++        failures = [_attempt(lambda p=path: r.read_bytes(p, 64))[1] for path in paths]
++        return {'relative_exception_type': _exception_type(failures[0]), 'dotdot_exception_type': _exception_type(failures[1]),
++                'component_limit_exception_type': _exception_type(failures[2]),
++                'no_native_acquisition': not proxy.rows,
++                'no_success_observation': not any(row['completed'] for row in r.report()['observations'])}
+@@ -893,30 +935,10 @@
+-        r, _ = ctx.reader(clock.check)
+-        failures = []
+-        for _ in range(1026):
+-            failures.append(_attempt(lambda: r.read_bytes(d.path + '/never-opened.bin', 64))[1])
+-        report = r.report()
+-        return {'deadline_refusals_first_1024': sum(type(exc) is ControlDeadlineExpired for exc in failures[:1024]),
+-                'call_1025': _pair(failures[1024]), 'call_1026': _pair(failures[1025]),
+-                'calls': report['calls'], 'resources': len(report['resources']),
+-                'observations': len(report['observations'])}
+-    if case_id == 'RD10E':
+-        deep = d
+-        for index in range(1, 29):
+-            deep = deep.mkdir('d' + str(index).zfill(2))
+-        data = deep.write('deep.bin', b'x')
+-        if len(_parts(data['path'])) != 40:
+-            raise HarnessRefusal('deep fixture no longer has40 components')
+-        r, _ = ctx.reader()
+-        successes = 0
+-        while True:
+-            value, exc = _attempt(lambda: r.read_bytes(data['path'], 1))
+-            if exc is not None:
+-                break
+-            if value != b'x':
+-                raise HarnessRefusal('deep fixture actual bytes differ')
+-            successes += 1
+-            ctx.check()
+-        report = r.report()
+-        return {'successful_reads_before_cap': successes, 'cap_refusal': _pair(exc),
+-                'resources': len(report['resources']), 'all_closed': _all_closed(report),
+-                'unresolved': report['unresolved'], 'calls': report['calls']}
++        r, proxy = ctx.reader(clock.check, rules=[])
++        expired = True
++        for _ in range(1024):
++            exc = _attempt(lambda: r.read_bytes(d.path + '/never-opened.bin', 64))[1]
++            expired = expired and type(exc) is ControlDeadlineExpired
++        first = _attempt(lambda: r.read_bytes(d.path + '/never-opened.bin', 64))[1]
++        second = _attempt(lambda: r.read_bytes(d.path + '/never-opened.bin', 64))[1]
++        return {'documented_attempts_all_expired': expired, 'first_after_limit_exception_type': _exception_type(first),
++                'second_after_limit_exception_type': _exception_type(second),
++                'no_native_acquisition': not proxy.rows, 'unresolved_empty': not r.report()['unresolved']}
+@@ -931,6 +953,9 @@
+-            row = report['observations'][-1]
+-            observed = {'exception': _pair(exc), 'observation': _obs_probe(row, len(initial)),
+-                        'unresolved': report['unresolved']}
+-            if case_id == 'RD11B':
+-                observed.update(before_size_rel=_rel(row['before']['size'], len(initial)),
+-                                after_size_rel=_rel(row['after']['size'], len(initial)))
++            row = _file_observation(report, data['path'])
++            observed = {'exception_type': _exception_type(exc), 'observation': _observation(row, len(initial)),
++                        'unresolved_empty': not report['unresolved']}
++            if case_id == 'RD11A':
++                observed['failed_read_metadata_matches_original'] = _exact(row['before'], data['metadata'])
++            else:
++                actual = _meta(d.lstat('grow.bin'))
++                observed['native_sizes_show_growth'] = (row['before']['size'] == len(initial) and
++                    row['after']['size'] == len(initial) + 1 and _exact(row['after'], actual))
+@@ -939 +964 @@
+-        observed.update(proxy_accounting_ok=proxy.accounting_ok(), orphans_cleared=proxy.orphans_cleared)
++        observed['all_native_handles_closed_once'] = proxy.accounting_ok()
+@@ -962,4 +987,2 @@
+-    observed['source_pins'] = copy.deepcopy(expectation['source_pins'])
+-    observed['input_pins'] = copy.deepcopy(expectation['input_pins'])
+-    records = (result, empty_result, stdout, stderr, empty_stdout, prefix_stdout,
+-               nonempty_stderr, receipt, input_a, same)
++    observed['source_pins'], observed['input_pins'] = copy.deepcopy(expectation['source_pins']), copy.deepcopy(expectation['input_pins'])
++    records = (result, empty_result, stdout, stderr, empty_stdout, prefix_stdout, nonempty_stderr, receipt, input_a, same)
+@@ -968,6 +991,4 @@
+-    ctx.ca = {'expectation': expectation, 'observed': observed, 'result': result,
+-              'empty_result': empty_result, 'stdout': stdout, 'stderr': stderr,
+-              'empty_stdout': empty_stdout, 'prefix_stdout': prefix_stdout,
+-              'nonempty_stderr': nonempty_stderr, 'receipt': receipt, 'input_a': input_a,
+-              'same': same, 'empty_job_path': empty_job.path, 'no_job_path': no_job.path,
+-              'path': d.path, 'snapshot': snapshot}
++    ctx.ca = {'expectation': expectation, 'observed': observed, 'result': result, 'empty_result': empty_result,
++              'stdout': stdout, 'stderr': stderr, 'empty_stdout': empty_stdout, 'prefix_stdout': prefix_stdout,
++              'nonempty_stderr': nonempty_stderr, 'receipt': receipt, 'input_a': input_a, 'same': same,
++              'empty_job_path': empty_job.path, 'no_job_path': no_job.path, 'path': d.path, 'snapshot': snapshot}
+@@ -997,3 +1018,2 @@
+-    callback, extras = r.read_bytes, {}
+-    capture = ctx.ns['capture4']['audit_capture']
+-    wrong = _sha(b'other')
++    callback = r.read_bytes
++    capture, wrong = ctx.ns['capture4']['audit_capture'], _sha(b'other')
+@@ -1016 +1036 @@
+-        return {'outcome': values, 'reader_unresolved': r.report()['unresolved']}
++        return {'outcome': values, 'reader_state': _state(r.report())}
+@@ -1031 +1051 @@
+-        return {'outcome': values, 'reader_unresolved': r.report()['unresolved']}
++        return {'outcome': values, 'reader_state': _state(r.report())}
+@@ -1070,2 +1090 @@
+-        d = ctx.fx.mkdir('ca61')
+-        pins = {}
++        d, pins = ctx.fx.mkdir('ca61'), {}
+@@ -1086 +1105 @@
+-            value = 'SYNTHETIC_FIXTURE leaf'
++            value = 'SYNTHETIC leaf'
+@@ -1092 +1111 @@
+-        shared = {'v': [1, 2, {'SYNTHETIC_FIXTURE': True}]}
++        shared = {'v': [1, 2, {'SYNTHETIC': True}]}
+@@ -1108 +1127 @@
+-        return {'outcome': values, 'reader_unresolved': r.report()['unresolved']}
++        return {'outcome': values, 'reader_state': _state(r.report())}
+@@ -1120 +1139 @@
+-        o['extra'] = 'SYNTHETIC_FIXTURE extra'
++        o['extra'] = 'SYNTHETIC extra'
+@@ -1129 +1148 @@
+-        callback = lambda path, cap: _raise(ValueError, 'LABELLED defined read refusal')()
++        callback = lambda path, cap: _raise_instance(ValueError('LABELLED defined read refusal'))()
+@@ -1136 +1155 @@
+-        callback = lambda path, cap: _raise(KeyError, 'LABELLED lookup fault')()
++        callback = lambda path, cap: _raise_instance(KeyError('LABELLED lookup fault'))()
+@@ -1139,5 +1158,4 @@
+-        callback = lambda path, cap: _raise(InjectedBaseInterrupt, 'LABELLED base interrupt')()
+-    elif case_id in ('CA99', 'CA100'):
+-        e['input_pins'][fixture['receipt']['path']] = fixture['receipt']['sha256']
+-        if case_id == 'CA99':
+-            e['input_pins'][fixture['result']['path']] = fixture['result']['sha256']
++        callback = lambda path, cap: _raise_instance(InjectedBaseInterrupt('LABELLED base interrupt'))()
++    elif case_id == 'CA99':
++        e['input_pins'].update({fixture['receipt']['path']: fixture['receipt']['sha256'],
++                                fixture['result']['path']: fixture['result']['sha256']})
+@@ -1145,4 +1163,16 @@
+-        reads = []
+-        def counted(path, cap):
+-            reads.append((path, cap))
+-            if case_id == 'CA100' and path == fixture['receipt']['path']:
++        supplied = set()
++        def single_use(path, cap):
++            if path in supplied:
++                raise OSError('LABELLED repeated coherent acquisition refused')
++            supplied.add(path)
++            return r.read_bytes(path, cap)
++        callback = single_use
++    elif case_id == 'CA100':
++        e['input_pins'][fixture['receipt']['path']] = fixture['receipt']['sha256']
++        o['input_pins'] = copy.deepcopy(e['input_pins'])
++        failed = set()
++        def latched_failure(path, cap):
++            if path == fixture['receipt']['path']:
++                if path in failed:
++                    raise InjectedConsumerFault('LABELLED attempted replay of failed acquisition')
++                failed.add(path)
+@@ -1151 +1181 @@
+-        callback = counted
++        callback = latched_failure
+@@ -1154 +1184 @@
+-        snapshot, calls = dict(fixture['snapshot']), []
++        snapshot = dict(fixture['snapshot'])
+@@ -1156 +1185,0 @@
+-            calls.append(path)
+@@ -1158 +1187 @@
+-                raise OSError('LABELLED snapshot unavailable/type/cap')
++                raise OSError('LABELLED snapshot unavailable/cap')
+@@ -1161,2 +1189,0 @@
+-        first_reads = calls.count(fixture['stdout']['path'])
+-        calls.clear()
+@@ -1165,2 +1192 @@
+-        return {'outcome': [first, second], 'reader_unresolved': None,
+-                'stdout_reads_per_call': [first_reads, calls.count(fixture['stdout']['path'])]}
++        return {'outcome': [first, second], 'reader_state': 'NOT_APPLICABLE'}
+@@ -1171,2 +1197 @@
+-        o['settlement']['unresolved'] = ['SYNTHETIC-unresolved-identity']
+-        o['resolved_argv'] = ['SYNTHETIC mismatch']
++        o['settlement']['unresolved'], o['resolved_argv'] = ['SYNTHETIC-unresolved'], ['SYNTHETIC mismatch']
+@@ -1210 +1235 @@
+-        return {'outcome': values, 'reader_unresolved': r.report()['unresolved']}
++        return {'outcome': values, 'reader_state': _state(r.report())}
+@@ -1214,11 +1239 @@
+-    if case_id == 'CA99':
+-        roles = {fixture[key]['path']: role for key, role in
+-                 (('stdout', 'stdout'), ('result', 'result'), ('stderr', 'stderr'),
+-                  ('receipt', 'receipt'), ('input_a', 'input-a'))}
+-        roles[PINS['capture4'][0]] = 'capture4'
+-        extras = {'read_roles': [roles.get(path, path) for path, _ in reads],
+-                  'caps': [cap for _, cap in reads],
+-                  'max_reads_per_path': max((sum(p == path for p, _ in reads) for path, _ in reads), default=0)}
+-    elif case_id == 'CA100':
+-        extras = {'receipt_reads': sum(path == fixture['receipt']['path'] for path, _ in reads)}
+-    return {'outcome': value, 'reader_unresolved': r.report()['unresolved'] if r is not None else None, **extras}
++    return {'outcome': value, 'reader_state': _state(r.report()) if r is not None else 'NOT_APPLICABLE'}
+@@ -1229,5 +1244,14 @@
+-    plan, original = ctx.sources['mols39_plan_v5'], ctx.sources['original_dm21']
+-    if case_id in ('SC32', 'SC33'):
+-        primary = InjectedReadFault if case_id == 'SC32' else InjectedBaseInterrupt
+-        message = 'LABELLED primary read fault' if case_id == 'SC32' else 'LABELLED base interrupt'
+-        rules = [_rule('read', 'before', 'ext4_gate.py', _raise(primary, message))]
++    primary = InjectedReadFault('LABELLED primary read fault') if case_id == 'SC32' else InjectedBaseInterrupt('LABELLED base interrupt')
++    rules = [_rule('read', 'before', 'ext4_gate.py', _raise_instance(primary))]
++    if case_id == 'SC32':
++        rules.append(_rule('close', 'after', 'ext4_gate.py', _raise_instance(InjectedCloseFault('LABELLED close fault'))))
++    r, proxy = ctx.reader(rules=rules)
++    try:
++        value, exc = _attempt(lambda: schema(ctx.sources['mols39_plan_v5'], 'DATA', {}, [],
++                                           ctx.sources['original_dm21'], ctx.check, r.read_bytes))
++        report = r.report()
++        row = _file_observation(report, PINS['ext4_gate'][0])
++        native = proxy.native('ext4_gate.py')
++        observed = {'outcome': {'exception': type(exc).__name__} if exc is not None else value,
++                    'primary_error_preserved': row is not None and row['error'] == repr(primary),
++                    'native_gate_identity_matches_pinned_acquisition': _identity_matches(native, ctx.input_metadata['ext4_gate'])}
+@@ -1235,40 +1259,13 @@
+-            rules.append(_rule('close', 'after', 'ext4_gate.py', _raise(InjectedCloseFault, 'LABELLED close fault')))
+-        r, proxy = ctx.reader(rules=rules)
+-        try:
+-            value = _outcome(lambda: schema(plan, 'DATA', {}, [], original, ctx.check, r.read_bytes))
+-            report = r.report()
+-            observed = {'outcome': value, 'reader_unresolved': report['unresolved'],
+-                        'unknown_paths': [row['path'] for row in report['resources'] if row['state'] == 'UNKNOWN']}
+-            if case_id == 'SC32':
+-                observed.update(observation_error_prefix=_prefix(report['observations'][-1]['error']),
+-                                close_error_prefix=_prefix(report['resources'][-1]['close_error']))
+-            else:
+-                ctx.retained_exception_readers.append(r)
+-        finally:
+-            proxy.clear_orphans()
+-        observed.update(proxy_accounting_ok=proxy.accounting_ok(), orphans_cleared=proxy.orphans_cleared)
+-        ctx.retain_report(case_id, report)
+-        return observed
+-    reads, r = [], None
+-    check = ctx.check
+-    if case_id == 'SC01':
+-        check = None
+-    elif case_id == 'SC04':
+-        check = lambda: False
+-    elif case_id == 'SC05':
+-        clock = _Clock(ctx.check)
+-        clock.arm()
+-        check = clock.check
+-    elif case_id == 'SC06':
+-        plan += b' '
+-    elif case_id == 'SC19':
+-        r, _ = ctx.reader()
+-    def callback(path, cap):
+-        reads.append((path, cap))
+-        return r.read_bytes(path, cap) if r is not None else ctx.sources['ext4_gate']
+-    item = 'CAL-beta' if case_id == 'SC19' else 'DATA'
+-    value = _outcome(lambda: schema(plan, item, {}, [], original, check, callback))
+-    observed = {'outcome': value, 'gate_reads': len(reads),
+-                'reader_unresolved': r.report()['unresolved'] if r is not None else None}
+-    if case_id == 'SC19':
+-        observed['gate_path_and_cap_bound'] = reads == [(PINS['ext4_gate'][0], 1 << 20)]
++            unknown = _unknown_target(report, PINS['ext4_gate'][0])
++            observed.update(unresolved_present=bool(report['unresolved']), unknown_gate_leaf_retained=unknown is not None,
++                            cleanup_error_type=_error_type(unknown['close_error']) if unknown else None)
++        else:
++            ctx.retained_exception_readers.append(r)
++            observed.update(same_primary_exception=exc is primary, all_resources_closed=_all_closed(report),
++                            unresolved_empty=not report['unresolved'])
++    finally:
++        proxy.clear_orphans()
++    if case_id == 'SC32':
++        observed['original_leaf_closed_once'] = proxy.closed_once(native)
++    observed['all_native_handles_closed_once'] = proxy.accounting_ok()
++    ctx.retain_report(case_id, report)
+@@ -1278,3 +1275,10 @@
+-class _DelegatingReader:
+-    """Labelled report fault/arming only. Never supplies mock bytes or success."""
+-    def __init__(self, reader, clock, fail_reports=(), arm_report=None):
++class _PublicFaultReader:
++    """Labelled public-method fault timing; no private ledger or count oracle.
++
++    A completed real census may perform an additive namespace mutation. A fresh
++    actual reread (same path, successful second native acquisition) arms a later
++    report fault/cutoff. These are injection triggers only, not tested counts or
++    forwarding expectations. No mock bytes or fabricated consumer result.
++    """
++    def __init__(self, reader, clock, *, census_actions=(), before_read=None,
++                 report_fail_after_reread=False, arm_after_reread_report=False):
+@@ -1282,2 +1286,5 @@
+-        self.fail_reports, self.arm_report = set(fail_reports), arm_report
+-        self.report_calls = 0
++        self.census_actions = list(census_actions)
++        self.before_read = before_read
++        self.report_fail_after_reread = report_fail_after_reread
++        self.arm_after_reread_report = arm_after_reread_report
++        self.native_paths, self.fresh_reread = set(), False
+@@ -1286 +1293,7 @@
+-        return self.reader.read_bytes(path, cap)
++        if self.before_read is not None:
++            self.before_read(path)
++        value = self.reader.read_bytes(path, cap)
++        if path in self.native_paths:
++            self.fresh_reread = True
++        self.native_paths.add(path)
++        return value
+@@ -1292 +1305,6 @@
+-        return self.reader.directory_names(path, cap)
++        names = self.reader.directory_names(path, cap)
++        if self.census_actions:
++            action = self.census_actions.pop(0)
++            if action is not None:
++                action()
++        return names
+@@ -1295,5 +1313,4 @@
+-        self.report_calls += 1
+-        if self.report_calls in self.fail_reports:
+-            raise InjectedConsumerFault('LABELLED consumer/report fault')
+-        result = self.reader.report()
+-        if self.report_calls == self.arm_report:
++        if self.fresh_reread and self.report_fail_after_reread:
++            raise InjectedConsumerFault('LABELLED report fault after fresh native reread')
++        value = self.reader.report()
++        if self.fresh_reread and self.arm_after_reread_report:
+@@ -1301 +1318 @@
+-        return result
++        return value
+@@ -1319,2 +1336 @@
+-    own_paths = [d.path + '/' + name for name in
+-                 ('expectation.json', 'observation.json', 'context.json', 'freeze.json')]
++    own_paths = [d.path + '/' + name for name in ('expectation.json', 'observation.json', 'context.json', 'freeze.json')]
+@@ -1323,0 +1340 @@
++    prefix_authority = []
+@@ -1327 +1344,3 @@
+-        context['original_dm21']['sha256'] = _sha(b'other')
++        wrong_original = d.write('wrong-original.raw', ctx.sources['original_dm21'] + b'SYNTHETIC_WRONG_ORIGINAL\n')
++        context['original_dm21'] = _ref(wrong_original)
++        immutable.add(wrong_original['path'])
+@@ -1329 +1348 @@
+-        audit = d.write('synthetic-prefix-audit.json', b'{"label":"SYNTHETIC_FIXTURE not a canonical audit"}\n')
++        audit = d.write('synthetic-prefix-audit.json', b'{"label":"SYNTHETIC_FIXTURE not canonical audit evidence"}\n')
+@@ -1331,0 +1351 @@
++        prefix_authority = [{'item': 'DATA', 'audit_sha256': audit['sha256']} for _ in range(20)]
+@@ -1346,3 +1366,2 @@
+-    if case_id in ('AD18', 'AD20', 'AD22'):
+-        immutable.add(d.path + '/derivation.json')
+-        immutable.add(d.path + '/upstream-observation.json')
++    if case_id in ('AD18', 'AD22'):
++        immutable.update((d.path + '/derivation.json', d.path + '/upstream-observation.json'))
+@@ -1350 +1369 @@
+-              'job_dir': job.path, 'immutable_paths': sorted(immutable), 'prefix_authority': []}
++              'job_dir': job.path, 'immutable_paths': sorted(immutable), 'prefix_authority': prefix_authority}
+@@ -1363 +1382 @@
+-    if case_id in ('AD18', 'AD20', 'AD22'):
++    if case_id in ('AD18', 'AD22'):
+@@ -1371,4 +1390 @@
+-        if case_id == 'AD20':
+-            manifest['expectation_sha256'] = '0' * 64
+-        manifest_rec = d.write('derivation.json', _json_bytes(manifest))
+-        context['derivation'] = _ref(manifest_rec)
++        context['derivation'] = _ref(d.write('derivation.json', _json_bytes(manifest)))
+@@ -1382,2 +1398 @@
+-    if case_id == 'AD30':
+-        d.write('poison.bin', DATA_BYTES)
++    poison = d.write('poison.bin', DATA_BYTES) if case_id == 'AD30' else None
+@@ -1385 +1400 @@
+-            'context': context, 'inputs': inputs}
++            'context': context, 'inputs': inputs, 'expectation_record': er, 'poison': poison}
+@@ -1388,7 +1403 @@
+-def _decision_probe(decision, context):
+-    synthetic = decision.get('synthetic_derivation')
+-    if synthetic is not None:
+-        synthetic = {'requested': synthetic.get('requested'), 'verified': synthetic.get('verified'),
+-                     'actual_exit_is_measured': synthetic.get('actual_exit_is_measured'),
+-                     'manifest_matches_context_ref': _exact(synthetic.get('manifest'), context.get('derivation'))}
+-    report = decision.get('reader')
++def _decision_probe(decision):
+@@ -1396,6 +1405 @@
+-            'error_stages': [row.get('stage') for row in decision.get('errors', [])],
+-            'tail_fallback': 'consumer_pins' not in decision, 'nested_exit': decision.get('nested_exit'),
+-            'synthetic': synthetic,
+-            'selected_artifacts': sorted(decision['selected_artifacts']) if 'selected_artifacts' in decision else None,
+-            'persistence_count': len(decision['snapshot_persistence']) if 'snapshot_persistence' in decision else None,
+-            'reader_unresolved': report.get('unresolved') if type(report) is dict else None,
++            'reader_state': _state(decision.get('reader')),
+@@ -1403 +1407,2 @@
+-                                ('canonical_audit_written', 'release_authority', 'runtime_authority')]}
++                                ('canonical_audit_written', 'release_authority', 'runtime_authority')],
++            'has_retained_error': bool(decision.get('errors'))}
+@@ -1405,0 +1411,8 @@
++def _selected_bound(decision, fixture):
++    selected = decision.get('selected_artifacts', {}).get('result.json')
++    return (type(selected) is dict and selected.get('path') == fixture['result']['path']
++            and selected.get('sha256') == fixture['result']['sha256']
++            and selected.get('bytes') == fixture['result']['bytes']
++            and _exact(selected.get('actual_metadata'), fixture['result']['metadata']))
++
++
+@@ -1409,5 +1422,2 @@
+-    proxy, extras = None, {}
+-    rules = None
+-    if case_id == 'AD30':
+-        rules = [_rule('open', 'after', 'poison.bin',
+-                       _raise(InjectedAcquisitionFault, 'LABELLED unexpected acquisition exception'))]
++    rules = ([_rule('open', 'after', 'poison.bin', _raise_instance(
++        InjectedAcquisitionFault('LABELLED unexpected acquisition exception')))] if case_id == 'AD30' else None)
+@@ -1415,2 +1425 @@
+-    reader = r
+-    inputs = fixture['inputs']
++    reader, inputs = r, fixture['inputs']
+@@ -1418 +1427 @@
+-    hook_state = {'fired': False}
++    prior, poison_unknown, extras = None, None, {}
+@@ -1422,2 +1431 @@
+-            stale = r.last_file(fixture['result']['path'])
+-            extras.update(stale_last_file_completed=stale['completed'], stale_last_file_nlink=stale['after']['nlink'])
++            prior = r.last_file(fixture['result']['path'])
+@@ -1425,14 +1433,7 @@
+-    if case_id in ('AD23', 'AD24'):
+-        needed = 1 if case_id == 'AD23' else 2
+-        def namespace_hook(_):
+-            # Instrumentation timing only: observe the exact reader's retained ledger,
+-            # not a private validator call or a source/wiring acceptance oracle.
+-            count = sum(row['kind'] == 'directory' and row['path'] == fixture['job'].path and row['completed']
+-                        for row in r._observations)
+-            if not hook_state['fired'] and count >= needed:
+-                hook_state['fired'] = True
+-                if case_id == 'AD23':
+-                    fixture['job'].write('late.bin', b'SYNTHETIC_FIXTURE additive namespace fault\n')
+-                else:
+-                    fixture['links'].hardlink(fixture['job'], 'result.json', 'result-hl2.json')
+-        clock.hook = namespace_hook
++    primary = InjectedBaseInterrupt('LABELLED base interrupt') if case_id == 'AD36' else InjectedConsumerFault('LABELLED consumer fault')
++    if case_id == 'AD23':
++        reader = _PublicFaultReader(r, clock, census_actions=(
++            lambda: fixture['job'].write('late.bin', b'SYNTHETIC additive namespace fault\n'),))
++    elif case_id == 'AD24':
++        reader = _PublicFaultReader(r, clock, census_actions=(None,
++            lambda: fixture['links'].hardlink(fixture['job'], 'result.json', 'result-hl2.json')))
+@@ -1440,6 +1441,4 @@
+-        def consumer_hook(current_clock):
+-            if not hook_state['fired'] and any(row['path'] == fixture['stdout']['path'] for row in r._observations):
+-                hook_state['fired'] = True
+-                current_clock.once = (InjectedConsumerFault('LABELLED consumer/report fault') if case_id == 'AD35'
+-                                      else InjectedBaseInterrupt('LABELLED base interrupt'))
+-        clock.hook = consumer_hook
++        def before_capture(path):
++            if path == fixture['stdout']['path']:
++                raise primary
++        reader = _PublicFaultReader(r, clock, before_read=before_capture)
+@@ -1447,2 +1446,4 @@
+-        def reference_hook(current_clock):
+-            if current_clock.calls == 2:
++        mutated = [False]
++        def mutate_refs(_):
++            if not mutated[0]:
++                mutated[0] = True
+@@ -1451 +1452,5 @@
+-        clock.hook = reference_hook
++        reader = _PublicFaultReader(r, clock, before_read=mutate_refs)
++    elif case_id == 'AD33':
++        reader = _PublicFaultReader(r, clock, report_fail_after_reread=True)
++    elif case_id == 'AD34':
++        reader = _PublicFaultReader(r, clock, arm_after_reread_report=True)
+@@ -1453,2 +1458,2 @@
+-        exc = _attempt(lambda: r.read_bytes(fixture['dir'].path + '/poison.bin', 64))[1]
+-        extras['poison_exception'] = type(exc).__name__
++        poison_exc = _attempt(lambda: r.read_bytes(fixture['poison']['path'], 64))[1]
++        poison_unknown = _unknown_target(r.report(), fixture['poison']['path'])
+@@ -1456,4 +1461 @@
+-    if case_id == 'AD33':
+-        reader = _DelegatingReader(r, clock, fail_reports=(3, 4))
+-    elif case_id == 'AD34':
+-        reader = _DelegatingReader(r, clock, arm_report=3)
++        extras['poison_exception_type'] = _exception_type(poison_exc)
+@@ -1467,5 +1469,3 @@
+-                row = next(row for row in reversed(report['observations']) if row['path'] == fixture['stdout']['path'])
+-                observed = {'exception': type(exc).__name__, 'decision_returned': False,
+-                            'reader_unresolved': report['unresolved'],
+-                            'stdout_observation_error_prefix': _prefix(row['error']),
+-                            'stdout_observation_completed': row['completed']}
++                observed = {'exception_type': _exception_type(exc), 'same_primary_exception': exc is primary,
++                            'reader_report_available_after_exception': type(report) is dict,
++                            'known_resources_settled': _settled(report), 'unresolved_empty': not report['unresolved']}
+@@ -1474,2 +1474,2 @@
+-            return {'unexpected_exception': _pair(exc), 'reader_unresolved': r.report()['unresolved']}
+-        observed = _decision_probe(decision, fixture['context'])
++            return {'unexpected_exception_type': _exception_type(exc), 'reader_state': _state(r.report())}
++        observed = _decision_probe(decision)
+@@ -1477,12 +1477,34 @@
+-            observed['selected_sha_matches_written'] = decision['selected_artifacts']['result.json']['sha256'] == fixture['result']['sha256']
+-        elif case_id in ('AD01', 'AD02'):
+-            observed.update(reader_calls=r.report()['calls'], input_pins_null=decision.get('input_pins') is None)
+-        elif case_id == 'AD28':
+-            observed['context_error_contains_cap_refusal'] = any(
+-                row.get('stage') == 'context_authority' and
+-                'cached immutable acquisition exceeds requested cap' in row.get('error', '')
+-                for row in decision['errors'])
+-        elif case_id in ('AD23', 'AD24', 'AD35'):
+-            observed['hook_fired'] = hook_state['fired']
+-        elif case_id == 'AD37':
+-            observed['reader_calls'] = r.report()['calls']
++            observed['selected_actual_bytes_and_identity_bound'] = _selected_bound(decision, fixture)
++        elif case_id == 'AD02':
++            actual = r.last_file(fixture['expectation_record']['path'])
++            observed['actual_expectation_bytes_retained'] = (actual is not None and actual['completed'] is True
++                and actual['sha256'] == fixture['expectation_record']['sha256']
++                and _exact(actual['after'], fixture['expectation_record']['metadata']))
++        elif case_id == 'AD16':
++            observed['stale_success_retained_but_not_selected'] = (prior is not None and prior['completed'] is True
++                and _exact(prior, r.last_file(fixture['result']['path']))
++                and 'result.json' not in decision.get('selected_artifacts', {}))
++        elif case_id in ('AD18', 'AD22'):
++            synthetic = decision.get('synthetic_derivation')
++            observed['synthetic_evidence'] = ({'requested': synthetic.get('requested'), 'verified': synthetic.get('verified'),
++                'actual_exit_is_measured': synthetic.get('actual_exit_is_measured'),
++                'manifest_matches_frozen_ref': _exact(synthetic.get('manifest'), fixture['context']['derivation']),
++                'nested_kind': decision.get('nested_exit', {}).get('kind')} if type(synthetic) is dict else None)
++        elif case_id == 'AD23':
++            before, after = decision.get('directory_before'), decision.get('directory_after')
++            observed['actual_census_retains_added_name'] = (type(before) is dict and type(after) is dict
++                and 'late.bin' not in before['names'] and 'late.bin' in after['names'])
++        elif case_id == 'AD24':
++            report = r.report()
++            failed = _file_observation(report, fixture['result']['path'], completed=False)
++            actual = _meta(fixture['job'].lstat('result.json'))
++            observed['selected_original_identity_retained'] = _selected_bound(decision, fixture)
++            observed['failed_read_retains_changed_link_metadata'] = (failed is not None and failed['before'] is not None
++                and actual['nlink'] > 1 and _exact(failed['before'], actual))
++        elif case_id == 'AD25':
++            observed['actual_result_identity_retained'] = _selected_bound(decision, fixture)
++        elif case_id == 'AD30':
++            observed['original_poison_uncertainty_retained'] = _same_unknown(r.report(), poison_unknown)
++            observed['native_poison_identity_matches_fixture'] = _identity_matches(proxy.native('poison.bin'), fixture['poison']['metadata'])
++        elif case_id == 'AD33':
++            observed['caller_reader_report_available'] = type(r.report()) is dict
+@@ -1490,3 +1512,3 @@
+-            observed.update(input_pins_equal_original=_exact(decision.get('input_pins'), original_inputs),
+-                            caller_inputs_mutated=not _exact(inputs, original_inputs),
+-                            input_pins_distinct_object=decision.get('input_pins') is not inputs)
++            inputs['expectation']['sha256'] = _sha(b'further caller mutation after return')
++            inputs['context'] = None
++            observed['decision_input_pins_equal_frozen_original'] = _exact(decision.get('input_pins'), original_inputs)
+@@ -1494,2 +1515,0 @@
+-        # Keep decision fields plus the complete report when <=64KiB; oversize is
+-        # explicitly digest-labelled by retain_report, never asserted full evidence.
+@@ -1501 +1521 @@
+-        observed.update(proxy_accounting_ok=proxy.accounting_ok(), orphans_cleared=proxy.orphans_cleared)
++        observed['all_native_handles_closed_once'] = proxy.accounting_ok()
+@@ -1516,2 +1536,2 @@
+-    required = (os.open, os.mkdir, os.stat, os.symlink, os.link, os.mkfifo)
+-    if any(function not in os.supports_dir_fd for function in required):
++    if any(function not in os.supports_dir_fd for function in
++           (os.open, os.mkdir, os.stat, os.symlink, os.link, os.mkfifo)):
+@@ -1520 +1540 @@
+-        raise HarnessRefusal('required scandir-fd or NOFOLLOW link operation unsupported')
++        raise HarnessRefusal('required scandir-fd or NOFOLLOW link unsupported')
+@@ -1523 +1543 @@
+-            raise HarnessRefusal('required os flag missing: ' + flag)
++            raise HarnessRefusal('required os flag missing')
+@@ -1528,2 +1548 @@
+-    bound = MAX_SUMMARY if summary else MAX_CASE_LINE
+-    if len(data) > bound or output_state['bytes'] + len(data) > MAX_STDOUT:
++    if len(data) > (MAX_SUMMARY if summary else MAX_CASE_LINE) or output_state['bytes'] + len(data) > MAX_STDOUT:
+@@ -1537 +1556 @@
+-    value = {'format': 'beta-consumer-control-case-v1', 'id': case['id'], 'type': case['type'],
++    value = {'format': 'beta-consumer-control-case-v2', 'id': case['id'], 'type': case['type'],
+@@ -1544 +1563 @@
+-            raise HarnessBudgetExceeded('case detail exceeds64KiB')
++            raise HarnessBudgetExceeded('case detail cap')
+@@ -1551,2 +1570 @@
+-    """Explicit future entrypoint. No caller may treat exit0 as qualification."""
+-    start = time.monotonic()
++    start, owned, output_state, ctx = time.monotonic(), _Owned(), {'bytes': 0}, None
+@@ -1557 +1575 @@
+-    owned, output_state, ctx = _Owned(), {'bytes': 0}, None
++    loader = None
+@@ -1559,4 +1577,2 @@
+-        if len(sys.argv) != 1:
+-            raise HarnessRefusal('no arguments accepted')
+-        if sys.flags.isolated != 1 or sys.flags.dont_write_bytecode != 1:
+-            raise HarnessRefusal('isolated -I and no-bytecode -B required')
++        if len(sys.argv) != 1 or sys.flags.isolated != 1 or sys.flags.dont_write_bytecode != 1:
++            raise HarnessRefusal('no arguments; -I -B required')
+@@ -1571,0 +1588,2 @@
++        if owned.errors:
++            raise HarnessRefusal('bootstrap harness descriptor uncertainty')
+@@ -1574 +1592 @@
+-        sources, namespaces = {'reader': reader_source}, {'reader': reader_ns}
++        sources, namespaces, input_metadata = {'reader': reader_source}, {'reader': reader_ns}, {}
+@@ -1581,0 +1600 @@
++            input_metadata[key] = loader.last_file(path)['after']
+@@ -1587 +1606 @@
+-            raise HarnessRefusal('operative controls plan pin mismatch')
++            raise HarnessRefusal('operative plan pin mismatch')
+@@ -1589,2 +1608,2 @@
+-        deferred_ids = tuple('DF' + str(index).zfill(2) for index in range(1, 16)) + tuple(
+-            'DP' + str(index).zfill(2) for index in range(24))
++        deferred_ids = tuple('DF' + str(i).zfill(2) for i in range(1, 16)) + tuple(
++            'DP' + str(i).zfill(2) for i in range(24)) + ('DL01',)
+@@ -1593,2 +1612,2 @@
+-        if plan.get('format') != 'beta-consumer-controls-plan-v2' or type(cases) is not list:
+-            raise HarnessRefusal('operative plan format/cases')
++        if plan.get('format') != 'beta-consumer-controls-plan-v3' or type(cases) is not list:
++            raise HarnessRefusal('operative plan format')
+@@ -1596 +1615 @@
+-            raise HarnessRefusal('harness and frozen plan case set/order differ')
++            raise HarnessRefusal('frozen plan/harness case order mismatch')
+@@ -1598 +1617 @@
+-            raise HarnessRefusal('case-line worst-case stdout exceeds1MiB')
++            raise HarnessRefusal('worst-case stdout exceeds cap')
+@@ -1600,2 +1619,2 @@
+-            is_deferred = case['id'] in deferred_ids
+-            if is_deferred != case['type'].startswith('DEFERRED_'):
++            deferred = case['id'] in deferred_ids
++            if deferred != case['type'].startswith('DEFERRED_'):
+@@ -1603 +1622 @@
+-            if not is_deferred and type(case.get('expected')) is not dict:
++            if not deferred and type(case.get('expected')) is not dict:
+@@ -1605,2 +1624,2 @@
+-            if is_deferred and not all(key in case for key in
+-                                       ('expected_when_available', 'missing_genuine_artifact', 'unreachable_entrypoint', 'prerequisites')):
++            if deferred and not all(key in case for key in
++                                    ('expected_when_available', 'missing_genuine_artifact', 'unreachable_entrypoint', 'prerequisites')):
+@@ -1608,5 +1627,4 @@
+-        pinned_plan = _parse(sources['mols39_plan_v5'])
+-        if tuple(pinned_plan['order']) != ORDER:
+-            raise HarnessRefusal('pinned MOLS plan order disagrees')
+-        if loader.report()['unresolved'] != []:
+-            raise HarnessRefusal('bootstrap reader unresolved acquisition/close')
++        if tuple(_parse(sources['mols39_plan_v5'])['order']) != ORDER:
++            raise HarnessRefusal('pinned MOLS plan order mismatch')
++        if loader.report()['unresolved'] or owned.errors:
++            raise HarnessRefusal('loader ownership uncertainty')
+@@ -1614 +1632 @@
+-        ctx = _Context(owned, check, sources, namespaces)
++        ctx = _Context(owned, check, sources, namespaces, input_metadata)
+@@ -1615,0 +1634,2 @@
++        if owned.errors:
++            raise HarnessRefusal('harness root ownership uncertainty')
+@@ -1618 +1638 @@
+-            'format': 'beta-negative-controls-run-start-v1', 'plan_sha256': PLAN_SHA,
++            'format': 'beta-negative-controls-run-start-v2', 'plan_sha256': PLAN_SHA,
+@@ -1620,4 +1640,2 @@
+-            'interpreter': sys.executable, 'isolated': sys.flags.isolated,
+-            'dont_write_bytecode': sys.flags.dont_write_bytecode,
+-            'protected_before': protected_before, 'qualification': 'NOT_QUALIFIED',
+-            'authority': 'NEGATIVE_CONTROL_AND_BOUNDARY_EVIDENCE_ONLY'}))
++            'interpreter': sys.executable, 'protected_before': protected_before,
++            'qualification': 'NOT_QUALIFIED', 'authority': 'NEGATIVE_BOUNDARY_EVIDENCE_ONLY'}))
+@@ -1625,4 +1643 @@
+-        try:
+-            owned.close_since(0)
+-        except BaseException as close_exc:
+-            owned.errors.append({'stage': 'precase_cleanup', 'error': repr(close_exc)})
++        owned.close_since(0)
+@@ -1630,3 +1645,3 @@
+-        _emit({'format': 'beta-consumer-controls-summary-v1', 'status': 'REFUSED_BEFORE_CASES',
+-               'exit_code': code, 'error': _pair(exc), 'harness_close_errors': owned.errors,
+-               'qualification': 'NOT_QUALIFIED', 'runtime_authority': False}, output_state, summary=True)
++        _emit({'format': 'beta-consumer-controls-summary-v2', 'status': 'REFUSED_BEFORE_CASES',
++               'exit_code': code, 'exception_type': type(exc).__name__, 'diagnostic': str(exc),
++               'harness_close_errors': owned.errors, 'qualification': 'NOT_QUALIFIED'}, output_state, summary=True)
+@@ -1635,6 +1650,11 @@
+-        _emit({'format': 'beta-consumer-controls-summary-v1', 'status': 'BOOTSTRAP_BASE_EXCEPTION',
+-               'exception': type(exc).__name__, 'qualification': 'NOT_QUALIFIED'}, output_state, summary=True)
+-        try:
+-            owned.close_since(0)
+-        finally:
+-            raise
++        retained = None
++        if loader is not None:
++            try:
++                retained = loader.report()
++            except Exception as report_exc:
++                retained = {'report_unavailable': type(report_exc).__name__}
++        _emit({'format': 'beta-consumer-controls-summary-v2', 'status': 'BOOTSTRAP_BASE_EXCEPTION',
++               'exception_type': type(exc).__name__, 'reader_state': _state(retained),
++               'qualification': 'NOT_QUALIFIED'}, output_state, summary=True)
++        owned.close_since(0)
++        raise
+@@ -1644,3 +1664,2 @@
+-            case_start = time.monotonic()
+-            mark = len(owned.rows)
+-            observed, status = None, None
++            case_start, mark = time.monotonic(), len(owned.rows)
++            status, observed = None, None
+@@ -1648,3 +1667,3 @@
+-                status = 'DEFERRED_NOT_EXECUTED'
+-                observed = {'executed': False, 'missing_genuine_artifact': case['missing_genuine_artifact'],
+-                            'unreachable_entrypoint': case['unreachable_entrypoint']}
++                status, observed = 'DEFERRED_NOT_EXECUTED', {'executed': False,
++                    'missing_genuine_artifact': case['missing_genuine_artifact'],
++                    'unreachable_entrypoint': case['unreachable_entrypoint']}
+@@ -1665 +1684 @@
+-                    check()  # original deadline after EVERY case, before matching/output
++                    check()
+@@ -1667 +1686 @@
+-                        raise HarnessBudgetExceeded('retained-byte budget latched')
++                        raise HarnessBudgetExceeded('retained budget latched')
+@@ -1673 +1692 @@
+-                    observed = {'case_started': True, 'error': str(exc)}
++                    observed = {'case_started': True, 'exception_type': type(exc).__name__}
+@@ -1676 +1695 @@
+-                    observed = {'case_started': True, 'error': str(exc)}
++                    observed = {'case_started': True, 'exception_type': type(exc).__name__}
+@@ -1678 +1697 @@
+-                    status, observed = 'ERROR', {'exception': _pair(exc)}
++                    status, observed = 'ERROR', {'exception_type': type(exc).__name__, 'diagnostic': str(exc)}
+@@ -1687,4 +1706,9 @@
+-                            retained = {'report_unavailable': repr(report_exc)}
+-                    _emit_case(case, 'BASE_EXCEPTION', {'exception': type(exc).__name__,
+-                               'reader_unresolved': retained.get('unresolved') if type(retained) is dict else None},
+-                               time.monotonic() - case_start, ctx, output_state)
++                            retained = {'report_unavailable': type(report_exc).__name__}
++                    # Compact emergency line; no detail allocation may replace the
++                    # module's BaseException. Cleanup also cannot replace it.
++                    try:
++                        _emit({'format': 'beta-consumer-control-case-v2', 'id': case['id'], 'type': case['type'],
++                               'status': 'BASE_EXCEPTION', 'exception_type': type(exc).__name__,
++                               'reader_state': _state(retained), 'qualification': 'NOT_QUALIFIED'}, output_state)
++                    finally:
++                        owned.close_since(mark)
+@@ -1693,2 +1717,9 @@
+-                    # At most one attempt, even if native close raises. Never retry.
+-                    owned.close_since(mark)
++                    cleanup_exc = owned.close_since(mark)
++                if cleanup_exc is not None:
++                    status = 'ERROR'
++                    observed = {'harness_ownership_uncertainty': type(cleanup_exc).__name__}
++            try:
++                _emit_case(case, status, observed, time.monotonic() - case_start, ctx, output_state)
++            except HarnessBudgetExceeded:
++                stop = status = 'NOT_RUN_BUDGET'
++                _emit_case(case, status, {'case_output_unretained': True}, time.monotonic() - case_start, ctx, output_state)
+@@ -1696,2 +1726,0 @@
+-            _emit_case(case, status, observed, time.monotonic() - case_start, ctx, output_state)
+-            # The cutoff is not renewed for deferred lines or cleanup/output work.
+@@ -1701 +1730 @@
+-        protected_unchanged = _exact(protected_before, protected_after)
++        unchanged = _exact(protected_before, protected_after)
+@@ -1706 +1735 @@
+-        elif counts.get('MISMATCH', 0) or counts.get('ERROR', 0) or not protected_unchanged:
++        elif counts.get('MISMATCH', 0) or counts.get('ERROR', 0) or not unchanged or owned.errors:
+@@ -1712,8 +1741,7 @@
+-        summary = {'format': 'beta-consumer-controls-summary-v1', 'exit_code': code,
+-                   'status': 'NEGATIVE_CONTROLS_MATCHED_NOT_QUALIFIED' if code == 0 else 'NEGATIVE_CONTROLS_NONZERO_NOT_QUALIFIED',
+-                   'counts': counts, 'cases': len(cases), 'plan_sha256': PLAN_SHA,
+-                   'qualification': 'NOT_QUALIFIED', 'mandatory_deferred_obligations_waived': False,
+-                   'protected_unchanged': protected_unchanged, 'protected_after': protected_after,
+-                   'elapsed_s': round(time.monotonic() - start, 6), 'retained_bytes_before_summary': ctx.retained,
+-                   'stdout_bytes_before_summary': output_state['bytes'], 'evidence_root': ROOT,
+-                   'canonical_audit_written': False, 'release_authority': False,
++        summary = {'format': 'beta-consumer-controls-summary-v2', 'exit_code': code,
++                   'status': 'NEGATIVE_BOUNDARY_MATCHED_NOT_QUALIFIED' if code == 0 else 'NONZERO_NOT_QUALIFIED',
++                   'counts': counts, 'plan_sha256': PLAN_SHA, 'qualification': 'NOT_QUALIFIED',
++                   'mandatory_deferred_obligations_waived': False, 'protected_unchanged': unchanged,
++                   'protected_after': protected_after, 'elapsed_s': round(time.monotonic() - start, 6),
++                   'retained_bytes_before_summary': ctx.retained, 'stdout_bytes_before_summary': output_state['bytes'],
++                   'evidence_root': ROOT, 'canonical_audit_written': False, 'release_authority': False,
+@@ -1722 +1750 @@
+-            ctx.root.write('run-summary.json', _json_bytes(summary))
++            ctx.root.write('run-summary.json', _json_bytes({**summary, 'phase': 'PRE_FINAL_HARNESS_CLOSE_PROVISIONAL'}))
+@@ -1724 +1751,0 @@
+-            summary.update(exit_code=6, status='RETAINED_BUDGET_NOT_QUALIFIED', summary_file_written=False)
+@@ -1725,0 +1753 @@
++            summary.update(exit_code=6, status='RETAINED_BUDGET_NOT_QUALIFIED', summary_file_written=False)
+@@ -1728,2 +1755,0 @@
+-            summary.update(exit_code=3, status='HARNESS_CLOSE_UNCERTAINTY_NOT_QUALIFIED',
+-                           harness_close_errors=owned.errors)
+@@ -1730,0 +1757,2 @@
++            summary.update(exit_code=3, status='HARNESS_CLOSE_UNCERTAINTY_NOT_QUALIFIED', harness_close_errors=owned.errors)
++        summary['phase'] = 'FINAL_AFTER_HARNESS_CLOSE'

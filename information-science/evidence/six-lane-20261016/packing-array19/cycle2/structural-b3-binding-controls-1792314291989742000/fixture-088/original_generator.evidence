@@ -1,0 +1,142 @@
+#!/usr/bin/env python3
+"""Independent second enumerator (M2) of one-column placements for A2 cases whose special
+columns are all P1 = (4,4,3,...,3,2); shares no code with extend_p1.py / extend_p1q.py.
+
+Input: a gen_skel_b skeleton (row types + #empty rows). Rows (M2 order): the listed types,
+then 4-deg(v) private rows of each P0 column v, then the empty rows. Rows with identical P0
+membership form a class; their rows are interchangeable. A placement of the first special
+column = disjoint blocks A, B (4 rows) and P (2 rows), each block pairwise without a common
+P0 quad, subject to the row budget with the remaining ns-1 free special columns:
+  |T(r)| + e(r) - (ns-1) <= 2  and  |T(r)| + e(r) + (ns-1) >= 2 - L
+(e = +1 in A/B, 0 in a triple, -1 in P). Up to row symmetry a placement is a choice, for each
+class, of how many of its rows go to A, B, P (a class with a nonempty P0 set contributes at
+most one row per block). Placements are then identified under the automorphism group of the
+skeleton (P0 column permutations preserving the type multiset, found by brute force over all
+c0! permutations) and the A/B swap; one canonical representative per orbit is output.
+Usage: extend_b.py SKEL_B_JSON INDEX OUT_JSON
+"""
+import itertools
+import json
+import sys
+
+
+def main():
+    path, idx, out = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+    d = json.load(open(path))
+    sk = d["skeletons"][idx]
+    c0, L = d["c0"], d["L"]
+    q = len(d["profiles"][0])
+    P0 = [4] + [3] * (q - 1)
+    special = [p for p in d["profiles"] if list(p) != P0]
+    ns = len(special)
+    assert all(sorted(p, reverse=True) == [4, 4] + [3] * (q - 3) + [2] for p in special)
+    types = [tuple(t) for t in sk["types"]]
+    deg = [0] * c0
+    for t in types:
+        for v in t:
+            deg[v] += 1
+    member = [frozenset(t) for t in types]
+    for v in range(c0):
+        member += [frozenset([v])] * (4 - deg[v])
+    member += [frozenset()] * sk["empty"]
+    N = len(member)
+    assert N == 3 * q + 1
+    classes = []  # (member set, [rows])
+    for r, ms in enumerate(member):
+        for cl in classes:
+            if cl[0] == ms:
+                cl[1].append(r)
+                break
+        else:
+            classes.append((ms, [r]))
+    K = len(classes)
+
+    def ok_row(t, e):
+        return t + e - (ns - 1) <= 2 and t + e + (ns - 1) >= 2 - L
+
+    # per class allowed (a, b, p) counts
+    opts = []
+    for ms, rows in classes:
+        t = len(ms)
+        cap = len(rows)
+        per_block = 1 if ms else cap
+        o = []
+        for a in range(min(per_block, cap) + 1):
+            for b in range(min(per_block, cap - a) + 1):
+                for p in range(min(per_block, cap - a - b) + 1):
+                    rest = cap - a - b - p
+                    good = True
+                    if a + b and not ok_row(t, 1):
+                        good = False
+                    if p and not ok_row(t, -1):
+                        good = False
+                    if rest and not ok_row(t, 0):
+                        good = False
+                    if good:
+                        o.append((a, b, p))
+        opts.append(o)
+    results = []
+
+    def compatible(sel, k, need):
+        # blocks pairwise without common P0 quad: classes with nonempty sets in the same block
+        # must have disjoint sets
+        return True
+
+    def rec(k, sel, sa, sb, sp):
+        if sa > 4 or sb > 4 or sp > 2:
+            return
+        if k == K:
+            if sa == 4 and sb == 4 and sp == 2:
+                results.append(tuple(sel))
+            return
+        ms = classes[k][0]
+        for a, b, p in opts[k]:
+            bad = False
+            for j in range(k):
+                aj, bj, pj = sel[j]
+                if ms and classes[j][0] and (ms & classes[j][0]):
+                    if (a and aj) or (b and bj) or (p and pj):
+                        bad = True
+                        break
+            if bad:
+                continue
+            sel.append((a, b, p))
+            rec(k + 1, sel, sa + a, sb + b, sp + p)
+            sel.pop()
+
+    rec(0, [], 0, 0, 0)
+    # automorphisms of the skeleton
+    tset = sorted(tuple(sorted(t)) for t in types)
+    auts = []
+    for perm in itertools.permutations(range(c0)):
+        if sorted(tuple(sorted(perm[v] for v in t)) for t in types) == tset:
+            auts.append(perm)
+    cls_sets = [tuple(sorted(ms)) for ms, _ in classes]
+    reps = {}
+    for sel in results:
+        best = None
+        for perm in auts:
+            mapped = []
+            for (ms, _), (a, b, p) in zip(classes, sel):
+                mapped.append((tuple(sorted(perm[v] for v in ms)), a, b, p))
+            for swap in (False, True):
+                key = tuple(sorted((m, b, a, p) if swap else (m, a, b, p) for m, a, b, p in mapped))
+                if best is None or key < best:
+                    best = key
+        reps.setdefault(best, sel)
+    placements = []
+    for key, sel in sorted(reps.items()):
+        A, B, P = [], [], []
+        for (ms, rows), (a, b, p) in zip(classes, sel):
+            A += rows[:a]
+            B += rows[a:a + b]
+            P += rows[a + b:a + b + p]
+        placements.append([sorted(A), sorted(B), sorted(P)])
+    json.dump({"source": path, "index": idx, "raw_class_assignments": len(results), "automorphisms": len(auts),
+               "num_placements": len(placements), "placements": placements}, open(out, "w"))
+    print(json.dumps({"index": idx, "raw": len(results), "aut": len(auts), "num_placements": len(placements)}))
+
+
+if __name__ == "__main__":
+    main()
+

@@ -1,0 +1,19 @@
+# Physics-2 checkpoint043 — base consumer source complete / matrix still authoring
+
+Actual `/bin/date`: **2026-10-19T13:40:19-0700**, read before this write. Prior04213:23:54; interval16m25s, within target20/binding30. Next target14:00:19; binding14:10:19. No new cadence deviation; earlier035/036 remain disclosed.
+
+## Completed source work, not acceptance
+
+Source19 remains unchanged0444/source-ready-runtime-HOLD at `cb828a78367dc2023bfc6e330696745f186f186811752361472747e5fe547e93`; parent readiness `558f9ba310dd1a925595d12919c01ebfff7e4f3d50cb68ea1391fa6695e6ce96`. No source20 or runtime authority.
+
+All eight basev9 consumer repairs are now authored in source19-bound child12/writer12/checker11, still UNFROZEN/unparsed/unrun. Since042, the checker additionally requires the complete14-field verified resource composite (including actual epoch), refuses pending raw composites for original22, and checks helper native wait/identity/clockless/endpoint telemetry without erasing it. RSS uses exact full main fingerprint/native before-task-after bracket/allocation-touch-report chronology and actual PID-alone excess. Ownership metadata matching is limited to source-declared setsid transitions (slow/fast descendant or double intermediate) and recorded ended-parent reparent intervals; no generic PGID/PPID/trace dropping. Zombie private join is bound to actual matched wait-last status5 identity, exact original hold window, final native status5 and join. Private parent edges bind exact declared role/phase and every native acquisition lies within original lifetime and before its own report.
+
+Current UNFROZEN checker11 authoring snapshot SHA: `2774e848b653594cc6ec0c10d761ce640931ba2d863ca6bcaad1eca94363bdb5`; not a freeze/review pin. Child12 remains `e3a8006890a164d36fdacbadc6e63b64c87302ec46149c7f3a6c731e1a3e186b`; writer12 remains `64fe308fcfb13f5a550a9e34b80866c49eaf0beb356ff862744d2be2bce75e25`. A single rejected hashline anchor did not apply; its exact unchanged ranges were re-read before the successful patch. No frozen file was touched.
+
+Prepared the complete8-finding AUTHORED_FOR_REVIEW_UNEXERCISED disposition and coherent plan text in memory, reusing the frozenv8 original22 exact table and parent-only transaction convention. No intermediate plan/manifest/packet was frozen with stale hashes. Child author explicitly disclosed unexercised SDK zombie-fingerprint availability; required proof fails closed if absent. State/IO former authors disclosed concrete stale-pin/API/model/accounting/stdio defects, all relayed to current source19 authors rather than claimed solved.
+
+## Remaining exact boundary
+
+Three independent source-only matrix slices remain active: State19 complete original85+missing model branches; IO19 original48+typed/null/historical stage/one-shot-versus-persistent stderr corrections; Native19 NEW bounded native lifecycle/timing/cancellation/platform/integration fixture+child+oracle/spec. Final case specs, exact per-row v13/v14 source-plan-oracle mapping, cross-pins, one combined AST-only coherence pass after all land, cumulative diffs, complete review snapshot/manifest and final0444 freeze remain. No source import, test or actual fixture/preparation/child/helper/control/native/numerical run has occurred. Every original22 and fullmatrix case remains UNEXERCISED; native prerequisites/missed boundaries are not discharged by state/API fixtures or flags. No22-only science qualification.
+
+Parent five-part release implementation is separately in progress and parent-owned. Held fixedB-v7 parser/backend/assay remains unchanged/unrun; exact parser extra-byte fixture keeps honest STATE/API/HOLD scope. No FCO enumeration/science/numerical rework. Maximal1-RQLS(10) remains OPEN/UNKNOWN. `fabe57ab`, owned bounded actualdate, all-UID conservative census, busy<=2, exact outcomes, exclusive artifacts and immutable UNSETTLED remain binding.

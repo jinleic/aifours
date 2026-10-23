@@ -1,0 +1,168 @@
+"""Generate ONLY hashes/metadata for six exact F_one AND C AND M_s formulas.
+Parts are real byte buffers suitable for a later independently measured stream:
+new header, unchanged weak body, original42unit lines, exactly126 M_s binaries.
+r2 canonicalizes each negative pair exactly as the independent parent fingerprint; r1 was rejected before output.
+CLI never writes a CNF/proof and never starts a solver. Coverage is still pending
+Claude review and parent acceptance; this generator supplies NO launch authority.
+"""
+from __future__ import annotations
+
+import hashlib
+import importlib.util
+import itertools
+import json
+import os
+from pathlib import Path
+import resource
+import shutil
+import stat
+import time
+
+ROOT = Path(__file__).resolve().parent.parent
+WMAN = ROOT / 'evidence/n8_one_p4_templates_v1/MANIFEST.json'
+WMAN_SHA = '355b33801640e39ab86946c51ab58c9c843370083ca896dd6d8ee5b09e90fc74'
+NAMES = ROOT / 'evidence/gram_dev_v1/GA5L_K5_sb2.map.json'
+NAMES_SHA = '7b4dd597894a7bbe39374f314bdb2016995216aa07bc03d7aad4a09f8e54b197'
+BASE_SHA = '374d6fb46ab2a1f7a77bdf6699aa67792c126b2e2dcdf65ad37074be9fc5eeb9'
+ORIGINAL_SHA = '6ecb77a779170635830c4c7c488c3e0eb434ee249fb2b1c81dc2625c4183469b'
+PRODUCER = ROOT / 'code/n8_one_p4_formula.py'
+PRODUCER_SHA = '61eda23ce7174e7cee77ee873ff06e5f22a2beaf0c197b8282f41dc8ddded400'
+PROOF = ROOT / 'review/P1_COLUMN0_BOOLEAN_NORMAL_FORM.r2.md'
+PROOF_SHA = '8ae0ac01de7ea5883111e8dcc4f84246813d8599b1e8af782e0498104a449e8f'
+FREEZE = ROOT / 'review/P1_MONOMIAL_GENERATOR_FREEZE.r2.json'
+OUT = ROOT / 'evidence/P1_MONOMIAL_FORMULA_HASHES.r2.json'
+CASES = (('P1-B1',2), ('P1-B2',2), ('P1-B2',4), ('P1-B3',2), ('P1-B5',2), ('P1-B5',3))
+PARENT_M_TAIL_SHA = {
+    2: '6fe525a9e6df69193b918d3f0ec29c841d0a66845ee58b3ca0690b9fe2988708',
+    3: 'e9f44b5f4c9ca4a4de152bcc47385283da7b66d074b10956a0fcdc7440b5ca7c',
+    4: '900a6bc37239e6835f4190ccf42dfc4088dfd4a43dcc4aec522d9297da8e4dea',
+}
+
+
+def sha(raw):
+    return hashlib.sha256(raw).hexdigest()
+
+
+def allocated_bytes(root):
+    pending, seen, total = [Path(root)], set(), 0
+    while pending:
+        p = pending.pop()
+        s = p.lstat()
+        key = (s.st_dev, s.st_ino)
+        if key in seen:
+            continue
+        seen.add(key)
+        total += s.st_blocks * 512
+        if stat.S_ISDIR(s.st_mode):
+            with os.scandir(p) as entries:
+                pending.extend(Path(e.path) for e in entries)
+    return ((total + 1023) // 1024) * 1024
+
+
+def load_bound_inputs():
+    wr, nr = WMAN.read_bytes(), NAMES.read_bytes()
+    if sha(wr) != WMAN_SHA or sha(nr) != NAMES_SHA or sha(PRODUCER.read_bytes()) != PRODUCER_SHA or sha(PROOF.read_bytes()) != PROOF_SHA:
+        raise RuntimeError('frozen formula input/source/proof pin changed')
+    w, n = json.loads(wr), json.loads(nr)
+    if (w['base_cnf_sha256'] != BASE_SHA or n['meta']['cnf_sha256'] != ORIGINAL_SHA
+            or n['meta']['vars'] != 509915 or n['meta']['clauses'] != 5740230):
+        raise RuntimeError('weak/original name-table lineage mismatch')
+    cases = {x['id']:x for x in w['cases']}
+    if len(cases) != 16:
+        raise RuntimeError('source template set incomplete/duplicate')
+    spec = importlib.util.spec_from_file_location('frozen_n8_one_p4_producer', PRODUCER)
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    f, recipe = m.build()
+    if f.sha != BASE_SHA or (f.nv, f.nc) != (509915,5740226):
+        raise RuntimeError('actual weak bytes differ')
+    return f, cases, n['vars']
+
+
+def g_id(names, s, i, c, nv):
+    # All these pairs are distinct/non-collinear, so they must be primary IDs,
+    # not True/False constants. The JSON name is exactly the frozen table format.
+    key = json.dumps(['g', s, [0,c], [i,0]])
+    v = names.get(key)
+    if type(v) is not int or not 1 <= v <= nv:
+        raise RuntimeError('missing/nonprimary/out-of-range monomial ID: ' + key)
+    return v
+
+
+def monomial_tail(names, s, nv):
+    clauses = []
+    for i in range(2,8):
+        ids = [g_id(names,s,i,c,nv) for c in range(1,8)]
+        if len(set(ids)) != 7:
+            raise RuntimeError('duplicate basis-coordinate IDs')
+        for c,d in itertools.combinations(range(7),2):
+            clauses.append(tuple(sorted((-ids[c],-ids[d]))))
+    if len(clauses) != 126 or len(set(clauses)) != 126:
+        raise RuntimeError('M_s is not exactly126 distinct negative binaries')
+    tail = b''.join(('%d %d 0\n'%cl).encode() for cl in clauses)
+    if sha(tail) != PARENT_M_TAIL_SHA[s]:
+        raise RuntimeError('M_s byte order/binding differs from independent parent fingerprint')
+    return tail
+
+
+def formula_parts(f, source, names, s):
+    """Complete real serializer, never a scaffold: byte parts plus bound metadata."""
+    units = source['units']
+    if (len(units) != 42 or source['cnf_vars'] != f.nv or source['cnf_clauses'] != f.nc+42
+            or f.leaf_sha(units) != source['cnf_sha256']):
+        raise RuntimeError('exact original F_one AND C leaf mismatch')
+    unit_tail = ''.join('%d 0\n'%v for v in units).encode()
+    m_tail = monomial_tail(names,s,f.nv)
+    header = ('p cnf %d %d\n'%(f.nv,f.nc+42+126)).encode()
+    parts = (header,f.body,unit_tail,m_tail)
+    h = hashlib.sha256()
+    for p in parts:
+        h.update(p)
+    metadata = {'id':source['id']+'.M%d'%s,'source_template':source['id'],'monomial_square':s,
+                'source_leaf_sha256':source['cnf_sha256'],'CNF_sha256_PLANNED':h.hexdigest(),
+                'variables':f.nv,'clauses':f.nc+42+126,'original_unit_count':42,'appended_binary_clauses':126,
+                'header':header.decode(),'expected_stream_bytes_PLANNED':sum(map(len,parts)),
+                'unit_tail_sha256':sha(unit_tail),'M_tail_sha256':sha(m_tail),
+                'ordering':'header; unchanged F_one body; original42unit lines; i2..7 then c1..7,d>c; negative literals integer-ascending within each binary',
+                'solver_feed_hash_MEASURED':None,'checker_feed_hash_MEASURED':None}
+    if metadata['clauses'] != 5740394:
+        raise RuntimeError('header count differs from frozen126-clause increment')
+    return parts,metadata
+
+
+def main():
+    t0 = time.monotonic()
+    freeze = json.loads(FREEZE.read_bytes())
+    script_sha = sha(Path(__file__).read_bytes())
+    if (freeze['generator_sha256'] != script_sha or freeze['proof_r2_sha256'] != PROOF_SHA
+            or freeze['case_order'] != [list(x) for x in CASES] or freeze['source_manifest_sha256'] != WMAN_SHA
+            or freeze['name_map_sha256'] != NAMES_SHA or freeze['weak_base_sha256'] != BASE_SHA):
+        raise RuntimeError('generator must be frozen BEFORE hashing')
+    free = shutil.disk_usage(ROOT).free
+    used = allocated_bytes(ROOT)
+    if free-200000 < 12200000000 or used+200000 > 10200547328:
+        raise SystemExit('DEFERRED: static-generator fresh disk/lane gate')
+    f,cases,names = load_bound_inputs()
+    records = []
+    for template,s in CASES:
+        _parts,metadata = formula_parts(f,cases[template],names,s)
+        records.append(metadata)
+    if len(records) != 6 or len({r['CNF_sha256_PLANNED'] for r in records}) != 6:
+        raise RuntimeError('six distinct exact formulas required')
+    result = {'schema':'p1-monomial-formula-hashes/1','generator_sha256':script_sha,'freeze_sha256':sha(FREEZE.read_bytes()),
+              'proof_r2_sha256':PROOF_SHA,'source_manifest_sha256':WMAN_SHA,'name_map_sha256':NAMES_SHA,
+              'weak_base_sha256':f.sha,'producer_sha256':PRODUCER_SHA,'formulas':records,
+              'coverage_status':'UNACCEPTED; Claude and parent disposition pending','solver_invocations':0,
+              'CNF_or_proof_files_written':False,'source_binding':'allsourceleaf hashes and independent parent M-tail fingerprints matched',
+              'fresh_free_bytes':free,'fresh_lane_bytes':used,'seconds':time.monotonic()-t0,
+              'peak_RSS_bytes_Darwin':resource.getrusage(resource.RUSAGE_SELF).ru_maxrss}
+    raw = json.dumps(result,indent=1).encode()
+    with OUT.open('xb') as out:
+        out.write(raw)
+    print(json.dumps({'RESULT_sha256':sha(raw),'formula_hashes':{r['id']:r['CNF_sha256_PLANNED'] for r in records},
+                      'solver_invocations':0,'CNF_files':False,'seconds':result['seconds'],
+                      'peak_RSS_bytes_Darwin':result['peak_RSS_bytes_Darwin']}),flush=True)
+
+
+if __name__ == '__main__':
+    main()

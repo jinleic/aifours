@@ -1,0 +1,35 @@
+You are a hostile, read-only source reviewer. Review ONE Python runner before a parent decides whether to allow a single bounded native launch. Read ONLY files inside the current working directory (this snapshot). Do not read anything outside it, do not run commands that modify anything, do not delegate to other agents or tools, do not use the network. Report only real problems, highest severity first, citing file:line. Do not modify anything.
+
+## What the runner is
+`src/pilot_file_drat_v5.py` (SHA-256 b1400f67cc2268bbb572dbe24d3b379b40682fffb0961af460e504a9ced483a2) is a research harness. It runs same-binary controls C1-C7 and then three SAT items, one native child at a time:
+- The items are independent-encoder CNFs for a combinatorial-design case split. The encoder is `src/vendor/encode_skel_b.py`, and the expected CNF digests are in `evidence/cnf-pins-v1.json`.
+- Solver: kissat 4.0.4, `kissat -q -f --seed=1 --time=600 CNF PROOF_FIFO`. The binary DRAT proof goes into a lane-local FIFO, and an owned sink thread writes it to a proof FILE with a hard cap.
+- Checker: `drat-trim CNF PROOF_FILE -i -t 1200` (source in `checker/drat-trim.c`).
+- An item may be recorded UNSAT and counted only if `qualify_unsat()` and `terminal_gate()` both pass.
+
+The previous version `src/pilot_file_drat_v3.py` received NO-GO. The exact diff is `src/pilot-runner-v3-to-v5.diff`. Parent findings on v3:
+- **P1.** The stability parser rejected the real monitor stream, whose first line is an `observer_start` event; see `control/resource-observer-live-v3-first40.jsonl` and `control/resource_observer_v3.py`. Only the explicit known event schema may be allowed, remaining lines must be strict samples, and the window must be `[time.time()-300, time.time()]`.
+- **P2.** v3 could publish UNSAT and count=true after a cancel was latched during or after the checker. A final per-item consumer gate is required before any counted status.
+- **P3.** The process status was ambiguous: exit 0 on failures. Explicit nonzero outcomes are required.
+- **P4.** The proof cap was only a sampled file size with an assumed overshoot. A hard byte bound, or an honestly scoped soft cap, is required.
+
+## Binding rules the runner must obey (see `control/launch-contract-tightening-v1.json`)
+- No SIGKILL, no subprocess timeouts, no ulimit, no deletion or overwrite, no reading of old FIFOs.
+- The only allowed signal is a SIGTERM to an owned, identity-safe child, followed by a bounded wait. A survivor must be quarantined (recorded, capacity held), never escalated.
+- **Chunk fit:** child end ≤ min(now + 10800 − 120, settled_by − 180), plus 120 s settlement and a 60 s margin.
+- **Stability rule** (`control/resource-stability-addendum-v1.json`, monitor path from v2): ≥25 samples spanning ≥290 s in the last 300 s; last sample age ≤30 s; last free ≥ 13.5e9 + projected bytes; max peak-to-later drop ≤ max(3e8, (last_free − 13.5e9)//12); timestamps timezone-aware and strictly increasing; any malformed complete line refuses.
+- **Fresh statvfs:** free ≥ 12.2e9 + projected growth, and free − remaining reservations ≥ 12e9.
+- **STOP registry:** refuse on any `STOP*`/`HALT*`/`SAT-CANDIDATE*` marker in the lane or run control directories, or on any change to the nine inherited old markers pinned in `evidence/inherited-stop-registry-v1.json`.
+- **Streamed proofs:** producer-read and checker-consumed byte counts plus SHA boundaries must be stated exactly.
+- **Settled** means: the direct child is reaped, its process group is empty, the streams are closed, the artifacts are hashed, and the receipt is written. Otherwise the run is UNKNOWN or UNSETTLED.
+
+## Review tasks, in priority order
+1. **Capped-output overshoot.** Is the proof file truly hard-bounded by `PROOF_CAP`? Are the stdout/stderr capture files truly hard-bounded by `LOG_CAP`? Can any path write beyond them or block a producer forever, for example when a FIFO pipe fills after the cap or the drain stops? Are the reservations (`ITEM_RESERVE`, `CONTROL_RESERVE`) consistent with all retained outputs, including control files?
+2. **Post-Popen exception settlement.** Check every exception path after a child or sink exists: Child init, `supervise`, `run_child`, `run_kissat` and `ProofSink.finish`. Can any path orphan a child, leave a FIFO reader thread blocked, signal a reaped or reused PID, signal more than once, or mark something settled when it is not?
+3. **Proof-file immutability and consumed count.** Check the FIFO sink semantics, `sink_complete()`, the drat-trim byte count `S->nReads` (`checker/drat-trim.c`, around `read_lit` and `parse`), and the pre/post hashes. Does "read N bytes from proof file" equal the file length for a complete binary proof? Can a truncated or partial proof or CNF still pass? Check the early-EOF behavior (`parse()` early EOF break, formula initialization) against the predicate.
+4. **Terminal consumer verdict.** Can any path write `status=UNSAT` or `count_for_scientific_coverage=true` without every predicate and the terminal gate passing, including races with SIGTERM/cancel, registry changes and disk floor? Check the summary and exit-code semantics.
+5. **Stability-parser correctness** against the real monitor format and the rule above. Also check the chunk-fit arithmetic and the exit codes.
+6. **Controls C1-C7.** Does each control demonstrate its intended reason with the same binaries? Could a control pass vacuously?
+7. **Assumptions about kissat behaviour** (the binary is not in the snapshot). Examples: rc 20/10/0, `-q` still printing status lines, `-f` allowing a FIFO proof path, a binary proof by default, SIGTERM handling. Flag every assumption that makes a predicate fail-open; assumptions that only cause fail-closed outcomes are fine.
+
+Return JSON matching the provided schema. Use `severity`=`blocker` only for issues that could produce a wrong UNSAT/count, an orphaned or unsignalled survivor, an unbounded write, or a rule violation.

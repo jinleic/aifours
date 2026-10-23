@@ -1,0 +1,82 @@
+--- control/parent_release_identity_v2.py
++++ control/parent_release_identity_v3.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""parent_release_identity_v2: CP2 historical identity-union consumer and fresh independent census callback.
++"""parent_release_identity_v3: CP2 historical identity-union consumer and fresh independent census callback.
+ 
+ NOEXEC SOURCE CANDIDATE: not accepted, not qualified, no runtime/release/signal/scheduling/science authority.
+ CP2 scope RUN/control/parent-release-cp1-cp2-implementation-scope-v1.json
+@@ -12,6 +12,14 @@
+ stays immutable HOLD): every pid-only unknown enumerable from a reconciliation (pending raw acquisition, overflow
+ observation, sv19 coverage-gap pid, identity-less helper or main spawn record) fires sticky U_UNKNOWN_INCARNATION,
+ and an unenumerable source fires it too. H7, a complete current census or ENDED never waive it. API/formats unchanged.
++
++V3 VERSION BINDING (scope RUN/control/parent-release-cp2-v3-repair-scope-v1.json
++0b7b3b7c8ebb3b8ae88ad04472cc7e16a4d2ea8ee718706a6408d714303d2421; finding SF1 b52ab85f; exact delta frozen in
++RUN/control/parent-release-cp2-design-freeze-v3.json; v2 7b2bc4021744aa6fa55677fa4953c9efc1088f53d341fb0ba339621abdddc3ec
++stays immutable): _v_union, used by evaluate_endedness and spec_identities_match, first requires exact equality of the
++union module, design_freeze_sha256, scheme and producer_sha256 with this module's own constants, before any status use;
++absence or mismatch is HELD with E_UNION_VERSION (endedness) or False (spec match). Unions built by v1, v2 or any other
++module are refused. These self-reported fields stop cross-version use, not forgery.
+ 
+ CONVENTION. The owned_supervisor_v19 cb828a78367dc2023bfc6e330696745f186f186811752361472747e5fe547e93 native identity
+ is reused unchanged: proc_listallpids; proc_pidinfo flavor 17 (uniqueid, idversion) and flavor 13 (pid, ppid, pgid,
+@@ -52,13 +60,13 @@
+ import time
+ 
+ SCOPE_SHA256 = '1f717bf944e6d5a524aa0a65776d39726cd251bcd006971ba322f328de6bd314'
+-DESIGN_FREEZE_SHA256 = '7f46b7e5f5581a6e905efa8405381208c9481332b26ba2e2a84f1ace436a1c28'
++DESIGN_FREEZE_SHA256 = '033cb30dcde31ec94acbb0f8576f436e14bfaae980c8bff34e76932dd894cb5a'
+ V1_DESIGN_FREEZE_SHA256 = '3d6f48ced0d07293a81f44936c3559571e4d4f98919c024a257f32761a7af027'
+ V1_SOURCE_SHA256 = 'd07548e2dbff4ef6b64a3a902d3b59ed7c4abbf8dc2115e8b08ed37ee2ec14d5'
+ REPAIR_SCOPE_SHA256 = 'afe35832c808cf3d6a482fb6549dc8957d57ae982b7e48e76dba5b5374bcfa98'
+ SUPERVISOR19_SHA256 = 'cb828a78367dc2023bfc6e330696745f186f186811752361472747e5fe547e93'
+ SUPERVISOR19_VERSION = 'owned_supervisor_v19'
+-MODULE = 'parent_release_identity_v2.py'
++MODULE = 'parent_release_identity_v3.py'
+ SCHEME = 'sv19-incarnation-v1'
+ REQUEST_FORMAT = 'parent-release-identity-request-v1'
+ UNION_FORMAT = 'parent-release-identity-union-v1'
+@@ -158,7 +166,8 @@
+     'U_CHILD_HELPER_UNBOUND', 'U_LAST_CENSUS_OPEN', 'U_LAST_CENSUS_TAPE_MISMATCH', 'U_SPAWN_CHRONOLOGY',
+     'U_UNKNOWN_INCARNATION', 'U_ROW_CONFLICT', 'U_CAP_EXCEEDED', 'U_DEADLINE', 'U_INTERNAL_ERROR')
+ E_CAUSES = (
+-    'E_UNION_HELD', 'E_UNION_DIGEST', 'E_NO_SERVED_CENSUS', 'E_CENSUS_INCOMPLETE', 'E_OBSERVER_UNCOVERED',
++    'E_UNION_VERSION', 'E_UNION_HELD', 'E_UNION_DIGEST', 'E_NO_SERVED_CENSUS', 'E_CENSUS_INCOMPLETE',
++    'E_OBSERVER_UNCOVERED',
+     'E_MEMBER_ALIVE', 'E_PID_REUSE_AMBIGUOUS', 'E_GROUP_NONEMPTY', 'E_PID_CHILD_PRESENT', 'E_DEADLINE',
+     'E_INTERNAL_ERROR')
+ PREREQUISITES = {
+@@ -1486,7 +1495,20 @@
+ 
+ 
+ # ---------------------------------------------------------------- endedness join
++def _union_version(union):
++    """V3 (SF1): exact module/design-freeze/scheme/producer binding BEFORE any status use; absence refuses."""
++    _require(type(union) is dict, 'union object required')
++    for key, expected in (('module', MODULE), ('design_freeze_sha256', DESIGN_FREEZE_SHA256), ('scheme', SCHEME),
++                          ('producer_sha256', SUPERVISOR19_SHA256)):
++        value = union.get(key)
++        shown = value[:80] if type(value) is str else type(value).__name__
++        _require(type(value) is str and value == expected,
++                 'union %s %r != %r: absent or built by another module/version' % (key, shown, expected))
++    return True
++
++
+ def _v_union(union):
++    _union_version(union)
+     _require(type(union) is dict and union.get('format') == UNION_FORMAT and _hex(union.get('union_sha256')),
+              'union format/digest field')
+     body = {key: value for key, value in union.items() if key != 'union_sha256'}
+@@ -1550,7 +1572,9 @@
+             elif not io.tick('endedness start'):
+                 st.fire('E_DEADLINE', 'original deadline unavailable at endedness start')
+             else:
+-                sets = _guard(io, st, 'E_UNION_DIGEST', 'union', None, _v_union, union)
++                version = _guard(io, st, 'E_UNION_VERSION', 'union version', None, _union_version, union)
++                sets = _FAILED if version is _FAILED else _guard(io, st, 'E_UNION_DIGEST', 'union', None,
++                                                                 _v_union, union)
+                 if sets is not _FAILED:
+                     union_sha = union['union_sha256']
+                     if union.get('state') != CLOSED or union.get('causes') != []:

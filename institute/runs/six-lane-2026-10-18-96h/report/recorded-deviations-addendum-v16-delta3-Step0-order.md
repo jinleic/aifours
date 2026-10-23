@@ -1,0 +1,9 @@
+# Recorded deviations addendum v16 — DELTA3 substantive proof work before required Step0 report
+
+Recorded 2026-10-21T22:24:47-0700 after `/bin/date`. Source: [completeworkerdisclosure](/Users/jinleic/repos/aifours/mathematics/evidence/six-lane-20261018-96h/olson/continuations/delta-three-pair-cover-followon/erratum-1-DELTA3-Step0-order-exposure-v1.md) SHA256 `ee69129129688b143f6d07d54bd465b6c6086ac6893eedaedc7c92446bb57922`,40LF,observed22:23:16. AFTERthepublished22:09:05ackbutBEFOREthemandatorybaselineaudithadbeencompletedANDsenttotheparent,theworkerbeganSUBSTANTIVEnewunwrittenδ3CRT/CONNECT/LIGHT/lower-bandSIGNreasoning,includingcandidateκ3B0/B3singleton/empty-patterncontradictions. Thefullprematurecontentisrecordedinthe40LFsource; notjustanunspecified“earlythought”.
+
+Parentclassification: **PERMANENT PROCESS MAJOR — Step0-report-before-proof sequencing violation.** ThisisNOTpre-ackreasoning,andnoscientificcode/computation/enumeration/assertion/modelrunisalleged. Mathematicsandprocessremainseparate;thecandidateideasarenotacceptedproofs. Immediatevoluntarydisclosure/stoppingiscorrectivebehavior,butlaterbaselinecompletion/rederivation/modelagreementcannotcurethedeparture.
+
+Worker instructedtofinishONLYliteralaccepted-baseline/own-sourceauditandSENDitbeforeANYfurthernewproofreasoning;parentmustacknowledgethatdeliverybeforecontinuation. No newack/reset/freeze-loop,clockextension,targetnarrowingornewslot. OriginalENTIREδ3wordclass/up-to-three-sourceparts/Oct22 02:00stop02:15handoffandallcampaigncutoffsunchanged. Eventualboth-familyproofpacketmustsupplyfullworkerdisclosureandTHISclassification. Allolddeparturesremainuncured.
+
+Theprovisionalκ2baselineclaimhasnotbeenpromotedasnewtheorem;theactualcallerproofandothergapmustbeexaminedfromliteralownauthorities. No inverseNFtransfer,fullOlson/REFL/INV*claim,priority/independence/formal/human/runtimecertificate follows.

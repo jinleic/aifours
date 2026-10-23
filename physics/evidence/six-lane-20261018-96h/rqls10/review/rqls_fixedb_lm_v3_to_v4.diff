@@ -1,0 +1,189 @@
+--- code/rqls_fixedb_lm_v3.py	2026-10-19 05:13:48
++++ code/rqls_fixedb_lm_v4.py	2026-10-19 05:24:45
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""rqls_fixedb_lm_v3: float Levenberg-Marquardt assay of the FIXED-B UNITARY MODEL (no orbit symmetry) for 1-RQLS(v)
++"""rqls_fixedb_lm_v4: float Levenberg-Marquardt assay of the FIXED-B UNITARY MODEL (no orbit symmetry) for 1-RQLS(v)
+ (design note evidence/fixedb-unitary-model-proposal-v1.md). NOT a certificate; any target miss is a scoped UNKNOWN.
+ 
+ Model: B is a fixed Latin square (the resolution). Cell (i, j) carries q_ij = U_i e_j with U_0 = I (rows built in);
+@@ -19,6 +19,13 @@
+ endpoints (stages W, WD, WS; v2 change: v1 also spent these slots on the Parker calibration stages) and the first 8
+ verified S8 endpoints. v3 change: in KP only a SKIPPED small-amplitude (<= 1e-2) run fails the gate (time-skipped
+ 0.1 / 0.3 runs are recorded only), and the KP slot is split 20 / 30 / 50 % over the v = 7, 8, 10 anchors.
++v4 change (parent HOLD on v3): every LM run receives its stage end; lm() checks the SIGTERM flag and min(stage end,
++T0 + BUDGET) before each outer iteration, after the normal-equation assembly, before each damping retry and after each
++solve, and then returns status TERMINATED or DEADLINE with the last accepted (finite) iterate - never CONVERGED. The
++record is still written with full-Gram diagnostics; candidate (exit 7) and defect (exit 8) stops keep priority; after a
++TERMINATED run, at any run boundary (over()) and at any gate evaluation after a SIGTERM, no new run starts and no gate is
++evaluated: TermStop, stop receipt TERMINATED_UNKNOWN, exit 5. After a DEADLINE run the stage starts nothing new (the
++stage loop sees its end); the S-stage self-tests contain no LM run.
+ 
+ Stages (deterministic seeds; wall-clock stage ends inside BUDGET; actual counts recorded; unfinished runs SKIPPED_TIME):
+  S   self-tests (gate): input pins (sha256) of the exact anchors and the Parker pair; analytic Jacobian vs central
+@@ -44,9 +51,10 @@
+ MODE "full" runs every stage with fixed calibration slots (S 60 s, N 120, C 60, KP 300, KR 900, S8 420) and splits the
+ remainder R = BUDGET - 1980 as W 0.6 R, WD 0.3 R, WS 0.1 R (120 s reserve). MODE "target" runs S and KP (the gated
+ self-tests and near-anchor recovery) and then W / WD / WS on R = BUDGET - 480 (same split). R <= 0 is a gate failure.
+-Usage: rqls_fixedb_lm_v3.py OUT.jsonl BUDGET_S MODE NN NC NKR NKR10 N8 NW NWD NS STOP_RECEIPT
++Usage: rqls_fixedb_lm_v4.py OUT.jsonl BUDGET_S MODE NN NC NKR NKR10 N8 NW NWD NS STOP_RECEIPT
+ Protocol (owned_supervisor_v2): no computation before the line "GO" on stdin (otherwise exit 6, no output); SIGTERM sets
+-a flag honoured between runs. Exit codes: 0 done, 2 exception, 3 gate failure, 4 output cap, 5 SIGTERM, 6 no GO,
++a flag honoured inside every LM run (see v4 change) and at run boundaries. Exit codes: 0 done, 2 exception, 3 gate
++failure, 4 output cap, 5 SIGTERM, 6 no GO,
+ 7 maximal candidate (unverified; immediate), 8 model defect (immediate). On every non-zero exit after GO a separate
+ exclusive STOP_RECEIPT is written.
+ """
+@@ -87,6 +95,10 @@
+ 
+ 
+ class ModelDefectStop(Exception):
++    pass
++
++
++class TermStop(Exception):
+     pass
+ 
+ 
+@@ -106,10 +118,15 @@
+ 
+ 
+ def over(end):
+-    return TERM[0] or time.monotonic() > end or elapsed() > BUDGET
++    if TERM[0]:
++        raise TermStop("SIGTERM seen at a run boundary")
++    return time.monotonic() > end or elapsed() > BUDGET
+ 
+ 
+ def gate(tag, ok, detail):
++    if TERM[0]:
++        W({"GATE": tag, "pass": None, "detail": "not evaluated: SIGTERM received", "elapsed_s": round(elapsed(), 2)})
++        raise TermStop("SIGTERM seen before gate " + tag)
+     W({"GATE": tag, "pass": bool(ok), "detail": detail, "elapsed_s": round(elapsed(), 2)})
+     if not ok:
+         raise GateFail(tag)
+@@ -243,7 +260,15 @@
+     return U2
+ 
+ 
+-def lm(Pr, U, iters=ITERS, tol=1e-26):
++def lm(Pr, U, end, iters=ITERS, tol=1e-26):
++    dl = min(end, T0 + BUDGET)
++
++    def halt():
++        if TERM[0]:
++            return "TERMINATED"
++        if time.monotonic() > dl:
++            return "DEADLINE"
++        return None
+     lam = 1e-3
+     r = Pr.resid(U)
+     nf = float(np.sum(np.abs(r) ** 2))
+@@ -252,14 +277,28 @@
+         if nf < tol:
+             status = "CONVERGED"
+             break
++        h = halt()
++        if h:
++            status = h
++            break
+         JTJ, JTr, _, _ = Pr.normal(U)
++        h = halt()
++        if h:
++            status = h
++            break
+         improved = False
+         for _ in range(12):
++            h = halt()
++            if h:
++                break
+             try:
+                 step = np.linalg.solve(JTJ + lam * Pr.eye, -JTr)
+             except np.linalg.LinAlgError:
+                 lam *= 10
+                 continue
++            h = halt()
++            if h:
++                break
+             if not np.all(np.isfinite(step)):
+                 lam *= 10
+                 continue
+@@ -272,6 +311,9 @@
+                 improved = True
+                 break
+             lam *= 10
++        if h:
++            status = h
++            break
+         if not improved:
+             status = "STALL"
+             break
+@@ -332,9 +374,11 @@
+     return {"U_re": U[1:].real.tolist(), "U_im": U[1:].imag.tolist(), "B_matrix": Pr.B.tolist(), "B_name": Pr.name}
+ 
+ 
+-def run_one(Pr, U0, tag, extra):
++def run_one(Pr, U0, tag, extra, end):
++    if TERM[0]:
++        raise TermStop("SIGTERM seen before the start of a %s run" % tag)
+     t0 = time.monotonic()
+-    U, res, it, st = lm(Pr, U0)
++    U, res, it, st = lm(Pr, U0, end)
+     rec = {"tag": tag, "v": Pr.v, "B": Pr.name, "st": st, "it": it, "res": res}
+     rec.update(evaluate(Pr, U))
+     rec.update(extra)
+@@ -356,6 +400,8 @@
+         raise ModelDefectStop("model defect at " + tag)
+     if rec["maximal_candidate"]:
+         raise CandidateStop("unverified 100-ray candidate at " + tag)
++    if st == "TERMINATED" or TERM[0]:
++        raise TermStop("SIGTERM during or right after a %s run (status %s, it %d)" % (tag, st, it))
+     return rec, U
+ 
+ 
+@@ -389,7 +435,7 @@
+             skipped += 1
+             continue
+         rng = np.random.default_rng(seed0 + k)
+-        rec, U = run_one(Pr, rand_U(Pr.v, rng), tag, {"seed": seed0 + k})
++        rec, U = run_one(Pr, rand_U(Pr.v, rng), tag, {"seed": seed0 + k}, end)
+         recs.append(rec)
+         Us.append(U)
+     if skipped:
+@@ -476,7 +522,7 @@
+                 continue
+             rng = np.random.default_rng(sd)
+             g = rng.standard_normal(Pr.P)
+-            rec, _ = run_one(Pr, Pr.retract(Ua, amp * g), tag, {"amp": amp, "seed": sd})
++            rec, _ = run_one(Pr, Pr.retract(Ua, amp * g), tag, {"amp": amp, "seed": sd}, end)
+             recs.append(rec)
+     small = [r for r in recs if r["amp"] <= 1e-2]
+     ok = skipped_small == 0 and len(small) == 8 and all(r["ok"] for r in small) and \
+@@ -494,7 +540,7 @@
+ 
+ 
+ def main():
+-    W({"assay": "rqls_fixedb_lm_v3", "numpy": np.__version__, "python": sys.version, "budget_s": BUDGET,
++    W({"assay": "rqls_fixedb_lm_v4", "numpy": np.__version__, "python": sys.version, "budget_s": BUDGET,
+        "argv": sys.argv[1:], "flags": {"optimize": sys.flags.optimize, "isolated": sys.flags.isolated}})
+     if sys.flags.optimize:
+         raise GateFail("python optimize flag set")
+@@ -625,7 +671,7 @@
+         Pr, Us = seeds[k % len(seeds)]
+         rng = np.random.default_rng(1200000 + k)
+         rec, _ = run_one(Pr, Pr.retract(Us, 0.05 * rng.standard_normal(Pr.P)), "WS_target_seeded",
+-                         {"seed": 1200000 + k, "seed_B": Pr.name})
++                         {"seed": 1200000 + k, "seed_B": Pr.name}, ends["WS"])
+         ws.append(rec)
+     if skipped:
+         W({"tag": "WS_target_seeded", "status": "SKIPPED_TIME", "count": skipped})
+@@ -662,6 +708,9 @@
+     except GateFail as ex:
+         stop_receipt("GATE_FAIL_STOP", repr(ex))
+         code = 3
++    except TermStop as ex:
++        stop_receipt("TERMINATED_UNKNOWN", str(ex))
++        code = 5
+     except Exception as ex:
+         import traceback
+         tb = traceback.format_exc()[-4000:]

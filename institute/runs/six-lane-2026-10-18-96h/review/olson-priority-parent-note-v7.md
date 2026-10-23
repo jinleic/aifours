@@ -1,0 +1,13 @@
+# Olson: o_F<=p assembly and primary-source boundary v7
+
+Recorded at 2026-10-19T13:20:34-0700. Supplements v6 without rewriting its historical status or granting a novelty verdict.
+
+[ASSEMBLY-P](/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/review/olson-ASSEMBLY-P-parent-verdict-v1.md) `9282f064a4ca60a5d65b6cc3e3a86dbd16c0c517e91273ff7a6d3a255707fd13` now accepts the restricted inverse statement at length4p-2 and ordered identity2p-subword statement at length4p-1 for primep>=7 and o_F<=p. ONE-SHORT-LS and ROT-SING have separately accepted statements, so their exact conditional premises are discharged. **Lev2022 remains statement-level in the stated high-kappa cells; S(p) remains secondary-statement trust through ROT-KP+, including S(7).** The p=7 result is Lev-free, not import-free. RPdelta's [verdict](/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/review/olson-RPdelta-parent-verdict-v1.md) `2ed0e96c4ceb01caec54bc3b672e17e2473df1ead24535301325777c9802d1f8` adds the exact E union N numerical increment relative to I.14 and initial-word transfer at RED's conditional scope. These are internal coverage changes, not a matched literature comparison.
+
+## Bounded current screen
+
+The narrow query `"dihedral" "ordered" "Olson" "reflection"` returned generic dihedral references, not an exact match. A retry using `"ordered Olson" OR "An algebraic approach towards a conjecture on the Davenport constant"` returned the already known Godara-Joshi-Mazumdar paper, unrelated abelian Olson/strong-Davenport material, and a Davenport-variants paper not assessed here. This result set does not establish novelty or current global openness.
+
+Parent re-read [Godara-Joshi-Mazumdar v2, section5](https://arxiv.org/html/2407.01148v2#S5), dated23November2025. It defines E(G) using increasing indices and sigma=id, then states Conjecture5.1 E(G)=D(G)+|G|-1 for arbitrary finite groups. The source concerns the genuinely ordered fixed-length problem. Its computed ordered-Davenport constants elsewhere do not imply this fixed-length conclusion. This observation is about the source's statement, not a claim that no later proof exists.
+
+[INFERENCE] Defensible contribution description: a restricted reflection-block word-class extension plus explicitly scoped terminal-cell methods. PP1-EXCL/KP2-EXCL are still candidates until their second-family reviews; a multiset-only exclusion outside their exact NF antecedents is not supported. Full dihedral/all-groups ordered Olson, SOTA superiority, novelty, publication readiness, Lean and human review remain unclaimed.

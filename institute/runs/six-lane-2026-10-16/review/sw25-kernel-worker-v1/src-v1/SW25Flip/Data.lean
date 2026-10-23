@@ -1,0 +1,71 @@
+/-
+GENERATED FILE - do not edit.  Produced by `gen_lean.py --write flip` from the raw SW(25,16) witness
+review/sw25-parent-inputs-v1/sw25-16-witness-v1.sw
+(1459 bytes, SHA-256 bfadf44596bc5138106432690bf507a8ff9c36cd3c40eb8eeb08195a9b2d4ab0, 26 lines), header line `SW 25 16`.
+NEGATIVE-CONTROL FIXTURE, NOT the witness: identical to the raw rows except that the entries at
+(row 0, column 2) and (row 2, column 0) are negated (raw values 1 and 1 become -1 and -1).
+(0, 2) is the first strictly-upper-triangular nonzero position of the raw matrix in row-major order,
+so this symmetric sign flip keeps the alphabet, symmetry and every row weight.  Module SW25Flip.Facts and
+the expected-failure twin SW25Flip.GramFails test the exact Gram property on it.
+-/
+
+namespace SW25Flip
+
+/-- The 25 rows (raw lines 2-26), in raw order, as integers. -/
+def rows : List (List Int) := [
+  -- row 0 = raw line 2 (entry 2 negated)
+  [1, 0, -1, 1, 0, 1, -1, 1, 0, 0, 1, -1, -1, -1, 0, 0, 0, -1, 1, 1, 0, 0, -1, -1, 1],
+  -- row 1 = raw line 3
+  [0, 1, 0, 1, 1, 0, 1, -1, 1, 0, 0, 1, -1, -1, -1, 1, 0, 0, -1, 1, 1, 0, 0, -1, -1],
+  -- row 2 = raw line 4 (entry 0 negated)
+  [-1, 0, 1, 0, 1, 0, 0, 1, -1, 1, -1, 0, 1, -1, -1, 1, 1, 0, 0, -1, -1, 1, 0, 0, -1],
+  -- row 3 = raw line 5
+  [1, 1, 0, 1, 0, 1, 0, 0, 1, -1, -1, -1, 0, 1, -1, -1, 1, 1, 0, 0, -1, -1, 1, 0, 0],
+  -- row 4 = raw line 6
+  [0, 1, 1, 0, 1, -1, 1, 0, 0, 1, -1, -1, -1, 0, 1, 0, -1, 1, 1, 0, 0, -1, -1, 1, 0],
+  -- row 5 = raw line 7
+  [1, 0, 0, 1, -1, 1, 0, -1, -1, 0, 0, 1, 0, 1, 0, 1, -1, -1, 0, 0, -1, -1, -1, 1, -1],
+  -- row 6 = raw line 8
+  [-1, 1, 0, 0, 1, 0, 1, 0, -1, -1, 0, 0, 1, 0, 1, 0, 1, -1, -1, 0, -1, -1, -1, -1, 1],
+  -- row 7 = raw line 9
+  [1, -1, 1, 0, 0, -1, 0, 1, 0, -1, 1, 0, 0, 1, 0, 0, 0, 1, -1, -1, 1, -1, -1, -1, -1],
+  -- row 8 = raw line 10
+  [0, 1, -1, 1, 0, -1, -1, 0, 1, 0, 0, 1, 0, 0, 1, -1, 0, 0, 1, -1, -1, 1, -1, -1, -1],
+  -- row 9 = raw line 11
+  [0, 0, 1, -1, 1, 0, -1, -1, 0, 1, 1, 0, 1, 0, 0, -1, -1, 0, 0, 1, -1, -1, 1, -1, -1],
+  -- row 10 = raw line 12
+  [1, 0, -1, -1, -1, 0, 0, 1, 0, 1, 0, 1, -1, -1, 1, 0, 1, 1, -1, 1, -1, -1, 0, 0, 0],
+  -- row 11 = raw line 13
+  [-1, 1, 0, -1, -1, 1, 0, 0, 1, 0, 1, 0, 1, -1, -1, 1, 0, 1, 1, -1, 0, -1, -1, 0, 0],
+  -- row 12 = raw line 14
+  [-1, -1, 1, 0, -1, 0, 1, 0, 0, 1, -1, 1, 0, 1, -1, -1, 1, 0, 1, 1, 0, 0, -1, -1, 0],
+  -- row 13 = raw line 15
+  [-1, -1, -1, 1, 0, 1, 0, 1, 0, 0, -1, -1, 1, 0, 1, 1, -1, 1, 0, 1, 0, 0, 0, -1, -1],
+  -- row 14 = raw line 16
+  [0, -1, -1, -1, 1, 0, 1, 0, 1, 0, 1, -1, -1, 1, 0, 1, 1, -1, 1, 0, -1, 0, 0, 0, -1],
+  -- row 15 = raw line 17
+  [0, 1, 1, -1, 0, 1, 0, 0, -1, -1, 0, 1, -1, 1, 1, 1, 0, 1, 1, 0, 0, 1, 1, -1, 0],
+  -- row 16 = raw line 18
+  [0, 0, 1, 1, -1, -1, 1, 0, 0, -1, 1, 0, 1, -1, 1, 0, 1, 0, 1, 1, 0, 0, 1, 1, -1],
+  -- row 17 = raw line 19
+  [-1, 0, 0, 1, 1, -1, -1, 1, 0, 0, 1, 1, 0, 1, -1, 1, 0, 1, 0, 1, -1, 0, 0, 1, 1],
+  -- row 18 = raw line 20
+  [1, -1, 0, 0, 1, 0, -1, -1, 1, 0, -1, 1, 1, 0, 1, 1, 1, 0, 1, 0, 1, -1, 0, 0, 1],
+  -- row 19 = raw line 21
+  [1, 1, -1, 0, 0, 0, 0, -1, -1, 1, 1, -1, 1, 1, 0, 0, 1, 1, 0, 1, 1, 1, -1, 0, 0],
+  -- row 20 = raw line 22
+  [0, 1, -1, -1, 0, -1, -1, 1, -1, -1, -1, 0, 0, 0, -1, 0, 0, -1, 1, 1, 1, -1, 0, 0, -1],
+  -- row 21 = raw line 23
+  [0, 0, 1, -1, -1, -1, -1, -1, 1, -1, -1, -1, 0, 0, 0, 1, 0, 0, -1, 1, -1, 1, -1, 0, 0],
+  -- row 22 = raw line 24
+  [-1, 0, 0, 1, -1, -1, -1, -1, -1, 1, 0, -1, -1, 0, 0, 1, 1, 0, 0, -1, 0, -1, 1, -1, 0],
+  -- row 23 = raw line 25
+  [-1, -1, 0, 0, 1, 1, -1, -1, -1, -1, 0, 0, -1, -1, 0, -1, 1, 1, 0, 0, 0, 0, -1, 1, -1],
+  -- row 24 = raw line 26
+  [1, -1, -1, 0, 0, -1, 1, -1, -1, -1, 0, 0, 0, -1, -1, 0, -1, 1, 1, 0, -1, 0, 0, -1, 1]
+]
+
+/-- The matrix as a function `Fin 25 → Fin 25 → Int`: `W i j` is entry `j` of row `i` of `rows`. -/
+def W : Fin 25 → Fin 25 → Int := fun i j => (rows.getD i.val []).getD j.val 0
+
+end SW25Flip

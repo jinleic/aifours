@@ -1,0 +1,16 @@
+**GO-WITH-FIXES.** Isolation and execution scope check out. One provenance fix remains before freezing this version.
+
+- **P2 — missing amendment citation.** SOURCE00:107–109 adopts the amended rule, but SOURCE00:27–32 and 151–157 never identify its authority. SOURCE06:7 expressly requires the next frozen version to cite the amendment. **Repair:** cite `parent-rule-amendment-long-job-stability-v1.md` and SHA-256 `0bbf4fdf6fd25e22e57b5c320262518dcf2df8a5a9e0a06c6b44b9afdac4ce87` in the wrapper and PRE-EXEC; preferably include it in `PINS`. Refreeze the wrapper and refresh SOURCE05’s wrapper hash.
+- **P3 — receipt clarity, nonblocking.** PRE-EXEC records `output_desk` and prose changes, rather than explicit effective globals (SOURCE00:151–157). The wrapper hash and index bind their deterministic assignments, so this is not a broken execution pin. Record actual `mod.DESK`, `mod.TMP`, `mod.CHILD_ENV`, `mod.GLOBAL_STOP`, and the admission-hook name to make the receipt directly auditable.
+
+The substantive checks passed:
+
+- **Output isolation:** SOURCE00:132–134 rebinds DESK, TMP, child TMPDIR and deadline. Runtime logs, receipts, RUN.lock, checkpoints and FIFOs derive from those rebound values (SOURCE01:1245–1265, 1370). `PLAN_V1` remains pointed at the old desk, but is read-only and unused by this run path (SOURCE01:469, 482–506). No old-result write or finalizer is invoked.
+- **Authorization and reuse:** fixed authority hashes, exact target/tag/READY/base-file checks and the one-record slice constrain each invocation (SOURCE00:48–73, 162–164). Exclusive directory creation consumes the attempt even on subsequent refusal (125–128). There is no automatic retry.
+- **Stability gate:** complete samples require timezone-aware, strictly increasing timestamps and nonnegative integer `free`; malformed samples refuse and an incomplete final line is ignored (SOURCE00:79–97). Freshness, count and span checks match SOURCE06:5. The latest-sample-anchored 300-second window and peak-to-later drawdown calculation are correct; integer division preserves the stated integer-byte threshold (100–109).
+- **Ownership and deadlines:** the hook runs under both token and bigmem locks, before either pinned base CNF is read (SOURCE01:1324–1336; SOURCE00:137–148). Its time consumes the existing deadline budget. Fresh spawn gates, caps, child cleanup and quarantine remain unchanged; the effective end becomes 17:57 PDT (SOURCE01:824, 853–865).
+- **Scientific predicate and imports:** builder binding, native settings, measured transport and strict PASS checks remain v4’s (SOURCE01:1119–1164, 1189–1213). v4’s accepted library/encoder imports are unchanged. Its `__main__` dispatch is suppressed; retaining its original `__file__` correctly preserves its source identity.
+
+All seven hashes and byte counts match. SOURCE05 reports metadata controls only, with zero native calls. The live monitor and capacity were not inspected.
+
+Launch approval remains conditional on lane-owner coordination confirming capacity and **no active safety HOLD**. No code execution, writes, network access or delegation occurred.

@@ -1,0 +1,2843 @@
+--- code/test_pilot_stream_v8.py
++++ code/test_pilot_stream_v9.py
+@@ -1,8 +1,12 @@
+ #!/usr/bin/env python3
+-"""PA19 offline transport/lifecycle/release test suite v8 for P-STREAM v7 (ms06 or ms09) and controls-only D2 v35.
+-Source-only successor of immutable test_pilot_stream_v7.py (55410243efa54d5a548002a655b95399072d6e47c2b530aa9137915eeffb7619).
++"""PA19 offline transport/lifecycle/release test suite v9 for P-STREAM v8 (ms06 or ms09) and controls-only D2 v36.
++Source-only successor of immutable test_pilot_stream_v8.py (6eb99962b721d24fbd18ec2ef90156780d95c61d3ba78e3b6cebbbf33c1d3011).
+ Verified source BYTES are loaded by ModuleType compile/exec ONLY under a separate parent GO/WINDOW.
+-P-STREAM selects 72 tests; D2 selects 58 tests. All prior 59 P/46 D cases remain selected in their original order.
++v9 repairs the three v8 test HOLDs (T1-1..T3-6) and adds independent oracles for every v8/v36 production repair:
++identity-field/runner-intent manifests, current-closeout failure disposal, raw read/walk/dup/anchor inventories,
++settlement-only helper safety, original-allowance digest/preservation/verify_sat/rehash fences and exact observed
++transport identities. Frozen 45 P/34 D inventories and the v8 TESTS order are preserved; new cases are appended.
++P-STREAM selects 78 tests; D2 selects 65 tests (v8: 72/58). All prior cases remain selected in their original order.
+ New guard cases use synthetic clocks, isolated registries and refusing native-birth/wait/signal/thread hooks; that
+ isolation is itself an evidenced oracle (rebound globals, unchanged production registries, default refusals).
+ No target/test execution, native/preflight/probe/review launch or scientific qualification follows from this draft.
+@@ -26,7 +30,7 @@
+ Parent must pin both artifact digests/sizes, observe the ended test-runner identity and match its actual in-budget
+ exit 0 before accepting the ALL_OK proposal. Files do not self-certify their fsync/close or process exit.
+ Only test-created artifacts under OUT_DIR/work may be deliberately rewritten/moved; old lane/run evidence stays immutable.
+-Usage: test_pilot_stream_v8.py RUNNER.py RUNNER_SHA256 OUT_DIR (NEW direct child of LANE/evidence/probes).
++Usage: test_pilot_stream_v9.py RUNNER.py RUNNER_SHA256 OUT_DIR (NEW direct child of LANE/evidence/probes).
+ Cooperative 280 s TOTAL budget including the 15 s result reserve; no SIGALRM/SIGKILL/ulimit/automatic subprocess timeout.
+ Exit 0 after terminal envelope; 1 failures/setup, 2 budget, 3 cancel, 70 prestart refusal, 71 publication failed.
+ One verified SIGTERM plus bounded grace only; uncertainty retains parent block. Source-only until independent parent review.
+@@ -53,10 +57,10 @@
+ RESULT_RESERVE_S = 15                 # B1: kept free for the terminal result
+ SLICE_S = 0.2                         # B1: wait slice (cancel/budget noticed within this)
+ STATE = {"t0": None, "deadline": None, "signal": None, "runner": None, "fixture_dispositions": [], "fixture_fds": [],
+-         "admission_pins": None}
++         "admission_pins": None, "publications": []}
+ HOST_CLOCK_RE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[+-][0-9]{4}")
+-TEST_RESULT_SCHEMA = "PA19-PSTREAM-TEST-RESULT-v8"
+-TEST_COMPLETION_SCHEMA = "PA19-PSTREAM-TEST-COMPLETION-v8"
++TEST_RESULT_SCHEMA = "PA19-PSTREAM-TEST-RESULT-v9"
++TEST_COMPLETION_SCHEMA = "PA19-PSTREAM-TEST-COMPLETION-v9"
+ TEST_EXIT_CODES = {"ALL_OK": 0, "FAILURES": 1, "SETUP_FAILED": 1, "BUDGET_EXHAUSTED": 2, "CANCELLED": 3}
+ 
+ 
+@@ -175,18 +179,22 @@
+ 
+ 
+ def fifo_writer(path, chunks, res):
+-    try:
+-        fd = os.open(path, os.O_WRONLY)
++    """T1-1: the writer descriptor is registered BEFORE os.open (fixture_open) and gets exactly one recorded close;
++    an uncertain close stays in the fixture registry (never retried) and fails the writer."""
++    try:
++        record = fixture_open(path, os.O_WRONLY, "fifo_writer " + path)
++        res["fd_record"] = record
+         try:
+             for c in chunks:
+                 mv = memoryview(c)
+                 while mv:
+-                    k = os.write(fd, mv)
++                    k = os.write(record["fd"], mv)
+                     if type(k) is not int or k <= 0 or k > len(mv):
+                         raise OSError(errno.EIO, "FIFO writer made no valid progress")
+                     mv = mv[k:]
+         finally:
+-            os.close(fd)
++            if not fixture_close(record, by="fifo_writer"):
++                raise OSError(errno.EIO, "FIFO writer close outcome uncertain or ownership unproven")
+         res["ok"] = True
+     except Exception as exc:
+         res["error"] = repr(exc)
+@@ -305,14 +313,16 @@
+         for k in set(R.TREE) - self.tree_keys:
+             fd = R.TREE[k][0]
+             owners = [record for record in R.RAW_FDS[len(self.saved_raw):] if isinstance(record, dict)
+-                      and record.get("path") == k and record.get("fd") == fd and record.get("state") == "anchored"]
+-            assert len(owners) == 1, ("fixture TREE entry lacks exactly one anchored RAW_FDS owner", k, owners)
++                      and record.get("path") == k and record.get("fd") == fd and record.get("state") == "anchored"
++                      and R.raw_record_refusals(record) == []]
++            assert len(owners) == 1, ("fixture TREE entry lacks exactly one identity-bound anchored owner", k, owners)
++            owners[0]["close_attempted"] = True      # the record's ONE owning close, outcome retained either way
+             try:
+                 os.close(fd)  # unexpected close failure is a failed fixture, never silently forgotten ownership
+             except BaseException as exc:
+                 owners[0].update(state="close_uncertain", close_error=repr(exc))
+                 raise
+-            owners[0]["state"] = "closed"
++            owners[0].update(state="closed", transfer="RunTreeFixture.restore close")
+             R.TREE.pop(k)
+         for k in set(R.WRITTEN) - self.written_keys:
+             R.WRITTEN.pop(k)
+@@ -418,7 +428,13 @@
+     assert rec["thread_alive_after_join"] is False and rec["undelivered_proof_bytes"] == 0 and f.blocks == ()
+     assert rec["read_endpoint_closed"] is True and rec["write_endpoint_closed"] is True, rec
+     assert rec["close_errors"] == [] and rec["errors"] == [], rec
+-    return {"fed": rec["fed_bytes"]}
++    # I2-1: the feeder's OBSERVED read-endpoint identity is the actual pipe object, independently confirmed by the
++    # registry-held duplicate's own fstat (the descriptor number is never the identity evidence).
++    seen = rec["read_endpoint_observed_identity"]
++    assert type(peer["observed_identity"]) is list and seen == {"dev": peer["observed_identity"][0],
++                                                               "ino": peer["observed_identity"][1], "kind": "fifo"}, (seen, peer)
++    assert type(rec["write_endpoint_observed_identity"]) is dict and rec["write_endpoint_observed_identity"]["kind"] == "fifo"
++    return {"fed": rec["fed_bytes"], "observed_read_endpoint": seen}
+ 
+ 
+ def t_feeder_suffix(R, W):
+@@ -478,6 +494,19 @@
+     return {"fed": rec["fed_bytes"], "read_by_peer": out["n"]}
+ 
+ 
++def descriptor_closed_observation(fd, observe=None):
++    """T2-4: ONLY EBADF is negative evidence that a descriptor number is closed. An open number returns its current
++    fingerprint; EVERY other inspection error is explicit uncertainty, never counted as closure."""
++    observe = os.fstat if observe is None else observe
++    try:
++        st = observe(fd)
++    except OSError as exc:
++        if exc.errno == errno.EBADF:
++            return {"closed": True}
++        return {"closed": None, "uncertain": repr(exc)}
++    return {"closed": False, "fingerprint": [st.st_dev, st.st_ino, st.st_mode]}
++
++
+ def t_feeder_guards(R, W):
+     ok_unknown = ok_list = False
+     try:
+@@ -490,20 +519,25 @@
+         ok_list = True
+     f = R.Feeder((b"a",), "plain")
+     fds = (f.rfd, f.wfd)
++    seen = (f.read_endpoint_observed_identity, f.write_endpoint_observed_identity)
++    assert all(type(x) is dict and set(x) == {"dev", "ino", "kind"} and x["kind"] == "fifo"
++               and type(x["dev"]) is int and type(x["ino"]) is int for x in seen), seen
+     f.abandon()
+-    closed = []
+-    for fd in fds:
+-        try:
+-            os.fstat(fd)
+-            closed.append(False)
+-        except OSError:
+-            closed.append(True)
+-    assert ok_unknown and ok_list and f.rfd is None and f.wfd is None and all(closed), (ok_unknown, ok_list, closed)
++    observations = [descriptor_closed_observation(fd) for fd in fds]
++    assert ok_unknown and ok_list and f.rfd is None and f.wfd is None, (ok_unknown, ok_list)
++    assert all(obs["closed"] is True for obs in observations), observations     # EBADF only; uncertainty refuses
++    # Independent negative: a non-EBADF inspection error is explicit uncertainty, never closure evidence.
++    def eio(fd):
++        raise OSError(errno.EIO, "synthetic endpoint inspection failure")
++    uncertain = descriptor_closed_observation(fds[0], observe=eio)
++    assert uncertain["closed"] is None and "EIO" in uncertain["uncertain"], uncertain
+     rec = f.finish(1)
+     assert rec["started"] is False and rec["fed_bytes"] == 0
++    assert rec["read_endpoint_observed_identity"] == seen[0] and rec["write_endpoint_observed_identity"] == seen[1]
+     assert f.read_endpoint_closed is True and f.write_endpoint_closed is True
+     assert f.close_errors == [] and f.errors == []
+-    return {"abandon_closed_both_ends": True}
++    return {"abandon_closed_both_ends": True, "observed_endpoints": list(seen),
++            "non_ebadf_inspection_refused": uncertain}
+ 
+ 
+ def pipe_writer(w, raw, step, res, record=None):
+@@ -559,14 +593,31 @@
+     c = R.Child.__new__(R.Child)
+     c.proc = types.SimpleNamespace(stdout=stdout)
+     cap = os.path.join(W, name)
+-    try:
+-        c.capture = open(cap, "xb")
++    # T1-1: the capture file is a registered fixture resource BEFORE creation; until a proven reader start it is
++    # closed at most once by the fixture, and an ambiguous start leaves it retained UNKNOWN (never closed here).
++    crec = fixture_fd_record("run_filter capture file " + name)
++    try:
++        try:
++            c.capture = open(cap, "xb")
++        except OSError as exc:
++            crec.update(state="not_acquired", acquisition_error=repr(exc))
++            raise
++        except BaseException as exc:
++            crec.update(state="acquisition_uncertain", acquisition_error=repr(exc))
++            raise
++        fixture_fd_acquired(crec, c.capture.fileno())
++        crec["owner"] = "file_object"
+         c.captured, c.capture_written, c.over_cap, c.reader_error, c.filt = 0, 0, False, None, R.new_filter()
+         rd = spawn(c._read, (), name + "-reader", handoff=rrec)
+     except BaseException:
++        if rrec.get("start") == "ambiguous":
++            crec.update(owner="ambiguous_thread_start", start="ambiguous")   # the reader may own and close it
++        elif crec.get("state") == "open":
++            close_wrapper_once(crec, c.capture)
+         close_wrapper_once(rrec, stdout)   # only while the fixture-held wrapper provably still owns the read end
+         fixture_close(wrec)
+         raise
++    crec.update(start="proven", owner="thread:" + name + "-reader")
+     wres = {}
+     try:
+         wr = spawn(pipe_writer, (w, raw, step, wres, wrec), name + "-writer", handoff=wrec)
+@@ -578,7 +629,9 @@
+     # The capture reader's own wrapper close is the read end's single close; its clean record is the evidence.
+     rrec["close_attempts"].append({"by": "capture reader", "error": c.reader_error})
+     rrec["state"] = "closed" if stdout.closed is True and c.reader_error is None else "close_uncertain"
+-    assert rrec["state"] == "closed" and wrec["state"] == "closed", (rrec, wrec)
++    crec["close_attempts"].append({"by": "capture reader", "error": c.reader_error})
++    crec["state"] = "closed" if c.capture.closed is True and c.reader_error is None else "close_uncertain"
++    assert rrec["state"] == "closed" and wrec["state"] == "closed" and crec["state"] == "closed", (rrec, wrec, crec)
+     with open(cap, "rb") as fh:
+         kept = fh.read()
+     return c, kept
+@@ -638,9 +691,27 @@
+     c = R.Child.__new__(R.Child)
+     c.proc = types.SimpleNamespace(stdout=ScriptedStdout(chunks))
+     cap = os.path.join(W, name)
+-    c.capture = open(cap, "xb")
+-    c.captured, c.capture_written, c.over_cap, c.reader_error, c.filt = 0, 0, False, None, R.new_filter()
++    crec = fixture_fd_record("scripted_filter capture file " + name)
++    try:
++        c.capture = open(cap, "xb")
++    except OSError as exc:
++        crec.update(state="not_acquired", acquisition_error=repr(exc))
++        raise
++    except BaseException as exc:
++        crec.update(state="acquisition_uncertain", acquisition_error=repr(exc))
++        raise
++    fixture_fd_acquired(crec, c.capture.fileno())
++    crec["owner"] = "file_object"
++    try:
++        c.captured, c.capture_written, c.over_cap, c.reader_error, c.filt = 0, 0, False, None, R.new_filter()
++    except BaseException:
++        close_wrapper_once(crec, c.capture)        # T1-1: no reader exists yet; the fixture closes it at most once
++        raise
++    crec["owner"] = "synchronous capture reader"
+     c._read()                                      # never blocks: the script is finite
++    crec["close_attempts"].append({"by": "synchronous capture reader", "error": c.reader_error})
++    crec["state"] = "closed" if c.capture.closed is True and c.reader_error is None else "close_uncertain"
++    assert crec["state"] == "closed", crec
+     with open(cap, "rb") as fh:
+         kept = fh.read()
+     return c, kept
+@@ -1190,7 +1261,11 @@
+             "summaryless_closeout_after_explicit_failure_disposition": scenario("nosummary-closeout-disposed", {
+                 "no_summary": True, "closeout_without_summary": True, "publication_failure_disposed": True}),
+             "boolean_closeout_exit_after_explicit_failure_disposition": scenario("closeout-exit-bool-disposed", {
+-                "closeout_exit": False, "publication_failure_disposed": True})}
++                "closeout_exit": False, "publication_failure_disposed": True}),
++            # GD2 timely twin: a CURRENT attempt's absent mandatory closeout is admissible ONLY by explicit NEW
++            # publication-failure disposal (audited release, never qualification).
++            "current_missing_closeout_after_explicit_failure_disposition": scenario("no-closeout-disposed", {
++                "no_closeout": True, "publication_failure_disposed": True})}
+         refused = {
+             "no_allocation": R.allocation_refusals({}, go_sha, os.path.join(W, "no-allocation"), 1000)[0],
+             "known_summary_assertions_without_disposition": scenario("no-disp", {"no_disposition": True}),
+@@ -1259,7 +1334,13 @@
+             "closeout_exit_boolean_false_for_actual_zero": scenario("closeout-exit-bool", {"closeout_exit": False}),
+             "closeout_exit_float_zero_for_actual_zero": scenario("closeout-exit-float", {"closeout_exit": 0.0}),
+             "closeout_summary_bytes_float_equal_size": scenario("closeout-bytes-float", {
+-                "closeout_summary_bytes_float": True})}
++                "closeout_summary_bytes_float": True}),
++            # GD2: a bare legacy flag can never dispose of a CURRENT attempt's missing mandatory closeout ...
++            "current_missing_closeout_with_bare_legacy_flag": scenario("no-closeout-legacy-flag", {
++                "no_closeout": True, "disposition_overrides": {"legacy_audit": True}}),
++            # ... nor of a legacy-schema attempt whose launch bytes are not bound (legacy status unproven).
++            "unbound_legacy_launch_missing_closeout_with_legacy_flag": scenario("legacy-unbound-launch", {
++                "legacy": True, "no_launch_record": True})}
+         for field in required:
+             refused["audit_not_true_" + field] = scenario("audit-" + field,
+                 {"disposition_overrides": {field: 1}})
+@@ -1279,7 +1360,10 @@
+             "reader_close_error": None, "unblock_close_error": None,
+             "cap": 1000, "connected": True, "eof": True, "over_cap": False, "error": None,
+             "unblocked_by_runner": False, "discarded": 0, "received": 100, "retained": 100,
+-            "sha256_of_retained": S, "buffer_rehash": [S, 100], "thread_alive_after_join": False}
++            "sha256_of_retained": S, "buffer_rehash": [S, 100], "thread_alive_after_join": False,
++            "fifo_identity": [17, 31], "reader_fd_acquired": True,
++            "reader_fd_observed_identity": {"dev": 17, "ino": 31, "kind": "fifo"},
++            "unblock_fd_acquired": False, "unblock_fd_observed_identity": None, "unblock_fd": None}
+     receipt = {"problems": [], "stream_thread_alive_after_join": False, "group_empty_after_reap": True,
+                        "reader_error": None, "quarantined": False, "stop_refused": False,
+                        "actual_owned_reap": True, "wait_lost": None, "settlement_publication_in_bounds": True, "grace_completion_in_bounds": True,
+@@ -1295,7 +1379,10 @@
+                               "proof_bytes_fed": 100, "delivery_error": None, "exception": None, "close_error": None,
+                               "thread_alive_after_join": False, "construction_error": None,
+                               "read_endpoint_closed": True, "write_endpoint_closed": True,
+-                              "close_errors": [], "errors": [], "finish_deadline_in_bounds": True},
++                              "close_errors": [], "errors": [], "finish_deadline_in_bounds": True,
++                              "read_endpoint_acquired": True, "write_endpoint_acquired": True,
++                              "read_endpoint_observed_identity": {"dev": 17, "ino": 40 + 2 * seq, "kind": "fifo"},
++                              "write_endpoint_observed_identity": {"dev": 17, "ino": 41 + 2 * seq, "kind": "fifo"}},
+                "stdout_filter": {"raw_eof": True, "raw_bytes": 700, "dup_bytes_dropped": 200}}
+         rec.update(copy.deepcopy(receipt))
+         lines = [R.STDIN_LINE, "c parsing input formula with 10 variables and 20 clauses",
+@@ -1524,6 +1611,56 @@
+         ("checker A dup bytes float", lambda fx: A(fx)["stdout_filter"].update(dup_bytes_dropped=200.0), ["A.FILTER"]),
+         ("checker A dup bytes negative",
+          lambda fx: A(fx)["stdout_filter"].update(raw_bytes=499, dup_bytes_dropped=-1), ["A.FILTER"]),
++        # T3-6: the checker's own nondropped_bytes is an exact int; its equal float alone must refuse.
++        ("checker A nondropped bytes float", lambda fx: A(fx).update(nondropped_bytes=500.0), ["A.FILTER"]),
++    ]
++    # I1-1/IP1-1 (P): exact observed collector endpoint schema; every substitute below refuses by schema alone.
++    seen_fifo = {"dev": 17, "ino": 31, "kind": "fifo"}
++
++    def one_valued_fifo(fx):
++        sink(fx).update(fifo_identity=[1, 31], reader_fd_observed_identity={"dev": 1, "ino": 31, "kind": "fifo"})
++    m += [
++        ("coherent one-valued collector FIFO identity", one_valued_fifo, []),
++        ("buffer reader observed bool dev at one",
++         lambda fx: (one_valued_fifo(fx), sink(fx).update(reader_fd_observed_identity={"dev": True, "ino": 31,
++                                                                                       "kind": "fifo"})),
++         ["BUFFER_INCOMPLETE"]),
++        ("buffer reader observation missing", lambda fx: sink(fx).pop("reader_fd_observed_identity"),
++         ["BUFFER_INCOMPLETE"]),
++        ("buffer reader observation unavailable",
++         lambda fx: sink(fx).update(reader_fd_observed_identity={"unavailable": "OSError(5, 'synthetic')"}),
++         ["BUFFER_INCOMPLETE"]),
++        ("buffer reader numeric descriptor as identity", lambda fx: sink(fx).update(reader_fd_observed_identity=31),
++         ["BUFFER_INCOMPLETE"]),
++        ("buffer reader observed different FIFO",
++         lambda fx: sink(fx).update(reader_fd_observed_identity=dict(seen_fifo, ino=32)), ["BUFFER_INCOMPLETE"]),
++        ("buffer reader observed extra key",
++         lambda fx: sink(fx).update(reader_fd_observed_identity=dict(seen_fifo, fd=7)), ["BUFFER_INCOMPLETE"]),
++        ("buffer reader acquisition truthy 1", lambda fx: sink(fx).update(reader_fd_acquired=1), ["BUFFER_INCOMPLETE"]),
++        ("buffer reader acquisition missing", lambda fx: sink(fx).pop("reader_fd_acquired"), ["BUFFER_INCOMPLETE"]),
++        ("buffer unblock acquired without observation", lambda fx: sink(fx).update(unblock_fd_acquired=True),
++         ["BUFFER_INCOMPLETE"]),
++        ("buffer unblock observation without acquisition",
++         lambda fx: sink(fx).update(unblock_fd_observed_identity=dict(seen_fifo)), ["BUFFER_INCOMPLETE"]),
++        ("buffer unblock acquisition state missing", lambda fx: sink(fx).pop("unblock_fd_acquired"),
++         ["BUFFER_INCOMPLETE"]),
++        ("buffer retained FIFO identity missing", lambda fx: sink(fx).pop("fifo_identity"), ["BUFFER_INCOMPLETE"]),
++        ("buffer retained FIFO identity float", lambda fx: sink(fx).update(fifo_identity=[17.0, 31]),
++         ["BUFFER_INCOMPLETE"]),
++        # I2-1 (P): each checker feed must carry acquired, exactly observed pipe endpoints.
++        ("checker A read endpoint observation missing",
++         lambda fx: A(fx)["stdin_feed"].pop("read_endpoint_observed_identity"), ["A.FEED_STATE"]),
++        ("checker A write endpoint observation unavailable",
++         lambda fx: A(fx)["stdin_feed"].update(write_endpoint_observed_identity={"unavailable": "OSError(9)"}),
++         ["A.FEED_STATE"]),
++        ("checker A read endpoint numeric identity",
++         lambda fx: A(fx)["stdin_feed"].update(read_endpoint_observed_identity=42), ["A.FEED_STATE"]),
++        ("checker A write endpoint observed as file",
++         lambda fx: A(fx)["stdin_feed"].update(write_endpoint_observed_identity={"dev": 17, "ino": 43,
++                                                                                "kind": "file"}),
++         ["A.FEED_STATE"]),
++        ("checker B read endpoint acquisition truthy 1",
++         lambda fx: B(fx)["stdin_feed"].update(read_endpoint_acquired=1), ["B.FEED_STATE"]),
+     ]
+     return m
+ 
+@@ -1630,18 +1767,21 @@
+     res = {}
+ 
+     def writer():
++        # T1-1: registered BEFORE os.open; exactly one recorded close; an uncertain close stays retained.
+         try:
+-            fd = os.open(p, os.O_WRONLY)
++            record = fixture_open(p, os.O_WRONLY, "collector fixture writer " + p)
++            res["fd_record"] = record
+             try:
+                 mv = memoryview(data)
+                 while mv:
+-                    k = os.write(fd, mv)
++                    k = os.write(record["fd"], mv)
+                     if type(k) is not int or k <= 0 or k > len(mv):
+                         raise OSError(errno.EIO, "collector fixture writer made no valid progress")
+                     mv = mv[k:]
+                 gate.wait(30)
+             finally:
+-                os.close(fd)
++                if not fixture_close(record, by="collector fixture writer"):
++                    raise OSError(errno.EIO, "collector fixture writer close uncertain or ownership unproven")
+             res["ok"] = True
+         except Exception as exc:
+             res["error"] = repr(exc)
+@@ -2249,6 +2389,11 @@
+                    "synthetic_never_open_fd": synthetic_never_open_fd,
+                    "licensed_fault_evidence": copy.deepcopy(licensed_fault_evidence)}
+     disposition["licensed_fault_evidence_sha256"] = sha(canonical_snapshot(disposition["licensed_fault_evidence"]).encode())
++    # T2-3: the authoritative runner identity is bound into the disposition interface at disposal time.
++    runner_state = getattr(R, "STATE", None)
++    disposition["runner_identity"] = copy.deepcopy(runner_state.get("runner_identity")) \
++        if isinstance(runner_state, dict) else None
++    disposition["runner_identity_sha256"] = sha(canonical_snapshot(disposition["runner_identity"]).encode())
+     if kind == "stdin feeder":
+         proof = [original_descriptor_identities, original_endpoint_fingerprints, synthetic_never_open_fd,
+                  both_original_descriptors_observed_closed]
+@@ -2291,6 +2436,9 @@
+     if disposition.get("resource_id") != id(obj):
+         return {"kind": kind, "object_id": id(obj), "lifecycle_refusals": ["disposition resource identity changed"]}
+     frozen_reasons, frozen = frozen_snapshot_refusals(R, disposition)
++    if runner_identity_key(disposition.get("runner_identity")) is None \
++            or sha(canonical_snapshot(disposition.get("runner_identity")).encode()) != disposition.get("runner_identity_sha256"):
++        frozen_reasons = frozen_reasons + ["authoritative runner identity missing, malformed, contradictory or changed"]
+     if kind == "file sink":
+         # Defined by the separately parent-integrated offline D2 fixture extension, never a production hook.
+         state = d2_fixture_fault_state(R, obj, disposition["expected_faults"])
+@@ -2342,20 +2490,30 @@
+                 or any(type(fd) is not int or fd < 0 for fd in originals) or type(synthetic) is not int \
+                 or synthetic in originals or not isinstance(fingerprints, (list, tuple)) or len(fingerprints) != 2:
+             reasons.append("missing exact independently recorded original and synthetic endpoint identities")
++        elif not all(pipe_fingerprint_ok(value) for value in fingerprints):
++            # T2-1: malformed/untyped fingerprints mean UNKNOWN ownership: no reuse-based reasoning is permitted and
++            # only an EBADF observation of every number avoids an open-endpoint refusal (nothing is ever closed).
++            reasons.append("original endpoint fingerprints malformed; endpoint ownership unknown")
++            for fd in list(originals) + [synthetic]:
++                if descriptor_closed_observation(fd)["closed"] is not True:
++                    reasons.append("endpoint %d not proven closed under unknown fingerprints" % fd)
+         else:
++            observed = (getattr(obj, "read_endpoint_observed_identity", None),
++                        getattr(obj, "write_endpoint_observed_identity", None))
++            if any(type(seen) is not dict or seen != {"dev": value[0], "ino": value[1], "kind": "fifo"}
++                   for seen, value in zip(observed, fingerprints)):
++                reasons.append("original fingerprints are not bound to the producer's observed endpoint identities")
+             if getattr(obj, "read_endpoint_identity", None) != originals[0] \
+                     or getattr(obj, "write_endpoint_identity", None) != originals[1] \
+                     or state["rfd"] != synthetic or getattr(obj, "read_close_fd", None) != synthetic:
+                 reasons.append("failed-close endpoint identity was erased or changed")
+             for fd, original in list(zip(originals, fingerprints)) + [(synthetic, None)]:
+-                try:
+-                    current = os.fstat(fd)
+-                except OSError as exc:
+-                    if exc.errno != errno.EBADF:
+-                        reasons.append("independent endpoint check is not EBADF: %d" % fd)
+-                else:
+-                    if original is None or list(original) == [current.st_dev, current.st_ino, current.st_mode]:
+-                        reasons.append("disposed original/synthetic endpoint is open: %d" % fd)
++                observation = descriptor_closed_observation(fd)
++                if observation["closed"] is None:
++                    reasons.append("independent endpoint check is not EBADF: %d" % fd)
++                elif observation["closed"] is False \
++                        and (original is None or observation["fingerprint"] == list(original)):
++                    reasons.append("disposed original/synthetic endpoint is open: %d" % fd)
+         if state["wfd"] is not None or state["started"] is not False \
+                 or state["read_endpoint_closed"] is not None or state["write_endpoint_closed"] is not True \
+                 or getattr(obj, "read_close_attempted", None) is not True \
+@@ -2394,24 +2552,60 @@
+     return module
+ 
+ def publish_json_x(path, obj):
+-    """Return publication evidence only AFTER exclusive write, flush, fsync AND close have returned."""
++    """Return publication evidence only AFTER exclusive write, fsync AND close have returned. T1-3: every attempt is
++    retained in STATE['publications'] BEFORE creation with its phase, partial-creation and descriptor/close evidence
++    (simultaneous operation and close errors both kept); a failure is evidence for an explicit disposition, never
++    proof that the partial artifact or descriptor was resolved."""
+     data = (json.dumps(obj, indent=1, sort_keys=True) + "\n").encode()
+-    with open(path, "xb") as fh:
+-        if fh.write(data) != len(data):
+-            raise OSError("short JSON write")
+-        fh.flush()
+-        os.fsync(fh.fileno())
++    attempt = {"path": path, "bytes_expected": len(data), "sha256_expected": sha(data), "state": "creating",
++               "fd": None, "observed_identity": None, "written": 0, "close_attempted": False, "close_error": None,
++               "error": None}
++    STATE.setdefault("publications", []).append(attempt)
++    try:
++        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o644)
++    except OSError as exc:
++        attempt.update(state="not_created", error=repr(exc))
++        raise
++    except BaseException as exc:
++        attempt.update(state="creation_uncertain", error=repr(exc))
++        raise
++    attempt.update(fd=fd, state="created_partial")
++    try:
++        st = os.fstat(fd)
++        attempt["observed_identity"] = [st.st_dev, st.st_ino]
++        view = memoryview(data)
++        while view:
++            n = os.write(fd, view)
++            if type(n) is not int or n <= 0 or n > len(view):
++                raise OSError(errno.EIO, "JSON publication made no valid progress")
++            view = view[n:]
++            attempt["written"] += n
++        os.fsync(fd)
++        attempt["state"] = "fsynced_open"
++    except BaseException as exc:
++        attempt.update(state="failed_partial", error=repr(exc))
++        raise
++    finally:
++        attempt["close_attempted"] = True
++        try:
++            os.close(fd)
++        except BaseException as exc:
++            attempt.update(close_error=repr(exc), state="close_uncertain")
++            raise
++    attempt["state"] = "published"
+     observed = time.monotonic()
+     return {"sha256": sha(data), "bytes": len(data), "publication_observed_mono": observed}
+ 
+ def selected_tests(R):
+-    """Preserve all frozen 45 P/34 D cases in order, then expand; no old test may disappear or duplicate."""
++    """Preserve all frozen 45 P/34 D cases in order (and the v8 TESTS order), then expand; no old test may disappear
++    or duplicate. v9 appends its new oracles after every v8 case."""
+     if hasattr(R, "ProofBuffer") and hasattr(R, "Feeder"):
+         tests, required = list(TESTS), FROZEN_P_TEST_NAMES
+     elif hasattr(R, "ProofSink"):
+         p_only = ('t_buffer_roundtrip', 't_buffer_cap', 't_buffer_never_connected', 't_buffer_fifo_replaced', 't_buffer_live_collector_release', 't_feeder_plain', 't_feeder_suffix', 't_feeder_hold_epipe', 't_feeder_midstream_close', 't_feeder_guards', 't_feeder_holder_charge', 't_feeder_abandon_close_error', 't_run_kissat_owner_on_exception', 't_qualify_matrix', 't_c7b_feeder_predicate', 't_transport_close_fault_identity', 't_buffer_observed_identity_retained')
+         tests = [test for test in TESTS if test.__name__ not in p_only]
+-        for name in ("t_d2_sink_roundtrip", "t_d2_sink_mismatch_and_replacement", "t_d2_qualification_matrix"):
++        for name in ("t_d2_sink_roundtrip", "t_d2_sink_mismatch_and_replacement", "t_d2_qualification_matrix",
++                     "t_d2_rehash_close_registration_fence"):
+             test = globals().get(name)
+             if not callable(test):
+                 raise RuntimeError("required frozen D2 offline test bundle not integrated: " + name)
+@@ -2877,12 +3071,10 @@
+         if type(raw_fds) is not list:
+             raise TypeError("runner RAW_FDS registry missing or not a list")
+         for index, record in enumerate(raw_fds):
+-            state = record.get("state") if isinstance(record, dict) else None
+-            tree = R.TREE.get(record.get("path")) if isinstance(record, dict) else None
+-            tree_owned = isinstance(tree, tuple) and len(tree) == 3 and tree[0] == record.get("fd")
+-            if state not in ("anchored", "closed", "not_acquired") or (state == "anchored" and not tree_owned):
++            refusals = independent_raw_record_refusals(record, R.TREE)
++            if refusals:
+                 inventory.append({"kind": "raw descriptor (independent test inspection)", "index": index,
+-                                  "resource_id": id(record),
++                                  "resource_id": id(record), "refusals": refusals,
+                                   "state": dict(record) if isinstance(record, dict) else repr(record)})
+         inventory.extend(fixture_fd_inventory(STATE["fixture_fds"]))
+         # Revalidation is unconditional even when the production inventory is empty.
+@@ -2901,6 +3093,32 @@
+     except BaseException as exc:
+         out["errors"].append("proof RAM accounting failed: %r" % (exc,))
+     return out
++
++def independent_raw_record_refusals(record, tree):
++    """T2-5/T3-3: independent TEST inspection of one runner RAW_FDS record. Resolved ONLY with coherent history:
++    not_acquired (no number, observation or close), closed (one returned close of a known number) or anchored (the
++    TREE entry owns exactly that number AND the record's observed directory dev/ino). State strings alone never
++    resolve ownership; every other state or shape stays unresolved."""
++    if not isinstance(record, dict):
++        return ["malformed raw descriptor record"]
++    state, fd, seen = record.get("state"), record.get("fd"), record.get("observed_identity")
++    if state == "not_acquired":
++        if fd is None and seen is None and record.get("close_attempted") is False:
++            return []
++        return ["not_acquired record with descriptor, observation or close evidence"]
++    if state == "closed":
++        if type(fd) is int and fd >= 0 and record.get("close_attempted") is True and record.get("close_error") is None:
++            return []
++        return ["closed record without one returned close of a known descriptor"]
++    if state == "anchored":
++        entry = tree.get(record.get("path")) if isinstance(tree, dict) else None
++        if type(fd) is int and record.get("close_attempted") is False and type(seen) is dict \
++                and set(seen) == {"dev", "ino", "kind"} and seen["kind"] == "dir" \
++                and type(seen["dev"]) is int and type(seen["ino"]) is int \
++                and isinstance(entry, tuple) and entry == (fd, seen["dev"], seen["ino"]):
++            return []
++        return ["anchored record is not identity-bound to its TREE owner"]
++    return ["raw descriptor unresolved in state %r" % (state,)]
+ 
+ def terminal_refusals(envelope):
+     """A8: no missing, nullable, truthy substitute or unknown envelope field can authorize ALL_OK; thread, latch and
+@@ -2944,61 +3162,90 @@
+             reasons.append("terminal proof RAM still held or accounting unknown")
+     return reasons
+ 
+-def d2_assert_sink_endpoints_closed(sink, file_fd, writer=None):
+-    """Independent OS checks of EVERY acquired endpoint, not merely the sink's settlement assertions. Each observed
+-    acquisition keeps an enumerable descriptor number; a number that is open again must name a DIFFERENT file
+-    (legitimate reuse), never the observed endpoint itself; an open number of unknown identity refuses."""
++def d2_assert_sink_endpoints_closed(sink, file_fd, writer=None, expected=("reader", "rehash")):
++    """Independent OS checks of EVERY acquired endpoint, not merely the sink's settlement assertions. T3-2: the
++    scenario's EXPECTED acquisitions are an independent ledger: each expected endpoint must still enumerate its
++    acquisition flag, descriptor number and an available observed identity; every unexpected endpoint must show
++    explicit non-acquisition. A number that is open again must name a DIFFERENT object (legitimate reuse), never the
++    observed endpoint; only EBADF counts as closed and any other inspection error refuses."""
+     assert sink.thread is not None and not sink.thread.is_alive(), sink.accounting()
+     assert sink.file is not None and sink.file.closed is True, sink.accounting()
+     assert sink.reader_fd_closed is True and sink.unblock_fd_closed is True and sink.rehash_fd_closed is True
+     assert sink.flush_completed is True and sink.fsync_completed is True and sink.close_completed is True
+-    endpoints = [("file", file_fd, None if sink.file_identity is None
+-                  else {"dev": sink.file_identity[0], "ino": sink.file_identity[1]})]
++    assert type(file_fd) is int and file_fd >= 0 and isinstance(sink.file_identity, list), (file_fd, sink.file_identity)
++    endpoints = [("file", file_fd, {"dev": sink.file_identity[0], "ino": sink.file_identity[1]})]
+     for side in ("reader", "unblock", "rehash"):
+-        number, observed = getattr(sink, side + "_fd"), getattr(sink, side + "_fd_observed_identity")
+-        if observed is not None:
+-            assert isinstance(observed, dict) and "unavailable" not in observed, (side, observed)
++        acquired = getattr(sink, side + "_fd_acquired", "missing")
++        number, observed = getattr(sink, side + "_fd", "missing"), getattr(sink, side + "_fd_observed_identity", "missing")
++        if side in expected:
++            assert acquired is True, ("expected acquisition history missing", side, acquired)
+             assert type(number) is int and number >= 0, ("observed endpoint lost its descriptor number", side, number)
+-        endpoints.append((side, number, observed))
++            assert type(observed) is dict and set(observed) == {"dev", "ino", "kind"} \
++                and type(observed["dev"]) is int and type(observed["ino"]) is int, ("unavailable observation", side, observed)
++            endpoints.append((side, number, observed))
++        else:
++            assert acquired is False and number is None and observed is None, ("unexpected acquisition", side,
++                                                                                acquired, number, observed)
++    if side_record_required(sink):
++        record = sink.rehash_record
++        assert isinstance(record, dict) and record.get("state") == "closed" and record.get("close_attempted") is True \
++            and record.get("fd") == sink.rehash_fd and record.get("observed_identity") == sink.rehash_fd_observed_identity, record
+     if writer is not None:
++        record = writer.get("fd_record")
+         assert writer.get("closed") is True and "close_error" not in writer, writer
+-        endpoints.append(("writer", writer.get("fd"), writer.get("observed_identity")))
++        assert isinstance(record, dict) and record.get("state") == "closed" and type(record.get("fd")) is int \
++            and len(record.get("close_attempts", [])) == 1 and record["close_attempts"][0].get("error") is None, record
++        assert writer.get("fd") == record["fd"] and isinstance(writer.get("observed_identity"), dict), writer
++        endpoints.append(("writer", record["fd"], writer["observed_identity"]))
+     checked = []
+     for side, fd, observed in endpoints:
+-        if fd is None:
+-            continue
+-        try:
+-            st = os.fstat(fd)
+-        except OSError as exc:
+-            assert exc.errno == errno.EBADF, (side, fd, exc)
+-        else:
+-            if observed is None or [st.st_dev, st.st_ino] == [observed["dev"], observed["ino"]]:
+-                raise AssertionError("D2 fixture endpoint still open or unidentifiable: %s %d" % (side, fd))
++        observation = descriptor_closed_observation(fd)
++        if observation["closed"] is None:
++            raise AssertionError(("endpoint inspection uncertain; never closure evidence", side, fd, observation))
++        if observation["closed"] is False \
++                and observation["fingerprint"][:2] == [observed["dev"], observed["ino"]]:
++            raise AssertionError("D2 fixture endpoint still open: %s %d" % (side, fd))
+         checked.append(fd)
+     return sorted(set(checked))
++
++
++def side_record_required(sink):
++    """A sink that acquired its rehash descriptor must retain the coherent RAW_FDS record of that acquisition."""
++    return getattr(sink, "rehash_fd_acquired", None) is True
+ 
+ def d2_fifo_writer(path, chunks, result, end):
+     """Test-owned nonblocking writer bounded by ONE fixed original deadline `end`. T2P-3: every successful open,
+     write and close observation is fenced against that same deadline; a late success is recorded in `late` and
+-    refuses ok (never retried, never renewed). Actual closure evidence is preserved independently of timeliness."""
++    refuses ok (never retried, never renewed). T1-1/T3-2: the descriptor is registered in the fixture registry BEFORE
++    any open attempt; its acquisition, observed identity and ONE close outcome stay enumerable independently."""
+     fd = None
+-    result.update(opened=False, closed=True, ok=False, late=[])
++    record = fixture_fd_record("d2_fifo_writer " + path)
++    result.update(opened=False, closed=True, ok=False, late=[], fd_record=record)
+     try:
+         while fd is None:
+             if time.monotonic() >= end:
++                record.update(state="not_acquired", acquisition_error="original deadline before acquisition")
+                 raise RuntimeError("D2 fixture writer open deadline")
+             try:
+                 fd = os.open(path, os.O_WRONLY | os.O_NONBLOCK | os.O_NOFOLLOW | os.O_CLOEXEC)
+-                result.update(fd=fd, opened=True, closed=False)
+             except OSError as exc:
+                 if exc.errno != errno.ENXIO:
++                    record.update(state="not_acquired", acquisition_error=repr(exc))
+                     raise
+                 time.sleep(min(0.01, max(0.0, end - time.monotonic())))
++                continue
++            except BaseException as exc:
++                record.update(state="acquisition_uncertain", acquisition_error=repr(exc))
++                raise
++            fixture_fd_acquired(record, fd)
++            result.update(fd=fd, opened=True, closed=False)
+         if time.monotonic() >= end:
+             result["late"].append("open")
+             raise TimeoutError("D2 fixture writer open completed after its original deadline")
+-        st = os.fstat(fd)
+-        result["observed_identity"] = {"dev": st.st_dev, "ino": st.st_ino}
++        seen = record.get("observed_identity")
++        if type(seen) is not list or len(seen) != 3:
++            raise RuntimeError("D2 fixture writer observed identity unavailable %r" % (seen,))
++        result["observed_identity"] = {"dev": seen[0], "ino": seen[1]}
+         for chunk in chunks:
+             view = memoryview(chunk)
+             while view:
+@@ -3019,14 +3266,12 @@
+         result["error"] = repr(exc)
+     finally:
+         if fd is not None:
+-            try:
+-                os.close(fd)
+-            except BaseException as exc:
+-                result["close_error"] = repr(exc)      # closure unknown: retained, never retried
+-            else:
++            if fixture_close(record, by="d2_fifo_writer"):
+                 result["closed"] = True
+                 if time.monotonic() >= end:
+                     result["late"].append("close")
++            else:
++                result["close_error"] = record.get("close_error") or "close ownership unproven"   # retained, never retried
+     result["ok"] = (fd is not None and "error" not in result and "close_error" not in result
+                     and result["closed"] is True and result["late"] == [])
+ 
+@@ -3077,8 +3322,17 @@
+         fifo_seen = {"dev": obj.fifo_identity[0], "ino": obj.fifo_identity[1], "kind": "fifo"}
+         if rec.get("reader_fd_observed_identity") != fifo_seen or rec.get("unblock_fd_observed_identity") is not None \
+                 or type(rec.get("reader_fd")) is not int or rec.get("unblock_fd") is not None \
+-                or type(rec.get("rehash_fd")) is not int:
++                or type(rec.get("rehash_fd")) is not int or rec.get("reader_fd_acquired") is not True \
++                or rec.get("unblock_fd_acquired") is not False or rec.get("rehash_fd_acquired") is not True \
++                or rec.get("fifo_identity") != obj.fifo_identity:
+             why.append("file sink endpoint observation history deviates from the licensed fixture")
++        rehash_record = rec.get("rehash_fd_record")
++        if not isinstance(rehash_record, dict) or rehash_record.get("state") != "closed" \
++                or rehash_record.get("close_attempted") is not True or rehash_record.get("close_error") is not None \
++                or rehash_record.get("fd") != rec.get("rehash_fd") \
++                or rehash_record.get("observed_identity") != rec.get("rehash_fd_observed_identity") \
++                or not any(item is obj.rehash_record for item in R.RAW_FDS):
++            why.append("rehash acquisition/close history is not one coherent retained RAW_FDS record")
+         made = R.CREATED.get(obj.file_path)
+         if not isinstance(made, dict) or made.get("state") != "open" or made.get("kind") != "file" \
+                 or made.get("identity") != obj.file_identity or made.get("error") is not None:
+@@ -3095,6 +3349,11 @@
+         current_pin = R.sha_file(obj.file_path, limit=obj.cap)
+         state["current_file_identity"] = [current.st_dev, current.st_ino]
+         state["current_file_pin"] = list(current_pin)
++        # T2-2: exact measured-pair schema BEFORE any comparison (a receipt pair of [S, 100.0] never matches).
++        if not measured_pair(current_pin, tuple):
++            why.append("independent current proof measurement is not an exact (digest, size) tuple")
++        if rec.get("file_rehash") is not None and not measured_pair(rec.get("file_rehash"), list):
++            why.append("receipt file_rehash is not an exact [digest, non-bool int] list")
+         if list(expected_faults) == ["proof rehash mismatch"]:
+             true_integrity = ("file_same_identity_regular", "file_nlink_one", "file_size_matches_written",
+                               "file_within_cap", "file_metadata_stable_during_rehash")
+@@ -3164,7 +3423,15 @@
+             "file_nlink_one": True, "file_size_matches_written": True, "file_within_cap": True,
+             "file_metadata_stable_during_rehash": True, "file_rehash_matches": True,
+             "file_integrity": True, "finish_deadline_in_bounds": True,
+-            "file_identity": [17, 23], "file_identity_at_finish": [17, 23]}
++            "file_identity": [17, 23], "file_identity_at_finish": [17, 23],
++            "fifo_identity": [17, 31], "reader_fd_acquired": True,
++            "reader_fd_observed_identity": {"dev": 17, "ino": 31, "kind": "fifo"},
++            "unblock_fd_acquired": False, "unblock_fd_observed_identity": None, "unblock_fd": None,
++            "rehash_fd_acquired": True, "rehash_fd": 7,
++            "rehash_fd_observed_identity": {"dev": 17, "ino": 23, "kind": "file"},
++            "rehash_fd_record": {"purpose": "proof sink rehash", "path": "/synthetic/offline.drat", "fd": 7,
++                                 "state": "closed", "observed_identity": {"dev": 17, "ino": 23, "kind": "file"},
++                                 "close_attempted": True, "close_error": None, "error": None, "transfer": None}}
+ 
+     def receipt(seq, rc):
+         pid = 454540 + seq
+@@ -3354,10 +3621,57 @@
+              ["SINK_INCOMPLETE"])
+         case("sink final identity tuple container", lambda fx: sink(fx).update(file_identity_at_finish=(17, 23)),
+              ["SINK_INCOMPLETE"])
+-        case("coherent one-valued file identity",
+-             lambda fx: sink(fx).update(file_identity=[1, 23], file_identity_at_finish=[1, 23]), [])
+-        case("sink final identity bool at one",
+-             lambda fx: sink(fx).update(file_identity=[1, 23], file_identity_at_finish=[True, 23]), ["SINK_INCOMPLETE"])
++        def one_valued_file(fx, final=None):
++            # The coherent twin moves EVERY observation of the proof inode (rehash descriptor and its record) to dev 1.
++            seen_one = {"dev": 1, "ino": 23, "kind": "file"}
++            sink(fx).update(file_identity=[1, 23], file_identity_at_finish=[1, 23] if final is None else final,
++                            rehash_fd_observed_identity=dict(seen_one))
++            sink(fx)["rehash_fd_record"]["observed_identity"] = dict(seen_one)
++        case("coherent one-valued file identity", one_valued_file, [])
++        case("sink final identity bool at one", lambda fx: one_valued_file(fx, final=[True, 23]), ["SINK_INCOMPLETE"])
++        # I1-1: sink_integrity consumes the exact producer acquisition/observation/close schema of every endpoint.
++        seen_fifo = {"dev": 17, "ino": 31, "kind": "fifo"}
++        seen_file = {"dev": 17, "ino": 23, "kind": "file"}
++
++        def one_valued_fifo(fx):
++            sink(fx).update(fifo_identity=[1, 31], reader_fd_observed_identity={"dev": 1, "ino": 31, "kind": "fifo"})
++        case("coherent one-valued sink FIFO identity", one_valued_fifo, [])
++        case("sink reader observed bool dev at one",
++             lambda fx: (one_valued_fifo(fx), sink(fx).update(reader_fd_observed_identity={"dev": True, "ino": 31,
++                                                                                            "kind": "fifo"})),
++             ["SINK_INCOMPLETE"])
++        for label, mutate in (
++                ("reader observation missing", lambda fx: sink(fx).pop("reader_fd_observed_identity")),
++                ("reader observation unavailable",
++                 lambda fx: sink(fx).update(reader_fd_observed_identity={"unavailable": "OSError(5, 'synthetic')"})),
++                ("reader numeric descriptor as identity", lambda fx: sink(fx).update(reader_fd_observed_identity=7)),
++                ("reader observed different FIFO",
++                 lambda fx: sink(fx).update(reader_fd_observed_identity=dict(seen_fifo, ino=32))),
++                ("reader observed as file", lambda fx: sink(fx).update(reader_fd_observed_identity=dict(seen_fifo,
++                                                                                                         kind="file"))),
++                ("reader acquisition truthy 1", lambda fx: sink(fx).update(reader_fd_acquired=1)),
++                ("reader acquisition missing", lambda fx: sink(fx).pop("reader_fd_acquired")),
++                ("unblock acquired without observation", lambda fx: sink(fx).update(unblock_fd_acquired=True)),
++                ("unblock observation without acquisition",
++                 lambda fx: sink(fx).update(unblock_fd_observed_identity=dict(seen_fifo))),
++                ("unblock acquisition state missing", lambda fx: sink(fx).pop("unblock_fd_acquired")),
++                ("unblock number without acquisition", lambda fx: sink(fx).update(unblock_fd=9)),
++                ("retained FIFO identity missing", lambda fx: sink(fx).pop("fifo_identity")),
++                ("retained FIFO identity float", lambda fx: sink(fx).update(fifo_identity=[17.0, 31])),
++                ("rehash not acquired", lambda fx: sink(fx).update(rehash_fd_acquired=False)),
++                ("rehash observation missing", lambda fx: sink(fx).pop("rehash_fd_observed_identity")),
++                ("rehash observed different inode",
++                 lambda fx: sink(fx).update(rehash_fd_observed_identity=dict(seen_file, ino=24))),
++                ("rehash numeric descriptor", lambda fx: sink(fx).update(rehash_fd=True)),
++                ("rehash record missing", lambda fx: sink(fx).pop("rehash_fd_record")),
++                ("rehash record close uncertain",
++                 lambda fx: sink(fx)["rehash_fd_record"].update(state="close_uncertain", close_error="OSError(5)")),
++                ("rehash record close not attempted",
++                 lambda fx: sink(fx)["rehash_fd_record"].update(close_attempted=False)),
++                ("rehash record number contradicts", lambda fx: sink(fx)["rehash_fd_record"].update(fd=8)),
++                ("rehash record observation contradicts",
++                 lambda fx: sink(fx)["rehash_fd_record"].update(observed_identity=dict(seen_file, ino=24)))):
++            case("sink " + label, mutate, ["SINK_INCOMPLETE"])
+         assert tuple(R.LATCH) == before_latches, (before_latches, R.LATCH)
+         return {"scenarios": len(rows), "all_complete_id_sets_exact": True,
+                 "fresh_post_hashes_read_from_exclusive_fixtures": True,
+@@ -3369,7 +3683,7 @@
+     """Real file corruption/replacement must latch exactly, retain production blockers, then receive TEST-ONLY disposition.
+     T2P-1: a same-object inventory entry whose state differs from the frozen snapshot stays unresolved."""
+     fixture = RunTreeFixture(R, W, "t-d2-sink-integrity")
+-    sinks, writers, rows = [], [], []
++    sinks, writers, rows, mutation_records = [], [], [], []
+     try:
+         for name, fault in (("same-inode-mismatch", "proof rehash mismatch"),
+                             ("different-inode-replacement", "proof inode replacement")):
+@@ -3394,27 +3708,42 @@
+                 R.write_bytes_x(sink.file_path + ".before-mismatch", data)
+                 changed = bytes([data[0] ^ 1]) + data[1:]
+                 dfd, final = R.tree_path(sink.file_path)
+-                fd = os.open(final, os.O_WRONLY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=dfd)
++                # T3-1: the mutation descriptor is registered BEFORE os.open with its observed identity and gets exactly
++                # one recorded close; an uncertain close stays retained and blocks fixture restoration.
++                mutation = fixture_open(final, os.O_WRONLY | os.O_NOFOLLOW | os.O_CLOEXEC,
++                                        "D2 same-inode corruption " + name, dir_fd=dfd)
++                mutation_records.append(mutation)
+                 try:
+-                    st = os.fstat(fd)
+-                    assert [st.st_dev, st.st_ino] == sink.file_identity and st.st_size == len(data)
++                    seen = mutation["observed_identity"]
++                    assert type(seen) is list and seen[:2] == sink.file_identity, (seen, sink.file_identity)
++                    assert os.fstat(mutation["fd"]).st_size == len(data)
+                     view = memoryview(changed)
+                     while view:
+-                        n = os.write(fd, view)
++                        n = os.write(mutation["fd"], view)
+                         assert isinstance(n, int) and not isinstance(n, bool) and 0 < n <= len(view)
+                         view = view[n:]
+-                    os.fsync(fd)
++                    os.fsync(mutation["fd"])
+                 finally:
+-                    os.close(fd)
++                    assert fixture_close(mutation, by="D2 corruption fixture"), mutation
+                 expected_messages = ["proof file identity/size/rehash mismatch: " + sink.file_path,
+                                      "proof sink not settled: " + sink.file_path]
+             else:
+                 # Move only the fixture's own proof; preserve the original inode and bytes, never delete it.
+                 os.rename(sink.file_path, sink.file_path + ".original")
+-                with open(sink.file_path, "xb") as replacement:
+-                    replacement.write(data)
+-                    replacement.flush()
+-                    os.fsync(replacement.fileno())
++                replacement = fixture_open(sink.file_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
++                                           | os.O_CLOEXEC, "D2 replacement proof " + name, mode=0o644)
++                mutation_records.append(replacement)
++                try:
++                    view = memoryview(data)
++                    while view:
++                        n = os.write(replacement["fd"], view)
++                        assert isinstance(n, int) and not isinstance(n, bool) and 0 < n <= len(view)
++                        view = view[n:]
++                    os.fsync(replacement["fd"])
++                finally:
++                    assert fixture_close(replacement, by="D2 replacement fixture"), replacement
++                replacement_seen = replacement["observed_identity"]    # independently captured replacement fingerprint
++                assert type(replacement_seen) is list and replacement_seen[:2] != sink.file_identity, replacement_seen
+                 error_repr = repr(RuntimeError("rehash descriptor is not the retained singly-linked proof at written size"))
+                 expected_messages = ["proof sink finish failed %s: %s" % (sink.file_path, error_repr),
+                                      "proof sink I/O error finish:" + error_repr,
+@@ -3431,6 +3760,10 @@
+                 assert rec["file_rehash"] is None and rec["file_same_identity_regular"] is False
+                 st = os.stat(sink.file_path + ".original", follow_symlinks=False)
+                 assert [st.st_dev, st.st_ino] == sink.file_identity
++                # T3-2: the retained rehash observation is the ACTUAL replacement descriptor, compared with the
++                # independently captured replacement fingerprint (never the expected original identity).
++                assert rec["rehash_fd_observed_identity"] == {"dev": replacement_seen[0], "ino": replacement_seen[1],
++                                                              "kind": "file"}, (rec, replacement_seen)
+             raw_inventory = R.unresolved_inventory()
+             matching_sink = [entry for entry in raw_inventory if entry.get("kind") == "file sink"
+                              and entry.get("state", {}).get("file") == sink.file_path]
+@@ -3463,6 +3796,25 @@
+                              and entry.get("resource_id") == id(sink)]
+             kept, _ = filter_fixture_inventory(R, contradictory)
+             assert len(contradictory) == 1 and kept == contradictory, kept
++            # T2-3: identity-only contradictions (sink AND covered partial publication) are never licensed.
++            for kind_name in ("file sink", "partial publication"):
++                contradicted = [dict(entry, runner_identity={"pid": 1, "start": [0, 0]}) for entry in raw_inventory
++                                if entry.get("kind") == kind_name and (entry.get("resource_id") == id(sink)
++                                                                       or entry.get("path") == sink.file_path)]
++                kept_identity, _ = filter_fixture_inventory(R, contradicted)
++                assert len(contradicted) == 1 and kept_identity == contradicted, (kind_name, kept_identity)
++            if fault == "proof rehash mismatch":
++                # T2-2: a stand-in whose ONLY difference is a float receipt size must be refused by schema.
++                standin = copy.copy(sink)
++                standin.finished = copy.deepcopy(sink.finished)
++                standin.finished["file_rehash"] = [standin.finished["file_rehash"][0],
++                                                   float(standin.finished["file_rehash"][1])]
++                view_runner = types.SimpleNamespace(LIVE_SINKS=[standin], CREATED=R.CREATED, WRITTEN=R.WRITTEN,
++                                                    RAW_FDS=R.RAW_FDS, LATCH=R.LATCH, sha_file=R.sha_file,
++                                                    stat=R.stat, STATE=R.STATE)
++                typed = d2_fixture_fault_state(view_runner, standin, ["proof rehash mismatch"])
++                assert any("not an exact [digest, non-bool int] list" in reason
++                           for reason in typed["lifecycle_refusals"]), typed
+             assert sum(obj is sink for obj in R.LIVE_SINKS) == 1
+             assert sink.finished == failed_receipt and sink.finished["sink_settled"] is False
+             assert R.CREATED[sink.file_path] == partial_state and partial_state["state"] == "open"
+@@ -3476,7 +3828,8 @@
+     finally:
+         if all(not th.is_alive() for th in writers) and all(s.thread is not None and not s.thread.is_alive()
+                    and s.file is not None and s.file.closed is True and s.reader_fd_closed is True
+-                   and s.unblock_fd_closed is True and s.rehash_fd_closed is True for s in sinks):
++                   and s.unblock_fd_closed is True and s.rehash_fd_closed is True for s in sinks) \
++                and all(record.get("state") == "closed" for record in mutation_records):
+             fixture.restore()
+ 
+ def t_d2_sink_roundtrip(R, W):
+@@ -3505,8 +3858,14 @@
+                 assert wait_thread(th, 5.0, "D2 FIFO writer"), writer
+                 assert writer.get("ok") is True and "error" not in writer, writer
+             rec = d2_finish_sink(R, sink, connected)
+-            closed_fds = d2_assert_sink_endpoints_closed(sink, file_fd, writer)
++            closed_fds = d2_assert_sink_endpoints_closed(
++                sink, file_fd, writer, expected=("reader", "rehash") if connected else ("reader", "unblock", "rehash"))
+             assert rec["sink_settled"] is True and R.sink_integrity(rec) is True, rec
++            # I1-1: explicit producer acquisition schema and ONE coherent rehash RAW_FDS record (transferred nowhere).
++            assert rec["reader_fd_acquired"] is True and rec["rehash_fd_acquired"] is True, rec
++            assert rec["unblock_fd_acquired"] is (not connected) and rec["fifo_identity"] == sink.fifo_identity, rec
++            assert rec["rehash_fd_record"] == dict(sink.rehash_record) and rec["rehash_fd_record"]["state"] == "closed"
++            assert sum(1 for item in R.RAW_FDS if item is sink.rehash_record) == 1, "rehash acquisition not inventoried once"
+             assert rec["thread_alive_after_join"] is False and rec["file_closed"] is True
+             assert rec["file_rehash"] == [rec["sha256_of_written"], rec["written"]]
+             fifo_seen = {"dev": sink.fifo_identity[0], "ino": sink.fifo_identity[1], "kind": "fifo"}
+@@ -3596,7 +3955,8 @@
+     fields = ("mode", "label", "expected", "fed", "proof_fed", "delivery_error", "exception", "construction_error",
+         "hold_released_by_event", "started", "start_attempted", "start_completed", "start_acquisition_unknown",
+         "pipe_acquisition_started", "pipe_acquisition_completed", "pipe_acquisition_unknown",
+-        "rfd", "wfd", "read_endpoint_identity", "write_endpoint_identity", "read_endpoint_acquired",
++        "rfd", "wfd", "read_endpoint_identity", "write_endpoint_identity", "read_endpoint_observed_identity",
++        "write_endpoint_observed_identity", "read_endpoint_acquired",
+         "write_endpoint_acquired", "read_endpoint_closed", "write_endpoint_closed", "read_close_attempted",
+         "write_close_attempted", "read_close_fd", "write_close_fd", "read_close_error", "write_close_error",
+         "abandon_error", "finish_started", "finish_deadline", "close_error")
+@@ -3805,12 +4165,18 @@
+                        ("fed_bytes", 1), ("fed_bytes", False), ("proof_bytes_fed", 1), ("proof_bytes_fed", False),
+                        ("delivery_error", "EPIPE after 0 fed bytes extra"), ("delivery_error", "EPIPE after 1 fed bytes"),
+                        ("started", False), ("thread_alive_after_join", True), ("hold_released_by_event", False),
+-                       ("finish_deadline_in_bounds", False)):
++                       ("finish_deadline_in_bounds", False),
++                       ("read_endpoint_observed_identity", None),
++                       ("write_endpoint_observed_identity", {"unavailable": "OSError(9, 'synthetic')"}),
++                       ("read_endpoint_observed_identity", 42),
++                       ("write_endpoint_observed_identity", {"dev": 17, "ino": 43, "kind": "file"}),
++                       ("read_endpoint_acquired", 1), ("write_endpoint_acquired", False)):
+         changed = copy.deepcopy(baseline)
+         changed["stdin_feed"][key] = value
+         bad[key + ":" + repr(value)] = R.c7b_missing_input_refusals(changed, lines, lines)
+     for key in ("read_endpoint_closed", "write_endpoint_closed", "close_error", "close_errors", "errors",
+-                "exception", "construction_error", "finish_deadline_in_bounds"):
++                "exception", "construction_error", "finish_deadline_in_bounds", "read_endpoint_observed_identity",
++                "write_endpoint_observed_identity", "read_endpoint_acquired", "write_endpoint_acquired"):
+         changed = copy.deepcopy(baseline)
+         changed["stdin_feed"].pop(key)
+         bad[key + ":missing"] = R.c7b_missing_input_refusals(changed, lines, lines)
+@@ -3834,31 +4200,51 @@
+         write_close_attempted=True, read_endpoint_closed=None, write_endpoint_closed=True,
+         close_error=expected, close_errors=[expected], errors=[expected], read_close_error=expected,
+         write_close_error=None, exception=None, abandon_error=None, pipe_acquisition_unknown=False,
+-        start_acquisition_unknown=False)
++        start_acquisition_unknown=False, read_endpoint_observed_identity={"dev": 1, "ino": 61, "kind": "fifo"},
++        write_endpoint_observed_identity={"dev": 1, "ino": 62, "kind": "fifo"})
++    runner_identity = {"pid": 770001, "start": [1, 0]}
+     f.accounting = lambda: {"label": f.label, "unresolved": True, "read_endpoint": f.rfd, "write_endpoint": f.wfd,
+                             "read_endpoint_closed": f.read_endpoint_closed,
+                             "write_endpoint_closed": f.write_endpoint_closed, "close_errors": list(f.close_errors),
+                             "errors": list(f.errors), "retained_bytes": 0 if not f.blocks else 1}
+     f.late_obligations = lambda: [{"what": "synthetic feeder", "label": f.label, "state": f.accounting()}]
+     def entry(obj, **changes):
+-        value = {"kind": "stdin feeder", "resource_id": id(obj), "runner_identity": None, "label": obj.label,
+-                 "state": obj.accounting(), "late_obligations": obj.late_obligations()}
++        value = {"kind": "stdin feeder", "resource_id": id(obj), "runner_identity": copy.deepcopy(runner_identity),
++                 "label": obj.label, "state": obj.accounting(), "late_obligations": obj.late_obligations()}
+         value.update(changes)
+         return value
+     inventory = []
+     fake = types.SimpleNamespace(OWNED=[], HELPERS=[], LIVE_BUFFERS=[], LIVE_FEEDERS=[f], LIVE_SINKS=[], CREATED={},
+-        RAW_FDS=[], TREE={}, buffer_charge=lambda: 0, unresolved_inventory=lambda: copy.deepcopy(inventory))
++        RAW_FDS=[], TREE={}, buffer_charge=lambda: 0, unresolved_inventory=lambda: copy.deepcopy(inventory),
++        STATE={"runner_identity": copy.deepcopy(runner_identity)})
+     cases = {}
+     try:
+         # Isolated synthetic registries, restored without altering real dispositions or real fixture descriptors.
+         STATE["fixture_dispositions"], STATE["fixture_fds"] = [], []
+         dispose_fixture_fault(fake, f, "stdin feeder", [expected], True, [999997, 999998],
+-                              [[0, 1, 0], [0, 2, 0]], 999999)
++                              [[1, 61, stat.S_IFIFO | 0o600], [1, 62, stat.S_IFIFO | 0o600]], 999999)
+         inventory[:] = [entry(f)]
+         exact = terminal_ownership(fake)
+         assert exact["unresolved"] == [] and exact["errors"] == [], exact
+         assert len(exact["explicitly_disposed_test_integrity_faults"]) == 1
+         cases["exact_object"] = exact
++        # T2-3 identity-only mutations: contradictory, malformed and absent runner context are never licensed, while
++        # the nested-only form of the SAME identity (no redundant outer pid) is.
++        for name, value in (("contradictory", {"pid": 770001, "start": [9, 9]}), ("malformed", {"pid": True}),
++                            ("outer_nested_disagree", {"pid": 770001, "start": [1, 0],
++                                                       "identity": {"pid": 770002, "start": [1, 0]}})):
++            inventory[:] = [entry(f, runner_identity=value)]
++            view = terminal_ownership(fake)
++            assert view["unresolved"] == inventory, (name, view)
++            cases["runner_identity_" + name] = {"retained_unresolved": len(view["unresolved"])}
++        inventory[:] = [entry(f, runner_identity={"identity": copy.deepcopy(runner_identity)})]
++        nested = terminal_ownership(fake)
++        assert nested["unresolved"] == [], nested
++        missing_identity = entry(f)
++        missing_identity.pop("runner_identity")
++        inventory[:] = [missing_identity]
++        assert terminal_ownership(fake)["unresolved"] == inventory
++        cases["runner_identity_nested_only_licensed"] = {"unresolved": 0}
+         second = types.SimpleNamespace(label=f.label, thread=dead, blocks=(), expected=0, started=False,
+             construction_error=None, rfd=999996, wfd=999995, close_error=None, close_errors=[], errors=[],
+             read_endpoint_closed=False, write_endpoint_closed=False)
+@@ -4083,6 +4469,23 @@
+     assert set(owner.known_identities) == {(780301, (1, 2)), (780301, None), (780301, (3, 4))}
+     assert owner.known_identities[(780301, (1, 2))]["identity"]["start"] == [1, 2]
+     assert owner.known_identities[(780301, (1, 2))]["observations"] == 2 and owner.census_uncertainty
++    # T1-5: the real method with the nested-only producer shape and with conflicting outer/nested identities keeps
++    # every valid identity (both keys on conflict) plus explicit uncertainty; a pid-less observation refuses.
++    owner.remember_identity({"identity": {"pid": 780307, "start": [5, 6]}, "identity_error": None,
++                             "observed_by_epoch": 100.0})
++    owner.remember_identity({"pid": 780308, "identity": {"pid": 780309, "start": [7, 8]}, "identity_error": None,
++                             "observed_by_epoch": 100.0})
++    for key in ((780307, (5, 6)), (780309, (7, 8)), (780308, None)):
++        assert key in owner.known_identities, (key, owner.known_identities)
++    assert owner.known_identities[(780307, (5, 6))]["pid"] == 780307
++    assert any("missing/invalid outer pid" in reason for reason in owner.census_uncertainty), owner.census_uncertainty
++    assert any("contradicts nested identity pid 780309" in reason for reason in owner.census_uncertainty)
++    pidless_refused = False
++    try:
++        owner.remember_identity({"pid": "unreadable", "identity": None, "identity_error": {"errno": errno.ESRCH}})
++    except RuntimeError:
++        pidless_refused = True
++    assert pidless_refused and {780307, 780308, 780309} <= set(owner.known_pids()), owner.known_pids()
+     queries = []
+     children = {780300: [], 780301: [780304], 780302: [780305], 780304: [780306], 780305: [], 780306: []}
+     def listed(kind, value):
+@@ -4217,9 +4620,12 @@
+ def t_publication_deadline_progress(R, W):
+     """Positive short writes crossing the common deadline fail; partial creation and failed close remain visible."""
+     results = {}
+-    for phase in ("positive_short_write", "file_fsync", "file_close", "parent_fsync", "file_close_error"):
++    for phase in ("positive_short_write", "file_fsync", "file_close", "parent_fsync", "file_close_error", "digest"):
+         X = synthetic_guard_namespace(R)
+         now, writes, closes, fsyncs = [0.0], [], [], []
++        if phase == "digest":
++            # GD5: every filesystem step completes in time; ONLY the digest crosses the ORIGINAL allowance.
++            X.hashlib = types.SimpleNamespace(sha256=lambda data=b"": (now.__setitem__(0, 1.01), hashlib.sha256(data))[1])
+         X.time.monotonic = lambda: now[0]
+         X.STATE["mono_end"] = 100.0
+         path = "/synthetic/publication.json"
+@@ -4266,6 +4672,9 @@
+         assert closes == [999999] and path not in X.WRITTEN and X.LATCH == [], (closes, X.WRITTEN, X.LATCH)
+         if phase == "positive_short_write":
+             assert writes == [5, 4, 3] and fsyncs == [], (writes, fsyncs)
++        if phase == "digest":
++            assert writes == [5] and fsyncs == [999999, 999998] and retained.get("error", "").startswith(
++                "TimeoutError('publication digest/success boundary"), retained
+         results[phase] = {"writes": writes, "fsyncs": fsyncs, "closes": closes, "retained": retained}
+     X = synthetic_guard_namespace(R)
+     X.time.monotonic = lambda: 2.0
+@@ -4389,6 +4798,7 @@
+     X.threading.Event = lambda: types.SimpleNamespace(set=lambda: None, wait=lambda cap: True)
+     X.threading.Thread = lambda **kwargs: types.SimpleNamespace(ident=None, is_alive=lambda: False)
+     X.os.pipe = lambda: (999996, 999995)
++    X.os.fstat = lambda fd: types.SimpleNamespace(st_dev=1, st_ino=fd, st_mode=stat.S_IFIFO | 0o600)
+     closes = []
+     read_error, write_error = OSError(errno.EBADF, "synthetic read close"), OSError(errno.EIO, "synthetic write close")
+     def both_fail(fd):
+@@ -4409,9 +4819,43 @@
+     assert feed_rec["read_endpoint_closed"] is None and feed_rec["write_endpoint_closed"] is None
+     assert feed_rec["close_errors"] == feed_rec["errors"] == expected and X.LATCH == []
+     assert feeder.finish(1.0) is feed_rec and closes == [999996, 999995]
++    # I2-1: the OBSERVED endpoint identities (not the numbers) survive both uncertain closes in all three interfaces.
++    seen = {"read": {"dev": 1, "ino": 999996, "kind": "fifo"}, "write": {"dev": 1, "ino": 999995, "kind": "fifo"}}
++    for side in ("read", "write"):
++        key = side + "_endpoint_observed_identity"
++        assert getattr(feeder, key) == seen[side] and feed_rec[key] == seen[side], (side, feed_rec)
++        assert feeder.accounting()[key] == seen[side] and feeder.late_obligations()[0]["state"][key] == seen[side]
+     inventory = X.unresolved_inventory()
+-    assert any(entry.get("kind") == "stdin feeder" and entry.get("resource_id") == id(feeder) for entry in inventory)
++    assert any(entry.get("kind") == "stdin feeder" and entry.get("resource_id") == id(feeder)
++               and entry["state"]["read_endpoint_observed_identity"] == seen["read"] for entry in inventory)
+     results["both_feeder_close_failures"] = {"receipt": feed_rec, "close_attempts": closes}
++    # I2-1: an unavailable endpoint observation is explicit, refuses construction and each endpoint is closed ONCE.
++    X = synthetic_guard_namespace(R)
++    X.time.monotonic = lambda: 0.0
++    X.threading.Event = lambda: types.SimpleNamespace(set=lambda: None, wait=lambda cap: True)
++    X.threading.Thread = lambda **kwargs: types.SimpleNamespace(ident=None, is_alive=lambda: False)
++    X.os.pipe = lambda: (999994, 999993)
++    unavailable = OSError(errno.EIO, "synthetic endpoint observation failure")
++    def observe(fd):
++        if fd == 999993:
++            raise unavailable
++        return types.SimpleNamespace(st_dev=1, st_ino=fd, st_mode=stat.S_IFIFO | 0o600)
++    unobserved_closes = []
++    X.os.fstat, X.os.close = observe, unobserved_closes.append
++    refused = False
++    try:
++        X.Feeder((b"a",), "plain", label="unobservable-endpoint")
++    except OSError as exc:
++        refused = exc is unavailable
++    unobserved = X.LIVE_FEEDERS[-1]
++    assert refused and unobserved.write_endpoint_observed_identity == {"unavailable": repr(unavailable)}
++    assert unobserved.read_endpoint_observed_identity == {"dev": 1, "ino": 999994, "kind": "fifo"}
++    assert unobserved_closes == [999994, 999993] and unobserved.read_endpoint_closed is True \
++        and unobserved.write_endpoint_closed is True, (unobserved_closes, unobserved.accounting())
++    assert X.LATCH == ["feeder construction unproven %r" % (unavailable,)], X.LATCH
++    assert any(entry.get("resource_id") == id(unobserved) for entry in X.unresolved_inventory())
++    results["unavailable_endpoint_observation"] = {"close_attempts": unobserved_closes,
++                                                   "write_observation": unobserved.write_endpoint_observed_identity}
+     for side in ("reader", "unblock"):
+         X = synthetic_guard_namespace(R)
+         X.time.monotonic = lambda: 0.0
+@@ -4480,14 +4924,35 @@
+ 
+ 
+ def fixture_dup(fd, purpose):
+-    """T2P-2: the registry record exists BEFORE os.dup; a duplicate is never owned only by a local variable."""
++    """T2P-2: the registry record exists BEFORE os.dup; a duplicate is never owned only by a local variable.
++    T2-5: ONLY an OSError from the syscall proves that no duplicate was returned (not_acquired); any other exception
++    may have followed a completed acquisition and stays acquisition_uncertain (unresolved, no number guessed)."""
+     record = fixture_fd_record(purpose)
+     try:
+         duplicate = os.dup(fd)
+-    except BaseException as exc:
++    except OSError as exc:
+         record.update(state="not_acquired", acquisition_error=repr(exc))
+         raise
++    except BaseException as exc:
++        record.update(state="acquisition_uncertain", acquisition_error=repr(exc))
++        raise
+     fixture_fd_acquired(record, duplicate)
++    return record
++
++
++def fixture_open(path, flags, purpose, mode=0o777, dir_fd=None):
++    """T1-1/T3-1: a test-owned raw descriptor is registered BEFORE os.open; OSError proves non-acquisition, any other
++    exception stays acquisition_uncertain. The caller closes it at most once through fixture_close."""
++    record = fixture_fd_record(purpose)
++    try:
++        fd = os.open(path, flags, mode, dir_fd=dir_fd)
++    except OSError as exc:
++        record.update(state="not_acquired", acquisition_error=repr(exc))
++        raise
++    except BaseException as exc:
++        record.update(state="acquisition_uncertain", acquisition_error=repr(exc))
++        raise
++    fixture_fd_acquired(record, fd)
+     return record
+ 
+ 
+@@ -4540,14 +5005,36 @@
+     return th, record
+ 
+ 
++def fixture_record_refusals(record):
++    """T2-5: a test-owned descriptor record is resolved ONLY with coherent history: not_acquired needs no number, no
++    close attempt and the retained acquisition error; closed needs a known number and exactly one clean recorded
++    close. State strings alone (or ambiguous ownership with no close observation) never resolve ownership."""
++    if not isinstance(record, dict):
++        return ["malformed fixture descriptor record"]
++    state, attempts = record.get("state"), record.get("close_attempts")
++    if type(attempts) is not list:
++        return ["fixture descriptor close history missing"]
++    if state == "not_acquired":
++        if record.get("fd") is None and attempts == [] and isinstance(record.get("acquisition_error"), str):
++            return []
++        return ["not_acquired fixture record without proven non-acquisition"]
++    if state == "closed":
++        if type(record.get("fd")) is int and record["fd"] >= 0 and len(attempts) == 1 \
++                and isinstance(attempts[0], dict) and attempts[0].get("error") is None \
++                and record.get("close_error") is None:
++            return []
++        return ["closed fixture record without exactly one clean close observation"]
++    return ["fixture descriptor unresolved in state %r" % (state,)]
++
++
+ def fixture_fd_inventory(registry):
+-    """Every test-owned descriptor record not affirmatively closed (or never acquired) remains unresolved."""
++    """Every test-owned descriptor record not COHERENTLY closed (or proven never acquired) remains unresolved."""
+     if type(registry) is not list:
+         raise TypeError("test fixture descriptor registry missing or not a list")
+     return [{"kind": "test fixture descriptor", "index": index, "resource_id": id(record),
++             "refusals": fixture_record_refusals(record),
+              "state": dict(record) if isinstance(record, dict) else repr(record)}
+-            for index, record in enumerate(registry)
+-            if not isinstance(record, dict) or record.get("state") not in ("closed", "not_acquired")]
++            for index, record in enumerate(registry) if fixture_record_refusals(record)]
+ 
+ 
+ def canonical_snapshot(obj):
+@@ -4563,7 +5050,8 @@
+               "finish_deadline", "thread_started", "error", "reader_fd", "reader_fd_identity",
+               "reader_fd_observed_identity", "reader_fd_closed", "reader_close_attempted", "reader_close_error",
+               "unblock_fd", "unblock_fd_identity", "unblock_fd_observed_identity", "unblock_fd_closed",
+-              "unblock_close_attempted", "unblock_close_error", "unblock_open_attempts")
++              "unblock_close_attempted", "unblock_close_error", "unblock_open_attempts", "reader_fd_acquired",
++              "unblock_fd_acquired")
+     state = {field: getattr(obj, field, "unknown") for field in fields}
+     thread = getattr(obj, "thread", None)
+     state.update(resource_id=id(obj), errors=list(getattr(obj, "errors", ["unknown"])),
+@@ -4581,7 +5069,8 @@
+               "over_cap", "connected", "eof", "error", "construction_error", "unblocked_by_runner", "started", "stage",
+               "file_closed", "flush_completed", "fsync_completed", "close_completed", "reader_fd", "unblock_fd",
+               "rehash_fd", "reader_fd_closed", "unblock_fd_closed", "rehash_fd_closed", "reader_fd_observed_identity",
+-              "unblock_fd_observed_identity", "rehash_fd_observed_identity", "finish_started", "finish_deadline")
++              "unblock_fd_observed_identity", "rehash_fd_observed_identity", "finish_started", "finish_deadline",
++              "reader_fd_acquired", "unblock_fd_acquired", "rehash_fd_acquired", "rehash_record")
+     state = {field: getattr(obj, field, "unknown") for field in fields}
+     thread, digest = getattr(obj, "thread", None), getattr(obj, "sha", None)
+     state.update(resource_id=id(obj), failed_receipt=copy.deepcopy(getattr(obj, "finished", None)),
+@@ -4642,7 +5131,8 @@
+                      "thread_alive_after_join": False, "buffer_rehash_matches": True, "finish_deadline_in_bounds": True,
+                      "connected": True, "eof": True, "over_cap": False, "unblocked_by_runner": False, "discarded": 0,
+                      "reader_fd_observed_identity": seen_fifo, "unblock_fd_observed_identity": None,
+-                     "storage": "RAM only"}
++                     "storage": "RAM only", "fifo_identity": fifo, "reader_fd_acquired": True,
++                     "unblock_fd_acquired": False}
+     licensed = {"fifo_same_inode_still_fifo": False, "sink_settled": False}
+     for key, value in list(clean_receipt.items()) + list(licensed.items()):
+         if key not in rec or canonical_snapshot(rec[key]) != canonical_snapshot(value):
+@@ -4650,16 +5140,18 @@
+     if "finish_error" in rec:
+         why.append("frozen receipt carries an unlicensed finish error")
+     retained, received, digest = rec.get("retained"), rec.get("received"), rec.get("sha256_of_retained")
++    # T2-2: exact measured-pair schema (list, hex64 digest, non-bool int) BEFORE comparison or normalization.
+     if type(retained) is not int or type(received) is not int or retained < 0 or retained != received \
+             or not isinstance(digest, str) or re.fullmatch("[0-9a-f]{64}", digest) is None \
+-            or type(rec.get("buffer_rehash")) is not list or rec.get("buffer_rehash") != [digest, retained] \
++            or not measured_pair(rec.get("buffer_rehash"), list) or rec.get("buffer_rehash") != [digest, retained] \
+             or type(rec.get("reader_fd_identity")) is not int or rec.get("fifo") != frozen.get("fifo_path"):
+         why.append("frozen receipt measurement/endpoint identity is not exact")
+     for key, value in (("released", True), ("release_requested", True), ("collector_alive", False),
+                        ("errors", []), ("error", None), ("construction_error", None), ("reader_fd", None),
+                        ("reader_fd_closed", True), ("unblock_fd", None), ("unblock_fd_closed", True),
+                        ("reader_close_error", None), ("unblock_close_error", None), ("still_held_by_feeders", []),
+-                       ("reader_fd_observed_identity", seen_fifo), ("unblock_fd_observed_identity", None)):
++                       ("reader_fd_observed_identity", seen_fifo), ("unblock_fd_observed_identity", None),
++                       ("fifo_identity", fifo), ("reader_fd_acquired", True), ("unblock_fd_acquired", False)):
+         if key not in acct or canonical_snapshot(acct[key]) != canonical_snapshot(value):
+             why.append("frozen accounting deviates from clean: " + key)
+     if canonical_snapshot(acct.get("finished")) != canonical_snapshot(rec):
+@@ -4690,13 +5182,48 @@
+     return why
+ 
+ 
++def measured_pair(value, container):
++    """T2-2 test-side schema: exact container, two elements, hex64 digest string and non-bool non-negative int."""
++    return (type(value) is container and len(value) == 2 and type(value[0]) is str
++            and re.fullmatch("[0-9a-f]{64}", value[0]) is not None and type(value[1]) is int and value[1] >= 0)
++
++
++def pipe_fingerprint_ok(value):
++    """T2-1: an original pipe endpoint fingerprint is exactly [dev, ino, mode] of non-bool non-negative ints naming
++    a FIFO/pipe; anything else (empty, short, float, bool, wrong kind) is malformed and means unknown ownership."""
++    return (isinstance(value, (list, tuple)) and len(value) == 3 and all(type(x) is int and x >= 0 for x in value)
++            and stat.S_ISFIFO(value[2]))
++
++
++def runner_identity_key(value):
++    """T2-3: (pid, start) of a runner identity in top-level {'pid','start'} form or nested {'identity': {...}} form
++    (no redundant outer pid required). Missing, malformed or self-contradictory evidence yields None."""
++    if not isinstance(value, dict):
++        return None
++    keys = []
++    for candidate in (value, value.get("identity")):
++        if isinstance(candidate, dict) and ("pid" in candidate or "start" in candidate):
++            pid, start = candidate.get("pid"), candidate.get("start")
++            if type(pid) is not int or pid <= 0 or type(start) is not list or len(start) != 2 \
++                    or any(type(x) is not int or x < 0 for x in start):
++                return None
++            keys.append((pid, tuple(start)))
++    if not keys or len(set(keys)) != 1:
++        return None
++    return keys[0]
++
++
+ def licensed_inventory_entry(R, disposition, entry):
+     """Exact match of ONE production inventory entry to ONE revalidated disposition: same kind, exact object (or the
+-    covered partial publication path), only known keys, and state/late obligations byte-identical to the frozen
+-    snapshot. Same-object entries carrying extra, changed or contradictory evidence are never licensed."""
++    covered partial publication path), only known keys, state/late obligations byte-identical to the frozen
++    snapshot, and (T2-3) a runner identity equal to the disposition's bound authoritative runner identity.
++    Same-object entries carrying extra, changed, contradictory or identity-contradicting evidence are never licensed."""
+     if not isinstance(entry, dict):
+         return False
+     try:
++        bound = runner_identity_key(disposition.get("runner_identity"))
++        if bound is None or "runner_identity" not in entry or runner_identity_key(entry["runner_identity"]) != bound:
++            return False
+         frozen = json.loads(disposition["known_fault_snapshot_json"])
+         kind, obj = disposition["kind"], disposition["resource"]
+         if entry.get("kind") == "partial publication":
+@@ -4722,31 +5249,48 @@
+ 
+ 
+ def admission_pins(R):
+-    """Identity pins of the production clock/Helper admission path and the registries it reads, captured ONCE right
+-    after verified loading; a later join requires every pinned object to be the very same object."""
++    """Identity pins of the production clock/Helper admission path, the registries it reads and (T1-2) the transitive
++    native observation members it calls through mutable modules: module identity never proves member identity.
++    Captured ONCE right after verified loading; a later join requires every pinned object to be the very same."""
++    popen = getattr(R.subprocess, "Popen", None)
++    popen_methods = vars(popen) if isinstance(popen, type) else {}
+     return {"functions": {name: getattr(R, name) for name in ("clock", "latch", "cancelled", "exe_identity",
+-                                                              "exe_refusals", "identity_checked", "work_deadline")},
++                                                              "exe_refusals", "identity_checked", "work_deadline",
++                                                              "bsd_identity", "task_rss", "list_pids", "_pidinfo",
++                                                              "descendants", "parse_pid_buffer", "deadline_check")},
+             "classes": {name: getattr(R, name) for name in ("Helper", "HelperRefused", "Owned")},
+-            "helper_methods": {name: R.Helper.__dict__.get(name) for name in ("admission_refusals", "run",
++            "helper_methods": {name: R.Helper.__dict__.get(name) for name in ("__init__", "admission_refusals", "run",
+                                                                              "_supervise_and_capture", "_settle")},
+-            "owned_methods": {name: R.Owned.__dict__.get(name) for name in ("reap_owned", "term", "verify_owned",
+-                                                                           "observe_exit", "_reap_once",
+-                                                                           "live_census", "_record_unsettled")},
++            "owned_methods": {name: R.Owned.__dict__.get(name) for name in ("_owned_init", "reap_owned", "term",
++                                                                           "verify_owned", "observe_exit", "_reap_once",
++                                                                           "live_census", "_record_unsettled",
++                                                                           "remember_identity", "known_pids",
++                                                                           "_identity_uncertain")},
+             "registries": {name: getattr(R, name, None) for name in ("LATCH", "OWNED", "HELPERS", "HELPER_LOG",
+                                                                      "STATE", "TREE", "CREATED", "WRITTEN", "RAW_FDS",
+                                                                      "LIVE_SINKS", "LIVE_BUFFERS", "LIVE_FEEDERS")},
+             "modules": {name: getattr(R, name) for name in ("subprocess", "os", "time", "signal", "threading",
+                                                             "select")},
++            "native_members": {"os.waitid": R.os.waitid, "os.waitpid": R.os.waitpid, "os.read": R.os.read,
++                               "os.close": R.os.close, "os.fstat": R.os.fstat, "os.getpid": R.os.getpid,
++                               "signal.getsignal": R.signal.getsignal, "time.monotonic": R.time.monotonic,
++                               "time.time": R.time.time, "time.sleep": R.time.sleep, "select.select": R.select.select,
++                               "Popen.__init__": popen_methods.get("__init__"),
++                               "Popen._execute_child": popen_methods.get("_execute_child"),
++                               "LIBPROC.proc_pidinfo": getattr(R.LIBPROC, "proc_pidinfo", None),
++                               "LIBPROC.proc_listpids": getattr(R.LIBPROC, "proc_listpids", None)},
+             "natives": {"KILLPG": R.KILLPG, "Popen": R.subprocess.Popen},
+             "values": {"DATE_ARGV": list(R.DATE_ARGV), "DATE": list(R.DATE),
+                        "NATIVE_LAUNCH_STOP": R.NATIVE_LAUNCH_STOP, "HELPER_ALLOW": R.HELPER_ALLOW}}
+ 
+ 
+ def admission_pin_refusals(R, pins):
+-    """Every pinned production admission object must still be identical; pinned values must still be equal."""
++    """Every pinned production admission object (including native observation members) must still be identical;
++    pinned values must still be equal."""
+     current = admission_pins(R)
+     why = []
+-    for group in ("functions", "classes", "helper_methods", "owned_methods", "registries", "modules", "natives"):
++    for group in ("functions", "classes", "helper_methods", "owned_methods", "registries", "modules",
++                  "native_members", "natives"):
+         for name, value in pins[group].items():
+             if current[group].get(name) is not value:
+                 why.append("production %s %s replaced since verified loading" % (group, name))
+@@ -4928,7 +5472,8 @@
+                "reader_fd_observed_identity": seen, "reader_fd_closed": True, "reader_close_attempted": True,
+                "reader_close_error": None, "unblock_fd": None, "unblock_fd_identity": None,
+                "unblock_fd_observed_identity": None, "unblock_fd_closed": True, "unblock_close_attempted": False,
+-               "unblock_close_error": None, "unblock_open_attempts": 0, "sha256_of_retained": S}
++               "unblock_close_error": None, "unblock_open_attempts": 0, "sha256_of_retained": S,
++               "fifo_identity": list(fifo), "reader_fd_acquired": True, "unblock_fd_acquired": False}
+         rec.update(receipt_changes or {})
+         b = types.SimpleNamespace(fifo_path=p, cap=4096, fifo_identity=list(fifo), retained=100, received=100,
+             discarded=0, over_cap=False, connected=True, eof=True, released=True, release_requested=True,
+@@ -4937,7 +5482,8 @@
+             reader_fd_observed_identity=dict(seen), reader_fd_closed=True, reader_close_attempted=True,
+             reader_close_error=None, unblock_fd=None, unblock_fd_identity=None, unblock_fd_observed_identity=None,
+             unblock_fd_closed=True, unblock_close_attempted=False, unblock_close_error=None,
+-            unblock_open_attempts=0, finished=rec, blocks=(), thread=dead)
++            unblock_open_attempts=0, finished=rec, blocks=(), thread=dead, reader_fd_acquired=True,
++            unblock_fd_acquired=False)
+         b.accounting = lambda: {"fifo": b.fifo_path, "retained": b.retained, "released": b.released,
+             "release_requested": b.release_requested, "collector_alive": b.thread.is_alive(),
+             "thread_constructed": True, "thread_started": b.thread_started, "construction_error": b.construction_error,
+@@ -4949,22 +5495,26 @@
+             "unblock_fd_closed": b.unblock_fd_closed, "unblock_close_attempted": b.unblock_close_attempted,
+             "unblock_close_error": b.unblock_close_error, "unblock_open_attempts": b.unblock_open_attempts,
+             "finish_started": True, "finish_deadline": 1.0, "still_held_by_feeders": [], "frozen": True,
+-            "finished": b.finished}
++            "finished": b.finished, "fifo_identity": list(b.fifo_identity), "reader_fd_acquired": b.reader_fd_acquired,
++            "unblock_fd_acquired": b.unblock_fd_acquired}
+         b.late_obligations = lambda: [{"path": b.fifo_path, "kind": "fifo"},
+                                       {"what": "RAM collector descriptors", "reader_fd": b.reader_fd,
+                                        "reader_fd_identity": b.reader_fd_identity, "errors": list(b.errors)}]
+         return b
+ 
++    runner_identity = {"pid": 770003, "start": [3, 0]}
++
+     def entry(b, **changes):
+-        value = {"kind": "RAM collector", "resource_id": id(b), "runner_identity": None, "state": b.accounting(),
+-                 "late_obligations": b.late_obligations()}
++        value = {"kind": "RAM collector", "resource_id": id(b), "runner_identity": copy.deepcopy(runner_identity),
++                 "state": b.accounting(), "late_obligations": b.late_obligations()}
+         value.update(changes)
+         return value
+ 
+     def runner_with(b, entries):
+         return types.SimpleNamespace(OWNED=[], HELPERS=[], LIVE_BUFFERS=[b], LIVE_FEEDERS=[], LIVE_SINKS=[],
+                                      CREATED={}, RAW_FDS=[], TREE={}, buffer_charge=lambda: 0,
+-                                     unresolved_inventory=lambda: copy.deepcopy(entries))
++                                     unresolved_inventory=lambda: copy.deepcopy(entries),
++                                     STATE={"runner_identity": copy.deepcopy(runner_identity)})
+ 
+     saved = STATE["fixture_dispositions"], STATE["fixture_fds"]
+     cases, refused = {}, {}
+@@ -4982,7 +5532,9 @@
+                               ("same_object_unblock_not_closed", entry(b, state=dict(b.accounting(),
+                                                                     unblock_fd_closed=False))),
+                               ("same_object_extra_fault_key", entry(b, error="unlicensed same-object fault")),
+-                              ("same_object_changed_late_obligations", entry(b, late_obligations=[]))):
++                              ("same_object_changed_late_obligations", entry(b, late_obligations=[])),
++                              ("same_object_contradictory_runner_identity",
++                               entry(b, runner_identity={"pid": 770003, "start": [4, 0]}))):
+             entries[:] = [changed]
+             view = terminal_ownership(fake)
+             assert view["unresolved"] == [changed] and view["errors"] == [], (name, view)
+@@ -5002,7 +5554,14 @@
+                                                        "ino": fifo[1] + 1, "kind": "fifo"}}, {}),
+                 ("receipt_additional_finish_error", {"finish_error": "RuntimeError('unlicensed')"}, {}),
+                 ("receipt_runner_unblocked", {"unblocked_by_runner": True}, {}),
+-                ("licensed_replacement_evidence_missing", {}, {"omit_evidence": True})):
++                ("licensed_replacement_evidence_missing", {}, {"omit_evidence": True}),
++                # T2-2: exact measured-pair schema; each substitute below is otherwise identical to the clean receipt.
++                ("receipt_rehash_float_size", {"buffer_rehash": [S, 100.0]}, {}),
++                ("receipt_rehash_missing_element", {"buffer_rehash": [S]}, {}),
++                ("receipt_rehash_malformed_digest", {"buffer_rehash": [S.upper(), 100]}, {}),
++                ("receipt_rehash_bool_size_at_one", {"retained": 1, "received": 1, "sha256_of_retained": sha(b"z"),
++                                                     "buffer_rehash": [sha(b"z"), True]}, {}),
++                ("receipt_reader_acquisition_truthy", {"reader_fd_acquired": 1}, {})):
+             STATE["fixture_dispositions"] = []
+             candidate = collector(changes)
+             try:
+@@ -5015,6 +5574,13 @@
+                 refused[name] = False
+             assert STATE["fixture_dispositions"] == [] and not hasattr(candidate, "fixture_disposed"), name
+         assert all(refused.values()), refused
++        # Timely twin of the bool negative: the coherent exact-int one-byte receipt IS admitted.
++        STATE["fixture_dispositions"] = []
++        twin = collector({"retained": 1, "received": 1, "sha256_of_retained": sha(b"z"), "buffer_rehash": [sha(b"z"), 1]})
++        admitted_twin = dispose_fixture_fault(runner_with(twin, [entry(twin)]), twin, "RAM collector", [expected_fault],
++                                              licensed_fault_evidence=evidence)
++        assert admitted_twin["lifecycle_refusals"] == [], admitted_twin
++        cases["exact_int_one_byte_twin_admitted"] = True
+         # The same exact-state rule binds feeder dispositions: a contradictory same-object entry is retained.
+         expected = "read endpoint closure uncertain: %r" % OSError(errno.EBADF, os.strerror(errno.EBADF))
+         STATE["fixture_dispositions"] = []
+@@ -5024,18 +5590,20 @@
+             write_close_attempted=True, read_endpoint_closed=None, write_endpoint_closed=True,
+             close_error=expected, close_errors=[expected], errors=[expected], read_close_error=expected,
+             write_close_error=None, exception=None, abandon_error=None, pipe_acquisition_unknown=False,
+-            start_acquisition_unknown=False)
++            start_acquisition_unknown=False, read_endpoint_observed_identity={"dev": 1, "ino": 63, "kind": "fifo"},
++            write_endpoint_observed_identity={"dev": 1, "ino": 64, "kind": "fifo"})
+         f.accounting = lambda: {"label": f.label, "unresolved": True, "close_errors": list(f.close_errors),
+                                 "errors": list(f.errors), "read_endpoint": f.rfd}
+         f.late_obligations = lambda: [{"what": "synthetic feeder", "label": f.label, "state": f.accounting()}]
+         feeder_entries = []
+         feeder_runner = types.SimpleNamespace(OWNED=[], HELPERS=[], LIVE_BUFFERS=[], LIVE_FEEDERS=[f], LIVE_SINKS=[],
+             CREATED={}, RAW_FDS=[], TREE={}, buffer_charge=lambda: 0,
+-            unresolved_inventory=lambda: copy.deepcopy(feeder_entries))
++            unresolved_inventory=lambda: copy.deepcopy(feeder_entries),
++            STATE={"runner_identity": copy.deepcopy(runner_identity)})
+         dispose_fixture_fault(feeder_runner, f, "stdin feeder", [expected], True, [999997, 999998],
+-                              [[0, 1, 0], [0, 2, 0]], 999999)
+-        exact_feeder = {"kind": "stdin feeder", "resource_id": id(f), "runner_identity": None, "label": f.label,
+-                        "state": f.accounting(), "late_obligations": f.late_obligations()}
++                              [[1, 63, stat.S_IFIFO | 0o600], [1, 64, stat.S_IFIFO | 0o600]], 999999)
++        exact_feeder = {"kind": "stdin feeder", "resource_id": id(f), "runner_identity": copy.deepcopy(runner_identity),
++                        "label": f.label, "state": f.accounting(), "late_obligations": f.late_obligations()}
+         feeder_entries[:] = [exact_feeder]
+         assert terminal_ownership(feeder_runner)["unresolved"] == []
+         contradictory = dict(exact_feeder, state=dict(exact_feeder["state"], errors=[expected, "extra fault"]))
+@@ -5054,7 +5622,8 @@
+     close happens at most once and only while ownership is proven; ambiguous starts and wrapper failures are retained
+     UNKNOWN (never closed); drain/pipe_writer record their own close outcome; failed closes keep their history."""
+     names = ("fixture_fd_record", "fixture_fd_acquired", "fixture_dup", "fixture_close", "close_wrapper_once",
+-             "spawn", "drain", "dup_reader_handoff", "pipe_writer", "run_filter", "fixture_fd_inventory")
++             "spawn", "drain", "dup_reader_handoff", "pipe_writer", "run_filter", "fixture_fd_inventory",
++             "fixture_open", "fifo_writer")
+     mode = ["normal"]
+ 
+     class SyntheticThread:
+@@ -5079,7 +5648,7 @@
+             if self.close_read_error is not None:
+                 raise self.close_read_error
+ 
+-    def isolated(close_error=None, fdopen_error=None):
++    def isolated(close_error=None, fdopen_error=None, dup_error=None):
+         closes, registry = [], []
+         def closing(fd):
+             closes.append(fd)
+@@ -5089,8 +5658,16 @@
+             if fdopen_error is not None:
+                 raise fdopen_error
+             return types.SimpleNamespace(closed=False, close=lambda: None)
+-        fake_os = types.SimpleNamespace(dup=lambda fd: 999971, pipe=lambda: (999972, 999973), close=closing,
++        def duplicating(fd):
++            # T2-5: the registry record must already exist (state 'acquiring', no number) when os.dup runs.
++            assert registry and registry[-1]["state"] == "acquiring" and registry[-1]["fd"] is None, registry
++            if dup_error is not None:
++                raise dup_error
++            return 999971
++        fake_os = types.SimpleNamespace(dup=duplicating, pipe=lambda: (999972, 999973), close=closing,
+                                         fdopen=wrapping, read=lambda fd, n: b"", path=os.path,
++                                        open=lambda path, flags, mode=0o777, dir_fd=None: 999974,
++                                        write=lambda fd, view: len(view), O_WRONLY=os.O_WRONLY,
+                                         fstat=lambda fd: types.SimpleNamespace(st_dev=1, st_ino=fd,
+                                                                                st_mode=stat.S_IFIFO | 0o600))
+         namespace = dict(globals())
+@@ -5170,6 +5747,102 @@
+     assert closes == [999973] and [item["state"]["fd"] for item in ns["fixture_fd_inventory"](registry)] == [999972]
+     results["capture_fdopen_wrapper_failure_retained"] = {"read_end": read_end["state"], "write_end": write_end["state"],
+                                                           "close_attempts": closes}
++    # T2-5: acquisition exceptions. Only an OSError from os.dup proves non-acquisition; any other exception after the
++    # syscall may follow a completed acquisition and stays UNKNOWN (unresolved, no number guessed, never closed).
++    for name, dup_error, resolved in (("dup_oserror_not_acquired", OSError(errno.EMFILE, "synthetic dup refusal"), True),
++                                      ("dup_unexpected_exception_uncertain", RuntimeError("synthetic lost result"),
++                                       False)):
++        ns, registry, closes = isolated(dup_error=dup_error)
++        mode[0] = "normal"
++        try:
++            ns["dup_reader_handoff"](SyntheticFeeder(), "synthetic peer " + name, {}, "drain")
++        except (OSError, RuntimeError) as exc:
++            assert exc is dup_error, exc
++        else:
++            raise AssertionError(("dup acquisition failure was not propagated", name))
++        record = registry[0]
++        unresolved = ns["fixture_fd_inventory"](registry)
++        assert record["fd"] is None and closes == [] and record["acquisition_error"] == repr(dup_error), record
++        if resolved:
++            assert record["state"] == "not_acquired" and unresolved == [], (record, unresolved)
++        else:
++            assert record["state"] == "acquisition_uncertain" and len(unresolved) == 1, (record, unresolved)
++        results[name] = {"state": record["state"], "unresolved": len(unresolved)}
++    # T2-5: a contradictory resolved-looking record (closed, ambiguous ownership, no close observation) stays owned.
++    contradictory = [{"purpose": "synthetic", "fd": 999975, "state": "closed", "owner": "ambiguous_thread_start",
++                      "start": "ambiguous", "observed_identity": None, "close_attempts": []}]
++    assert len(fixture_fd_inventory(contradictory)) == 1
++    results["closed_without_close_observation_retained"] = True
++    # T2-5/T1-1: pipe_writer after a PROVEN start records its own single close; a close failure is retained.
++    for name, close_error in (("pipe_writer_closes_once", None), ("pipe_writer_close_failure_retained", close_failure)):
++        ns, registry, closes = isolated(close_error=close_error)
++        record = ns["fixture_fd_record"]("synthetic pipe writer " + name)
++        ns["fixture_fd_acquired"](record, 999973)
++        record.update(start="proven", owner="thread:writer")
++        res = {}
++        try:
++            ns["pipe_writer"](999973, b"abc", 2, res, record)
++        except OSError as exc:
++            assert exc is close_error, exc
++        assert closes == [999973] and len(record["close_attempts"]) == 1, (closes, record)
++        if close_error is None:
++            assert record["state"] == "closed" and res.get("ok") is True and ns["fixture_fd_inventory"](registry) == []
++        else:
++            assert record["state"] == "close_uncertain" and len(ns["fixture_fd_inventory"](registry)) == 1, record
++        assert ns["fixture_close"](record) is False and closes == [999973]
++        results[name] = {"state": record["state"], "close_attempts": closes}
++    # T1-1: fifo_writer registers BEFORE os.open and records exactly one close; a failed close stays retained.
++    for name, close_error in (("fifo_writer_closes_once", None), ("fifo_writer_close_failure_retained", close_failure)):
++        ns, registry, closes = isolated(close_error=close_error)
++        res = {}
++        ns["fifo_writer"]("/synthetic/never-opened.fifo", [b"abc"], res)
++        record = registry[0]
++        assert record["fd"] == 999974 and closes == [999974] and len(record["close_attempts"]) == 1, (record, closes)
++        if close_error is None:
++            assert res.get("ok") is True and record["state"] == "closed", (res, record)
++        else:
++            assert "ok" not in res and record["state"] == "close_uncertain", (res, record)
++            assert len(ns["fixture_fd_inventory"](registry)) == 1
++        results[name] = {"state": record["state"], "close_attempts": closes}
++    # T1-1: a run_filter failure before the reader starts closes the capture file at most once; an ambiguous reader
++    # start retains it UNKNOWN (the reader may own it).
++    class CaptureFile:
++        def __init__(self):
++            self.closed, self.closes = False, 0
++        def fileno(self):
++            return 999976
++        def close(self):
++            self.closes += 1
++            self.closed = True
++    class FakeChild:
++        def _read(self):
++            pass
++    for name, start_mode, filter_error in (("filter_state_failure_capture_closed_once", "normal",
++                                            RuntimeError("synthetic new_filter failure")),
++                                           ("ambiguous_reader_start_capture_retained", "start_fails", None)):
++        ns, registry, closes = isolated()
++        captures = []
++        ns["open"] = lambda path, mode_text: captures.append(CaptureFile()) or captures[-1]
++        mode[0] = start_mode
++        def new_filter():
++            if filter_error is not None:
++                raise filter_error
++            return {}
++        fake_runner = types.SimpleNamespace(Child=FakeChild, new_filter=new_filter)
++        try:
++            ns["run_filter"](fake_runner, W, "synthetic-capture.out", b"", 1)
++        except RuntimeError:
++            pass
++        else:
++            raise AssertionError(("run_filter capture failure was not propagated", name))
++        capture_record = [record for record in registry if record["purpose"].startswith("run_filter capture file")][0]
++        if filter_error is not None:
++            assert captures[0].closes == 1 and capture_record["state"] == "closed", (captures[0].closes, capture_record)
++            assert capture_record["close_attempts"] == [{"by": "fixture wrapper", "error": None}], capture_record
++        else:
++            assert captures[0].closes == 0 and capture_record["owner"] == "ambiguous_thread_start", capture_record
++            assert capture_record["state"] == "open" and fixture_record_refusals(capture_record), capture_record
++        results[name] = {"capture_state": capture_record["state"], "capture_closes": captures[0].closes}
+     return results
+ 
+ 
+@@ -5199,15 +5872,25 @@
+         def no_sleep(amount):
+             raise AssertionError("synthetic writer slept")
+         fake_os = types.SimpleNamespace(open=opened, write=wrote, close=closed,
+-                                        fstat=lambda fd: types.SimpleNamespace(st_dev=1, st_ino=60),
++                                        fstat=lambda fd: types.SimpleNamespace(st_dev=1, st_ino=60,
++                                                                               st_mode=stat.S_IFIFO | 0o600),
+                                         O_WRONLY=os.O_WRONLY, O_NONBLOCK=os.O_NONBLOCK, O_NOFOLLOW=os.O_NOFOLLOW,
+                                         O_CLOEXEC=os.O_CLOEXEC)
+         namespace = dict(globals())
+-        namespace.update(os=fake_os, time=types.SimpleNamespace(monotonic=lambda: now[0], sleep=no_sleep))
++        registry = []          # private fixture registry: synthetic records never enter the real terminal inventory
++        namespace.update(os=fake_os, time=types.SimpleNamespace(monotonic=lambda: now[0], sleep=no_sleep),
++                         STATE={"fixture_fds": registry})
++        for helper in ("fixture_fd_record", "fixture_fd_acquired", "fixture_close"):
++            namespace[helper] = types.FunctionType(globals()[helper].__code__, namespace, helper,
++                                                   globals()[helper].__defaults__)
+         writer = types.FunctionType(d2_fifo_writer.__code__, namespace, "d2_fifo_writer")
+         result = {}
+         writer("/synthetic/never-opened.fifo", chunks, result, 1.0)
+         assert ops.count("close") == 1 and ops[0] == "open", (phase, ops)
++        # T1-1/T3-2: one registry record per writer with the acquired number and ONE recorded close outcome.
++        assert len(registry) == 1 and registry[0]["fd"] == 999960 and len(registry[0]["close_attempts"]) == 1, registry
++        assert registry[0]["state"] == ("close_uncertain" if phase == "close_error" else "closed"), registry
++        assert result["fd_record"] is registry[0]
+         if phase == "clean":
+             assert result["ok"] is True and result["late"] == [] and result["closed"] is True, result
+             assert "error" not in result and ops == ["open", "write", "close"], (result, ops)
+@@ -5235,29 +5918,39 @@
+     try:
+         STATE["fixture_dispositions"], STATE["fixture_fds"] = [], []
+         X = synthetic_guard_namespace(R)
+-        states = ("opening", "acquired", "anchored", "transferred_to_wrapper", "closed", "close_uncertain",
+-                  "uncertain_after_wrapper_exception", "not_acquired")
+-        records = {}
+-        for index, state in enumerate(states):
+-            record = {"purpose": "synthetic", "path": "/synthetic/raw-%d" % index, "fd": 999950 + index,
+-                      "state": state, "close_error": None, "observed_identity": None}
++        X.TREE["/synthetic/raw-anchored"] = (999952, 1, 2)
++        X.TREE["/synthetic/raw-anchored-mismatch"] = (999953, 1, 3)
++
++        def raw(path, state, fd, seen=None, attempted=False, close_error=None):
++            record = {"purpose": "synthetic", "path": path, "fd": fd, "state": state, "observed_identity": seen,
++                      "close_attempted": attempted, "close_error": close_error, "error": None, "transfer": None}
+             X.RAW_FDS.append(record)
+-            records[state] = record
+-        X.TREE["/synthetic/raw-2"] = (999952, 1, 2)
+-        X.RAW_FDS.append({"purpose": "anchor_dir", "path": "/synthetic/raw-stale", "fd": 999949, "state": "anchored",
+-                          "close_error": None, "observed_identity": None})
++            return record
++        # Coherently resolved records only:
++        resolved = [raw("/synthetic/raw-not-acquired", "not_acquired", None),
++                    raw("/synthetic/raw-closed", "closed", 999951, {"dev": 1, "ino": 51, "kind": "file"}, True),
++                    raw("/synthetic/raw-anchored", "anchored", 999952, {"dev": 1, "ino": 2, "kind": "dir"})]
++        unresolved = [raw("/synthetic/raw-" + state, state, 999954 + index) for index, state in enumerate(
++            ("opening", "acquired", "acquisition_uncertain", "wrapper_handoff", "transferred_to_wrapper",
++             "close_uncertain", "uncertain_after_wrapper_exception"))]
++        # T3-3/T2-5: resolved-LOOKING but incoherent records, including the orphaned anchor absent from TREE, stay owned.
++        unresolved += [raw("/synthetic/raw-not-acquired-with-number", "not_acquired", 999961),
++                       raw("/synthetic/raw-closed-without-close", "closed", 999962),
++                       raw("/synthetic/raw-closed-with-close-error", "closed", 999963, None, True, "OSError(5)"),
++                       raw("/synthetic/raw-stale", "anchored", 999949, {"dev": 1, "ino": 49, "kind": "dir"}),
++                       raw("/synthetic/raw-anchored-mismatch", "anchored", 999953, {"dev": 1, "ino": 99, "kind": "dir"}),
++                       raw("/synthetic/raw-anchored", "anchored", 999952, None)]
+         inventory = X.unresolved_inventory()
+-        listed = sorted(entry["state"]["state"] for entry in inventory if entry.get("kind") == "raw descriptor")
+-        unresolved_states = sorted(s for s in states if s not in ("anchored", "closed", "not_acquired"))
+-        assert listed == unresolved_states, (listed, unresolved_states)
+-        assert all(entry["resource_id"] == id(records[entry["state"]["state"]])
+-                   for entry in inventory if entry.get("kind") == "raw descriptor"), inventory
++        listed = sorted(entry["resource_id"] for entry in inventory if entry.get("kind") == "raw descriptor")
++        assert listed == sorted(id(record) for record in unresolved), ([e["state"]["path"] for e in inventory],)
++        assert all(entry.get("unknowns") for entry in inventory if entry.get("kind") == "raw descriptor"), inventory
++        assert not any(entry.get("resource_id") in {id(record) for record in resolved} for entry in inventory)
+         ownership = terminal_ownership(X)
+-        independent = sorted(entry["state"]["path"] for entry in ownership["unresolved"]
++        independent = sorted(entry["resource_id"] for entry in ownership["unresolved"]
+                              if entry.get("kind") == "raw descriptor (independent test inspection)")
+-        expected_paths = sorted([records[s]["path"] for s in unresolved_states] + ["/synthetic/raw-stale"])
+-        assert independent == expected_paths, (independent, expected_paths)
+-        results["inventory_states"] = {"runner_unresolved": listed, "independent_unresolved_paths": independent}
++        assert independent == listed, (independent, listed)
++        results["inventory_states"] = {"runner_unresolved_paths": sorted(r["path"] for r in unresolved),
++                                       "resolved_paths": sorted(r["path"] for r in resolved)}
+         for name, open_error, fstat_error, close_error in (
+                 ("open_fails", OSError(errno.ENOENT, "synthetic open"), None, None),
+                 ("fstat_fails_close_ok", None, OSError(errno.EIO, "synthetic fstat"), None),
+@@ -5339,14 +6032,14 @@
+                 assert X.LATCH == [] and closes == [], (X.LATCH, closes)
+             results["open_wb:" + name] = dict(made)
+         cnf = "/synthetic/run/item.cnf"
+-        observed = types.SimpleNamespace(st_dev=1, st_ino=42, st_mode=stat.S_IFREG | 0o600)
++        observed = types.SimpleNamespace(st_dev=1, st_ino=42, st_mode=stat.S_IFREG | 0o600, st_size=0)
+ 
+         class FailingClose:
+             def __init__(self):
+                 self.closes = 0
+ 
+-            def __iter__(self):
+-                return iter(())
++            def readline(self, limit):
++                return b""
+ 
+             def close(self):
+                 self.closes += 1
+@@ -5367,26 +6060,34 @@
+             def no_clock():
+                 raise AssertionError("verify_sat reached the clock after a descriptor fault")
+             X.tree_path = lambda current: (999930, "item.cnf")
+-            X.open_regular = lambda current, dir_fd=None: (999942, observed)
++            def opened(current, dir_fd=None, record=None):
++                # The caller's pre-registered acquisition record is the ONLY RAW_FDS owner (transfer, no duplicate).
++                record.update(fd=999942, state="acquired", observed_identity={"dev": 1, "ino": 42, "kind": "file"})
++                return 999942, observed, record
++            X.open_regular = opened
+             X.os.fdopen, X.os.close, X.clock = wrapped, no_close, no_clock
+             raised = None
+             try:
+-                X.verify_sat(cnf, ["v 1 0"], "synthetic-label")
++                X.verify_sat(cnf, ["v 1 0"], "synthetic-label", 100)
+             except OSError as exc:
+                 raised = exc
+             assert raised is not None, ("verify_sat descriptor fault returned", name)
+-            record = X.RAW_FDS[-1]
+-            base = {"purpose": "verify_sat_read", "path": cnf, "fd": 999942,
++            owners = [item for item in X.RAW_FDS if item.get("path") == cnf]
++            assert len(owners) == 1, owners
++            record = owners[0]
++            base = {"purpose": "verify_sat_read", "path": cnf, "fd": 999942, "error": None,
+                     "observed_identity": {"dev": 1, "ino": 42, "kind": "file"}}
+             listed = [e for e in X.unresolved_inventory() if e.get("kind") == "raw descriptor"
+                       and e.get("resource_id") == id(record)]
+             if name == "wrapper_exception":
+                 assert raised is wrapper_error, raised
+-                assert record == dict(base, state="uncertain_after_wrapper_exception", close_error=None), record
++                assert record == dict(base, state="uncertain_after_wrapper_exception", close_error=None,
++                                      close_attempted=False, transfer=None), record
+                 assert X.LATCH == ["raw descriptor ownership uncertain after wrapper exception: " + cnf], X.LATCH
+             else:
+                 assert wrappers[0].closes == 1, wrappers[0].closes
+-                assert record == dict(base, state="close_uncertain", close_error=repr(raised)), record
++                assert record == dict(base, state="close_uncertain", close_error=repr(raised), close_attempted=True,
++                                      transfer="file_object"), record
+                 assert X.LATCH == ["verify_sat descriptor close outcome uncertain: " + cnf], X.LATCH
+             assert closes == [] and len(listed) == 1, (closes, listed)
+             results["verify_sat:" + name] = dict(record)
+@@ -5396,8 +6097,10 @@
+ 
+ 
+ def t_nested_identity_without_outer_pid(R, W):
+-    """Runner item 5: a readable nested identity under a missing/invalid OUTER pid stays known evidence (settlement
+-    path and collect_record), records the outer-pid uncertainty, and still requires certified parent coverage."""
++    """Runner item 5 + T3-5: a readable nested identity under a missing/invalid OUTER pid stays known evidence
++    (settlement path and collect_record); a VALID outer pid contradicting the nested pid retains BOTH identities with
++    explicit uncertainty; EVERY retained identity (settlement- and summary-derived) independently requires certified
++    parent coverage."""
+     X = synthetic_guard_namespace(R)
+     X.time.monotonic, X.time.time = lambda: 1.0, lambda: 100.0
+     root = "/synthetic/outer-pid-missing"
+@@ -5408,7 +6111,9 @@
+                                  "live_census": {"complete": True, "group_members": [], "descendants": []}}).encode(),
+              summary_path: json.dumps({"children": [{"pid": "unreadable",
+                                                      "identity_at_start": {"pid": 780212, "start": [9, 9]}},
+-                                                    {"identity": {"pid": 780213, "start": [9, 10]}}]}).encode()}
++                                                    {"identity": {"pid": 780213, "start": [9, 10]}},
++                                                    {"pid": 780214,
++                                                     "identity_at_start": {"pid": 780215, "start": [9, 11]}}]}).encode()}
+     X.run_tree_census = lambda directory: {settle: ("file", 1, 2, 1, 0, 0, 0o600, 1, 512)}
+     def bounded_read(current, limit, *args, **kwargs):
+         if current not in files:
+@@ -5420,32 +6125,40 @@
+     manifest = X.attempt_owner_manifest(root, None)
+     retained = {(item["pid"], None if item["start"] is None else tuple(item["start"]))
+                 for item in manifest["identities"]}
+-    for key in ((780211, (9, 8)), (780212, (9, 9)), (780213, (9, 10))):
++    expected_keys = [(780211, (9, 8)), (780212, (9, 9)), (780213, (9, 10)), (780215, (9, 11)), (780214, None)]
++    for key in expected_keys:
+         assert key in retained, (key, manifest)
+     assert "invalid/missing outer pid at " + settle in manifest["unknowns"], manifest["unknowns"]
+     assert "invalid/missing outer pid at " + summary_path in manifest["unknowns"], manifest["unknowns"]
++    assert "record/identity PID contradiction at " + summary_path in manifest["unknowns"], manifest["unknowns"]
+     census = {"sha256": "a" * 64, "entries": 1, "root_identity": [1, 10]}
+     runner = {"pid": 780200, "start": [8, 1]}
++
++    def certified(omit=None):
++        return [dict(runner, group_leader=False)] + [{"pid": pid, "start": None if start is None else list(start),
++                                                      "group_leader": False}
++                                                     for pid, start in expected_keys if (pid, start) != omit]
+     disposition = {key: True for key in ("all_processes_ended", "ownership_inventory_complete",
+                                          "all_runner_resources_released", "all_unknown_owners_resolved",
+                                          "publication_audited", "ram_accounting_audited", "late_artifacts_audited")}
+     disposition.update(schema=X.DISPOSITION_SCHEMA, attempt_dir=root, launch_record_sha256=None, summary_sha256=None,
+         closeout_sha256=None, attempt_tree_census=census, observed_runner_exit_code=50, publication_failure_disposed=True,
+-        runner_identity=runner, identities=[dict(runner, group_leader=False),
+-                                            {"pid": 780212, "start": [9, 9], "group_leader": True},
+-                                            {"pid": 780213, "start": [9, 10], "group_leader": False}])
++        runner_identity=runner, identities=certified())
+     release = {"dir": root, "launch_record_sha256": None, "summary_sha256": None, "closeout_sha256": None,
+                "disposition": {"path": "/synthetic/parent-disposition", "sha256": "b" * 64}}
+     X.read_pinned = lambda *args, **kwargs: json.dumps(disposition).encode()
+     X.census_digest, X.list_pids = lambda directory: census, lambda *args: []
+-    omitted = X.disposition_refusals(root, release, manifest, None)
+-    assert any("does not cover known identity" in reason and "780211" in reason for reason in omitted), omitted
+-    disposition["identities"].append({"pid": 780211, "start": [9, 8], "group_leader": True})
+     complete = X.disposition_refusals(root, release, manifest, None)
+     assert complete == [], complete
++    omitted = {}
++    for key in expected_keys:
++        disposition["identities"] = certified(omit=key)
++        refusals = X.disposition_refusals(root, release, manifest, None)
++        assert any("does not cover known identity %r" % (key,) in reason for reason in refusals), (key, refusals)
++        omitted[repr(key)] = refusals
+     return {"retained_identities": sorted([pid, list(start) if start else None] for pid, start in retained),
+             "outer_pid_unknowns": [u for u in manifest["unknowns"] if u.startswith("invalid/missing outer pid")],
+-            "omitted_nested_identity_refusals": omitted, "complete_independent_inventory": complete}
++            "individual_omission_refusals": omitted, "complete_independent_inventory": complete}
+ 
+ 
+ def t_helper_cancel_safety_precedence(R, W):
+@@ -5499,6 +6212,49 @@
+             assert X.LATCH == safety + ["metadata helper invalid: %r" % (helper.record["invalid"],)], (name, X.LATCH)
+         results[name] = {"trips": helper.record["trips"], "outcome": outcome, "latch": list(X.LATCH),
+                          "stop_requests": terms}
++    # GD4: with ONLY cancellation collected during supervision, a safety defect first discovered at settlement
++    # (executable drift, exit observed beyond HELPER_WALL) is latched and refuses with RuntimeError, never the
++    # cancellation-only HelperRefused path; the single stop request is unchanged.
++    for name, drift, exit_mono in (("cancel_with_settlement_only_drift", ["native executable identity/pin drift"], 0.5),
++                                   ("cancel_with_settlement_only_late_exit", [], R.HELPER_WALL + 1.0)):
++        X = synthetic_guard_namespace(R)
++        X.time.monotonic, X.time.time = lambda: 1.0, lambda: 100.0
++        X.STATE["cancel_order"] = 1
++        X.exe_refusals = lambda binding, value=drift: list(value)
++        X.task_rss = lambda pid: 1000
++        helper = X.Helper(X.DATE_ARGV)
++        helper.proc = types.SimpleNamespace(pid=780502, returncode=None,
++                                            stdout=types.SimpleNamespace(fileno=lambda: 999978, closed=True))
++        helper.pid = helper.pgid = 780502
++        helper.launch_order, helper.popen_call_mono = 1, 0.0
++        helper.identity_at_start = {"pid": 780502, "pgid": 780502, "start": [5, 2]}
++        helper.live_census = lambda deadline=None: {"complete": True}
++        helper.observe_exit = lambda: None
++        terms = []
++        def term(reason, owner=helper):
++            terms.append(reason)          # synthetic stand-in: no verified kernel identity, no signal
++            if owner.stop is None:
++                owner.stop = reason
++        helper.term = term
++        helper._supervise_and_capture()
++        assert helper.record["trips"] == ["owner_cancel_sigterm"] and terms == ["owner_cancel_sigterm"], helper.record
++        assert X.LATCH == [], X.LATCH                       # nothing safety-relevant was visible during supervision
++        helper.reaped = helper.group_closed_before_reap = helper.grace_completion_in_bounds = True
++        helper.exit_observed_mono = exit_mono
++        try:
++            helper._settle(0)
++        except X.HelperRefused:
++            outcome = "HelperRefused"
++        except RuntimeError as exc:
++            outcome = "RuntimeError: " + str(exc)
++        else:
++            outcome = "returned"
++        assert outcome == "RuntimeError: required host clock invalid", (name, outcome, helper.record)
++        assert helper.record["settled"] is True and helper.record["settlement_safety_defects"], helper.record
++        assert X.LATCH == ["metadata helper invalid: %r" % (helper.record["invalid"],)], (name, X.LATCH)
++        assert terms == ["owner_cancel_sigterm"], terms
++        results[name] = {"outcome": outcome, "settlement_safety": helper.record["settlement_safety_defects"],
++                         "latch": list(X.LATCH), "stop_requests": terms}
+     return results
+ 
+ 
+@@ -5513,16 +6269,30 @@
+                                    ("sha_file", "eof", "hash read completion: /synthetic/h"),
+                                    ("sha_file", "fstat", "hash identity completion: /synthetic/h"),
+                                    ("sha_file", "close", "hash close completion: /synthetic/h"),
++                                   ("sha_file", "acquisition", "hash acquisition completion: /synthetic/h"),
++                                   ("sha_file", "late_nonempty_read", "hash read completion: /synthetic/h"),
+                                    ("read_regular_bounded", "in_time", None),
+                                    ("read_regular_bounded", "eof", "bounded metadata read completion"),
+-                                   ("read_regular_bounded", "close", "bounded metadata read close completion")):
++                                   ("read_regular_bounded", "close", "bounded metadata read close completion"),
++                                   ("read_regular_bounded", "acquisition", "bounded metadata read acquisition completion"),
++                                   ("read_regular_bounded", "late_nonempty_read", "bounded metadata read completion")):
+         X = synthetic_guard_namespace(R)
+         now, reads, closes = [0.0], [], []
+         X.time.monotonic = lambda: now[0]
+-        X.open_regular = lambda path, dir_fd=None: (999943, before)
++
++        def opened(path, dir_fd=None, record=None):
++            # A successful acquisition of an OWNED fd, registered in the proxy RAW_FDS exactly like production.
++            record = X.raw_record("synthetic open_regular", path) if record is None else record
++            record.update(fd=999943, state="acquired", observed_identity={"dev": 1, "ino": 43, "kind": "file"})
++            if phase == "acquisition":
++                now[0] = 100.0               # T3-4: the acquisition itself returns after the ORIGINAL allowance
++            return 999943, before, record
++        X.open_regular = opened
+         def read(fd, n):
+             reads.append(n)
+             if len(reads) == 1:
++                if phase == "late_nonempty_read":
++                    now[0] = 100.0           # T3-4: a successful NONEMPTY read completes late; no further read
+                 return b"abc"
+             if phase == "eof":
+                 now[0] = 100.0           # the EOF read returns after the ORIGINAL allowance
+@@ -5546,7 +6316,13 @@
+             assert message is None, (target, phase, "late completion returned timely evidence")
+             assert value == ((sha(b"abc"), 3) if target == "sha_file" else b"abc"), value
+             outcome = "timely"
+-        assert closes == [999943], (target, phase, closes)
++        assert closes == [999943], (target, phase, closes)                  # exactly one owning close
++        if phase == "acquisition":
++            assert reads == [], (target, reads)                               # nothing processed after a late acquisition
++        if phase == "late_nonempty_read":
++            assert len(reads) == 1, (target, reads)                           # no read after the late completion
++        record = X.RAW_FDS[-1]
++        assert record["state"] == "closed" and record["close_attempted"] is True and X.raw_record_refusals(record) == []
+         results[target + ":" + phase] = {"outcome": outcome, "reads": len(reads), "closes": len(closes)}
+     for phase in ("in_time", "late_last_hash"):
+         X = synthetic_guard_namespace(R)
+@@ -5615,6 +6391,9 @@
+         assert rec[other] is None and buffer.accounting()[key] == seen, (side, rec)
+         assert any(isinstance(item, dict) and item.get(key) == seen for item in buffer.late_obligations()), side
+         assert getattr(buffer, side + "_fd") == getattr(buffer, side + "_fd_identity") == 999944, side
++        # I1-1/IP1-1: the explicit acquisition state accompanies the observation (never inferred from a number).
++        assert getattr(buffer, side + "_fd_acquired") is True and rec[side + "_fd_acquired"] is True, (side, rec)
++        assert X.fifo_endpoint_refusals(rec) and X.buffer_integrity(rec) is False, rec
+         assert getattr(buffer, side + "_fd_closed") is None and closes == [999944], (side, closes)
+         assert rec["sink_settled"] is False and rec["errors"], rec
+         entries = [entry for entry in X.unresolved_inventory() if entry.get("kind") == "RAM collector"
+@@ -5706,99 +6485,155 @@
+     return {"refused": refused, "this_run_root_allocated_bytes": ledger["this_run_usage"]["allocated_st_blocks_bytes"]}
+ 
+ 
++def structural_snapshot(value, depth=0, within_object=False):
++    """T1-4: EXPLICIT structural snapshot (never an opaque repr): primitives by value, containers recursively by
++    identity and content, registry objects by identity, class and their own primitive/container fields; objects
++    nested inside an object are recorded by identity and class only."""
++    if value is None or isinstance(value, (str, int, float, bool)):
++        return value
++    if depth > 8:
++        return {"depth_cap": id(value), "class": type(value).__name__}
++    if isinstance(value, dict):
++        return {"dict": id(value), "items": sorted(([repr(k), structural_snapshot(v, depth + 1, within_object)]
++                                                    for k, v in value.items()), key=lambda pair: pair[0])}
++    if isinstance(value, (list, tuple, set, frozenset)):
++        items = sorted(value, key=repr) if isinstance(value, (set, frozenset)) else value
++        return {type(value).__name__: id(value), "items": [structural_snapshot(v, depth + 1, within_object) for v in items]}
++    fields = getattr(value, "__dict__", None)
++    if within_object or not isinstance(fields, dict):
++        return {"object": id(value), "class": type(value).__name__}
++    return {"object": id(value), "class": type(value).__name__,
++            "fields": structural_snapshot(dict(fields), depth + 1, True)}
++
++
+ def t_synthetic_namespace_isolation(R, W):
+     """Isolation is EVIDENCED, not assumed: (1) every rebound function, method and property accessor (including
+     X.Helper.reap_owned, X.Owned.* and X.Child.*) resolves globals in the proxy; (2) production registries and STATE
+-    are identity- and byte-unchanged across a complete synthetic test plus direct proxy mutations; (3) native birth,
+-    wait, signal and thread entry points refuse by default until a test explicitly installs a fake."""
+-    X = synthetic_guard_namespace(R)
+-    g, production = vars(X), vars(R)
+-    production_codes = {value.__code__ for value in production.values() if isinstance(value, types.FunctionType)}
+-    production_classes = [value for value in production.values() if isinstance(value, type)]
+-    leaked, rebound, methods = [], 0, {}
+-    for name, value in g.items():
+-        if isinstance(value, types.FunctionType) and value.__code__ in production_codes:
+-            rebound += 1
+-            if value.__globals__ is not g:
+-                leaked.append(name)
+-    for name in ("Owned", "Helper", "Child", "ProofBuffer", "Feeder", "ProofSink"):
+-        original = getattr(R, name, None)
+-        if not isinstance(original, type):
+-            continue
+-        copied = g[name]
+-        if copied is original or any(klass is production_class for klass in copied.__mro__
+-                                     for production_class in production_classes):
+-            leaked.append(name + ": class or MRO is a production class")
+-        count = 0
+-        for klass in copied.__mro__:
+-            if klass is object:
++    are identity- and structurally unchanged across a complete synthetic test plus direct proxy mutations; (3) T1-4:
++    PRE-EXISTING inert sentinels (a mutable STATE resource and a registry member) have DISJOINT proxy counterparts,
++    and mutating only those counterparts leaves the originals' explicit snapshots unchanged; (4) native birth, wait,
++    signal and thread entry points refuse by default until a test explicitly installs a fake."""
++    sentinel_state = {"inert_isolation_sentinel": True, "mutable": {"count": 0, "items": ["original"]}}
++    sentinel_member = {"inert_isolation_sentinel": True, "mutable": {"count": 0, "items": ["original"]}}
++    if "pa19_isolation_sentinel" in R.STATE or any(item is sentinel_member for item in R.HELPER_LOG):
++        raise AssertionError("isolation sentinel already present")
++    sentinel_text = (canonical_snapshot(sentinel_state), canonical_snapshot(sentinel_member))
++    R.STATE["pa19_isolation_sentinel"] = sentinel_state      # inert test-only resources that PRE-EXIST the proxy
++    R.HELPER_LOG.append(sentinel_member)
++    try:
++        X = synthetic_guard_namespace(R)
++        g, production = vars(X), vars(R)
++        production_codes = {value.__code__ for value in production.values() if isinstance(value, types.FunctionType)}
++        production_classes = [value for value in production.values() if isinstance(value, type)]
++        leaked, rebound, methods = [], 0, {}
++        for name, value in g.items():
++            if isinstance(value, types.FunctionType) and value.__code__ in production_codes:
++                rebound += 1
++                if value.__globals__ is not g:
++                    leaked.append(name)
++        for name in ("Owned", "Helper", "Child", "ProofBuffer", "Feeder", "ProofSink"):
++            original = getattr(R, name, None)
++            if not isinstance(original, type):
+                 continue
+-            for key, value in vars(klass).items():
+-                for fn in method_functions(value):
+-                    count += 1
+-                    if fn.__globals__ is not g:
+-                        leaked.append("%s.%s" % (klass.__name__, key))
+-        methods[name] = count
+-    if X.Helper.reap_owned.__globals__ is not g or X.Owned.reap_owned.__globals__ is not g:
+-        leaked.append("Helper.reap_owned")
+-    assert leaked == [] and rebound > 0 and methods.get("Helper", 0) > 0, (leaked, rebound, methods)
+-
+-    def fingerprint():
+-        out = {}
++            copied = g[name]
++            if copied is original or any(klass is production_class for klass in copied.__mro__
++                                         for production_class in production_classes):
++                leaked.append(name + ": class or MRO is a production class")
++            count = 0
++            for klass in copied.__mro__:
++                if klass is object:
++                    continue
++                for key, value in vars(klass).items():
++                    for fn in method_functions(value):
++                        count += 1
++                        if fn.__globals__ is not g:
++                            leaked.append("%s.%s" % (klass.__name__, key))
++            methods[name] = count
++        if X.Helper.reap_owned.__globals__ is not g or X.Owned.reap_owned.__globals__ is not g:
++            leaked.append("Helper.reap_owned")
++        assert leaked == [] and rebound > 0 and methods.get("Helper", 0) > 0, (leaked, rebound, methods)
++        # T1-4: the pre-existing resources' proxy counterparts are disjoint objects (no shallow sharing).
++        proxy_state = X.STATE.get("pa19_isolation_sentinel")
++        assert proxy_state is not sentinel_state and proxy_state["mutable"] is not sentinel_state["mutable"] \
++            and proxy_state["mutable"]["items"] is not sentinel_state["mutable"]["items"], proxy_state
++        assert canonical_snapshot(proxy_state) == sentinel_text[0], proxy_state
++        assert not any(item is sentinel_member or item is sentinel_member["mutable"] for item in X.HELPER_LOG)
+         for name in ("LATCH", "OWNED", "HELPERS", "HELPER_LOG", "LIVE_BUFFERS", "LIVE_FEEDERS", "LIVE_SINKS",
+-                     "CREATED", "TREE", "WRITTEN", "RAW_FDS", "STATE"):
+-            value = getattr(R, name, None)
+-            members = [id(item) for item in value] if isinstance(value, list) else None
+-            out[name] = [id(value), members, json.dumps(value, sort_keys=True, default=repr)]
+-        return out
+-
+-    before = fingerprint()
+-    exercised = t_popen_exception_retains_unknown_intent(R, W)
+-    X.latch("synthetic isolation latch")
+-    owner = X.Owned()
+-    owner._owned_init()
+-    owner.pid = owner.pgid = 780601
+-    owner.argv = ["synthetic-not-executed"]
+-    owner._record_unsettled("synthetic isolation probe")
+-    X.os.open = lambda *args, **kwargs: 999945
+-    X.os.fstat = lambda fd: types.SimpleNamespace(st_dev=1, st_ino=45, st_mode=stat.S_IFDIR | 0o700)
+-    X.anchor_dir("/synthetic/isolation", None, "/synthetic/isolation")
+-    X.STATE["cancel_order"] = 7
+-    X.STATE["prior_census"]["/synthetic/isolation"] = {"synthetic": True}
+-    X.CREATED["/synthetic/isolation/x"] = {"state": "open"}
+-    after = fingerprint()
+-    changed = sorted(name for name in before if before[name] != after[name])
+-    assert changed == [], changed
+-    assert X.LATCH == ["synthetic isolation latch",
+-                       "UNSETTLED pid 780601: synthetic isolation probe; reservation retained"], X.LATCH
+-    assert X.RAW_FDS and X.RAW_FDS[-1]["state"] == "anchored" and "/synthetic/isolation" in X.TREE, X.RAW_FDS
+-    probes = {}
+-    # Arguments are chosen so that even a REGRESSED (non-refusing) proxy could not start, wait, signal or fork.
+-    for label, attempt in (("subprocess.Popen", lambda: X.subprocess.Popen([])),
+-                           ("subprocess.run", lambda: X.subprocess.run([])),
+-                           ("subprocess.check_output", lambda: X.subprocess.check_output([])),
+-                           ("os.waitpid", lambda: X.os.waitpid("not-a-pid", 0)),
+-                           ("os.waitid", lambda: X.os.waitid("not-a-kind", 0, 0)),
+-                           ("os.killpg", lambda: X.os.killpg("not-a-group", 0)),
+-                           ("os.kill", lambda: X.os.kill("not-a-pid", 0)),
+-                           ("KILLPG", lambda: X.KILLPG("not-a-group", 0)),
+-                           ("os.system", lambda: X.os.system("\0")),
+-                           ("os.fork", lambda: X.os.fork("unexpected argument")),
+-                           ("os.posix_spawn", lambda: X.os.posix_spawn("not-a-path")),
+-                           ("threading.Thread", lambda: X.threading.Thread(target=None))):
+-        try:
+-            attempt()
+-        except AssertionError as exc:
+-            probes[label] = "refused" if str(exc).startswith("synthetic fixture attempted") else "other " + repr(exc)
+-        except BaseException as exc:
+-            probes[label] = "NOT_REFUSED " + repr(exc)
+-        else:
+-            probes[label] = "NOT_REFUSED returned"
+-    assert all(value == "refused" for value in probes.values()), probes
+-    fake = lambda *args, **kwargs: "synthetic explicit fake"
+-    X.subprocess.Popen = fake
+-    assert X.subprocess.Popen() == "synthetic explicit fake"
++                     "RAW_FDS", "CREATED", "TREE", "WRITTEN"):
++            original, copied = getattr(R, name), getattr(X, name)
++            members = original.values() if isinstance(original, dict) else original
++            assert copied is not original and not any(member is item for member in members
++                                                      for item in (copied.values() if isinstance(copied, dict) else copied))
++
++        def fingerprint():
++            out = {}
++            for name in ("LATCH", "OWNED", "HELPERS", "HELPER_LOG", "LIVE_BUFFERS", "LIVE_FEEDERS", "LIVE_SINKS",
++                         "CREATED", "TREE", "WRITTEN", "RAW_FDS", "STATE"):
++                value = getattr(R, name, None)
++                out[name] = [id(value), structural_snapshot(value)]
++            return out
++
++        before = fingerprint()
++        exercised = t_popen_exception_retains_unknown_intent(R, W)
++        X.latch("synthetic isolation latch")
++        owner = X.Owned()
++        owner._owned_init()
++        owner.pid = owner.pgid = 780601
++        owner.argv = ["synthetic-not-executed"]
++        owner._record_unsettled("synthetic isolation probe")
++        X.os.open = lambda *args, **kwargs: 999945
++        X.os.fstat = lambda fd: types.SimpleNamespace(st_dev=1, st_ino=45, st_mode=stat.S_IFDIR | 0o700)
++        X.anchor_dir("/synthetic/isolation", None, "/synthetic/isolation")
++        X.STATE["cancel_order"] = 7
++        X.STATE["prior_census"]["/synthetic/isolation"] = {"synthetic": True}
++        X.CREATED["/synthetic/isolation/x"] = {"state": "open"}
++        # Mutate ONLY the disjoint counterparts of the pre-existing sentinels.
++        proxy_state["mutable"]["count"] += 1
++        proxy_state["mutable"]["items"].append("proxy-only mutation")
++        X.HELPER_LOG.append({"inert_isolation_sentinel": True, "mutable": {"count": 99, "items": ["proxy"]}})
++        after = fingerprint()
++        changed = sorted(name for name in before if before[name] != after[name])
++        assert changed == [], changed
++        assert (canonical_snapshot(sentinel_state), canonical_snapshot(sentinel_member)) == sentinel_text, \
++            "pre-existing sentinel resource state changed through the proxy"
++        assert X.LATCH == ["synthetic isolation latch",
++                           "UNSETTLED pid 780601: synthetic isolation probe; reservation retained"], X.LATCH
++        assert X.RAW_FDS and X.RAW_FDS[-1]["state"] == "anchored" and "/synthetic/isolation" in X.TREE, X.RAW_FDS
++        probes = {}
++        # Arguments are chosen so that even a REGRESSED (non-refusing) proxy could not start, wait, signal or fork.
++        for label, attempt in (("subprocess.Popen", lambda: X.subprocess.Popen([])),
++                               ("subprocess.run", lambda: X.subprocess.run([])),
++                               ("subprocess.check_output", lambda: X.subprocess.check_output([])),
++                               ("os.waitpid", lambda: X.os.waitpid("not-a-pid", 0)),
++                               ("os.waitid", lambda: X.os.waitid("not-a-kind", 0, 0)),
++                               ("os.killpg", lambda: X.os.killpg("not-a-group", 0)),
++                               ("os.kill", lambda: X.os.kill("not-a-pid", 0)),
++                               ("KILLPG", lambda: X.KILLPG("not-a-group", 0)),
++                               ("os.system", lambda: X.os.system("\0")),
++                               ("os.fork", lambda: X.os.fork("unexpected argument")),
++                               ("os.posix_spawn", lambda: X.os.posix_spawn("not-a-path")),
++                               ("threading.Thread", lambda: X.threading.Thread(target=None))):
++            try:
++                attempt()
++            except AssertionError as exc:
++                probes[label] = "refused" if str(exc).startswith("synthetic fixture attempted") else "other " + repr(exc)
++            except BaseException as exc:
++                probes[label] = "NOT_REFUSED " + repr(exc)
++            else:
++                probes[label] = "NOT_REFUSED returned"
++        assert all(value == "refused" for value in probes.values()), probes
++        fake = lambda *args, **kwargs: "synthetic explicit fake"
++        X.subprocess.Popen = fake
++        assert X.subprocess.Popen() == "synthetic explicit fake"
++    finally:
++        # Remove ONLY the two inert test sentinels, by identity; production resources are never touched.
++        if R.STATE.get("pa19_isolation_sentinel") is sentinel_state:
++            R.STATE.pop("pa19_isolation_sentinel")
++        positions = [index for index, item in enumerate(R.HELPER_LOG) if item is sentinel_member]
++        if len(positions) == 1:
++            del R.HELPER_LOG[positions[0]]
+     return {"rebound_functions": rebound, "rebound_methods": methods, "production_unchanged": True,
++            "pre_existing_sentinels_disjoint_and_unchanged": True,
+             "default_refusals": probes, "exercised_synthetic_test": sorted(exercised)}
+ 
+ 
+@@ -5825,11 +6660,13 @@
+             write_close_attempted=True, read_endpoint_closed=None, write_endpoint_closed=True,
+             close_error=expected, close_errors=[expected], errors=[expected], read_close_error=expected,
+             write_close_error=None, exception=None, abandon_error=None, pipe_acquisition_unknown=False,
+-            start_acquisition_unknown=False)
++            start_acquisition_unknown=False, read_endpoint_observed_identity={"dev": 1, "ino": 65, "kind": "fifo"},
++            write_endpoint_observed_identity={"dev": 1, "ino": 66, "kind": "fifo"})
+         f.accounting = lambda: {"label": f.label, "unresolved": True, "read_endpoint": f.rfd, "errors": list(f.errors)}
+         f.late_obligations = lambda: [{"what": "synthetic feeder", "label": f.label, "state": f.accounting()}]
+         X.LIVE_FEEDERS.append(f)
+-        dispose_fixture_fault(X, f, "stdin feeder", [expected], True, [999997, 999998], [[0, 1, 0], [0, 2, 0]], 999999)
++        dispose_fixture_fault(X, f, "stdin feeder", [expected], True, [999997, 999998],
++                              [[1, 65, stat.S_IFIFO | 0o600], [1, 66, stat.S_IFIFO | 0o600]], 999999)
+         return f
+ 
+     def attempt(name, X):
+@@ -5863,6 +6700,20 @@
+         X = proxy()
+         X.STATE["cancel_order"] = 1
+         attempt("runner_cancel_stamped", X)
++        # T1-2: replacing a MUTABLE native observation member (module identity unchanged) or a pinned constructor/
++        # method must refuse the join independently for each member.
++        for label, mutate in (
++                ("os.waitid", lambda P: setattr(P.os, "waitid", lambda *args: None)),
++                ("os.waitpid", lambda P: setattr(P.os, "waitpid", lambda *args: (0, 0))),
++                ("signal.getsignal", lambda P: setattr(P.signal, "getsignal", lambda sig: signal.SIG_DFL)),
++                ("time.monotonic", lambda P: setattr(P.time, "monotonic", lambda: 2.0)),
++                ("bsd_identity", lambda P: setattr(P, "bsd_identity", lambda pid: (None, {"errno": 0}))),
++                ("Owned.remember_identity", lambda P: setattr(P.Owned, "remember_identity", lambda self, item: None)),
++                ("Owned._owned_init", lambda P: setattr(P.Owned, "_owned_init", lambda self: None)),
++                ("Helper.__init__", lambda P: setattr(P.Helper, "__init__", lambda self, argv: None))):
++            X = proxy()
++            mutate(X)
++            attempt("native_member_replaced:" + label, X)
+     finally:
+         STATE["fixture_dispositions"], STATE["fixture_fds"] = saved[0], saved[1]
+         STATE["admission_pins"] = saved[2]
+@@ -5873,6 +6724,558 @@
+         "licensed_production_blocker_cleared", "unlicensed_raw_descriptor_blocker", "production_admission_replaced",
+         "production_admission_refuses")), outcomes
+     assert outcomes["runner_cancel_stamped"][0] == "cancelled", outcomes
++    native = [name for name in outcomes if name.startswith("native_member_replaced:")]
++    assert len(native) == 8 and all(outcomes[name][0] == "refused" for name in native), outcomes
++    return outcomes
++
++
++def t_manifest_identity_fields_and_runner_intents(R, W):
++    """GD1 oracle on the REAL attempt_owner_manifest (synthetic files, no process): every readable identity field is
++    collected independently; a present null never shadows a readable field; two different readable fields at one
++    item are retained together with an explicit contradiction; a runner_identity emitted only in intents is retained
++    without any launch-record/summary/closeout runner publication; every identity independently needs coverage."""
++    X = synthetic_guard_namespace(R)
++    X.time.monotonic, X.time.time = lambda: 1.0, lambda: 100.0
++    root = "/synthetic/identity-fields"
++    children = root + "/children/"
++    runner = {"pid": 780230, "ppid": 1, "pgid": 780230, "start": [8, 30], "status": 2}
++    files = {children + "01-child.intent.json": {"schema": "PA19-OWNER-INTENT-v1", "kind": "child",
++                                                 "runner_identity": runner},
++             children + "02-helper.intent.json": {"schema": "PA19-OWNER-INTENT-v1", "kind": "helper",
++                                                  "runner_identity": runner},
++             children + "02-helper.launch.json": {"kind": "helper", "pid": 780231, "pgid": 780231,
++                                                  "identity": {"pid": 780231, "start": [8, 31]}},
++             children + "03-child.settle.json": {"pid": 780232, "identity_at_start": {"pid": 780232, "start": [8, 32]},
++                                                 "identity": {"pid": 780232, "start": [8, 33]},
++                                                 "known_identities": [], "census_uncertainty": [],
++                                                 "live_census": {"complete": True, "group_members": [],
++                                                                 "descendants": []}},
++             root + "/summary.json": {"children": [{"pid": 780236, "identity_at_start": None,
++                                                    "identity": {"pid": 780236, "start": [8, 36]}}],
++                                      "metadata_helpers": [{"pid": 780237,
++                                                            "identity_at_start": {"pid": 780237, "start": [8, 37]},
++                                                            "identity": {"pid": 780237, "start": [8, 38]}}]}}
++    census = {path: ("file", 1, 100 + index, 1, 0, 0, 0o600, 1, 512)
++              for index, path in enumerate(sorted(p for p in files if p.startswith(children)))}
++    X.run_tree_census = lambda directory: dict(census)
++    def bounded_read(current, limit, *args, **kwargs):
++        if current not in files:
++            raise AssertionError(("unexpected ownership read", current))
++        return json.dumps(files[current]).encode()
++    X.read_regular_bounded = bounded_read
++    X.os.path = types.SimpleNamespace(**vars(R.os.path))
++    X.os.path.lexists = lambda current: current in files
++    manifest = X.attempt_owner_manifest(root, None)
++    retained = {(item["pid"], None if item["start"] is None else tuple(item["start"]))
++                for item in manifest["identities"]}
++    expected_keys = [(780230, (8, 30)), (780231, (8, 31)), (780232, (8, 32)), (780232, (8, 33)),
++                     (780236, (8, 36)), (780237, (8, 37)), (780237, (8, 38))]
++    for key in expected_keys:
++        assert key in retained, (key, manifest)
++    contradictions = [u for u in manifest["unknowns"] if u.startswith("contradictory readable identities at ")]
++    assert any(children + "03-child.settle.json" in u for u in contradictions), manifest["unknowns"]
++    assert any(root + "/summary.json" in u for u in contradictions), manifest["unknowns"]
++    assert "intent without proven launch/no-launch: " + children + "01-child" in manifest["unknowns"]
++    disposition = {key: True for key in ("all_processes_ended", "ownership_inventory_complete",
++                                         "all_runner_resources_released", "all_unknown_owners_resolved",
++                                         "publication_audited", "ram_accounting_audited", "late_artifacts_audited")}
++
++    def certified(omit=None):
++        return [{"pid": pid, "start": list(start), "group_leader": False}
++                for pid, start in expected_keys if (pid, start) != omit]
++    disposition.update(schema=X.DISPOSITION_SCHEMA, attempt_dir=root, launch_record_sha256=None, summary_sha256=None,
++        closeout_sha256=None, attempt_tree_census={"sha256": "c" * 64, "entries": 4, "root_identity": [1, 9]},
++        observed_runner_exit_code=50, publication_failure_disposed=True,
++        runner_identity={"pid": 780230, "start": [8, 30]}, identities=certified())
++    release = {"dir": root, "launch_record_sha256": None, "summary_sha256": None, "closeout_sha256": None,
++               "disposition": {"path": "/synthetic/parent-disposition", "sha256": "d" * 64}}
++    X.read_pinned = lambda *args, **kwargs: json.dumps(disposition).encode()
++    X.census_digest, X.list_pids = lambda directory: disposition["attempt_tree_census"], lambda *args: []
++    complete = X.disposition_refusals(root, release, manifest, None)
++    assert complete == [], complete
++    omitted = {}
++    for key in expected_keys:
++        disposition["identities"] = certified(omit=key)
++        refusals = X.disposition_refusals(root, release, manifest, None)
++        assert any(("does not cover known identity %r" % (key,)) in reason
++                   or "parent runner identity is not covered" in reason for reason in refusals), (key, refusals)
++        omitted[repr(key)] = refusals
++    return {"retained": sorted([pid, list(start)] for pid, start in expected_keys),
++            "contradictions": contradictions, "individual_omission_refusals": omitted}
++
++def t_raw_read_walk_acquisition_inventory(R, W):
++    """GD3 oracle on the REAL open_regular/read_regular_bounded/sha_file/walk_bounded (synthetic descriptors only):
++    every acquisition is inventoried BEFORE inspection with its observed identity; a refused inspection or owning
++    close that raises leaves close_uncertain in the unresolved inventory; OSError proves non-acquisition while any
++    other acquisition exception stays UNKNOWN; each acquired number gets exactly ONE close call (reuse sentinel: a
++    later unrelated acquisition of the same number never triggers a retry of the uncertain record)."""
++    results = {}
++    regular = types.SimpleNamespace(st_mode=stat.S_IFREG | 0o600, st_dev=1, st_ino=21, st_size=3, st_mtime_ns=1,
++                                    st_ctime_ns=1, st_nlink=1, st_blocks=8)
++    fifo = types.SimpleNamespace(st_mode=stat.S_IFIFO | 0o600, st_dev=1, st_ino=22, st_size=0, st_mtime_ns=1,
++                                 st_ctime_ns=1, st_nlink=1, st_blocks=0)
++    directory = types.SimpleNamespace(st_mode=stat.S_IFDIR | 0o700, st_dev=1, st_ino=23, st_size=64,
++                                      st_mtime_ns=1, st_ctime_ns=1, st_nlink=2, st_blocks=8)
++
++    def namespace(open_result, observed, close_failures=(), reads=(b"abc", b"")):
++        X = synthetic_guard_namespace(R)
++        X.time.monotonic = lambda: 1.0
++        calls = {"close": [], "fstat_registry_states": []}
++        script = list(reads)
++        def opened(*args, **kwargs):
++            if isinstance(open_result, BaseException):
++                raise open_result
++            return open_result
++        def inspected(fd):
++            # Registration precedes inspection: the newest record already holds this acquired number.
++            calls["fstat_registry_states"].append((X.RAW_FDS[-1]["fd"], X.RAW_FDS[-1]["state"]))
++            return observed
++        def closing(fd):
++            calls["close"].append(fd)
++            if len(calls["close"]) in close_failures:
++                raise OSError(errno.EIO, "synthetic close uncertainty %d" % len(calls["close"]))
++        X.os.open, X.os.dup, X.os.fstat, X.os.close = opened, opened, inspected, closing
++        X.os.read = lambda fd, n: script.pop(0) if script else b""
++        return X, calls
++
++    def raw_unresolved(X):
++        return [entry for entry in X.unresolved_inventory() if entry.get("kind") == "raw descriptor"]
++
++    # (1) refused inspection (not regular) whose single rollback close raises: retained close_uncertain.
++    X, calls = namespace(999920, fifo, close_failures=(1,))
++    try:
++        X.open_regular("/synthetic/not-regular")
++    except RuntimeError as exc:
++        refused = str(exc) == "not a regular file: /synthetic/not-regular"
++    else:
++        refused = False
++    record = X.RAW_FDS[-1]
++    assert refused and calls["fstat_registry_states"] == [(999920, "acquired")], calls
++    assert record["state"] == "close_uncertain" and record["fd"] == 999920 and calls["close"] == [999920], record
++    assert record["observed_identity"] == {"dev": 1, "ino": 22, "kind": "fifo"}, record
++    assert [entry["resource_id"] for entry in raw_unresolved(X)] == [id(record)]
++    # Reuse sentinel: the SAME number is later acquired for an unrelated regular file; only that new record is
++    # closed, the uncertain record is never retried or resolved by it.
++    X.os.fstat = lambda fd: regular
++    data = X.read_regular_bounded("/synthetic/unrelated-reuse", 10)
++    assert data == b"abc" and calls["close"] == [999920, 999920] and record["state"] == "close_uncertain"
++    assert X.RAW_FDS[-1]["state"] == "closed" and [e["resource_id"] for e in raw_unresolved(X)] == [id(record)]
++    results["refused_inspection_close_uncertain_and_reuse"] = {"closes": calls["close"]}
++    # (2)/(3) owning close failures of read_regular_bounded and sha_file stay inventoried, exactly one close each.
++    for name, call in (("read_regular_bounded", lambda X: X.read_regular_bounded("/synthetic/r", 10)),
++                       ("sha_file", lambda X: X.sha_file("/synthetic/h", limit=10))):
++        X, calls = namespace(999921, regular, close_failures=(1,))
++        try:
++            call(X)
++        except OSError as exc:
++            raised = "synthetic close uncertainty 1" in str(exc)
++        else:
++            raised = False
++        record = X.RAW_FDS[-1]
++        assert raised and calls["close"] == [999921] and record["state"] == "close_uncertain", (name, record, calls)
++        assert record["close_attempted"] is True and [e["resource_id"] for e in raw_unresolved(X)] == [id(record)]
++        results[name + "_close_uncertain"] = dict(record)
++    # (4) acquisition outcomes: OSError proves non-acquisition; any other exception stays UNKNOWN.
++    for name, error, resolved in (("oserror", OSError(errno.ENOENT, "synthetic open refusal"), True),
++                                  ("unexpected", RuntimeError("synthetic lost acquisition result"), False)):
++        X, calls = namespace(error, regular)
++        try:
++            X.sha_file("/synthetic/missing")
++        except (OSError, RuntimeError) as exc:
++            assert exc is error, exc
++        record = X.RAW_FDS[-1]
++        assert record["fd"] is None and calls["close"] == [] and record["error"] == repr(error), record
++        assert record["state"] == ("not_acquired" if resolved else "acquisition_uncertain"), record
++        assert (raw_unresolved(X) == []) is resolved, raw_unresolved(X)
++        results["acquisition_" + name] = record["state"]
++    # (5) walk_bounded: the root dup and every child directory are inventoried; a child close failure is retained
++    # while the root still gets its single close.
++    X, calls = namespace(999922, directory, close_failures=(1,))
++    entries = {999922: [types.SimpleNamespace(name="sub")], 999923: []}
++    opened_numbers = iter((999922, 999923))
++    X.os.dup = X.os.open = lambda *args, **kwargs: next(opened_numbers)
++    class Scan:
++        def __init__(self, dfd):
++            self.items = iter(entries[dfd])
++        def __enter__(self):
++            return self
++        def __exit__(self, *args):
++            return False
++        def __iter__(self):
++            return self.items
++    X.os.scandir = Scan
++    X.os.stat = lambda name, dir_fd=None, follow_symlinks=True: directory
++    try:
++        X.walk_bounded("/synthetic/walk-root", root_fd=999900)
++    except OSError as exc:
++        raised = "synthetic close uncertainty 1" in str(exc)
++    else:
++        raised = False
++    walk = [record for record in X.RAW_FDS if record["purpose"].startswith("walk_bounded")]
++    assert raised and [record["fd"] for record in walk] == [999922, 999923], walk
++    assert calls["close"] == [999923, 999922], calls                       # child first, then the root, once each
++    assert walk[0]["state"] == "closed" and walk[1]["state"] == "close_uncertain", walk
++    assert [e["resource_id"] for e in raw_unresolved(X)] == [id(walk[1])]
++    results["walk_child_close_uncertain"] = [dict(record) for record in walk]
++    return results
++
++def t_commit_publication_original_allowance(R, W):
++    """GD5 oracle on the REAL commit_record (synthetic descriptors/clock): post-publication preservation runs under
++    the ORIGINAL operation allowance (STATE cleanup_deadline == end while it runs, restored afterwards) and a
++    completion observed beyond that allowance is a latched completion defect that never commits UNSAT; the timely
++    twin commits. Late UNSAT never gains provisional promotion through a separately calculated allowance."""
++    results = {}
++    for phase in ("timely", "late_post_publication_preservation"):
++        X = synthetic_guard_namespace(R)
++        now = [0.0]
++        X.time.monotonic, X.time.time = lambda: now[0], lambda: 100.0 + now[0]
++        X.STATE.update(mono_end=1000.0, abs_end=10000.0, cleanup_deadline=None)
++        path = "/synthetic/item.record.json"
++        writes, observed_deadlines = [], []
++        def create(current):
++            X.CREATED[current] = {"state": "open", "kind": "file", "identity": [1, 90], "acquired_fd": 999910,
++                                  "fd_owner": "raw_creation"}
++            return 999910
++        def preserve(exclude=()):
++            observed_deadlines.append(X.STATE.get("cleanup_deadline"))
++            if not exclude and phase != "timely":
++                now[0] = 31.0                # the post-publication preservation crosses the ORIGINAL 30 s allowance
++            return []
++        X.create_excl, X.tree_path = create, lambda current: (999911, "item.record.json")
++        X.os.write = lambda fd, view: writes.append(len(view)) or len(view)
++        X.os.fsync = lambda fd: None
++        X.os.close = lambda fd: None
++        X.confinement_refusals, X.preservation_refusals = lambda *args: [], preserve
++        commit = X.commit_record(path, {"status": "UNKNOWN"}, {"status": "UNSAT_PROVISIONAL"})
++        end = commit["original_operation_allowance_mono"]
++        assert end == 30.0 and observed_deadlines == [None, end] and X.STATE["cleanup_deadline"] is None, \
++            (end, observed_deadlines, X.STATE["cleanup_deadline"])
++        if phase == "timely":
++            assert commit["committed_unsat"] is True and commit["publication_completed_in_bounds"] is True, commit
++            assert X.LATCH == [] and commit["publication_done_mono"] <= end, (X.LATCH, commit)
++        else:
++            defect = "item publication completion observed beyond its original operation allowance"
++            assert commit["committed_unsat"] is False and commit["publication_completed_in_bounds"] is False, commit
++            assert commit["publication_defects"] == [defect] and commit["publication_done_mono"] > end, commit
++            assert X.LATCH == ["item publication completion: " + defect], X.LATCH
++        results[phase] = {"committed_unsat": commit["committed_unsat"], "defects": commit["publication_defects"],
++                          "preservation_deadlines": observed_deadlines}
++    return results
++
++def t_verify_sat_original_deadline(R, W):
++    """I1-2 oracle on the REAL verify_sat (synthetic descriptors/clock, no SAT science): ONE allowance fixed before
++    acquisition fences acquisition, every bounded read, the owned close and the completion BEFORE any candidate
++    publication; the CNF bound is the exact expected byte count; the acquisition record is the single RAW_FDS owner
++    transferred to the wrapper; each failure leaves exactly one close and NO publication. The timely twin publishes."""
++    results = {}
++    cnf_bytes = b"p cnf 2 1\n1 2 0\n"
++    regular = types.SimpleNamespace(st_dev=1, st_ino=95, st_mode=stat.S_IFREG | 0o600, st_size=len(cnf_bytes))
++    for phase in ("timely", "late_acquisition", "oversize_stat", "late_read", "growth_beyond_bound", "late_close"):
++        X = synthetic_guard_namespace(R)
++        now, raw_closes, publications = [0.0], [], []
++        X.time.monotonic, X.time.time = lambda: now[0], lambda: 100.0 + now[0]
++        X.STATE["out"] = "/synthetic/run"
++        X.tree_path = lambda current: (999930, "item.cnf")
++        def opened(current, dir_fd=None, record=None):
++            record.update(fd=999931, state="acquired", observed_identity={"dev": 1, "ino": 95, "kind": "file"})
++            if phase == "late_acquisition":
++                now[0] = 31.0
++            observed = regular if phase != "oversize_stat" else types.SimpleNamespace(
++                st_dev=1, st_ino=95, st_mode=stat.S_IFREG | 0o600, st_size=len(cnf_bytes) + 1)
++            return 999931, observed, record
++        class Reader:
++            def __init__(self):
++                self.closes, self.lines = 0, [b"p cnf 2 1\n", b"1 2 0\n"] if phase != "growth_beyond_bound" \
++                    else [b"p cnf 2 1\n", b"1 2 0\n", b"c extra comment beyond the expected bound\n"]
++            def readline(self, limit):
++                if phase == "late_read":
++                    now[0] = 31.0
++                return self.lines.pop(0)[:limit] if self.lines else b""
++            def close(self):
++                self.closes += 1
++                if phase == "late_close":
++                    now[0] = 31.0
++        readers = []
++        X.open_regular = opened
++        X.os.fdopen = lambda fd, mode: readers.append(Reader()) or readers[-1]
++        X.os.close = raw_closes.append
++        X.clock = lambda: "2000-01-01T00:00:00+0000"      # synthetic predicate fixture, NEVER an observed clock
++        X.write_x = lambda path, body, deadline=None: publications.append(path) or sha(b"synthetic")
++        X.write_bytes_x = lambda path, data, deadline=None: publications.append(path) or (sha(data), len(data))
++        limit = len(cnf_bytes) if phase != "growth_beyond_bound" else len(cnf_bytes) + 5
++        try:
++            value = X.verify_sat("/synthetic/run/item.cnf", ["v 1 -2 0"], "synthetic-sat", limit)
++            outcome = "returned"
++        except (TimeoutError, RuntimeError) as exc:
++            value, outcome = None, type(exc).__name__ + ": " + str(exc)
++        owners = [item for item in X.RAW_FDS if item.get("path") == "/synthetic/run/item.cnf"]
++        assert len(owners) == 1, owners                                  # transfer, never a duplicate owner
++        record = owners[0]
++        if phase == "timely":
++            assert outcome == "returned" and value["clauses_all_satisfied"] is True, (outcome, value)
++            assert len(publications) == 2 and readers[0].closes == 1 and raw_closes == [], (publications, raw_closes)
++            assert record["state"] == "closed" and record["transfer"] == "file_object", record
++        else:
++            assert publications == [], (phase, publications)              # nothing published after a fence failure
++            assert record["close_attempted"] is True and record["state"] == "closed", (phase, record)
++            if phase in ("late_acquisition", "oversize_stat"):
++                assert readers == [] and raw_closes == [999931], (phase, readers, raw_closes)
++            else:
++                assert len(readers) == 1 and readers[0].closes == 1 and raw_closes == [], (phase, raw_closes)
++            expected = {"late_acquisition": "TimeoutError: verify_sat acquisition completion",
++                        "oversize_stat": "RuntimeError: CNF exceeds its expected byte bound before verify_sat read",
++                        "late_read": "TimeoutError: verify_sat read completion",
++                        "growth_beyond_bound": "RuntimeError: CNF grew beyond its expected byte bound during verify_sat",
++                        "late_close": "TimeoutError: verify_sat read/check/close completion"}[phase]
++            assert outcome.startswith(expected), (phase, outcome)
++        results[phase] = {"outcome": outcome, "publications": publications, "record_state": record["state"]}
++    return results
++
++def t_d2_rehash_close_registration_fence(R, W):
++    """I2-2 oracle on the REAL ProofSink._rehash_file/finish (D only; synthetic descriptors/clock, no thread or
++    native process): the measured result is held while the ONE owning close runs, then the UNCHANGED allowance is
++    checked; a late or uncertain close returns no success (no second close/hash). finish() rechecks that allowance
++    immediately before success-path registration: a crossing skips register_written and keeps ownership. T3-2: an
++    expected endpoint whose observation is unavailable or whose acquisition history is missing refuses the checker."""
++    results = {}
++    file_stat = types.SimpleNamespace(st_mode=stat.S_IFREG | 0o600, st_dev=1, st_ino=70, st_size=3, st_mtime_ns=1,
++                                      st_ctime_ns=1, st_nlink=1, st_blocks=8)
++    fifo_stat = types.SimpleNamespace(st_mode=stat.S_IFIFO | 0o600, st_dev=1, st_ino=71, st_size=0, st_mtime_ns=1,
++                                      st_ctime_ns=1, st_nlink=1, st_blocks=0)
++
++    def sink_namespace(close_mode):
++        X = synthetic_guard_namespace(R)
++        now, closes, script = [0.0], [], [b"abc", b""]
++        X.time.monotonic = lambda: now[0]
++        X.tree_path = lambda path: (999980, os.path.basename(path))
++        X.os.open = lambda *args, **kwargs: 999981
++        X.os.fstat = lambda fd: file_stat
++        X.os.read = lambda fd, n: script.pop(0) if script else b""
++        X.os.stat = lambda *args, **kwargs: fifo_stat if str(args[0]).endswith(".fifo") else file_stat
++        def closing(fd):
++            closes.append(fd)
++            if close_mode == "late":
++                now[0] = 6.0
++            if close_mode == "uncertain":
++                raise OSError(errno.EIO, "synthetic rehash close uncertainty")
++        X.os.close = closing
++        sink = X.ProofSink.__new__(X.ProofSink)
++        sink.file_path, sink.fifo_path, sink.file_identity, sink.fifo_identity = "/synthetic/p.drat", "/synthetic/p.fifo", [1, 70], [1, 71]
++        sink.written, sink.cap, sink.error, sink.rehash_record = 3, 10, None, None
++        sink.rehash_fd, sink.rehash_fd_acquired, sink.rehash_fd_observed_identity, sink.rehash_fd_closed = None, False, None, True
++        return X, sink, now, closes
++
++    for mode in ("timely", "late", "uncertain"):
++        X, sink, now, closes = sink_namespace(mode)
++        try:
++            measured = sink._rehash_file(5.0)
++            outcome = "returned"
++        except RuntimeError as exc:
++            measured, outcome = None, str(exc)
++        record = sink.rehash_record
++        assert closes == [999981] and record["close_attempted"] is True and record["fd"] == 999981, (mode, closes, record)
++        assert any(item is record for item in X.RAW_FDS) and sink.rehash_fd_acquired is True, record
++        assert sink.rehash_fd_observed_identity == {"dev": 1, "ino": 70, "kind": "file"}, sink.rehash_fd_observed_identity
++        if mode == "timely":
++            assert outcome == "returned" and measured[0] == [sha(b"abc"), 3] and sink.rehash_fd_closed is True
++        elif mode == "late":
++            assert outcome == "proof sink allowance exhausted at rehash close completion" and measured is None
++            assert record["state"] == "closed" and sink.rehash_fd_closed is True, record
++        else:
++            assert outcome == "proof sink rehash descriptor close outcome uncertain; no rehash success", outcome
++            assert record["state"] == "close_uncertain" and sink.rehash_fd_closed is None and "rehash fd close" in sink.error
++            assert any(e.get("resource_id") == id(record) for e in X.unresolved_inventory() if e.get("kind") == "raw descriptor")
++        results["rehash_" + mode] = {"outcome": outcome, "closes": closes, "record_state": record["state"]}
++    # finish(): success registration is fenced by the UNCHANGED allowance; a crossing between the rehash result and
++    # registration skips register_written (no second close/hash) and leaves the sink unsettled and owned.
++    for mode in ("timely", "crossing_before_registration"):
++        X, sink, now, closes = sink_namespace("timely")
++        registered = []
++        X.register_written = lambda path, digest, n: registered.append((path, digest, n))
++        dead = types.SimpleNamespace(is_alive=lambda: False, ident=1, join=lambda timeout: None)
++        digest = hashlib.sha256(b"abc")
++        for name, value in (("thread", dead), ("started", True), ("connected", True), ("eof", True), ("received", 3),
++                            ("discarded", 0), ("over_cap", False), ("construction_error", None), ("finished", None),
++                            ("finish_started", False), ("finish_deadline", None), ("dir_fd", 999980),
++                            ("fifo_name", "p.fifo"), ("file", types.SimpleNamespace(closed=True)), ("file_closed", True),
++                            ("flush_completed", True), ("fsync_completed", True), ("close_completed", True),
++                            ("reader_fd", 999982), ("unblock_fd", None), ("reader_fd_closed", True),
++                            ("unblock_fd_closed", True), ("reader_fd_acquired", True), ("unblock_fd_acquired", False),
++                            ("reader_fd_observed_identity", {"dev": 1, "ino": 71, "kind": "fifo"}),
++                            ("unblock_fd_observed_identity", None), ("unblocked_by_runner", False), ("sha", digest),
++                            ("stage", "running"), ("cap_charged", True), ("fifo_create_started", True),
++                            ("fifo_created", True), ("file_create_started", True), ("file_created", True)):
++            setattr(sink, name, value)
++        original_rehash = sink._rehash_file
++        def rehash_then_cross(end, original=original_rehash, crossing=(mode != "timely")):
++            measured = original(end)
++            if crossing:
++                now[0] = end                 # the allowance expires after the helper returned, before registration
++            return measured
++        sink._rehash_file = rehash_then_cross
++        rec = sink.finish(timeout=5.0)
++        assert closes == [999981], closes                                     # one rehash close, never repeated
++        if mode == "timely":
++            assert registered == [(sink.file_path, digest.hexdigest(), 3)] and rec["sink_settled"] is True, rec
++            assert X.sink_integrity(rec) is True, rec
++        else:
++            assert registered == [] and rec["sink_settled"] is False and X.sink_integrity(rec) is False, rec
++            assert rec["finish_error"] == repr(RuntimeError("proof sink allowance exhausted before success registration"))
++            assert sink.finish(timeout=5.0) is rec and closes == [999981] and registered == []
++        results["finish_" + mode] = {"registered": registered, "sink_settled": rec["sink_settled"]}
++    # T3-2: the independent endpoint checker refuses unavailable observations and missing acquisition history.
++    dead = types.SimpleNamespace(is_alive=lambda: False, ident=1)
++    def checker_sink(**changes):
++        base = dict(thread=dead, file=types.SimpleNamespace(closed=True), reader_fd_closed=True, unblock_fd_closed=True,
++                    rehash_fd_closed=True, flush_completed=True, fsync_completed=True, close_completed=True,
++                    file_identity=[1, 72], reader_fd_acquired=True, reader_fd=999983,
++                    reader_fd_observed_identity={"dev": 1, "ino": 73, "kind": "fifo"}, unblock_fd_acquired=False,
++                    unblock_fd=None, unblock_fd_observed_identity=None, rehash_fd_acquired=False, rehash_fd=None,
++                    rehash_fd_observed_identity=None, rehash_record=None, accounting=lambda: {})
++        base.update(changes)
++        return types.SimpleNamespace(**base)
++    refusals = {}
++    for name, changes in (("reader_observation_unavailable", {"reader_fd_observed_identity": {"unavailable": "OSError(5)"}}),
++                          ("reader_history_missing", {"reader_fd": None, "reader_fd_observed_identity": None}),
++                          ("reader_acquisition_flag_missing", {"reader_fd_acquired": None}),
++                          ("unexpected_unblock_acquisition", {"unblock_fd_acquired": True, "unblock_fd": 999984,
++                                                              "unblock_fd_observed_identity": {"dev": 1, "ino": 73,
++                                                                                               "kind": "fifo"}})):
++        try:
++            d2_assert_sink_endpoints_closed(checker_sink(**changes), 999985, expected=("reader",))
++        except AssertionError as exc:
++            refusals[name] = repr(exc)[:200]
++    assert sorted(refusals) == sorted(("reader_observation_unavailable", "reader_history_missing",
++                                       "reader_acquisition_flag_missing", "unexpected_unblock_acquisition")), refusals
++    assert d2_assert_sink_endpoints_closed(checker_sink(), 999985, expected=("reader",)) == [999983, 999985]
++    results["endpoint_checker_refusals"] = refusals
++    return results
++
++def t_receipt_publication_failure_disposition(R, W):
++    """T1-3 oracle on THIS suite's main (isolated namespace; no real file, runner load, clock or test run): a failure
++    of the FIRST publication (receipt.json) returns the designated publication-failure code 71 with the retained
++    partial-creation/descriptor evidence printed, before any runner load. Code 71 is never resolution proof."""
++    reached, printed, created = [], [], []
++    out = LANE + "/evidence/probes/synthetic-receipt-failure-never-created"
++    runner_bytes = b"RUNNER = 'synthetic bytes never compiled'\n"
++    runner_path = "/synthetic/runner.py"
++
++    class Bytes:
++        def __init__(self, data):
++            self.data = data
++        def __enter__(self):
++            return self
++        def __exit__(self, *args):
++            return False
++        def read(self):
++            return self.data
++    def fake_open(path, mode="r", *args, **kwargs):
++        reached.append(("open", path, mode))
++        return Bytes(runner_bytes if path == runner_path else b"synthetic suite bytes")
++    private = {"t0": None, "deadline": None, "signal": None, "runner": None, "fixture_dispositions": [],
++               "fixture_fds": [], "admission_pins": None, "publications": []}
++    failure = OSError(errno.EIO, "synthetic receipt fsync failure")
++    def failing_publication(path, obj):
++        private["publications"].append({"path": path, "state": "close_uncertain", "fd": 999970,
++                                        "error": repr(failure), "close_error": "OSError(5, 'synthetic close')"})
++        raise failure
++    def forbidden(*args, **kwargs):
++        reached.append(("forbidden", args[:1]))
++        raise AssertionError("receipt publication failure reached a later boundary")
++    fake_path = types.SimpleNamespace(abspath=lambda p: p, dirname=os.path.dirname, join=os.path.join,
++                                      lexists=lambda p: False, basename=os.path.basename)
++    fake_os = types.SimpleNamespace(path=fake_path, mkdir=created.append, getpid=lambda: 4242, getppid=lambda: 1)
++    namespace = dict(globals())
++    namespace.update(sys=types.SimpleNamespace(flags=types.SimpleNamespace(optimize=0),
++                                               argv=["test_pilot_stream_v9.py", runner_path, sha(runner_bytes), out]),
++                     os=fake_os, open=fake_open, STATE=private, publish_json_x=failing_publication,
++                     load_verified_runner=forbidden, admission_pins=forbidden, host_clock=forbidden,
++                     signal=types.SimpleNamespace(signal=lambda *args: reached.append(("signal", args[0])),
++                                                  SIGTERM=signal.SIGTERM, SIGINT=signal.SIGINT),
++                     time=types.SimpleNamespace(monotonic=lambda: 1000.0),
++                     print=lambda *args, **kwargs: printed.append(" ".join(str(a) for a in args)))
++    isolated_main = types.FunctionType(main.__code__, namespace, main.__name__)
++    code = isolated_main()
++    assert code == 71, (code, printed, reached)
++    assert created == [out] and not any(item[0] == "forbidden" for item in reached), (created, reached)
++    assert len(printed) == 1 and printed[0].startswith("RECEIPT PUBLICATION FAILED; partial artifact/descriptor "
++                                                       "ownership NOT resolved:"), printed
++    assert repr(failure) in printed[0] and "999970" in printed[0] and "close_uncertain" in printed[0], printed
++    return {"exit": code, "printed": printed, "retained_attempt": private["publications"]}
++
++def t_feeder_fingerprint_schema_refusals(R, W):
++    """T2-1 oracle on the REAL fixture_disposition_state with a REAL open pipe (test-owned, registered): malformed or
++    unbound original-endpoint fingerprints mean UNKNOWN ownership and refuse while either original is open; typed
++    fingerprints bound to the producer's observed identities still refuse an open original; only after the test's
++    own single closes are the same bound fingerprints admitted. No descriptor is ever closed by the oracle."""
++    expected = "read endpoint closure uncertain: %r" % OSError(errno.EBADF, os.strerror(errno.EBADF))
++    saved = STATE["fixture_dispositions"]
++    rrec, wrec = fixture_fd_record("fingerprint oracle pipe read end"), fixture_fd_record("fingerprint oracle pipe write end")
++    try:
++        r, w = os.pipe()
++    except OSError as exc:
++        for record in (rrec, wrec):
++            record.update(state="not_acquired", acquisition_error=repr(exc))
++        raise
++    except BaseException as exc:
++        for record in (rrec, wrec):
++            record.update(state="acquisition_uncertain", acquisition_error=repr(exc))
++        raise
++    fixture_fd_acquired(rrec, r)
++    fixture_fd_acquired(wrec, w)
++    outcomes = {}
++    try:
++        synthetic = 999969
++        assert descriptor_closed_observation(synthetic)["closed"] is True
++        seen = [{"dev": rec["observed_identity"][0], "ino": rec["observed_identity"][1], "kind": "fifo"}
++                for rec in (rrec, wrec)]
++        bound = [list(rrec["observed_identity"]), list(wrec["observed_identity"])]
++        dead = types.SimpleNamespace(is_alive=lambda: False, ident=None)
++        runner_identity = {"pid": 770007, "start": [7, 0]}
++
++        def attempt(name, fingerprints):
++            STATE["fixture_dispositions"] = []
++            f = types.SimpleNamespace(label="fingerprint-oracle-" + name, thread=dead, blocks=(), expected=0,
++                started=False, construction_error=None, rfd=synthetic, wfd=None, read_endpoint_identity=r,
++                write_endpoint_identity=w, read_close_fd=synthetic, read_close_attempted=True,
++                write_close_attempted=True, read_endpoint_closed=None, write_endpoint_closed=True,
++                close_error=expected, close_errors=[expected], errors=[expected], read_close_error=expected,
++                write_close_error=None, exception=None, abandon_error=None, pipe_acquisition_unknown=False,
++                start_acquisition_unknown=False, read_endpoint_observed_identity=seen[0],
++                write_endpoint_observed_identity=seen[1])
++            f.accounting = lambda: {"label": f.label, "unresolved": True, "errors": list(f.errors)}
++            f.late_obligations = lambda: [{"what": "synthetic feeder", "label": f.label, "state": f.accounting()}]
++            fake = types.SimpleNamespace(OWNED=[], HELPERS=[], LIVE_BUFFERS=[], LIVE_FEEDERS=[f], LIVE_SINKS=[],
++                                         CREATED={}, RAW_FDS=[], TREE={}, buffer_charge=lambda: 0,
++                                         unresolved_inventory=lambda: [], STATE={"runner_identity": runner_identity})
++            try:
++                state = dispose_fixture_fault(fake, f, "stdin feeder", [expected], True, [r, w], fingerprints, synthetic)
++            except AssertionError as exc:
++                state = exc.args[0] if exc.args and isinstance(exc.args[0], dict) else {"lifecycle_refusals": [repr(exc)]}
++            outcomes[name] = list(state["lifecycle_refusals"])
++            return outcomes[name]
++        # Originals OPEN: every fingerprint variant refuses; malformed ones refuse as UNKNOWN ownership.
++        for name, prints in (("empty_fingerprints_open", [[], []]),
++                             ("float_fingerprint_open", [[float(bound[0][0])] + bound[0][1:], bound[1]]),
++                             ("bool_mode_fingerprint_open", [bound[0][:2] + [True], bound[1]]),
++                             ("not_fifo_fingerprint_open", [bound[0][:2] + [stat.S_IFREG | 0o600], bound[1]])):
++            refusals = attempt(name, prints)
++            assert any("fingerprints malformed" in reason for reason in refusals), (name, refusals)
++            assert any("not proven closed under unknown fingerprints" in reason for reason in refusals), (name, refusals)
++        unbound = attempt("unbound_fingerprints_open", [bound[0][:1] + [bound[0][1] + 1] + bound[0][2:], bound[1]])
++        assert any("not bound to the producer's observed endpoint identities" in reason for reason in unbound), unbound
++        still_open = attempt("bound_fingerprints_open", bound)
++        assert any("endpoint is open" in reason for reason in still_open), still_open
++        # The test's OWN single closes; only then the same bound fingerprints are admitted.
++        assert fixture_close(rrec, by="fingerprint oracle") and fixture_close(wrec, by="fingerprint oracle")
++        admitted = attempt("bound_fingerprints_closed", bound)
++        assert admitted == [], admitted
++        malformed_closed = attempt("empty_fingerprints_closed", [[], []])
++        assert any("fingerprints malformed" in reason for reason in malformed_closed), malformed_closed
++    finally:
++        STATE["fixture_dispositions"] = saved
++        for record in (rrec, wrec):
++            fixture_close(record, by="fingerprint oracle cleanup")      # no-op unless still provably fixture-owned
+     return outcomes
+ 
+ 
+@@ -5947,7 +7350,13 @@
+          t_final_code_last_fence,
+          t_usage_root_required,
+          t_synthetic_namespace_isolation,
+-         t_mandatory_clock_join_refusals]
++         t_mandatory_clock_join_refusals,
++         t_manifest_identity_fields_and_runner_intents,
++         t_raw_read_walk_acquisition_inventory,
++         t_commit_publication_original_allowance,
++         t_verify_sat_original_deadline,
++         t_receipt_publication_failure_disposition,
++         t_feeder_fingerprint_schema_refusals]
+ 
+ 
+ def main():
+@@ -5956,7 +7365,7 @@
+         print("REFUSED: unoptimized Python is required (-O/PYTHONOPTIMIZE are forbidden)", flush=True)
+         return 70
+     if len(sys.argv) != 4:
+-        print("usage: test_pilot_stream_v8.py RUNNER.py RUNNER_SHA256 OUT_DIR", flush=True)
++        print("usage: test_pilot_stream_v9.py RUNNER.py RUNNER_SHA256 OUT_DIR", flush=True)
+         return 70
+     runner, runner_sha, out = os.path.abspath(sys.argv[1]), sys.argv[2], os.path.abspath(sys.argv[3])
+     if os.path.dirname(out) != LANE + "/evidence/probes" or os.path.lexists(out):
+@@ -5975,10 +7384,13 @@
+     os.mkdir(out)
+     with open(os.path.abspath(__file__), "rb") as fh:
+         self_sha = sha(fh.read())
+-    write_x(os.path.join(out, "receipt.json"), {"pid": os.getpid(), "ppid": os.getppid(), "argv": sys.argv,
++    receipt_path = os.path.join(out, "receipt.json")
++    try:
++        receipt_publication = publish_json_x(receipt_path, {
++                                                "pid": os.getpid(), "ppid": os.getppid(), "argv": sys.argv,
+                                                 "start": None, "start_note": "required host clock is read after "
+                                                 "verified-byte loading through the owned bounded /bin/date helper",
+-                                                "runner": [runner, runner_sha], "test_version": 8,
++                                                "runner": [runner, runner_sha], "test_version": 9,
+                                                 "test_source_sha256": self_sha, "budget_s": BUDGET_S,
+                                                 "python_optimize": sys.flags.optimize, "python_debug": __debug__,
+                                                 "unoptimized_python_required": True,
+@@ -5991,6 +7403,12 @@
+                                                 "completion_artifact": "terminal-completion.json",
+                                                 "parent_observed_exit_required": True,
+                                                 "mandatory_clock_join_before_end_clock": True})
++    except BaseException as exc:
++        # T1-3: explicit publication-failure disposition for the FIRST publication. Code 71 and process exit are
++        # never proof that the partial artifact or its descriptor was resolved; the retained attempt is reported.
++        print("RECEIPT PUBLICATION FAILED; partial artifact/descriptor ownership NOT resolved:", repr(exc),
++              json.dumps(STATE.get("publications", [])[-1:], sort_keys=True, default=repr), flush=True)
++        return 71
+     results, in_flight, not_started, terminal, setup_error, R = [], None, [], None, None, None
+     start_clock = None
+     tests = list(TESTS)
+@@ -6095,10 +7513,12 @@
+              "test_runner_identity": None if R is None else R.STATE.get("runner_identity")}
+     result_path = os.path.join(out, "result.json")
+     completion_path = os.path.join(out, "terminal-completion.json")
++    final["receipt_publication"] = dict(receipt_publication, name="receipt.json")
+     try:
+         result_publication = publish_json_x(result_path, final)
+     except BaseException as exc:
+-        print("RESULT WRITE FAILED %r" % (exc,), flush=True)
++        print("RESULT WRITE FAILED; partial artifact/descriptor ownership NOT resolved: %r %s"
++              % (exc, json.dumps(STATE.get("publications", [])[-1:], sort_keys=True, default=repr)), flush=True)
+         return 71
+     after_result, terminal = observe(terminal)
+     proposed_code = TEST_EXIT_CODES[terminal]
+@@ -6127,7 +7547,8 @@
+     try:
+         completion_publication = publish_json_x(completion_path, completion)
+     except BaseException as exc:
+-        print("TERMINAL COMPLETION WRITE FAILED %r" % (exc,), flush=True)
++        print("TERMINAL COMPLETION WRITE FAILED; partial artifact/descriptor ownership NOT resolved: %r %s"
++              % (exc, json.dumps(STATE.get("publications", [])[-1:], sort_keys=True, default=repr)), flush=True)
+         return 71
+     # This diagnostic is nonauthoritative. Its own blocking time is included in the FINAL observation below.
+     print("RESULT", result_path, "PROVISIONAL", "completion", completion_path,

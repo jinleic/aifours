@@ -1,0 +1,214 @@
+# D-family full-grid extension: line concentration theorems and the remaining system — CANDIDATE v1
+
+Frozen at 2026-10-19T16:54:40-0700 under `SCOPE-FREEZE-v1.json` (SHA256 `4bb2ecb28b6c1591d901bb6759559495cec4d11456b04373cacfc0d6702dec8a`). Status: CANDIDATE written mathematics, not reviewed or accepted. Every finite statement is proved by hand in the text. No script, assertion, enumeration, probe, solver, checker, CLI, numerical package or nested agent was used for any scientific statement.
+
+**Outcome class (preregistered): EXACT_NECESSARY_OBSTRUCTION_OR_REMAINING_EQUATIONS (partial).** This note does NOT prove that no member of D extends to a full genuine five-set, and it does NOT give a witness. It proves new necessary **concentration theorems** (Theorems K, K', KA, KA') and the axis-frame **mass-transversal lemma** (Lemma M). These hold for every member of D, with all amplitudes and phases and arbitrary interior vectors; most hold for all genuine B3 axis data. The full extension problem for D is stated exactly in section 8 and remains undecided here.
+
+**Context, not used.** At their accepted conditional scopes, three parent-accepted items would already imply that no member of D extends:
+- U's necessity and canonical extension (assembly A2);
+- the NF lemma (A5, reach clarified by erratum 1);
+- the qualified computer-assisted GA certificate for P1-B3.M2 (verdict pinned in section 10).
+
+That implication is computer-assisted and conditional. The assembly keeps A10 and A11 open. It is neither re-proved nor relied on here; this note seeks independent written structure.
+
+## 1. Setting and notation
+
+H1: Q_1,...,Q_5 form a FULL genuine set of pairwise-orthogonal QLS(8) ([PRIM] LF195-225). In each square every row and column is an ONB of C^8. For s != t and distinct cells x, y, writing G_s(x,y) := <Q_s(x),Q_s(y)>, we have G_s(x,y)G_t(x,y) = 0. H2-H4 are as before:
+- row 0 standard, Q_s(0,c) = w_{s,c}e_c with |w_{s,c}| = 1;
+- SB2: supp Q_1(1,0) = {1,2,3} and supp Q_s(1,0) = {s+2};
+- exact template: the supports of Q_1(i,0), i = 2..7, are {6,7}, {6,7}, {4,5}, {4,5}, {2,3}, {1,2,3} ([J]).
+
+Put q_s^r := Q_s(r,0), so q_s^0 = w_{s,0}e_0. The common blocks are Z = {0}, A = {1,2,3}, C = {4,5}, B = {6,7}, with coordinate spans V_Z, V_A, V_C, V_B and orthogonal projections P_A, P_B, P_C. For a vector v:
+- the common support is S(v) := {d : <e_d,v> != 0};
+- the own support in square s is T_s(v) := {r : <q_s^r,v> != 0}.
+
+By the template, V_A = span{q_1^1,q_1^6,q_1^7}, V_B = span{q_1^2,q_1^3} and V_C = span{q_1^4,q_1^5}. Each of q_1^2, q_1^3 has support exactly {6,7}, and each of q_1^4, q_1^5 has support exactly {4,5}.
+
+**The family D** consists of the genuine B3 axis data of the row-1 candidate [R1]. Concretely: H2-H4 with arbitrary phases; any square-1 column-0 unitary with exactly the template support; and q_s^r = u_{s,r}e_{π_s(r)}, |u_{s,r}| = 1, for s >= 2. The permutations π_s(r) for r = 1..7 are:
+- π_2: 4,2,3,1,6,7,5;
+- π_3: 5,3,2,7,1,6,4;
+- π_4: 6,1,4,2,3,5,7;
+- π_5: 7,5,1,3,2,4,6.
+
+All results below hold for every member of D, with all amplitudes, phases and interior vectors unrestricted. Results marked **(B3)** use only H1-H4 and hold for all genuine B3 axis data.
+
+## 2. Basic facts (B3), re-proved
+
+**(F1) Cell exclusions.** For i, j >= 1: j ∉ S(Q_s(i,j)) and i ∉ T_s(Q_s(i,j)). These are orthogonality to Q_s(0,j) in the same column and to q_s^i in the same row.
+
+**(F2) Cell disjointness.** For fixed (i,j) with i, j >= 1, the five sets S(Q_s(i,j)) are pairwise disjoint, and so are the five sets T_s(Q_s(i,j)). Proof: apply H1 to the pair (i,j), (0,d) for d != j, and to the pair (i,j), (r,0) for r != i. These cells differ from (i,j) in both row and column, and G_s((0,d),(i,j)) = conj(w_{s,d})<e_d,Q_s(i,j)>.
+
+**(AX) Axis disjointness.** For each r >= 1, the sets supp q_s^r (s = 1..5) are pairwise disjoint and avoid 0. Proof: apply H1 to (0,d), (r,0) for d >= 1, and note q_s^r ⊥ q_s^0 = w e_0. Hence for every s >= 2:
+- q_s^2, q_s^3 ⊥ V_B and q_s^4, q_s^5 ⊥ V_C;
+- q_s^1, q_s^7 ⊥ V_A;
+- q_s^6 ⊥ e_2, e_3.
+
+In D, moreover, q_s^6 ⊥ V_A, since π_s(6) ∈ {4,5,6,7}.
+
+**(W) Line weights.** Let X be any subspace. If a line of square s (a row i or a column c) is an ONB {v_0,...,v_7}, then sum_k ||P_X v_k||^2 = dim X. Hence the interior part of row i carries X-weight dim X − ||P_X q_s^i||^2, and the interior part of column c carries dim X − ||P_X e_c||^2. For a unit vector, ||P_X v||^2 <= 1.
+
+## 3. Lemma M (mass-transversal in both axis frames) (B3)
+
+For c ∈ {1..7} and d ∈ [8] \ {c}:
+- sum_{i=1..7} |<e_d,Q_s(i,c)>|^2 = 1 for every s;
+- the sets I_s(c,d) := {i : <e_d,Q_s(i,c)> != 0} are nonempty and pairwise disjoint subsets of {1..7};
+- hence sum_s (|I_s(c,d)| − 1) <= 2.
+
+Likewise, for i ∈ {1..7} and r ∈ [8] \ {i}:
+- sum_{j=1..7} |<q_s^r,Q_s(i,j)>|^2 = 1;
+- the sets J_s(i,r) := {j : <q_s^r,Q_s(i,j)> != 0} are nonempty and pairwise disjoint;
+- hence sum_s (|J_s(i,r)| − 1) <= 2.
+
+*Proof.* Column c is an ONB containing w e_c with e_d ⊥ e_c, so the first identity is Parseval. Disjointness is (F2) applied to the cells (i,c). Five nonempty disjoint subsets of a 7-set have total excess at most 2. The row version is identical, using row i, which contains q_s^i ⊥ q_s^r. QED
+
+## 4. Lemma B (square-1 block geometry) (B3)
+
+(a) **Corner orthogonality.**
+- For i ∈ {2,3} and c ∈ {6,7}: Q_1(i,c) ⊥ V_B.
+- For i, c ∈ {4,5}: Q_1(i,c) ⊥ V_C.
+- For i ∈ {1,6,7} and c ∈ {1,2,3}: P_A Q_1(i,c) lies in the line L_{i,c} := V_A ∩ {q_1^i, e_c}^⊥.
+
+The generator of L_{i,c} has common support as follows:
+- L_{1,1} = L_{7,1} = span{q_1^6}, support {2,3};
+- L_{1,2}, L_{7,2}: support {1,3};
+- L_{1,3}, L_{7,3}: support {1,2};
+- L_{6,1}: support {2,3};
+- L_{6,2} = L_{6,3} = span{e_1}.
+
+(b) **Rank-one projections.**
+- For i ∈ {2,3}: P_B Q_1(i,j) = λ_{i,j} q_1^{5−i} for all j, with sum_j |λ_{i,j}|^2 = 1 and λ_{i,6} = λ_{i,7} = 0.
+- For i ∈ {4,5}: P_C Q_1(i,j) = λ_{i,j} q_1^{9−i}, with λ_{i,4} = λ_{i,5} = 0.
+- For c ∈ {6,7}: P_B Q_1(i,c) = κ_{i,c} e_{13−c}, with sum_i |κ_{i,c}|^2 = 1 and κ_{2,c} = κ_{3,c} = 0.
+- For c ∈ {4,5}: P_C Q_1(i,c) = κ_{i,c} e_{9−c}, with κ_{4,c} = κ_{5,c} = 0.
+
+(c) **Plane projections.** For i ∈ {1,6,7}: P_A Q_1(i,j) ∈ P_i := V_A ∩ (q_1^i)^⊥ for all j, and sum_j ||P_A Q_1(i,j)||^2 = 2. The plane P_i contains no basis vector e_d for i ∈ {1,7}, while P_6 contains e_1.
+
+*Proof.* (a) Q_1(i,c) is orthogonal to q_1^i (same row) and to e_c (same column).
+- For i ∈ {2,3}, c ∈ {6,7}: q_1^i has full support {6,7}, so q_1^i and e_c span V_B. The C-block case is identical.
+- For the A-block: q_1^i has at least two support coordinates, so q_1^i and e_c are independent, and V_A ∩ {q_1^i,e_c}^⊥ is a line. A vector of V_A with zero c-coordinate lies in span{e_a, e_b}, where {a,b} = A \ {c}.
+  - If both the a- and b-coordinates of q_1^i are nonzero, orthogonality to q_1^i forces both coordinates of the generator to be nonzero, giving support {a,b}. This covers i ∈ {1,7} (q_1^i has full support) and (i,c) = (6,1).
+  - For i = 6 and c ∈ {2,3}, q_1^6 has a zero 1-coordinate, so e_1 is the generator.
+  - Finally, q_1^6 ∈ span{e_2,e_3} is orthogonal to q_1^1 and q_1^7, so L_{1,1} = L_{7,1} = span{q_1^6}.
+
+(b) Row i of square 1 resolves the identity, so sum_{j=0..7} P_B|Q_1(i,j)><Q_1(i,j)|P_B = P_B. For i ∈ {2,3}, the j = 0 term is |q_1^i><q_1^i|, so the interior sum equals |q_1^{5−i}><q_1^{5−i}|. This is a rank-one projector, and positive rank-at-most-one summands of it have range inside its range. The zero values at j ∈ {6,7} follow from (a). Columns c ∈ {6,7}: the column-0 term is |e_c><e_c|, so the interior sum is |e_{13−c}><e_{13−c}|. The C-block is identical.
+
+(c) is the same computation with the rank-two projector onto P_i. A basis vector e_d lies in P_i iff d ∉ supp q_1^i, which happens only for (i,d) = (6,1). QED
+
+## 5. Theorem K (row concentration, common frame) (B3)
+
+Let J_i := {j : λ_{i,j} != 0} for i ∈ {2,3,4,5}. Then:
+- 1 <= |J_i| <= 2;
+- J_i ⊆ {1,...,5} for i ∈ {2,3}, and J_i ⊆ {1,2,3,6,7} for i ∈ {4,5}.
+
+**(K1)** If J_i = {j*}, then Q_1(i,j*) is a unit multiple of q_1^{5−i} (B rows) or of q_1^{9−i} (C rows). This is exact reuse at that cell.
+
+**(K2)** Suppose |J_i| = 2; take the B case i ∈ {2,3} (the C case reads {4,5} for {6,7} and e_4, e_5 for e_6, e_7). Then each square s >= 2 has in row i exactly one cell where Q_s(i,j) is a unit multiple of e_6, exactly one where it is a unit multiple of e_7, and no other cell with nonzero V_B-weight. These cells are as follows:
+- each of the three columns j ∈ {1..5} \ J_i carries one e_6-cell and one e_7-cell, of two different squares;
+- (i,6) is an e_7-cell;
+- (i,7) is an e_6-cell.
+
+*Proof (B case).*
+- **Demands.** By (W) and (AX), each square s >= 2 has V_B-weight exactly 2 in the interior of row i. Indeed q_s^i ⊥ V_B because supp q_s^i ∩ supp q_1^i = ∅ and supp q_1^i = {6,7}. So squares 2-5 need total V_B-weight 8 in row i.
+- **Capacity per cell.** For j ∈ J_i, λ_{i,j} q_1^{5−i} has both coordinates 6 and 7 nonzero, so 6, 7 ∈ S(Q_1(i,j)). By (F2), no square s >= 2 has V_B-weight at (i,j). For j ∈ {1..5} \ J_i, by (F2) at most two squares s >= 2 meet {6,7}, each with V_B-weight at most 1. If one of them uses both coordinates, it is alone. So the total is at most 2. For j ∈ {6,7}, coordinate j is excluded by (F1), so at most one square uses the single coordinate 13−j, with weight at most 1.
+- **Count.** 8 <= 2(5 − |J_i|) + 2, so |J_i| <= 2. Since sum_j |λ_{i,j}|^2 = 1, |J_i| >= 1.
+- **K1.** If J_i = {j*}, then ||P_B Q_1(i,j*)|| = 1, so the unit vector Q_1(i,j*) lies in V_B and equals λ q_1^{5−i} with |λ| = 1.
+- **K2.** If |J_i| = 2, every inequality is tight. At each j ∈ {1..5} \ J_i, two squares each have V_B-weight 1 on a single coordinate, so their vectors are unit multiples of e_6 and e_7. Each of (i,6), (i,7) hosts one square whose vector is a unit multiple of e_7, resp. e_6. A square cannot have two e_6-cells in an orthonormal row, so each square has at most weight 2 from such cells. Weight 2 is needed, so each square has exactly one e_6-cell and one e_7-cell.
+QED
+
+## 6. Theorem K' (column concentration, own frame) (B3)
+
+Let I_c := {i : κ_{i,c} != 0}. Then:
+- for c ∈ {6,7}: I_c ⊆ {1,4,5,6,7} and 1 <= |I_c| <= 2;
+- for c ∈ {4,5}: I_c ⊆ {1,2,3,6,7} and 1 <= |I_c| <= 2.
+
+**(K'1)** If I_c = {i*}, then Q_1(i*,c) is a unit multiple of e_{13−c} (resp. e_{9−c}).
+
+**(K'2)** Suppose |I_c| = 2; take the B case (C: q_s^4, q_s^5 and rows 4, 5). Put U_s := span{q_s^2, q_s^3}. Then each square s >= 2 has in column c exactly one cell where Q_s(i,c) is a unit multiple of q_s^2, exactly one where it is a unit multiple of q_s^3, and no other cell with nonzero U_s-weight. These cells are as follows:
+- each of the three rows in {1,4,5,6,7} \ I_c carries one q^2-cell and one q^3-cell, of different squares;
+- (2,c) is a q^3-cell;
+- (3,c) is a q^2-cell.
+
+*Proof (B case).*
+- **Demands.** For s >= 2, supp q_s^2 and supp q_s^3 avoid {6,7} by (AX), so e_c ⊥ U_s. By (W), square s has U_s-weight 2 in column c's interior, a total of 8 for squares 2-5. The U_s-weight of a vector v is |<q_s^2,v>|^2 + |<q_s^3,v>|^2. It is nonzero only on the own indices T_s(v) ∩ {2,3}, and it is at most 1.
+- **Capacity per cell.**
+  - For i ∈ I_c, the B-part of Q_1(i,c) is κ e_{13−c} with κ != 0, and e_{13−c} has nonzero coefficients on both q_1^2 and q_1^3 (dense B block). So 2, 3 ∈ T_1(Q_1(i,c)), and by (F2) no other square has U_s-weight there.
+  - For i ∈ {2,3}, own index i is excluded by (F1), leaving one own index. Square 1 has no own index in {2,3} there, since Q_1(i,c) ⊥ V_B by Lemma B(a).
+  - For i ∈ {1,4,5,6,7} \ I_c, square 1 has zero B-part, hence no own index in {2,3}, and at most two squares share the own indices {2,3}.
+- **Count.** 8 <= 2(5 − |I_c|) + 1 + 1, so |I_c| <= 2. Since sum_i |κ_{i,c}|^2 = 1, |I_c| >= 1.
+- **K'1.** If I_c = {i*}, then ||P_B Q_1(i*,c)|| = 1.
+- **K'2.** As in Theorem K. In the tight case each square's U_s-content at a cell sits on one own index with weight 1, so its vector is a unit multiple of q_s^r. Column orthonormality forbids two q_s^2-cells in one column.
+QED
+
+## 7. Theorems KA and KA' (A block)
+
+**Theorem KA (rows).** Let i ∈ {1,7} (B3), or i = 6 when every q_s^6, s >= 2, is ⊥ e_1 (true in D). Put K_i := {j : P_A Q_1(i,j) != 0} and σ_i := sum_{j ∈ K_i} |S(P_A Q_1(i,j))|. Then:
+- |K_i| >= 2 and σ_i <= 6;
+- for i ∈ {1,7}, every such component has support of size at least 2, hence |K_i| <= 3;
+- if σ_i = 6 (saturation), every A-coordinate slot (j,d), d ∈ A \ {j}, not used by square 1 carries a square s >= 2 whose vector at (i,j) is a unit multiple of e_d.
+
+*Proof.*
+- **Demands.** q_s^i ⊥ V_A for s >= 2 (by (AX) for i ∈ {1,7}, by hypothesis for i = 6). So by (W) each square s >= 2 has V_A-weight 3 in the interior of row i, a total of 12. Square 1 has total 2 by Lemma B(c), with each cell carrying at most 1, so |K_i| >= 2.
+- **Slots.** Row i has 3·2 + 4·3 = 18 A-coordinate slots (j,d), d ∈ A \ {j}; coordinate j is excluded by (F1). By (F2) each slot is used by at most one square. A square s >= 2 has V_A-weight at most 1 at a cell, and at most the number of slots it uses there. So the total weight of squares 2-5 is at most 18 − σ_i, giving σ_i <= 6.
+- **Support bound.** For i ∈ {1,7}, P_i contains no basis vector (Lemma B(c)), so each component's support has size at least 2.
+- **Saturation.** Equality forces every remaining slot to carry weight exactly 1 from a single square using only that coordinate.
+QED
+
+**Theorem KA' (columns 2, 3; own frame) (B3).** Put O := {1,6,7}. For c ∈ {2,3}, let K'_c := {i : P_A Q_1(i,c) != 0} and τ_c := sum_{i ∈ K'_c} |T_1(Q_1(i,c)) ∩ O|. Then:
+- 2 <= |K'_c| <= 3 and τ_c <= 6;
+- if τ_c = 6, every unused own slot (i,r), r ∈ O \ {i}, carries a square s >= 2 whose vector at (i,c) is a unit multiple of q_s^r.
+
+*Proof.*
+- **Demands, squares 2-5.** For s >= 2 and c ∈ {2,3}, sum_{r ∈ O} |<q_s^r,e_c>|^2 = 0 by (AX): supp q_s^1, supp q_s^7 avoid A, and supp q_s^6 avoids {2,3}. By (W), each such square needs own-O weight 3 in column c, a total of 12.
+- **Demand, square 1.** span{q_1^r : r ∈ O} = V_A and ||P_A e_c||^2 = 1, so square 1 has own-O weight 2 there, with <q_1^r,Q_1(i,c)> = <q_1^r,P_A Q_1(i,c)>.
+- **Square 1's own supports.** A nonzero vector of V_A orthogonal to e_c with a single own index r would be a multiple of q_1^r with c ∉ supp q_1^r. This is impossible for c ∈ {2,3}, because q_1^1, q_1^6, q_1^7 all contain 2 and 3. So each component uses at least two own slots, and |K'_c| <= 3.
+- **Slots.** There are 3·2 + 4·3 = 18 own slots, since own index i is excluded by (F1). Disjointness is (F2). The count and saturation are exactly as in Theorem KA.
+QED
+
+## 8. D-specific corollaries and the exact remaining system
+
+**Corollary D1.** In D, let a cell of a saturated B row (K2) carry square a with e_6 and square b with e_7. Their own indices π_a^{-1}(6) and π_b^{-1}(7) must differ by (F2). Here π^{-1}(6) = 5, 6, 1, 7 and π^{-1}(7) = 6, 4, 7, 1 for s = 2, 3, 4, 5. So (a,b) ∉ {(3,2), (4,5), (5,4)}. No row-orthogonality restriction arises, because π_s(2), π_s(3) ∉ {6,7}.
+
+**Corollary D2.** In D, q_s^2 = u e_{π_s(2)} and q_s^3 = u' e_{π_s(3)}, with π_s(2) = 2, 3, 1, 5 and π_s(3) = 3, 2, 4, 1. Let a cell of a saturated column c ∈ {6,7} (K'2) carry square a with q_a^2 and square b with q_b^3. Their common coordinates must differ by (F2). So (a,b) ∉ {(2,3), (3,2), (4,5)}.
+
+**Locality.** Theorems K, KA and Lemma M (row part) use only one full row together with the axes. K', KA' and Lemma M (column part) use only one full column together with the axes. They are therefore necessary conditions for single-line partial extensions as well. The row-1 candidate [R1] (not a premise) satisfies the row-1 instance of KA on D: there K_1 = {4,5} and σ_1 = 3 + 2 = 5.
+
+**Remaining system for D (undecided here).** Unknowns: unit vectors Q_s(i,j) ∈ C^8 for i, j ∈ {1..7} and s = 1..5, together with the D parameters (square-1 column-0 unitary with template support; all phases). Equations:
+- (R) every row {Q_s(i,0),...,Q_s(i,7)}, i >= 1, is an ONB;
+- (C) every column {Q_s(0,j),...,Q_s(7,j)}, j >= 1, is an ONB;
+- (T) G_s(x,y)G_t(x,y) = 0 for all distinct cells x, y and s != t.
+
+Lemma M and Theorems K, K', KA, KA' are proved consequences, and the corollaries are their D-specializations. They do not by themselves decide (R), (C), (T). In particular, no contradiction and no solution is derived. A written no-go would need to combine several lines, including the interior line frames (rows and columns i, j >= 1), whose vectors are unknown. The analogue of (F2) and Lemma M holds in every such frame for a full configuration, but it is not exploited here.
+
+## 9. Import table and exhaustiveness ledger
+
+| item | role | status |
+|---|---|---|
+| [PRIM] LF195-225 | definitions H1 | primary source |
+| [J] GBBINDING P1-B3 entry | template rows of H4 | identity metadata |
+| H2-H4 and family D | hypotheses; D restated from [R1] | conditioning; U/T16 link not used |
+| [R1] row-1 candidate | definition source of D; consistency remark only | not a premise (its pre-freeze assertion deviation stays disclosed) |
+| GA/NF/U chain [CTX] | context implication only | not used |
+
+| claim | status |
+|---|---|
+| F1, F2, AX, W | proved (B3) |
+| Lemma M | proved (B3), both axis frames |
+| Lemma B | proved (B3), including the exact supports of every corner line |
+| Theorems K, K', KA, KA' | proved; B3 except KA at i = 6 (holds in D) |
+| Corollaries D1, D2 | proved for D |
+| full no-go for D | NOT proved |
+| full witness in D | NOT given |
+| interior line frames | stated only, not exploited |
+| Boolean/GB/UNSAT/n=8 | no statement; GB 15/18, UNKNOWNs, A10/A11 unchanged |
+
+## 10. Sources
+
+- [PRIM] `/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261016/moqls8-problem16/sources/2607.12933v2.raw.txt`, SHA256 `265851e451cc30706b0a4ea1860c5f04568d99be85896c7b049f95c995108df9`.
+- [J] `/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-16/review/moqls8-gb-parent-binding-v1/GBBINDING.json`, SHA256 `d917203deb29a13e212c290e227a001a695765d080a897141d6dc154d79fc673`.
+- [R1] `/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/moqls8/continuations/b3-full-row/B3-FULL-ROW1-REUSE-CANDIDATE-v1.md`, SHA256 `8450649494d32f566a0b98a8fb7cadadb8afd1281cf6fa441b3260d04bb15f67`.
+- [TR] `/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/control/written-slot-transitions-olson-moqls8-20261019-1634-v1.json`, SHA256 `0c852bf12ebc5daa6e176ae465a038cb5e82f5f24d8355e925b09ada6276b0de`.
+- [SC] `/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/moqls8/continuations/b3-d-general-extension/SCOPE-FREEZE-v1.json`, SHA256 `4bb2ecb28b6c1591d901bb6759559495cec4d11456b04373cacfc0d6702dec8a`.
+- [CTX:B3M2_GA_verdict] `/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/review/moqls8-P1-B3-M2-parent-verdict-v1.json`, SHA256 `e9ce796c9d6cef49f2db6350fb5338e3370f10bf83185aae10626e8c82068ebe`.
+- [CTX:NF_verdict] `/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-16/review/moqls8-p1-normalform-parent-verdict-v1.md`, SHA256 `4748f023a504a263ef99400e83df063ecbfcdebe979b77d24a69ff1f301b7826`.
+- [CTX:NF_erratum] `/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-16/review/moqls8-p1-normalform-parent-verdict-v1-erratum-1.md`, SHA256 `da050a74916b691a0af3a3257e286ce3725247628a80dc0ae4a341fb133887c2`.
+- [CTX:unified_disposition] `/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-16/review/moqls8-unified-parent-disposition-v1.md`, SHA256 `29d17f380416045f73cd4e4b6923e55316bed8a62a45dd6310235cb239f8eaeb`.

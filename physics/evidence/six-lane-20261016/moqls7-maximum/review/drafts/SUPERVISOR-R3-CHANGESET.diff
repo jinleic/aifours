@@ -1,0 +1,562 @@
+--- code/supervise_r2.py
++++ code/supervise_r3.py
+@@ -1,12 +1,21 @@
+ #!/usr/bin/env python3
+-"""supervise_r2.py: minimal single-threaded supervisor for one command and its process group (macOS libproc).
+-
+-New version of supervise_r1.py (0755d68e...8b53, preserved, never run). It adds the fail-closed exception path the
+-parent source review asked for (message 15aaec72049e6f66). Any exception after the command starts (statvfs, probe,
+-listing, sample, or anything else in the loop) records an uncertain UNKNOWN. The supervisor then SIGTERMs the still
+-reserved owned group (the leader stays unreaped), waits a bounded time and quarantines capacity. If measurement fails
+-during the stop itself, it sends one killpg, waits the grace period without measuring and reports the survivors as
+-unknown, which is a quarantine. It always attempts the run record (falling back to RECORD.failure.json) and restores
+-the signal handlers in a finally block. Otherwise identical to r1.
++"""supervise_r3.py: minimal single-threaded supervisor for one command and its process group (macOS libproc).
++
++New version of supervise_r2.py (0b023e2c...8c37), whose controls FAILED on this host (receipt
++evidence/k3cubes/supervise_controls_r2.json, 8313d092...18a1). Observed macOS facts behind this version:
++  - proc_pidinfo (PROC_PIDTBSDINFO and SHORTBSDINFO) returns 0 with ESRCH for an unreaped exited child (a zombie);
++  - proc_listpids(PROC_PGRP_ONLY) still lists that zombie in its group;
++  - killpg on a group whose only member is a zombie raises EPERM;
++  - os.waitid is not available in this Python 3.9.
++Changes from r2:
++  - a pid is classified zombie only on positive evidence: ESRCH from proc_pidinfo while the kernel still lists the pid
++    in our process group. A leader with ESRCH that is no longer listed stays "leader gone while unreaped"
++    (uncertain). A failed or short read is still unknown, never death;
++  - the stop sends killpg only while the group has live or unknown members (or when the listing failed). An error
++    from killpg is recorded; any live member is then a survivor and causes quarantine;
++  - member_state(pid, pgid) exposes the same rule for the controls.
++Unchanged from r2: the fail-closed exception path (uncertain UNKNOWN, SIGTERM to the reserved group, bounded wait,
++quarantine, a record attempt with fallback, signal handlers restored in a finally block), strict probes, escape
++detection, final completion check, no SIGKILL and no subprocess timeout.
+ Scope, stated exactly. The command starts as a new session and process-group leader. The supervisor watches the
+ members of that process group, and nothing else. Members keep the group when they are re-parented. A descendant that
+@@ -15,9 +24,9 @@
+ drivers, gram_encB.py, cadical, kissat, drat-trim) do not leave the group.
+ 
+-Every 0.25 s, in the one thread, it probes itself, the leader and every member through proc_pidinfo. Each probe is
+-one of four states:
++Every 0.25 s, in the one thread, it probes itself, the leader and every member through proc_pidinfo, using a fresh
++group listing from the same sample. Each probe is one of four states:
+   - alive: full BSD info, not a zombie, full task info with RSS > 0;
+-  - zombie: BSD status SZOMB;
+-  - gone: ESRCH;
++  - zombie: BSD status SZOMB, or (as on this Darwin host) ESRCH while the pid is still listed in our process group;
++  - gone: ESRCH and not listed;
+   - unknown: any other short, failed or zero-RSS read.
+ Alive RSS is summed, including the supervisor's own.
+@@ -30,6 +39,7 @@
+   - a member still alive after the leader exited.
+ The leader is never reaped before the stop sequence ends. Its zombie keeps the group ID reserved, so killpg(group,
+-SIGTERM) cannot reach an unrelated process. After the signal the supervisor waits at most `grace` seconds for every
+-member to become a zombie or gone. Survivors, or any uncertain trip, produce an exclusive-create quarantine record
++SIGTERM) cannot reach an unrelated process. killpg is sent only while live or unknown members exist (a zombie-only
++group raises EPERM on Darwin). After the signal the supervisor waits at most `grace` seconds for every member to
++become a zombie or gone. Survivors, or any uncertain trip, produce an exclusive-create quarantine record
+ of process identities (pid, ppid, pgid, start time). Code never removes it, and the supervisor refuses to start while
+ it exists.
+@@ -38,5 +48,5 @@
+ leader is reaped. There is no SIGKILL, no thread and no subprocess timeout. The child environment gets
+ K3_SUPERVISOR_PID, K3_SUPERVISOR_SCRIPT and K3_SUPERVISOR_RECORD so that workers can refuse to run unsupervised.
+-Usage: /usr/bin/python3 -I -B supervise_r1.py --name N --wall S --rss-cap B --floor B --lane DIR
++Usage: /usr/bin/python3 -I -B supervise_r3.py --name N --wall S --rss-cap B --floor B --lane DIR
+                                               --record OUT.json --quarantine Q.json [--grace 30] -- COMMAND [ARGS...]
+ """
+@@ -130,4 +140,14 @@
+ 
+ 
++def member_state(pid, pgid, probe_fn=probe, members=None):
++    """probe() plus the macOS zombie rule: ESRCH while still listed in our process group means zombie."""
++    state, rss, ident = probe_fn(pid)
++    if state == "gone":
++        listed = members if members is not None else list_pids(PROC_PGRP_ONLY, pgid)
++        if pid in listed:
++            return "zombie", 0, dict(ident, zombie_evidence="ESRCH while listed in process group %d" % pgid)
++    return state, rss, ident
++
++
+ def sample(pgid, leader, probe_fn, observed):
+     """One strict sample of the supervisor and the group. Problems are (reason, uncertain) pairs."""
+@@ -139,10 +159,14 @@
+     try:
+         members = list_pids(PROC_PGRP_ONLY, pgid)
++        listing_ok = True
+     except OSError as exc:
+         problems.append(("process-group listing failed: %r" % (exc,), True))
+-        members = []
++        members, listing_ok = [], False
+     leader_state = None
+     for pid in sorted(set(members) | {leader}):
+-        state, rss, ident = probe_fn(pid)
++        if listing_ok:
++            state, rss, ident = member_state(pid, pgid, probe_fn, members)
++        else:
++            state, rss, ident = probe_fn(pid)
+         if state in ("alive", "zombie"):
+             observed.setdefault(str(pid), ident)
+@@ -174,28 +198,43 @@
+ 
+ 
++def live_members(pgid, probe_fn, observed):
++    """Members that are alive or unknown (zombies excluded by the listed-ESRCH rule). Raises OSError if the listing
++    fails; probe exceptions propagate to the caller's fallback."""
++    members = list_pids(PROC_PGRP_ONLY, pgid)
++    live = []
++    for pid in members:
++        state, _, ident = member_state(pid, pgid, probe_fn, members)
++        if state in ("alive", "unknown"):
++            observed.setdefault(str(pid), ident)
++            live.append({"pid": pid, "state": state, "identity": ident})
++    return live
++
++
+ def stop_group(pgid, grace, probe_fn, observed):
+-    """SIGTERM the whole group (leader still unreaped, so the group ID is reserved); wait at most `grace` seconds."""
+-    sent = True
++    """SIGTERM the group while it has live or unknown members (the unreaped leader reserves the group ID); wait at most
++    `grace` seconds. Members that are only zombies are not signalled, because killpg would raise EPERM."""
++    sent, kill_error = False, None
+     try:
+-        os.killpg(pgid, signal.SIGTERM)
+-    except ProcessLookupError:
+-        sent = False
++        live = live_members(pgid, probe_fn, observed)
++    except OSError:
++        live = None
++    if live is None or live:
++        try:
++            os.killpg(pgid, signal.SIGTERM)
++            sent = True
++        except OSError as exc:
++            kill_error = repr(exc)
+     deadline = time.monotonic() + grace
+     while True:
+-        remaining = []
+         try:
+-            members = list_pids(PROC_PGRP_ONLY, pgid)
+-            listing_ok = True
++            live, listing_ok = live_members(pgid, probe_fn, observed), True
+         except OSError:
+-            members, listing_ok = [], False
+-        for pid in members:
+-            state, _, ident = probe_fn(pid)
+-            if state in ("alive", "unknown"):
+-                observed.setdefault(str(pid), ident)
+-                remaining.append({"pid": pid, "state": state, "identity": ident})
+-        if listing_ok and not remaining:
+-            return {"sigterm_sent": sent, "survivors": [], "listing_ok": True}
++            live, listing_ok = None, False
++        if listing_ok and not live:
++            return {"sigterm_sent": sent, "killpg_error": kill_error, "survivors": [], "listing_ok": True}
+         if time.monotonic() > deadline:
+-            return {"sigterm_sent": sent, "survivors": remaining, "listing_ok": listing_ok}
++            return {"sigterm_sent": sent, "killpg_error": kill_error,
++                    "survivors": live if live is not None else "unknown: group listing failed",
++                    "listing_ok": listing_ok}
+         time.sleep(0.1)
+ 
+@@ -359,5 +398,5 @@
+ def main():
+     if "--" not in sys.argv:
+-        raise SystemExit("usage: supervise_r2.py OPTIONS -- COMMAND [ARGS...]")
++        raise SystemExit("usage: supervise_r3.py OPTIONS -- COMMAND [ARGS...]")
+     split = sys.argv.index("--")
+     ap = argparse.ArgumentParser()
+--- code/supervise_controls_r2.py
++++ code/supervise_controls_r3.py
+@@ -1,30 +1,50 @@
+ #!/usr/bin/env python3
+-"""supervise_controls_r2.py: controls for supervise_r2.py (expected outcomes below are design targets until run).
+-
+-Runs as a plain top-level process, not under a supervisor: each test command gets its own process group, which an
+-outer supervisor would correctly report as an escape. Every test child is supervised by the supervisor under test,
+-in-process or as a separate supervisor process. All records and quarantine files go in this script's own directory,
+-evidence/k3cubes/supervise_controls_r2 (os.mkdir), never at the production quarantine path. New version of
+-supervise_controls_r1.py (0f61b466...01c5, preserved, never run); it adds S12-S13 for the fail-closed exception path.
+-Probe classification (P1-P9; deterministic fakes wrap the real proc_pidinfo):
+-  P1 the supervisor itself is alive with RSS > 0;  P2 an unreaped exited child is a zombie;  P3 after reaping it is
+-  gone;  P4 a short task-info read is unknown;  P5 a full task-info read with zero RSS is unknown;  P6 a short BSD
+-  read is unknown;  P7 EPERM on the BSD read is unknown;  P8 ESRCH on the BSD read is gone;  P9 a pid mismatch is
+-  unknown;  P10 a task-info failure followed by a zombie BSD re-read with the same start time is zombie (exit race).
++"""supervise_controls_r3.py: controls for supervise_r3.py (expected outcomes below are design targets until run).
++
++New version of supervise_controls_r2.py (f8f71254...11ec). It was run once and FAILED: receipt
++evidence/k3cubes/supervise_controls_r2.json, 8313d092...18a1, with P2, S1, S6 and S7 failing. The receipt and its
++test quarantines are preserved. This script is a plain top-level process, not run under a supervisor, because each
++test command gets its own process group, which an outer supervisor would correctly report as an escape. Every test
++child is supervised by the supervisor under test, either in-process or as a separate supervisor process. All
++records and quarantine files go in this script's own directory, evidence/k3cubes/supervise_controls_r3 (os.mkdir),
++never at the production quarantine path.
++Probe classification (deterministic fakes wrap the real proc_pidinfo):
++  P1 the supervisor itself is alive with RSS > 0;
++  P2 an unreaped exited child in its own group is a zombie by member_state, which uses a fresh group listing;
++  P2b the raw probe of that unreaped child is recorded (on this Darwin host, ESRCH = "gone"), for information;
++  P3 after reaping, the raw probe is gone;
++  P4 a short task-info read is unknown;
++  P5 a full task-info read with zero RSS is unknown;
++  P6 a short BSD read is unknown;
++  P7 EPERM on the BSD read is unknown;
++  P8 ESRCH on the BSD read is gone;
++  P9 a pid mismatch is unknown;
++  P10 a task-info failure followed by a zombie BSD re-read with the same start time is zombie (exit race);
++  P11 member_state keeps ESRCH as gone when the pid is not in the listing;
++  P12 member_state keeps an unknown probe unknown even when the pid is listed.
+   The pid-1 probe result is recorded for information only.
+-Supervision (S1-S13):
+-  S1 a clean short command completes cleanly;  S2 the wall cap stops the leader (rc -15);  S3 a short command still
+-  meets the completion check: a floor above the free space trips;  S4 injected RSS above the cap trips and stops;
+-  S5 an injected unknown probe trips as uncertain, stops the group and writes a capacity quarantine with no
+-  survivors;  S6 a re-parented grandchild that ignores SIGTERM is listed with ppid 1, survives the grace period, is
+-  quarantined and exits by itself;  S7 a re-parented grandchild that obeys SIGTERM is stopped through the reserved
+-  group ID with no quarantine;  S8 a child that leaves the group is detected as uncertain, is not signalled, is
+-  quarantined and exits by itself;  S9 external SIGTERM to a separate supervisor process stops its leader (rc -15)
+-  and exits 3;  S10 an existing quarantine record refuses admission;  S11 the driver r4 refuses to run unsupervised
+-  and creates nothing;  S12 a real statvfs exception inside the loop (nonexistent lane path) still SIGTERMs the
+-  reserved group (leader rc -15), records UNKNOWN as uncertain and writes a capacity quarantine;  S13 a probe that
+-  raises a real exception (not an unknown return) inside the loop and again during the stop takes the fallback: one
+-  killpg, a bounded unmeasured wait, survivors unknown, quarantine, leader rc -15, record written.
+-Usage: /usr/bin/python3 -I -B supervise_controls_r2.py
++Supervision:
++  S1 a clean short command completes cleanly;
++  S2 the wall cap stops the leader (rc -15);
++  S3 a short command still meets the completion check: a floor above the free space trips;
++  S4 injected RSS above the cap trips and stops;
++  S5 an injected unknown probe trips as uncertain, stops the group and writes a capacity quarantine;
++  S6 a re-parented grandchild that ignores SIGTERM is listed with ppid 1, survives the grace period, is quarantined
++     and exits by itself;
++  S7 a re-parented grandchild that obeys SIGTERM is stopped through the reserved group ID, with no quarantine;
++  S8 a child that leaves the group is detected as uncertain, is not signalled, is quarantined and exits by itself;
++  S9 external SIGTERM to a separate supervisor process stops its leader (rc -15) and exits 3;
++  S10 an existing quarantine record refuses admission;
++  S11 the driver r5 refuses to run unsupervised and creates nothing;
++  S12 a real statvfs exception inside the loop (nonexistent lane path) still SIGTERMs the reserved group, records an
++      uncertain UNKNOWN and writes a capacity quarantine;
++  S13 a probe that raises (not one that returns unknown) inside the loop and during the stop, on a leader that
++      ignores SIGTERM, takes the fallback: one killpg, a bounded unmeasured wait, survivors unknown, quarantine and a
++      written record; the leader then exits by itself;
++  S14 a trip on a zombie-only group (the leader exited before the first sample) sends no killpg and records no
++      killpg error, no survivors and no quarantine;
++  S15 a killpg failure (os.killpg patched to raise EPERM) while a live member exists leaves that member unresolved:
++      the killpg error is recorded, the member is a survivor and is quarantined, and it then exits by itself.
++Usage: /usr/bin/python3 -I -B supervise_controls_r3.py
+ """
+ import ctypes
+@@ -42,10 +62,10 @@
+     sys.path.insert(0, HERE)
+ 
+-import supervise_r2 as sv  # noqa: E402
++import supervise_r3 as sv  # noqa: E402
+ 
+ LANE = os.path.dirname(HERE)
+ K3DIR = os.path.join(LANE, "evidence", "k3cubes")
+-OUT = os.path.join(K3DIR, "supervise_controls_r2.json")
+-TEST_DIR = os.path.join(K3DIR, "supervise_controls_r2")
++OUT = os.path.join(K3DIR, "supervise_controls_r3.json")
++TEST_DIR = os.path.join(K3DIR, "supervise_controls_r3")
+ RSS_CAP, FLOOR = 3584 * 1024 * 1024, 12000000000
+ REAL = sv.LIBPROC.proc_pidinfo
+@@ -87,15 +107,24 @@
+     state, rss, _ = sv.probe(os.getpid())
+     out["P1_self_alive"] = {"state": state, "rss": rss, "ok": state == "alive" and rss > 0}
+-    child = subprocess.Popen(["/usr/bin/true"])
++    child = subprocess.Popen(["/usr/bin/true"], start_new_session=True)
+     deadline, state = time.monotonic() + 5, None
+     while time.monotonic() < deadline:
+-        state = sv.probe(child.pid)[0]
++        state = sv.member_state(child.pid, child.pid)[0]
+         if state == "zombie":
+             break
+         time.sleep(0.05)
+-    out["P2_unreaped_exit_is_zombie"] = {"state": state, "ok": state == "zombie"}
++    raw = sv.probe(child.pid)
++    out["P2_unreaped_exit_is_zombie_by_group_listing"] = {"state": state, "ok": state == "zombie"}
++    out["P2b_info_raw_probe_of_unreaped_child"] = {"state": raw[0], "identity": raw[2], "ok": True,
++                                                   "note": "information only; Darwin returns ESRCH here"}
+     child.wait()
+     state = sv.probe(child.pid)[0]
+     out["P3_reaped_is_gone"] = {"state": state, "ok": state == "gone"}
++    fake_gone = lambda pid, pidinfo=None: ("gone", 0, {"pid": pid, "errno": errno.ESRCH})
++    fake_unknown = lambda pid, pidinfo=None: ("unknown", 0, {"pid": pid, "injected": "unknown"})
++    state = sv.member_state(424242, 1, fake_gone, members=[1])[0]
++    out["P11_esrch_not_listed_stays_gone"] = {"state": state, "ok": state == "gone"}
++    state = sv.member_state(424242, 1, fake_unknown, members=[424242])[0]
++    out["P12_unknown_listed_stays_unknown"] = {"state": state, "ok": state == "unknown"}
+     expected = {"P4_task_short": ("task_short", "unknown"), "P5_task_zero_rss": ("task_zero_rss", "unknown"),
+                 "P6_bsd_short": ("bsd_short", "unknown"), "P7_bsd_eperm": ("bsd_eperm", "unknown"),
+@@ -192,5 +221,5 @@
+     record = os.path.join(TEST_DIR, "s9_external.record.json")
+     quarantine = os.path.join(TEST_DIR, "s9_external.quarantine.json")
+-    proc = subprocess.Popen(["/usr/bin/python3", "-I", "-B", os.path.join(HERE, "supervise_r2.py"), "--name", "s9",
++    proc = subprocess.Popen(["/usr/bin/python3", "-I", "-B", os.path.join(HERE, "supervise_r3.py"), "--name", "s9",
+                              "--wall", "60", "--rss-cap", str(RSS_CAP), "--floor", str(FLOOR), "--lane", LANE,
+                              "--record", record, "--quarantine", quarantine, "--grace", "5", "--", "/bin/sleep", "30"],
+@@ -222,5 +251,5 @@
+ 
+     before = sorted(n for n in os.listdir(K3DIR) if n.startswith("C311cuts_"))
+-    drv = subprocess.run(["/usr/bin/python3", "-I", "-B", os.path.join(HERE, "k3_cuts_certify_r4.py"), "A"],
++    drv = subprocess.run(["/usr/bin/python3", "-I", "-B", os.path.join(HERE, "k3_cuts_certify_r5.py"), "A"],
+                          stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+     after = sorted(n for n in os.listdir(K3DIR) if n.startswith("C311cuts_"))
+@@ -228,5 +257,5 @@
+     out["S11_driver_refuses_unsupervised"] = {"returncode": drv.returncode, "message_tail": message[-300:],
+                                               "created": [n for n in after if n not in before],
+-                                              "ok": drv.returncode != 0 and "under the pinned supervise_r2.py" in message
++                                              "ok": drv.returncode != 0 and "under the pinned supervisor" in message
+                                               and after == before}
+ 
+@@ -252,4 +281,35 @@
+         and r["stop_error"] is not None and r["stop"]["survivors"] == "unknown: stop measurement failed"
+         and leader_exited}
++
++    first = {"done": False}
++
++    def late_start(pid, pidinfo=None):
++        if not first["done"]:
++            first["done"] = True
++            time.sleep(0.5)
++        return sv.probe(pid)
++    st = os.statvfs(LANE)
++    r = run("s14_zombie_only_stop", ["/usr/bin/true"], floor=st.f_bavail * st.f_frsize + 10 ** 15, probe_fn=late_start)
++    out["S14_zombie_only_group_not_signalled"] = {
++        "record": r, "ok": "below floor" in str(r["trip_reason"]) and not r["uncertain"]
++        and r["stop"]["sigterm_sent"] is False and r["stop"]["killpg_error"] is None and r["stop"]["survivors"] == []
++        and not r["quarantine_exists"] and r["leader_returncode"] == 0}
++
++    real_killpg = os.killpg
++
++    def failing_killpg(pgid, sig):
++        raise PermissionError(1, "injected EPERM from killpg")
++    os.killpg = failing_killpg
++    try:
++        r = run("s15_killpg_failure", ["/bin/sleep", "4"], wall=1, grace=2.0)
++    finally:
++        os.killpg = real_killpg
++    survivors = r["stop"]["survivors"] if isinstance(r["stop"]["survivors"], list) else []
++    exited = wait_gone([r["leader_pid"]], 15) if r.get("leader_pid") else False
++    out["S15_killpg_failure_unresolved_quarantined"] = {
++        "record": r, "leader_exited_by_itself": exited,
++        "ok": str(r["trip_reason"]).startswith("wall cap") and r["stop"]["sigterm_sent"] is False
++        and "PermissionError" in str(r["stop"]["killpg_error"]) and r["leader_pid"] in [s["pid"] for s in survivors]
++        and r["quarantine_exists"] and r["leader_returncode"] is None and exited}
+     return out
+ 
+@@ -261,5 +321,5 @@
+     t0 = time.monotonic()
+     rec = {"started_at": sv.now(), "controls_sha256": sv.sha(os.path.abspath(__file__)),
+-           "supervisor_sha256": sv.sha(os.path.join(HERE, "supervise_r2.py")),
++           "supervisor_sha256": sv.sha(os.path.join(HERE, "supervise_r3.py")),
+            "executable": sys.executable, "version": sys.version, "isolated": bool(sys.flags.isolated),
+            "design_note": "Signals go only to the supervised group while its leader is unreaped (the group ID is "
+--- code/k3_cuts_certify_r4.py
++++ code/k3_cuts_certify_r5.py
+@@ -1,8 +1,10 @@
+ #!/usr/bin/env python3
+-"""k3_cuts_certify_r4.py: AMENDMENT-4.r3 appender and certification driver for C311 + transported cuts, r4.
+-
+-New version of driver r3 (7453009c...5fbe). Drivers r1, r2 and r3 are preserved and were never run. The only change
+-from r3: the pinned supervisor (now supervise_r2.py with its fail-closed exception path) is read from the frozen
+-delta, not hard-coded, so this driver refuses to run unless it is the session and process-group leader started by
++"""k3_cuts_certify_r5.py: AMENDMENT-4.r4 appender and certification driver for C311 + transported cuts, r5.
++
++New version of driver r4 (3ad6a4df...c038). Drivers r1 to r4 are preserved; none of them ran a native pipeline. The
++only changes from r4 are the paths of the frozen amendment (AMENDMENT-4.r4), the frozen delta (r5), the receipts
++(generator r6, controls r5, supervisor controls r3), the route directories (_r5), and a generic refusal message. As
++in r4, the pinned supervisor (now supervise_r3.py, with the Darwin zombie rule) is read from the frozen delta, not
++hard-coded, so this driver refuses to run unless it is the session and process-group leader started by
+ the supervisor file whose SHA the frozen delta pins. Resource supervision lives in that supervisor, following the
+ parent source reviews 15aae4593f5e6f0b, 15aaec72049e6f66 and the stage_guard review. The supervisor watches the
+@@ -16,5 +18,5 @@
+      [b"s UNSATISFIABLE"]; both are recorded.
+   2. Admission is refused while evidence/k3cubes/C311cuts.QUARANTINE.json exists.
+-  3. Each route has one directory, evidence/k3cubes/C311cuts_<route>_r4, created by os.mkdir; if it exists, nothing
++  3. Each route has one directory, evidence/k3cubes/C311cuts_<route>_r5, created by os.mkdir; if it exists, nothing
+      runs. Outputs are exclusive-create. A receipt is written on every outcome this process survives; if the
+      supervisor stops the group, its record is the receipt of that stop.
+@@ -27,5 +29,5 @@
+   - FIFO feeds with per-feed SHA; binary DRAT through proof_stream.watch.
+ No CNF or proof file is written.
+-Usage (only under the supervisor, see the delta): /usr/bin/python3 -I -B k3_cuts_certify_r4.py A|B
++Usage (only under the supervisor, see the delta): /usr/bin/python3 -I -B k3_cuts_certify_r5.py A|B
+ """
+ import errno
+@@ -54,9 +56,9 @@
+ K3DIR = os.path.join(LANE, "evidence", "k3cubes")
+ QUARANTINE = os.path.join(K3DIR, "C311cuts.QUARANTINE.json")
+-AMENDMENT = os.path.join(LANE, "review", "AMENDMENT-4.r3.md")
+-DELTA = os.path.join(LANE, "review", "K3-CUTS-CERT-DELTA.r4.json")
+-GENERATOR_RECEIPT = os.path.join(K3DIR, "cuts_r5_receipt.json")
+-CONTROLS_RECEIPT = os.path.join(K3DIR, "cuts_cert_controls_r4.json")
+-SUPERVISOR_CONTROLS_RECEIPT = os.path.join(K3DIR, "supervise_controls_r2.json")
++AMENDMENT = os.path.join(LANE, "review", "AMENDMENT-4.r4.md")
++DELTA = os.path.join(LANE, "review", "K3-CUTS-CERT-DELTA.r5.json")
++GENERATOR_RECEIPT = os.path.join(K3DIR, "cuts_r6_receipt.json")
++CONTROLS_RECEIPT = os.path.join(K3DIR, "cuts_cert_controls_r5.json")
++SUPERVISOR_CONTROLS_RECEIPT = os.path.join(K3DIR, "supervise_controls_r3.json")
+ ORACLE_RECEIPT = os.path.join(K3DIR, "bmap_oracle_r1.json")
+ ORACLE_RECEIPT_SHA = "6e2bd95ee38c615ab2a1a6282531da730b2bf0cc45e104e95b850102e0b1952c"
+@@ -146,9 +148,9 @@
+     if not (pid > 1 and os.getppid() == pid and os.getsid(0) == os.getpid() and os.getpgrp() == os.getpid()
+             and os.path.isfile(script)):
+-        raise SystemExit("must run as the session leader under the pinned supervise_r2.py")
++        raise SystemExit("must run as the session leader under the pinned supervisor")
+     with open(DELTA) as f:
+         pinned = json.load(f)["supervisor"]
+     if os.path.basename(script) != os.path.basename(pinned["path"]) or sha(script) != pinned["sha256"]:
+-        raise SystemExit("must run as the session leader under the pinned supervise_r2.py (SHA mismatch)")
++        raise SystemExit("must run as the session leader under the pinned supervisor (SHA mismatch)")
+     return {"supervisor_pid": pid, "supervisor_script": script, "supervisor_sha256": pinned["sha256"],
+             "supervisor_record": os.environ.get("K3_SUPERVISOR_RECORD")}
+@@ -548,5 +550,5 @@
+ def main():
+     if len(sys.argv) != 2 or sys.argv[1] not in ROUTES:
+-        raise SystemExit("usage: k3_cuts_certify_r4.py A|B")
++        raise SystemExit("usage: k3_cuts_certify_r5.py A|B")
+     route_name = sys.argv[1]
+     supervisor = require_supervisor()
+@@ -558,5 +560,5 @@
+     except OSError:
+         raise SystemExit("another C311+cuts pipeline holds the lock; not launched")
+-    route_dir = make_route_dir(os.path.join(K3DIR, "C311cuts_%s_r4" % route_name))
++    route_dir = make_route_dir(os.path.join(K3DIR, "C311cuts_%s_r5" % route_name))
+     receipt = os.path.join(route_dir, "C311cuts_%s.json" % route_name)
+     state = {"route": route_name, "status": "UNKNOWN", "verified_unsat": False, "started_at": now(),
+@@ -576,5 +578,5 @@
+                                                   "trip, no quarantine",
+                       "authority": "Parent AMENDMENT-4 disposition 3c9373c0...4e44 decisions 1-6; parent source "
+-                                   "reviews; frozen AMENDMENT-4.r3 and K3-CUTS-CERT-DELTA.r4",
++                                   "reviews; frozen AMENDMENT-4.r4 and K3-CUTS-CERT-DELTA.r5",
+                       "scope": "One strengthened C311 input on one route; parent replay and composition review remain separate"})
+         with open(receipt, "x") as f:
+--- code/k3_cuts_r5.py
++++ code/k3_cuts_r6.py
+@@ -1,10 +1,11 @@
+ #!/usr/bin/env python3
+-"""k3_cuts_r5.py: AMENDMENT-4.r3 cut-family controls C1-C4, re-bound to the frozen r3 text (supervised r5).
+-
+-New version of k3_cuts_r4.py (5c19b64a...24d9), which repeats the never-run r2 (5c1c1d67...bdd9); r2, r3 and r4 are
+-preserved and were never run. The content is r2's, with two changes:
+-  - it imports the current driver k3_cuts_certify_r4 for paths, pins, the oracle check and the B_C311 binding;
++"""k3_cuts_r6.py: AMENDMENT-4.r4 cut-family controls C1-C4, re-bound to the frozen r4 text (supervised r6).
++
++New version of k3_cuts_r5.py (2b9b1189...8e87). r2 to r5 are preserved, and none of them produced a receipt. The
++content is r2's (5c1c1d67...bdd9), with these changes:
++  - it imports the current driver k3_cuts_certify_r5 for paths (frozen AMENDMENT-4.r4, delta r5), pins, the oracle
++    check and the B_C311 binding;
+   - it refuses to run unless it is the session/group leader started by the supervisor that the frozen delta pins
+-    (supervise_r2.py).
++    (supervise_r3.py).
+ The supervisor therefore guards this whole process and every encoder B child in its group: strict RSS probes, the
+ 12e9 floor, a stage wall cap, killpg stops with a bounded wait, and quarantine on survivors or uncertainty. Admission
+@@ -13,6 +14,6 @@
+ The clause family and emission come from the reviewed k3_cuts_r1.py (0ec92c86...1b0a), also used by the appender.
+ Content carried from r2 (desk m9-m12, parent decisions 2 and 4):
+-  binding  refuses to run unless review/AMENDMENT-4.r3.md exists and names this script's SHA; binds the r3 SHA, so
+-           C1 (2100 local assignments, exactly 450 rejected) and C2-C4 are re-bound to the frozen r3 text;
++  binding  refuses to run unless the frozen amendment (drv.AMENDMENT, review/AMENDMENT-4.r4.md) exists and names this
++           script's SHA; binds its SHA, so C1 (2100 local assignments, exactly 450 rejected) and C2-C4 are re-bound to it;
+   m9       the runtime B decode first asserts the oracle receipt (PASS and pins) and the B_C311 metadata binding,
+            checks the B base output against the oracle base, and checks every --fix-json run: header (base vars,
+@@ -24,5 +25,5 @@
+   m12      the receipt records sys.executable, sys.version, flags and the path and SHA of every imported lane module.
+ The clause block is hashed in memory and not written. No solver is run.
+-Usage (only under the supervisor, see the delta): /usr/bin/python3 -I -B k3_cuts_r5.py
++Usage (only under the supervisor, see the delta): /usr/bin/python3 -I -B k3_cuts_r6.py
+ """
+ import hashlib
+@@ -40,5 +41,5 @@
+ import gram_enc  # noqa: E402
+ import k3_cubes  # noqa: E402
+-import k3_cuts_certify_r4 as drv  # noqa: E402
++import k3_cuts_certify_r5 as drv  # noqa: E402
+ import k3_cuts_r1 as r1  # noqa: E402
+ import k3_lex  # noqa: E402
+@@ -54,5 +55,5 @@
+ def environment():
+     modules = {}
+-    for name in ("gram_enc", "k3_cubes", "k3_lex", "k3_cuts_r1", "k3_cuts_certify_r4", "gram_certify_r4", "proof_stream"):
++    for name in ("gram_enc", "k3_cubes", "k3_lex", "k3_cuts_r1", "k3_cuts_certify_r5", "gram_certify_r4", "proof_stream"):
+         path = os.path.abspath(sys.modules[name].__file__)
+         modules[name] = {"path": path, "sha256": sha(path)}
+@@ -154,10 +155,10 @@
+     failures = []
+     if me not in amendment_text:
+-        failures.append("frozen AMENDMENT-4.r3 does not name this generator's SHA")
++        failures.append("frozen amendment %s does not name this generator's SHA" % os.path.relpath(drv.AMENDMENT, LANE))
+     rec = {"started_at": now(), "gate": gate, "generator_sha256": me, "environment": environment(),
+            "supervisor": supervisor, "pid": os.getpid(),
+-           "amendment": {"path": "review/AMENDMENT-4.r3.md", "sha256": sha(drv.AMENDMENT)},
++           "amendment": {"path": os.path.relpath(drv.AMENDMENT, LANE), "sha256": sha(drv.AMENDMENT)},
+            "family_source": {"path": "code/k3_cuts_r1.py", "sha256": sha(os.path.join(HERE, "k3_cuts_r1.py"))},
+-           "status_note": "Controls C1-C4 for the frozen r3 text; no solve; clause block not written"}
++           "status_note": "Controls C1-C4 for the frozen amendment text; no solve; clause block not written"}
+     drv.check_code_pins()
+ 
+--- code/k3_cuts_certify_controls_r4.py
++++ code/k3_cuts_certify_controls_r5.py
+@@ -1,13 +1,15 @@
+ #!/usr/bin/env python3
+-"""k3_cuts_certify_controls_r4.py: pre-solve, parser and transport controls for the C311+cuts driver r4.
+-
+-New version of controls r3 (90634fb3...1c3f). Controls r1, r2 and r3 are preserved and were never run. The only
+-changes from r3: it uses driver r4 and generator r5, and it takes the supervisor and supervisor-controls file names
+-from the frozen delta (supervise_r2.py, supervise_controls_r2.py). It must run as the session/group leader under
+-that pinned supervisor, so the in-process preparation, the B encoder child and the tiny solver/checker runs are all
+-inside the supervised group. Supervisor behaviour is tested separately by the supervisor controls, because those
+-tests create their own process groups. Every check is designed to fail on a wrong driver.
+-1. Bindings among the frozen r3 text, the frozen delta r4, the driver r4, this script, generator r5, the supervisor
+-   and the supervisor controls; the generator r5 receipt PASS; lane code pins; the oracle receipt PASS with its pins;
++"""k3_cuts_certify_controls_r5.py: pre-solve, parser and transport controls for the C311+cuts driver r5.
++
++New version of controls r4 (646798ef...07e5). Controls r1 to r4 are preserved and were never run. The only changes
++from r4: it uses driver r5 (frozen AMENDMENT-4.r4, delta r5) and generator r6, and it takes the supervisor and
++supervisor-controls file names from the frozen delta (supervise_r3.py, supervise_controls_r3.py). It must run as the
++session/group leader under that pinned supervisor, so the in-process preparation, the B encoder child and the tiny
++solver/checker runs are all inside the supervised group. Supervisor behaviour is tested separately by the
++supervisor controls, because those tests create their own process groups. Every check is designed to fail on a
++wrong driver.
++1. Bindings among the frozen amendment r4, the frozen delta r5, the driver r5, this script, generator r6, the
++   supervisor and the supervisor controls; the generator r6 receipt PASS; lane code pins; the oracle receipt PASS
++   with its pins;
+    the B_C311 metadata bound to the oracle.
+ 2. Status-line parser: synthetic byte logs. Only exactly [b"s VERIFIED"] or [b"s UNSATISFIABLE"] counts; leading,
+@@ -24,5 +26,5 @@
+    (ii) base only: solver rc 10, not verified;
+    (iii) solver gets base + block, checker gets base only: not verified, and the checker feed SHA differs.
+-Usage (only under the supervisor, see the delta): /usr/bin/python3 -I -B k3_cuts_certify_controls_r4.py
++Usage (only under the supervisor, see the delta): /usr/bin/python3 -I -B k3_cuts_certify_controls_r5.py
+ """
+ import copy
+@@ -37,5 +39,5 @@
+ 
+ import k3_cubes  # noqa: E402
+-import k3_cuts_certify_r4 as drv  # noqa: E402
++import k3_cuts_certify_r5 as drv  # noqa: E402
+ import k3_cuts_r1 as r1  # noqa: E402
+ from gram_certify_r4 import now, sha  # noqa: E402
+@@ -43,5 +45,5 @@
+ LANE = os.path.dirname(HERE)
+ OUT = drv.CONTROLS_RECEIPT
+-TEST_DIR = os.path.join(LANE, "evidence", "k3cubes", "cuts_cert_controls_r4")
++TEST_DIR = os.path.join(LANE, "evidence", "k3cubes", "cuts_cert_controls_r5")
+ GATE, GROWTH = 12200000000, 2097152
+ 
+@@ -126,8 +128,8 @@
+         meta = json.load(f)
+     drv.check_b_c311_binding(meta, sha(meta_path), oracle)
+-    bindings = {"r3_names_driver": driver_sha in text, "r3_names_controls": me in text,
+-                "r3_names_generator": generator_sha in text, "r3_names_supervisor": supervisor_sha in text,
+-                "r3_names_supervisor_controls": supervisor_controls_sha in text,
+-                "delta_pins_r3": delta["amendment"]["sha256"] == amendment_sha,
++    bindings = {"amendment_names_driver": driver_sha in text, "amendment_names_controls": me in text,
++                "amendment_names_generator": generator_sha in text, "amendment_names_supervisor": supervisor_sha in text,
++                "amendment_names_supervisor_controls": supervisor_controls_sha in text,
++                "delta_pins_amendment": delta["amendment"]["sha256"] == amendment_sha,
+                 "delta_pins_driver": delta["driver"]["sha256"] == driver_sha,
+                 "delta_pins_controls": delta["controls"]["sha256"] == me,
+@@ -135,5 +137,5 @@
+                 "delta_pins_supervisor": delta["supervisor"]["sha256"] == supervisor_sha,
+                 "delta_pins_supervisor_controls": delta["supervisor_controls"]["sha256"] == supervisor_controls_sha,
+-                "generator_receipt_pass_bound_to_r3": generator.get("status") == "PASS"
++                "generator_receipt_pass_bound_to_amendment": generator.get("status") == "PASS"
+                 and generator["amendment"]["sha256"] == amendment_sha and generator["generator_sha256"] == generator_sha,
+                 "oracle_pass_with_pins": True, "B_C311_metadata_bound_to_oracle": True}

@@ -1,0 +1,159 @@
+--- code/rqls_assay_v7.py
++++ code/rqls_assay_v8.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""rqls_assay_v7: float feasibility assay for maximal 1-RQLS(10) (NOT a certificate; numeric results are UNKNOWN).
++"""rqls_assay_v8: float feasibility assay for maximal 1-RQLS(10) (NOT a certificate; numeric results are UNKNOWN).
+ 
+ Representation: a Latin square B (resolution) and unit vectors q_p, p in [v]^2, with every row, column and B-class an
+ orthonormal basis. Problems are given by representatives z_r and line slots (r, k) meaning the vector U^k z_r with U
+@@ -53,7 +53,19 @@
+ starts (as in v5 K). Every run records its raw final residual, LM status and the full-configuration verification.
+ No target search, no basin hopping.
+ 
+-Usage: rqls_assay_v7.py OUT.jsonl GLOBAL_BUDGET_S CLASSICAL_JSON EX24_JSON EX24_SHA256 STOP_RECEIPT MODE(kcal)
++v8 change (parent instruction after the v7 calibration): ONE bounded R7 target assay with the UNCHANGED Reduced
++parametrisation, LM and full verifier (only main(), MODE and this docstring differ from v7). Gates A, C1, C1p, C2, A5 as
++in v7; retained calibrations, all gating: C3r = deterministic replay of the v3 maximal v = 7 calibration (Cay(Z_7),
++seed 33, unsymmetric RRR), C4r = replay of the v3 maximal v = 8 calibration (XOR_8, seeds 41 and 44; >= 1 maximal
++required), KPc = the v7 KP amplitude-0.1 seed-0 runs at the four classical instances (all must verify with 10 rays),
++KRc = the first 32 v7 KR random starts (>= 1 verified, every verified solution classical with 10 rays; whether the
++verified seed set equals v7's is recorded). Stage R7: exactly 256 distinct random forced Z_7+3 configurations
++(T1_config with a fresh generator, seed 20261019; exact duplicates and BAD_CONFIG skipped and recorded) x 8
++deterministic LM starts (seeds 80000 + 8 cfg + j), 200 LM iterations each, every endpoint verified on the full
++configuration. Recovery rates of known classical points do NOT transfer to unknown maximal configurations: an R7
++negative is a scoped UNKNOWN, not a detection-power statement.
++
++Usage: rqls_assay_v8.py OUT.jsonl GLOBAL_BUDGET_S CLASSICAL_JSON EX24_JSON EX24_SHA256 STOP_RECEIPT MODE(r7)
+ Exit codes: 0 completed (or ended by budget), 2 exception, 3 gate failure, 4 cap stop, 5 terminated by SIGTERM.
+ """
+ import hashlib, itertools, json, math, os, signal, sys, time
+@@ -62,7 +74,7 @@
+ SRC_SHA = hashlib.sha256(open(os.path.abspath(__file__), "rb").read()).hexdigest()
+ OUT, GLOBAL_BUDGET, CLASSICAL_JSON, EX24_JSON, EX24_SHA, STOP_RECEIPT, MODE = (sys.argv[1], float(sys.argv[2]), sys.argv[3],
+                                                                               sys.argv[4], sys.argv[5], sys.argv[6], sys.argv[7])
+-if MODE not in ("kcal",):
++if MODE not in ("r7",):
+     sys.exit(7)
+ TERM = [False]
+ STAGE = ["init"]
+@@ -972,7 +984,7 @@
+ 
+ 
+ def main():
+-    W.write({"assay": "rqls_assay_v7", "mode": MODE, "src_sha256": SRC_SHA, "numpy": np.__version__, "python": sys.version,
++    W.write({"assay": "rqls_assay_v8", "mode": MODE, "src_sha256": SRC_SHA, "numpy": np.__version__, "python": sys.version,
+              "flags": {"optimize": sys.flags.optimize, "isolated": sys.flags.isolated, "dont_write_bytecode": sys.flags.dont_write_bytecode},
+              "budget_s": GLOBAL_BUDGET, "argv": sys.argv[1:],
+              "env": {k: os.environ.get(k) for k in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "MKL_NUM_THREADS", "TMPDIR")}})
+@@ -980,7 +992,8 @@
+         W.write({"GATE": "python_optimize_flag", "pass": False})
+         raise GateFail("optimize flag set")
+     classical = json.load(open(CLASSICAL_JSON))
+-    plan = [("A", 30), ("C1", 25), ("C1p", 40), ("C2", 30), ("A5", 10), ("KP", 60), ("KR", GLOBAL_BUDGET - 195 - 15)]
++    plan = [("A", 30), ("C1", 25), ("C1p", 40), ("C2", 30), ("A5", 10), ("C3r", 40), ("C4r", 70), ("KPc", 20), ("KRc", 40),
++            ("R7", GLOBAL_BUDGET - 305 - 15)]
+     ends, acc, t0 = {}, 0, time.monotonic()
+     for tag, b in plan:
+         acc += b
+@@ -1017,44 +1030,73 @@
+     md, ry, ms = R0_.P.verify(R0_.Z_full(th0))
+     gate("A5_reduced_classical_anchor", r0 < 1e-12 and md < 1e-12 and ry == 10,
+          {"reduced_resid": r0, "maxdev": md, "rays": ry, "npar": R0_.npar})
+-    STAGE[0] = "KP"
++    STAGE[0] = "C3r"
++    recs = run(unsym("v7_cayley", cayley_cyclic(7)), "C3r_cal_v7_cayley_replay", [33], 20000, ends["C3r"])
++    summary("C3r_cal_v7_cayley_replay", recs)
++    ran = [r for r in recs if r != "SKIPPED"]
++    gate("C3r_maximal_v7_replay", any(r["maximal_candidate"] and r["rays"] == 49 for r in ran),
++         {"runs": len(ran), "rays": [r["rays"] for r in ran], "rule": "v3 seed 33 replay must give a verified maximal (49-ray) solution"})
++    STAGE[0] = "C4r"
++    recs = run(unsym("v8_xor", xor8()), "C4r_cal_v8_xor_replay", [41, 44], 20000, ends["C4r"])
++    summary("C4r_cal_v8_xor_replay", recs)
++    ran = [r for r in recs if r != "SKIPPED"]
++    gate("C4r_maximal_v8_replay", any(r["maximal_candidate"] and r["rays"] == 64 for r in ran),
++         {"runs": len(ran), "rays": [r["rays"] for r in ran], "rule": "v3 seeds 41/44 replay must give >= 1 verified maximal (64-ray) solution"})
++    STAGE[0] = "KPc"
+     instances = [(0, "B", (0, 1, 3)), (1, "A", (0, 2, 5)), (2, "B", (0, 3, 6)), (3, "A", (0, 4, 1))]
+-    amps = [1e-3, 1e-2, 0.1, 0.5]
+     kp = []
+     for ii, (hi, res, mlab) in enumerate(instances):
+         R, thc, lab, M = parker_reduced(classical["pairs"][hi], res, mlab)
+-        rc = float(np.linalg.norm(R.resid(thc)))
+-        W.write({"tag": "KP_anchor", "instance": ii, "hit": hi, "resolution": res, "mlab": list(mlab), "anchor_resid": rc})
+-        for amp in amps:
+-            for sd in range(4):
+-                if over(ends["KP"]):
+-                    break
+-                kp.append(run_perturbed(R, thc, amp, 40000 + 1000 * ii + 100 * amps.index(amp) + sd, 200, ends["KP"],
+-                                        {"instance": ii, "hit": hi, "resolution": res, "mlab": list(mlab)}))
+-    by_amp = {}
+-    for r in kp:
+-        a = str(r["amp"])
+-        by_amp.setdefault(a, {"runs": 0, "verified": 0, "rays": {}, "resid_max_verified": 0.0, "resid_min_unverified": None})
+-        b = by_amp[a]
+-        b["runs"] += 1
+-        if r["verified"]:
+-            b["verified"] += 1
+-            b["rays"][str(r["rays"])] = b["rays"].get(str(r["rays"]), 0) + 1
+-            b["resid_max_verified"] = max(b["resid_max_verified"], r["resid"])
+-        else:
+-            b["resid_min_unverified"] = r["resid"] if b["resid_min_unverified"] is None else min(b["resid_min_unverified"], r["resid"])
+-    W.write({"summary": "KP_perturbed_classical", "by_amp": by_amp, "elapsed_s": round(elapsed(), 2)})
+-    STAGE[0] = "KR"
++        if over(ends["KPc"]):
++            break
++        kp.append(run_perturbed(R, thc, 0.1, 40000 + 1000 * ii + 200, 200, ends["KPc"],
++                                {"instance": ii, "hit": hi, "resolution": res, "mlab": list(mlab)}))
++    gate("KPc_near_anchor", len(kp) == 4 and all(r["verified"] and r["rays"] == 10 for r in kp),
++         {"runs": len(kp), "verified": [r["verified"] for r in kp], "rays": [r["rays"] for r in kp],
++          "rule": "the four v7 KP amp-0.1 seed-0 runs must all verify with 10 rays"})
++    STAGE[0] = "KRc"
+     rk = np.random.default_rng(31337)
+     recs, k = [], 0
+-    while k < 256 and not over(ends["KR"]):
++    while k < 32 and not over(ends["KRc"]):
+         hi = int(rk.integers(len(classical["pairs"])))
+         res = "B" if rk.integers(2) == 0 else "A"
+         a_, b_ = [int(x) for x in rk.choice(np.arange(1, 7), 2, replace=False)]
+         R, thc, lab, M = parker_reduced(classical["pairs"][hi], res, (0, a_, b_))
+-        recs += run_reduced(R, "KR_random_start", [7000 + k], 200, ends["KR"], extra={"hit": hi, "resolution": res, "mlab": [0, a_, b_]})
++        recs += run_reduced(R, "KRc_random_start_replay", [7000 + k], 200, ends["KRc"], extra={"hit": hi, "resolution": res, "mlab": [0, a_, b_]})
+         k += 1
+-    summary_red("KR_random_start", recs)
++    summary_red("KRc_random_start_replay", recs)
++    ran = [r for r in recs if r != "SKIPPED"]
++    ver = [r for r in ran if r["maxdev"] < 1e-8]
++    expected_v7 = [7012, 7015, 7016, 7018, 7021, 7023]
++    gate("KRc_known_classical_recovery", len(ran) == 32 and len(ver) >= 1 and all(r["rays"] == 10 for r in ver),
++         {"runs": len(ran), "verified_seeds": [r["seed"] for r in ver], "v7_verified_seeds": expected_v7,
++          "replay_matches_v7": [r["seed"] for r in ver] == expected_v7,
++          "rule": "32 runs, >= 1 verified, every verified solution classical (10 rays); v7 match recorded, not gated"})
++    STAGE[0] = "R7"
++    L3 = latin3_all()
++    rcfg = np.random.default_rng(20261019)
++    recs, cfg, seen, attempts = [], 0, set(), 0
++    while cfg < 256 and not over(ends["R7"]):
++        attempts += 1
++        Dinf, beta, gam, dlt, Lc, D2, M = T1_config(rcfg, L3)
++        conf = {"Dinf": Dinf, "beta": {str(kk): vv for kk, vv in beta.items()}, "gamma": gam, "delta": dlt, "L": Lc, "D2": D2, "M": M}
++        key = json.dumps(conf, sort_keys=True)
++        if key in seen:
++            W.write({"tag": "R7_forced_reduced", "config": conf, "status": "DUPLICATE_CONFIG", "attempt": attempts})
++            continue
++        seen.add(key)
++        try:
++            R = Reduced(7, 3, Dinf, beta, gam, dlt, Lc, list(range(7)) + D2, M)
++        except AssertionError as ex:
++            W.write({"tag": "R7_forced_reduced", "config": conf, "status": "BAD_CONFIG", "why": repr(ex), "attempt": attempts})
++            continue
++        conf["cfg"] = cfg
++        recs += run_reduced(R, "R7_forced_reduced", [80000 + 8 * cfg + j for j in range(8)], 200, ends["R7"], extra=conf)
++        cfg += 1
++    summary_red("R7_forced_reduced", recs)
++    W.write({"summary": "R7_counts", "configs_completed_or_started": cfg, "generator_attempts": attempts,
++             "runs_recorded": len([r for r in recs if r != "SKIPPED"]), "skipped": len([r for r in recs if r == "SKIPPED"]),
++             "target_configs": 256, "starts_per_config": 8})
+     W.write({"end": True, "mode": MODE, "terminated": TERM[0], "elapsed_s": round(elapsed(), 2), "records": W.records, "bytes": W.n})
+     return 0
+ 

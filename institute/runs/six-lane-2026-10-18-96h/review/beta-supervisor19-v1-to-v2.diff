@@ -1,0 +1,185 @@
+--- control/beta_supervisor19_adapter_v1.py
++++ control/beta_supervisor19_adapter_v2.py
+@@ -1,7 +1,10 @@
+-"""SOURCE ONLY, UNEXECUTED. Raw owned_supervisor_v19 evidence -> beta_parent_adapter_v3 input records bridge.
++"""SOURCE ONLY, UNEXECUTED. Raw owned_supervisor_v19 evidence -> beta_parent_adapter_v3 input records bridge (v2).
+ 
+ Scope:     RUN/control/beta-supervisor19-scope-v1.json      4087d6f9eab6034f142d9706972774cbea04aed982fe7600f2753129f602315c
+ Interface: RUN/control/beta-supervisor19-interface-v1.json  91f709f6dc9b07a7d9c36bf2593dcae21175ffaaf0fbd8c3ca883591612b3086
++Corrected: RUN/control/beta-supervisor19-interface-v2.json  073222bf77f4666ff9f584245d1f6f085e7f8f9c220a3d7a0c93590824fc31fa
++Repair:    RUN/control/beta-supervisor19-v2-repair-scope-v1.json  64fe152a54e26aec87c7f150c72ba540f414a57ed4298e931d33ee4617c96fbd
++Replaces:  RUN/control/beta_supervisor19_adapter_v1.py      fb857b959da63365bd39f438e99c5ee9b7dbe4e2286b003f5ec579419c33ab1c (HOLD)
+ Supervisor: physics rqls10 code/owned_supervisor_v19.py     cb828a78367dc2023bfc6e330696745f186f186811752361472747e5fe547e93
+ 
+     result = build_beta_inputs(request_ref, reader, deadline_check)
+@@ -19,6 +22,11 @@
+ authenticates selected bytes, not their origin. Authenticity of the request, waits, captures, union, freeze, GO,
+ config, prefix and deadline remains the parent's external obligation (EXTERNAL_PREREQUISITES).
+ 
++Sticky supervisor histories (interface-v2 C1-C3): every receipt or ACK unproved_history uniqueid, every ACK
++coverage_history gap and every ACK contract violation is an always-blocking settlement label. No parent identity-union
++status (ENDED_PROVED, PID-only or otherwise) waives it. The ACK histories must extend the receipt histories, so
++post-receipt census retries are retained.
++
+ Missing, ambiguous, contradictory or unbound evidence yields state HELD with ordered causes and NO records. There
+ is no partial, default or success fallback. READY records are canonical JSON text the parent must publish
+ exclusively itself before calling beta_parent_adapter_v3.evaluate_pinned(result['adapter3_inputs'], reader, check).
+@@ -103,6 +111,7 @@
+                 'mono_close_completed')
+ STREAM_KEYS = frozenset(STREAM_COUNTERS + STREAM_FLAGS + STREAM_MONOS + ('error', 'sha256_prefix', 'sha256_written'))
+ ARTIFACT_KEYS = frozenset(('sha256', 'bytes', 'inode', 'nlink', 'birth_epoch'))
++HELPER_KEYS = ('pid', 'identity', 'settled', 'signal')  # interface-v2 C4: mandatory in every receipt helper row
+ LAUNCH_KEYS = frozenset(('supervisor', 'supervisor_sha256', 'config_sha256', 'supervisor_pid', 'identity', 'argv', 'cwd',
+                          'env', 'mono_spawn', 'epoch_spawn', 'start_date', 'baseline_count', 'authorization',
+                          'launch_commit', 'cpu_slots', 'reservation_bytes'))
+@@ -438,11 +447,13 @@
+     ack = st.stage(_ack, req)
+     rinfo = st.stage(_receipt, req)
+     receipt = None if rinfo is None else rinfo['receipt']
+-    identities = None
++    identities = hist = None
+     if receipt is not None:
+         st.stage(_receipt_complete, receipt)
+         st.stage(_tamper, receipt)
+         identities = st.stage(_receipt_identities, receipt, ack)
++        if identities is not None and ack is not None:
++            hist = st.stage(_ack_histories, ack, receipt, identities)
+         if wait is not None:
+             st.stage(_wait_joins, wait, receipt)
+         if wait is not None and ack is not None:
+@@ -460,11 +471,11 @@
+         pins = st.stage(_actual_pins, req, cfg)
+     dates = st.stage(_dates, receipt, rinfo) if receipt is not None else None
+     union = None
+-    if receipt is not None and ack is not None and wait is not None and identities is not None:
+-        union = st.stage(_union, req, receipt, rinfo, wait, identities)
++    if receipt is not None and wait is not None and hist is not None:
++        union = st.stage(_union, req, receipt, rinfo, wait, hist)
+     settlement = None
+-    if receipt is not None and ack is not None and union is not None:
+-        settlement = st.stage(_settlement, receipt, ack, union)
++    if receipt is not None and ack is not None and union is not None and hist is not None:
++        settlement = st.stage(_settlement, receipt, ack, union, hist)
+     authority = st.stage(_context, req, plan) if plan is not None else None
+     freeze = st.stage(_freeze, req, authority) if authority is not None else None
+     if freeze is not None and plan is not None and expected_cfg is not None and cfg is not None and rinfo is not None:
+@@ -725,11 +736,10 @@
+     if not all(type(e) is dict and 'first_identity' in e and 'last_identity' in e for e in r['unproved_history']):
+         raise _Held('RECEIPT_INVALID', 'receipt unproved_history')
+     for h in r['helpers']:
+-        if (type(h) is not dict or not _int(h.get('pid'), 1) or type(h.get('settled')) is not bool
+-                or not (h.get('identity') is None or type(h.get('identity')) is dict)
+-                or not (h.get('signal') is None or (type(h.get('signal')) is dict
+-                                                     and type(h['signal'].get('sent')) is bool))):
+-            raise _Held('RECEIPT_INVALID', 'receipt helper report')
++        if (type(h) is not dict or not all(key in h for key in HELPER_KEYS) or not _int(h['pid'], 1)
++                or type(h['settled']) is not bool or not (h['identity'] is None or type(h['identity']) is dict)
++                or not (h['signal'] is None or (type(h['signal']) is dict and type(h['signal'].get('sent')) is bool))):
++            raise _Held('RECEIPT_INVALID', 'receipt helper report (pid/identity/settled/signal keys mandatory)')
+     for entry in r['coverage_history']:
+         observation = entry.get('observation') if type(entry) is dict else None
+         if type(observation) is not list or not observation or not _int(observation[0], 0):
+@@ -796,6 +806,46 @@
+     return found
+ 
+ 
++def _ack_histories(st, ack, r, identities):
++    """Interface-v2 C1-C3/C5: ACK histories extend the receipt's; post-receipt census retries stay sticky."""
++    coverage, unproved, violations = ack['coverage_history'], ack['unproved_history'], ack['contract_violations']
++    if type(coverage) is not list or type(unproved) is not list or type(violations) is not list:
++        raise _Held('SUPERVISOR_ACK_INVALID', 'ACK coverage/unproved/violation histories must be lists')
++    for entry in coverage:
++        observation = entry.get('observation') if type(entry) is dict else None
++        if type(observation) is not list or not observation or not _int(observation[0], 0):
++            raise _Held('SUPERVISOR_ACK_INVALID', 'ACK coverage_history observation')
++    found = dict(identities)
++
++    def add(p, label):
++        if not _identity(p):
++            raise _Held('SUPERVISOR_ACK_INVALID', label + ': malformed identity')
++        old = found.get(p['uniqueid'])
++        if old is not None and old != p['pid']:
++            raise _Held('SUPERVISOR_ACK_INVALID', label + ': one uniqueid reported with two pids')
++        found[p['uniqueid']] = p['pid']
++    ack_uids = set()
++    for entry in unproved:
++        if type(entry) is not dict or 'first_identity' not in entry or 'last_identity' not in entry:
++            raise _Held('SUPERVISOR_ACK_INVALID', 'ACK unproved_history entry')
++        add(entry['first_identity'], 'ACK unproved_history')
++        add(entry['last_identity'], 'ACK unproved_history')
++        if entry['first_identity']['uniqueid'] != entry['last_identity']['uniqueid']:
++            raise _Held('SUPERVISOR_ACK_INVALID', 'ACK unproved_history entry spans two uniqueids')
++        ack_uids.add(entry['first_identity']['uniqueid'])
++    for violation in violations:
++        add(violation, 'ACK contract_violations')
++    for name, mine, theirs in (('coverage_history', r['coverage_history'], coverage),
++                               ('contract_violations', r['contract_violations'], violations)):
++        if len(theirs) < len(mine) or not _exact(theirs[:len(mine)], mine):
++            raise _Held('SUPERVISOR_ACK_INVALID', 'receipt ' + name + ' is not an exact prefix of the ACK history')
++    receipt_uids = {entry['first_identity']['uniqueid'] for entry in r['unproved_history']}
++    if not receipt_uids <= ack_uids:
++        raise _Held('SUPERVISOR_ACK_INVALID', 'receipt unproved_history uniqueids are not a subset of the ACK history')
++    return {'identities': found, 'coverage': coverage, 'unproved_uids': sorted(receipt_uids | ack_uids),
++            'violations': violations}
++
++
+ def _wait_joins(st, wait, r):
+     if wait['pid'] != r['supervisor_pid']:
+         raise _Held('PARENT_WAIT_INVALID', 'parent-waited supervisor pid differs from the receipt supervisor_pid')
+@@ -964,7 +1014,7 @@
+     return source, inputs
+ 
+ 
+-def _union(st, req, r, rinfo, wait, identities):
++def _union(st, req, r, rinfo, wait, hist):
+     data, _ = st.pinned('identity_union', req['identity_union'], LARGE_CAP, 'IDENTITY_UNION_INVALID')
+     doc = _parse(data, 'IDENTITY_UNION_INVALID', 'identity union')
+     if (not _keys(doc, UNION_KEYS) or not _same_str(doc['format'], UNION_FORMAT) or not _same_str(doc['item'], req['item'])
+@@ -989,7 +1039,7 @@
+     if (len(drivers) != 1 or drivers[0]['pid'] != wait['pid'] or drivers[0]['pgid'] != wait['pgid']
+             or drivers[0]['start_fingerprint'] != wait['start_fingerprint']):
+         raise _Held('IDENTITY_UNION_INVALID', 'union needs exactly one driver row equal to the parent-waited supervisor')
+-    for uid, pid in identities.items():
++    for uid, pid in hist['identities'].items():
+         row = by_uid.get(uid)
+         if row is None or row['pid'] != pid:
+             raise _Held('IDENTITY_UNION_INVALID', 'union omits or contradicts supervisor identity uniqueid %d' % uid)
+@@ -999,13 +1049,13 @@
+     for h in r['helpers']:
+         if h['identity'] is None and not any(row['role'] == 'helper' for row in by_pid.get(h['pid'], [])):
+             raise _Held('IDENTITY_UNION_INVALID', 'union omits identity-less helper pid %d' % h['pid'])
+-    for entry in r['coverage_history']:
++    for entry in hist['coverage']:
+         if entry['observation'][0] not in by_pid:
+             raise _Held('IDENTITY_UNION_INVALID', 'union omits supervisor coverage-gap pid %d' % entry['observation'][0])
+     return doc['identities']
+ 
+ 
+-def _settlement(st, r, ack, rows):
++def _settlement(st, r, ack, rows, hist):
+     final, at_ack = r['final_census'], ack['ack_census']
+     unresolved, signals = set(), set()
+     for label, census in (('FINAL', final), ('ACK', at_ack)):
+@@ -1013,6 +1063,10 @@
+             unresolved.add('%s_OWNED_LIVE:%d' % (label, p['uniqueid']))
+         for p in census['unproved_live']:
+             unresolved.add('%s_UNPROVED_LIVE:%d' % (label, p['uniqueid']))
++    for uid in hist['unproved_uids']:
++        unresolved.add('UNPROVED_HISTORY:%d' % uid)  # Sticky: no union status (ENDED_PROVED or other) waives it.
++    for index, entry in enumerate(hist['coverage']):
++        unresolved.add('COVERAGE_GAP:%d:%d' % (index, entry['observation'][0]))  # Sticky; never a PID-only clearance.
+     for h in r['helpers']:
+         if h['settled'] is not True:
+             unresolved.add('HELPER_UNSETTLED:%d' % h['pid'])
+@@ -1024,9 +1078,8 @@
+         unresolved.add('SUPERVISOR_TRIP:' + trip['trip'])
+     if r['settlement'] != 'SETTLED':
+         unresolved.add('SUPERVISOR_STATE:' + r['settlement'])
+-    for index, violation in enumerate(r['contract_violations']):
+-        uid = violation.get('uniqueid') if type(violation) is dict else None
+-        unresolved.add('CONTRACT_VIOLATION:' + (str(uid) if _int(uid, 1) else 'index%d' % index))
++    for violation in hist['violations']:
++        unresolved.add('CONTRACT_VIOLATION:%d' % violation['uniqueid'])
+     if r['loop_status'] != 'EXITED':
+         unresolved.add('LOOP_STATUS:' + r['loop_status'])
+     if r['clear'] is None:

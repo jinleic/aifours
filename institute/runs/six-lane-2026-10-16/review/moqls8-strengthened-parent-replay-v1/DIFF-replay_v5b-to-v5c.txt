@@ -1,0 +1,690 @@
+DIFF replay_v5b.py -> replay_v5c.py for desk review/moqls8-strengthened-parent-replay-v1 (FROZEN for parent review)
+replay_v5b.py sha256 5726273c6b584708334a8ce4f0d8c538245445b1e733b3cf607341d5a43aa32d (/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-16/review/moqls8-strengthened-parent-replay-v1/scripts/replay_v5b.py)
+replay_v5c.py sha256 36f50cb6483fef91a3e93d78dcba46b1eb97bdfbdfaa247ee7bc99303466c1af (/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-16/review/moqls8-strengthened-parent-replay-v1/scripts/replay_v5c.py)
+written_at 2026-10-18T08:36:09-07:00
+Basis: Codex source review of v5b (review/n8-replay-v5b-source-codex-v1.note.md 1e275723...c64b: controls
+GO-WITH-FIXES on F1/F2, formulas/leaves HOLD on F1/F2/F3), the parent instruction "v5c = v5b + ONLY F1-F3", and the
+parent's added item F4: the M8 lane escalation review/parent-decision-m8-lane-rss-escalation-v1.md
+(b9886e242764750f55a2393323dfa7da7eb7696554d493bb107cd5f3815209ec). Every v5c artefact uses the 'v5c-' prefix. No
+existing file is changed.
+
+Item -> hunks (H01-H33 count the @@ headers below, in order):
+ F1 (A: worker state before the claim; claimed descriptors closed on every exit; handles kept before start):
+   H14-H17: _writer builds its hash/counter (and fd = None) before claiming, and claims inside the try whose finally
+   closes the claimed descriptor once; _relay builds hin/hout/state/tail and the delivery function first, then claims
+   fifo_read/cpw inside the try whose finally closes whatever was claimed. _start_writer/_start_relay are replaced by
+   _new_writer/_new_relay, which return the thread UNSTARTED. H19-H20: pipeline() registers each handle (relay,
+   writers['checker_feed'], writers['solver_feed']) before calling start(). H23: a thread is joined only if it has an
+   ident (started, possibly with an interrupted start()); thread_started/thread_finished are recorded, an unstarted
+   thread counts as unfinished (PASS veto), and an unstarted relay gets relay_exception 'relay thread not started'.
+ F2 (B: helper ownership): H09: run_helper assigns chunks/err/sel/fatal/p BEFORE Popen; one enclosing try/except
+   BaseException/finally runs from the spawn through the cleanup; whenever a helper exists (p is not None), the finally
+   SIGTERMs a live helper with the bounded _stop_helper reap (survivor record if unreaped, no escalation) and closes
+   the selector and stdout independently; non-Exception BaseExceptions are re-raised afterwards.
+ F3 (H: leaf allowlist on consumption): H25: validate_items(), one shared validator (single kind, no duplicates,
+   item == kind:name, selftests as in SELFTESTS incl. mode/relay mode/early-close/verdict, formulas in FORMULAS with the
+   bound hash, leaves in DIRECT_LEAVES with the RESULT/MANIFEST hashes). Applied in cmd_preexec before writing (H27),
+   in cmd_run before any regeneration, log or launch (H31), and in cmd_assemble (H33).
+ F4 (parent M8 lane escalation, own hunks only): H05: LANE_RSS_LIMIT = 11 GiB (11,811,160,064 B) for GATE_RSS
+   (admission: all other lane processes, a worker GB pipeline included, + this desk's reservation = projected) and
+   STOP_LANE_RSS (in flight); LANE_BUSY_CAP 4 and MINE 2 unchanged. H21-H22: in flight the lane total counts this desk
+   as max(measured desk, reservation) (the decision's 'declared reservation'; stricter than measured only), stop if
+   > 11 GiB; H18/H24: peak_lane_reserved_rss_bytes and lane_rss_limit_bytes recorded. H07-H08: rule texts. H11:
+   lane_decision() re-hashes the decision file (refuses if changed); recorded in the PRE-EXEC limits (H29) and the run
+   summary (H32). This desk's own projection and RSS caps are unchanged as frozen: projected =
+   max(1.5 x worker peak, 4.6 GiB) for formulas and leaves (1.3 GiB floor for P0-B4/P0-B5), i.e. 1.70e9 B for
+   P0-B4/P0-B5, 4.94e9 B for P1-B4 and 5.69e9-6.91e9 B for the other leaves and the formulas; desk stop at
+   projected + 0.5 GiB.
+ Naming/provenance only: H01-H04, H06, H10, H12-H13, H26, H27 (messages), H28, H30: v5c names, 'v5c-' prefix,
+   DIFF-replay_v5b-to-v5c.txt, load_strengthened also pins replay_v5b.py and DIFF-replay_v4-to-v5b.txt, provenance
+   derived_from v5b, docstring citations of the v5b review and the lane decision.
+Unchanged from v5b: items A-H otherwise, the formula/leaf PASS predicate and vetoes, the five controls and verdicts,
+limits 3600/7200 s, free-space gates and floor, the amended stability rule, the 17:29 cutoff and the 17:57 deadline.
+Pre-review checks (no native solver or checker, no ps/lsof helper started): compile() under /usr/bin/python3 3.9.6 and
+3.14.3; AST undefined-name scan (only __file__); scripts/unitcheck_v5c.py 3771e204...c860 -> UNITCHECK-v5c-r1.json
+4c1f35c2...834be: 113/113 PASS. New for v5c: F1a-F1e (hash construction failure before the claim leaves the
+descriptors registered; exceptions after the claim close them in the workers' finally; a start() interrupted after
+the relay thread started is joined and reported with fifo_read/cpw claimed and only keepalive/ccw left to the
+cleanup), F2a-F2b (bookkeeping before Popen; an exception on the first statement after the spawn gives SIGTERM,
+rc -15, no survivor, no fd leak), F3a-F3k (validator cases; run and assemble refuse a hand-built PRE-EXEC with
+leaf:P1-B1 carrying correct bound fields, before any log/regeneration), F4a-F4f (11 GiB constants, decision hash, gate
+launches at 10 + 0.5 GiB and refuses at 10.59 + 0.5 GiB, in-flight PASS at 9.5 GiB + 1 GiB reservation and stop at
+7.5 GiB + 4 GiB reservation with measured total < 11 GiB). The v5b-era checks named 'F1/F2 ... spawn error' are the
+brief's item F (spawn failures), not these findings.
+
+--- moqls8-strengthened-parent-replay-v1/scripts/replay_v5b.py
++++ moqls8-strengthened-parent-replay-v1/scripts/replay_v5c.py
+@@ -1,12 +1,15 @@
+ #!/usr/bin/env python3
+ """Parent replay desk for the six MOQLS(8) P1 strengthened formulas (normal form r2, section 5) and the twelve direct
+-F_one leaves, v5b transport.
++F_one leaves, v5c transport.
+ 
+ Desk: institute/runs/six-lane-2026-10-16/review/moqls8-strengthened-parent-replay-v1 (parent-owned). Derived by
+ copying scripts/replay_v4.py (sha256 44b4f293...dc9d; v4 = v3 baa4a675...7565 + DIFF-replay_v3-to-v4.txt) and fixing
+ the Codex source-review findings on v4 (review/n8-replay-v4-source-codex-v1.note.md) as items A-H of the parent brief;
+ the changes are in DIFF-replay_v4-to-v5b.txt. The name is v5b because an unfrozen draft scripts/replay_v5.py
+-(c1521f95...cc4f) exists and is left untouched. Every v5b file name has the 'v5b-' prefix.
++(c1521f95...cc4f) exists and is left untouched. v5c = v5b (5726273c...a32d) + DIFF-replay_v5b-to-v5c.txt, which fixes
++only the Codex v5b findings F1-F3 (review/n8-replay-v5b-source-codex-v1.note.md 1e275723...c64b) and adopts (F4) the
++parent M8 lane escalation review/parent-decision-m8-lane-rss-escalation-v1.md (b9886e24...09ec): lane RSS limit 11 GiB,
++<= 4 busy, one GA + one GB pipeline. Every v5c file name has the 'v5c-' prefix.
+ 
+ Transport: CNF bytes exist only in this process's memory and reach each child through its own anonymous pipe passed
+ as /dev/fd/N. Each writer thread hashes exactly the bytes it writes (measured feed). The DRAT proof goes solver ->
+@@ -38,14 +41,14 @@
+ thread or a live scanner vetoes PASS and stops the desk. A timeout, guard stop or deferral is never success.
+ 
+ Runs: a PRE-EXEC holds only controls (selftest:NAME), only formulas (formula:ID) or only direct leaves (leaf:ID). A
+-formula or leaf PRE-EXEC is admitted only if all five v5b control receipts exist for THIS script sha and the pinned
++formula or leaf PRE-EXEC is admitted only if all five v5c control receipts exist for THIS script sha and the pinned
+ binaries with their preregistered verdicts; this is validated at preexec, before each gate and again after gate
+ success (post_gate_identity: script, python, cadical and drat-trim re-hashed, controls re-validated). Formula and
+ leaf launches also need the parent disk-monitor stability rule (amended 07:32 PDT); controls keep the plain gate.
+ Usage (/usr/bin/python3 -I -B, environment TMPDIR=<desk>/tmp/):
+-  replay_v5b.py preexec OUT [--worker-prefix N SHA] ITEM...    ITEM = selftest:NAME | formula:ID | leaf:ID
+-  replay_v5b.py run PREEXEC
+-  replay_v5b.py assemble OUT PREEXEC...
++  replay_v5c.py preexec OUT [--worker-prefix N SHA] ITEM...    ITEM = selftest:NAME | formula:ID | leaf:ID
++  replay_v5c.py run PREEXEC
++  replay_v5c.py assemble OUT PREEXEC...
+ """
+ import ctypes
+ import datetime
+@@ -71,8 +74,8 @@
+ LANE = ROOT + "/physics/evidence/six-lane-20261016/moqls8-problem16"
+ DESK = REVIEW + "/moqls8-strengthened-parent-replay-v1"
+ SCRIPT = os.path.realpath(__file__)
+-SCRIPT_REL = "scripts/replay_v5b.py"
+-LABEL_PREFIX = "v5b-"  # every v5b receipt/log/FIFO/TMPDIR name; v2, v3, v4 (and the draft v5) names stay untouched
++SCRIPT_REL = "scripts/replay_v5c.py"
++LABEL_PREFIX = "v5c-"  # every v5c receipt/log/FIFO/TMPDIR name; older (v2-v5b, draft v5) names stay untouched
+ TMP = DESK + "/tmp"
+ 
+ CADICAL = "/opt/homebrew/Cellar/cadical/3.0.1/bin/cadical"
+@@ -124,7 +127,11 @@
+ V4_SCRIPT_SHA = "44b4f293b4a0eeb86cafce1afa9314e7e54592d60d95791dee4d58539c9bdc9d"
+ DIFF_V3_V4 = DESK + "/DIFF-replay_v3-to-v4.txt"
+ DIFF_V3_V4_SHA = "3e2625c591f17ec432512e4cb9f603901cf2ddea64399f7986348501f48acd53"
+-DIFF = DESK + "/DIFF-replay_v4-to-v5b.txt"
++DIFF_V4_V5B = DESK + "/DIFF-replay_v4-to-v5b.txt"
++DIFF_V4_V5B_SHA = "6d4ef029eb2d5f4eb36fccbb0bc9fcd6c02cb7dd7c1ccafc345923b50e77f296"
++V5B_SCRIPT = DESK + "/scripts/replay_v5b.py"
++V5B_SCRIPT_SHA = "5726273c6b584708334a8ce4f0d8c538245445b1e733b3cf607341d5a43aa32d"
++DIFF = DESK + "/DIFF-replay_v5b-to-v5c.txt"
+ NF_R2 = LANE + "/review/P1_COLUMN0_BOOLEAN_NORMAL_FORM.r2.md"
+ NF_R2_SHA = "8ae0ac01de7ea5883111e8dcc4f84246813d8599b1e8af782e0498104a449e8f"
+ NF_CHECK = REVIEW + "/moqls8-p1-normalform-parent-v1/check_local_boolean_v1.py"
+@@ -165,8 +172,13 @@
+ LAUNCH_FLOOR = 12200000000 + 10 * MIB   # fresh check before each launch: 12.2e9 + projected retained growth
+ FLOOR = 12000000000                     # in flight: free below this -> SIGTERM -> UNKNOWN
+ LANE_BUSY_CAP, MINE = 4, 2
+-GATE_RSS = 76 * GIB // 10               # launch: lane RSS + projected <= 7.6 GiB
+-STOP_LANE_RSS = 785 * GIB // 100        # in flight: lane RSS > 7.85 GiB -> SIGTERM
++# (F4) parent M8 lane escalation review/parent-decision-m8-lane-rss-escalation-v1.md (b9886e24...09ec): at most ONE
++# parent GA pipeline (this desk) + ONE worker GB pipeline, lane aggregate RSS limit 11 GiB, <= 4 busy natives
++LANE_DECISION = REVIEW + "/parent-decision-m8-lane-rss-escalation-v1.md"
++LANE_DECISION_SHA = "b9886e242764750f55a2393323dfa7da7eb7696554d493bb107cd5f3815209ec"
++LANE_RSS_LIMIT = 11 * GIB               # 11,811,160,064 B
++GATE_RSS = LANE_RSS_LIMIT               # launch: all other lane processes (GB included) + this desk's reservation
++STOP_LANE_RSS = LANE_RSS_LIMIT          # in flight: other lane + max(desk measured, reservation) > 11 GiB -> SIGTERM
+ DESK_MARGIN = GIB // 2                  # in flight: desk aggregate > projected + 0.5 GiB -> SIGTERM
+ FLOOR_LOW, FLOOR_HIGH = 13 * GIB // 10, 46 * GIB // 10
+ SELFTEST_PROJECTED = 512 * MIB
+@@ -186,7 +198,7 @@
+           b"-1 -2 -3 0\n")
+ SAT3 = b"p cnf 3 7\n1 2 3 0\n1 2 -3 0\n1 -2 3 0\n1 -2 -3 0\n-1 2 3 0\n-1 2 -3 0\n-1 -2 3 0\n"
+ NOHEADER = b"c header-less control input: the parent drat-trim exits before it reads any proof byte\n"
+-SELFTESTS = {  # name -> (solver CNF, checker CNF, mode): the five v5b relay controls (unchanged from v4)
++SELFTESTS = {  # name -> (solver CNF, checker CNF, mode): the five v5c relay controls (unchanged from v4)
+     "unsat": (UNSAT3, UNSAT3, "refutation"),            # complete valid relay path
+     "sat-checker": (UNSAT3, SAT3, "negative"),         # invalid: relay complete and equal, proof rejected
+     "truncate": (UNSAT3, UNSAT3, "relay-truncate"),    # relay withholds the last TRUNCATE_BYTES proof bytes
+@@ -246,8 +258,10 @@
+ GATE_RULE = ("Before each launch a fresh lane scan (native solver/checker processes plus python processes whose cwd "
+              "or argv lies in the lane or a review/moqls8-* desk, excluding this desk's driver and children; python "
+              "counts as busy if its CPU use over a 2 s libproc window is >= 50%; lane RSS conservatively includes "
+-             "every such python, busy or not) and a fresh statvfs: launch only if lane busy + 2 <= 4, lane RSS + "
+-             "projected <= 7.6 GiB and free >= 12,200,000,000 + 10 MiB. Stricter than the brief: two consecutive "
++             "every such python, busy or not) and a fresh statvfs: launch only if lane busy + 2 <= 4, lane RSS (all "
++             "other lane processes, a worker GB pipeline included) + projected <= 11 GiB (parent M8 lane escalation "
++             "b9886e24...09ec: one GA + one GB pipeline) and free >= 12,200,000,000 + 10 MiB. Stricter than the "
++             "brief: two consecutive "
+              "passing checks 60 s apart are required, so a launch never rides a transient gap of the priority "
+              "worker pipeline. Otherwise sleep 60 s and re-check; total gate wait per run bounded by 6 h, then stop "
+              "and report deferral. No launch at or after 2026-10-18 17:29:00 PDT (host clock; 60 s margin before "
+@@ -265,8 +279,9 @@
+ STOPS = ("In flight, every 0.25 s: desk aggregate RSS (driver + live children, libproc; a live child unreadable twice "
+          "in a row is a guard failure) and free space; a scanner thread publishes lane scans every >= 1 s (helpers "
+          "under %.0f s deadlines; any failed reading is latched). SIGTERM own children if a lane reading failed, a "
+-         "failure is latched or the reading is older than %.0f s, lane RSS "
+-         "(other lane processes + desk) > 7.85 GiB, desk aggregate > projected + 0.5 GiB, free < 12,000,000,000, "
++         "failure is latched or the reading is older than %.0f s, lane RSS (other lane processes, GB included, + "
++         "max(desk measured, desk reservation = projected)) > 11 GiB, desk aggregate > projected + 0.5 GiB, free < "
++         "12,000,000,000, "
+          "wall > %d + %d + 120 s, the host clock reaches 2026-10-18 17:57:00 PDT, the checker exits while the solver "
+          "still runs, a solver spawn error, a helper survivor, any exception after the first fd, or the driver "
+          "receives SIGTERM (also checked immediately before each spawn, before gate success and before the "
+@@ -388,66 +403,72 @@
+ 
+ def run_helper(argv):
+     """Run one short ps/lsof helper in its own session (never in the driver's process group) under a monotonic
+-    deadline -> (rc or None, stdout, error). (B) Everything after a successful spawn is one ownership scope: on an
+-    overrun or any exception the helper gets SIGTERM and a bounded reap (_stop_helper, never escalated), then the
+-    selector and the stdout pipe are closed independently of each other. A helper not reaped after that wait is in
+-    HELPER_SURVIVORS; while any survivor is recorded no helper is spawned (the error stops gate and run). A
+-    non-Exception BaseException (e.g. KeyboardInterrupt) is re-raised after the cleanup."""
++    deadline -> (rc or None, stdout, error). (B, F2) All bookkeeping exists before the spawn, and one enclosing
++    ownership scope runs from the spawn through the cleanup: once a helper exists, every exit (normal, overrun or
++    exception) passes the finally block, which SIGTERMs a live helper with a bounded reap of HELPER_TERM_WAIT
++    (_stop_helper, never escalated), records an unreaped one in HELPER_SURVIVORS and closes the selector and the
++    stdout pipe independently of each other. While any survivor is recorded no helper is spawned (the error stops
++    gate and run). A non-Exception BaseException (e.g. KeyboardInterrupt) is re-raised after the cleanup."""
++    chunks, err, sel, fatal, p = [], None, None, None, None  # (F2) before the spawn: nothing is allocated after it
+     if HELPER_SURVIVORS:
+         return None, b"", "no helper launch: helper survivor(s) recorded (pid %s)" % ", ".join(
+             str(s["pid"]) for s in HELPER_SURVIVORS)
+-    try:
+-        p = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+-                             env=ENV, start_new_session=True)
+-    except OSError as e:
+-        return None, b"", "spawn %s: %r" % (argv[0], e)
+-    chunks, err, sel, fatal = [], None, None, None
+-    try:  # the one ownership scope: nothing fallible runs between the spawn and this try
+-        deadline = time.monotonic() + HELPER_DEADLINE
+-        fd = p.stdout.fileno()
+-        os.set_blocking(fd, False)
+-        sel = selectors.DefaultSelector()
+-        sel.register(fd, selectors.EVENT_READ)
+-        eof = False
+-        while not eof and err is None:
+-            left = deadline - time.monotonic()
+-            if left <= 0:
+-                err = "%s exceeded the %.0f s deadline" % (argv[0], HELPER_DEADLINE)
+-                break
+-            for _key, _ev in sel.select(min(left, 0.5)):
+-                try:
+-                    b = os.read(fd, 65536)
+-                except BlockingIOError:
+-                    continue
+-                if b:
+-                    chunks.append(b)
+-                else:
+-                    eof = True
+-        while err is None and p.poll() is None:
+-            if time.monotonic() > deadline:
+-                err = "%s did not exit within the %.0f s deadline" % (argv[0], HELPER_DEADLINE)
+-                break
+-            time.sleep(0.01)
+-    except BaseException as e:  # recorded; the SIGTERM/reap/close cleanup below runs before anything else
++    try:  # (F2) the one enclosing ownership scope: spawn, supervision and cleanup
++        try:
++            p = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
++                                 env=ENV, start_new_session=True)
++        except OSError as e:  # no helper exists
++            err = "spawn %s: %r" % (argv[0], e)
++        else:
++            deadline = time.monotonic() + HELPER_DEADLINE
++            fd = p.stdout.fileno()
++            os.set_blocking(fd, False)
++            sel = selectors.DefaultSelector()
++            sel.register(fd, selectors.EVENT_READ)
++            eof = False
++            while not eof and err is None:
++                left = deadline - time.monotonic()
++                if left <= 0:
++                    err = "%s exceeded the %.0f s deadline" % (argv[0], HELPER_DEADLINE)
++                    break
++                for _key, _ev in sel.select(min(left, 0.5)):
++                    try:
++                        b = os.read(fd, 65536)
++                    except BlockingIOError:
++                        continue
++                    if b:
++                        chunks.append(b)
++                    else:
++                        eof = True
++            while err is None and p.poll() is None:
++                if time.monotonic() > deadline:
++                    err = "%s did not exit within the %.0f s deadline" % (argv[0], HELPER_DEADLINE)
++                    break
++                time.sleep(0.01)
++    except BaseException as e:  # recorded; the finally below runs the SIGTERM/reap/close cleanup first
+         err = "%s supervision raised %s: %s" % (argv[0], type(e).__name__, e)
+         if not isinstance(e, Exception):
+             fatal = e
+-    try:
+-        if err is not None:
+-            err += _stop_helper(p, argv, err)
+-    except Exception as e:  # _stop_helper has already recorded the survivor; never hidden
+-        err += "; helper stop raised %r" % e
+     finally:
+-        for what, closer in (("selector", sel.close if sel is not None else None), ("stdout", p.stdout.close)):
+-            if closer is None:
+-                continue
++        if p is not None:  # a helper exists: bounded SIGTERM-only cleanup on every exit path
+             try:
+-                closer()
+-            except Exception as e:  # independent closes; a close failure fails the reading
+-                err = (err + "; " if err else "") + "%s close failed: %r" % (what, e)
++                if err is not None or p.poll() is None:
++                    why = err or "%s left the supervision scope while alive" % argv[0]
++                    err = why + _stop_helper(p, argv, why)
++            except Exception as e:  # _stop_helper has already recorded the survivor; never hidden
++                err = (err or "") + "; helper stop raised %r" % e
++            finally:
++                for what, closer in (("selector", sel.close if sel is not None else None),
++                                     ("stdout", p.stdout.close)):
++                    if closer is None:
++                        continue
++                    try:
++                        closer()
++                    except Exception as e:  # independent closes; a close failure fails the reading
++                        err = (err + "; " if err else "") + "%s close failed: %r" % (what, e)
+     if fatal is not None:
+         raise fatal
+-    return p.returncode, b"".join(chunks), err
++    return (None if p is None else p.returncode), b"".join(chunks), err
+ 
+ 
+ def lane_scan():
+@@ -928,7 +949,7 @@
+                       (NF_R2, NF_R2_SHA), (NF_CHECK, NF_CHECK_SHA), (NF_RESULT, NF_RESULT_SHA),
+                       (WORKER_HASHES, WORKER_HASHES_SHA), (V2_SCRIPT, V2_SCRIPT_SHA), (DIFF_V1_V2, DIFF_V1_V2_SHA),
+                       (V3_SCRIPT, V3_SCRIPT_SHA), (DIFF_V2_V3, DIFF_V2_V3_SHA), (V4_SCRIPT, V4_SCRIPT_SHA),
+-                      (DIFF_V3_V4, DIFF_V3_V4_SHA)):
++                      (DIFF_V3_V4, DIFF_V3_V4_SHA), (V5B_SCRIPT, V5B_SCRIPT_SHA), (DIFF_V4_V5B, DIFF_V4_V5B_SHA)):
+         raw[path] = read_bytes(path)
+         if sha_bytes(raw[path]) != exp:
+             die("pin mismatch " + path)
+@@ -1011,6 +1032,18 @@
+             "use": "read only to learn IDs, solve seconds and peaks; nothing else is taken from it"}
+ 
+ 
++def lane_decision():
++    """(F4) The parent M8 lane escalation implemented here, re-hashed -> record; a changed decision file refuses."""
++    got = sha_file(LANE_DECISION)
++    if got != LANE_DECISION_SHA:
++        die("parent M8 lane decision sha256 %s != %s" % (got, LANE_DECISION_SHA))
++    return {"path": LANE_DECISION, "sha256": got, "lane_rss_limit_bytes": LANE_RSS_LIMIT,
++            "lane_busy_cap": LANE_BUSY_CAP,
++            "rule": "at most one parent GA pipeline (this desk) and one worker GB pipeline; admission: all other lane "
++                    "processes (GB included) + this desk's reservation (projected) <= 11 GiB and busy + 2 <= 4; in "
++                    "flight: other lane + max(desk measured, reservation) > 11 GiB stops this desk's pipeline"}
++
++
+ def check_binaries():
+     receipt = json.loads(read_bytes(DRAT_RECEIPT))
+     exp = receipt["drat_trim"]["binary_sha256"]
+@@ -1034,7 +1067,7 @@
+         return LABEL_PREFIX + "selftest-" + item["name"]
+     if item["kind"] in ("formula", "leaf"):  # formula IDs (P1-Bx.My) and direct leaf IDs never coincide
+         return LABEL_PREFIX + item["id"]
+-    die("unknown item kind %r (v5b runs selftest, formula and leaf items only)" % item["kind"])
++    die("unknown item kind %r (v5c runs selftest, formula and leaf items only)" % item["kind"])
+ 
+ 
+ def header_counts(b):
+@@ -1055,7 +1088,7 @@
+         case = ctx["cases"][item["id"]]
+         parts = [LEAF_HEADER, ctx["body_view"], case["unit_bytes"]]
+         return parts, parts
+-    die("unknown item kind %r (v5b runs selftest, formula and leaf items only)" % item["kind"])
++    die("unknown item kind %r (v5c runs selftest, formula and leaf items only)" % item["kind"])
+ 
+ 
+ # --- the solver -> FIFO -> parent relay -> drat-trim pipeline with measured feeds
+@@ -1089,14 +1122,14 @@
+ 
+ 
+ def _writer(fds, name, parts, res, gate=None):
+-    (fd,) = fds.take(name)  # (A) claim: from here on this thread is the descriptor's only closer
+-    res["fd_claimed"] = fd is not None
+-    h, total = hashlib.sha256(), 0
+-    if fd is None:  # the pipeline cleanup took (and closed) it first
+-        res.update({"ok": False, "error": "descriptor %s was not handed over (taken by the cleanup first)" % name,
+-                    "written": 0, "sha256": h.hexdigest()})
+-        return
+-    try:
++    h, total, fd = hashlib.sha256(), 0, None  # (F1) all worker state exists before the descriptor is claimed
++    try:  # (F1) the claim and everything after it run inside this try; the finally closes what was claimed
++        (fd,) = fds.take(name)  # (A) claim: from here on this thread is the descriptor's only closer
++        res["fd_claimed"] = fd is not None
++        if fd is None:  # the pipeline cleanup took (and closed) it first
++            res["ok"] = False
++            res["error"] = "descriptor %s was not handed over (taken by the cleanup first)" % name
++            return
+         if gate is not None:  # early-close control only: write the checker CNF after the solver was reaped
+             res["gate_released_by_event"] = gate.wait(HOLD_SECONDS)
+         for part in parts:
+@@ -1112,39 +1145,39 @@
+         res["ok"] = False
+         res["error"] = repr(e)
+     finally:
+-        try:
+-            os.close(fd)
+-        except OSError as e:
+-            res["close_error"] = repr(e)
++        if fd is not None:
++            try:
++                os.close(fd)
++            except OSError as e:
++                res["close_error"] = repr(e)
+         res["written"] = total
+         res["sha256"] = h.hexdigest()
+ 
+ 
+-def _start_writer(fds, name, parts, gate=None):
+-    """(A) The descriptor stays registered in fds until the started thread claims it; if Thread.start() raises, no
+-    thread ran and the pipeline cleanup closes the descriptor (exactly once)."""
++def _new_writer(fds, name, parts, gate=None):
++    """(A, F1) -> (thread, res), NOT started: the pipeline registers the handle first and then starts it, so an
++    interrupted start() is still joined and reported. The descriptor stays registered in fds until the started
++    thread claims it; if no thread runs, the pipeline cleanup closes it (exactly once)."""
+     res = {"ok": False, "fd": name, "expected_len": sum(len(p) for p in parts)}
+-    t = threading.Thread(target=_writer, args=(fds, name, parts, res, gate), daemon=True)
+-    t.start()
+-    return t, res
++    return threading.Thread(target=_writer, args=(fds, name, parts, res, gate), daemon=True), res
+ 
+ 
+ def _relay(fds, res, mode, hold):
+     """Parent proof relay: solver FIFO (src) -> sha256/count -> checker stdin pipe (dst). One CHUNK in flight.
+-    (A) src ('fifo_read') and dst ('cpw') are claimed from fds as the first action of this thread; an incomplete
+-    claim (the cleanup took one first) closes what was claimed and is a relay_exception.
++    (A, F1) all relay state and the delivery function exist first; then src ('fifo_read') and dst ('cpw') are claimed
++    from fds inside the try whose finally closes whatever was claimed; an incomplete claim (the cleanup took one
++    first) closes what was claimed and is a relay_exception.
+     'read' = bytes read from the FIFO (the proof stream); 'delivered' = bytes os.write() accepted into the checker's
+     pipe. Modes: 'plain' delivers everything; 'truncate' (control) never delivers the last TRUNCATE_BYTES; 'suffix'
+     (control) delivers SUFFIX after the FIFO EOF. hold (early-close control only) delays the first delivery until the
+     checker was reaped. fifo_eof_seen is set only when read() returns b''. A delivery error (EPIPE or another write
+     error) stops delivery, but the FIFO is still read and hashed to EOF so the solver never blocks; drain (read)
+     errors, close errors and exceptions are recorded separately. ok = EOF seen and no error of any kind."""
+-    src, dst = fds.take("fifo_read", "cpw")  # (A) one lock acquisition for both
+-    res["fds_claimed"] = {"fifo_read": src is not None, "cpw": dst is not None}
+-    hin, hout = hashlib.sha256(), hashlib.sha256()
++    hin, hout = hashlib.sha256(), hashlib.sha256()  # (F1) built before the claim
+     st = {"nin": 0, "nout": 0, "open_out": True}
+     keep = TRUNCATE_BYTES if mode == "truncate" else 0
+     tail = b""
++    src = dst = None
+ 
+     def deliver(data):
+         if hold is not None and "hold_released_by_event" not in res:
+@@ -1164,7 +1197,9 @@
+             off += n
+             st["nout"] += n
+ 
+-    try:
++    try:  # (F1) the claim is inside the try: every claimed descriptor is closed by the finally, on any exit
++        src, dst = fds.take("fifo_read", "cpw")  # (A) one lock acquisition for both
++        res["fds_claimed"] = {"fifo_read": src is not None, "cpw": dst is not None}
+         if src is None or dst is None:
+             raise RuntimeError("descriptor handoff incomplete %s (taken by the cleanup first)" % res["fds_claimed"])
+         while True:
+@@ -1209,13 +1244,12 @@
+                      and not any(k in res for k in ("delivery_error", "drain_error", "relay_exception")))
+ 
+ 
+-def _start_relay(fds, mode, hold):
+-    """(A) 'fifo_read' and 'cpw' stay registered in fds until the started thread claims them; if Thread.start()
+-    raises, no thread ran and the pipeline cleanup closes both (exactly once)."""
++def _new_relay(fds, mode, hold):
++    """(A, F1) -> (thread, res), NOT started: the pipeline registers the handle first and then starts it, so an
++    interrupted start() is still joined and reported. 'fifo_read' and 'cpw' stay registered in fds until the started
++    thread claims them; if no thread runs, the pipeline cleanup closes both (exactly once)."""
+     res = {"ok": False, "mode": mode, "chunk_bytes": CHUNK}
+-    t = threading.Thread(target=_relay, args=(fds, res, mode, hold), daemon=True)
+-    t.start()
+-    return t, res
++    return threading.Thread(target=_relay, args=(fds, res, mode, hold), daemon=True), res
+ 
+ 
+ def _lines(b):
+@@ -1263,7 +1297,7 @@
+     fds, procs, done, writers, events, rss_fail = Fds(), {}, {}, {}, [], {}
+     ev_solver, ev_checker = threading.Event(), threading.Event()
+     relay, scanner = None, Scanner()
+-    peak_desk = peak_lane = peak_other = other_rss = 0
++    peak_desk = peak_lane = peak_other = other_rss = peak_lane_reserved = 0
+     max_other_busy = 0
+     min_free = None
+     reason, term_at, grace_exceeded = None, None, False
+@@ -1330,9 +1364,12 @@
+                 rec["checker_pid"] = procs["checker"].pid
+                 close_fd("cpr")
+                 close_fd("ccr")
+-                # (A) 'fifo_read', 'cpw' and 'ccw' stay in fds until the started threads claim them
+-                relay = _start_relay(fds, relay_mode, ev_checker if early_close else None)
+-                writers["checker_feed"] = _start_writer(fds, "ccw", checker_parts, ev_solver if early_close else None)
++                # (A) 'fifo_read', 'cpw' and 'ccw' stay in fds until the started threads claim them; (F1) each
++                # handle is registered before its start(), so an interrupted start() is still joined/reported
++                relay = _new_relay(fds, relay_mode, ev_checker if early_close else None)
++                relay[0].start()
++                writers["checker_feed"] = _new_writer(fds, "ccw", checker_parts, ev_solver if early_close else None)
++                writers["checker_feed"][0].start()
+                 r, w = os.pipe()
+                 fds.put("scr", r)
+                 fds.put("scw", w)
+@@ -1351,7 +1388,8 @@
+                 if "solver" in procs:
+                     rec["solver_pid"] = procs["solver"].pid
+                     close_fd("scr")
+-                    writers["solver_feed"] = _start_writer(fds, "scw", solver_parts)  # 'scw' claimed by the thread
++                    writers["solver_feed"] = _new_writer(fds, "scw", solver_parts)  # 'scw' claimed by the thread
++                    writers["solver_feed"][0].start()
+                 else:
+                     close_fd("scr")
+                     close_fd("scw")
+@@ -1424,6 +1462,8 @@
+                         peak_other = max(peak_other, other_rss)
+                 lane_total = other_rss + desk
+                 peak_lane = max(peak_lane, lane_total)
++                lane_reserved = other_rss + max(desk, projected)  # (F4) this desk counts as max(measured, reservation)
++                peak_lane_reserved = max(peak_lane_reserved, lane_reserved)
+                 fb = free_bytes()
+                 min_free = fb if min_free is None else min(min_free, fb)
+                 if reason is None:
+@@ -1431,9 +1471,9 @@
+                         reason = "driver received %s" % stop["signal"]
+                     elif guard_fail is not None:
+                         reason = "guard reading failed: " + guard_fail
+-                    elif lane_total > STOP_LANE_RSS:
+-                        reason = ("lane RSS %d > 7.85 GiB (%d): other lane %d + desk %d"
+-                                  % (lane_total, STOP_LANE_RSS, other_rss, desk))
++                    elif lane_reserved > STOP_LANE_RSS:
++                        reason = ("lane RSS %d > 11 GiB (%d): other lane %d + max(desk %d, reservation %d)"
++                                  % (lane_reserved, STOP_LANE_RSS, other_rss, desk, projected))
+                     elif desk > projected + DESK_MARGIN:
+                         reason = "desk aggregate RSS %d > projected + 0.5 GiB (%d)" % (desk, projected + DESK_MARGIN)
+                     elif fb < FLOOR:
+@@ -1489,21 +1529,28 @@
+     rec["fds_closed_by_cleanup"] = closed_by_cleanup
+     if scanner.is_alive():
+         scanner.join(3 * (HELPER_DEADLINE + HELPER_TERM_WAIT) + 2)
+-    for name, (t, res) in writers.items():
+-        t.join(5.0 if grace_exceeded else HOLD_SECONDS + 5.0)
+-        res["thread_finished"] = not t.is_alive()
++    for name, (t, res) in writers.items():  # (F1) a thread whose start() never ran is reported, not joined
++        if t.ident is not None:
++            t.join(5.0 if grace_exceeded else HOLD_SECONDS + 5.0)
++        res["thread_started"] = t.ident is not None
++        res["thread_finished"] = t.ident is not None and not t.is_alive()
+     if relay is not None:
+-        relay[0].join(5.0 if grace_exceeded else HOLD_SECONDS + 30.0)
+-        relay[1]["thread_finished"] = not relay[0].is_alive()
++        if relay[0].ident is not None:
++            relay[0].join(5.0 if grace_exceeded else HOLD_SECONDS + 30.0)
++        relay[1]["thread_started"] = relay[0].ident is not None
++        relay[1]["thread_finished"] = relay[0].ident is not None and not relay[0].is_alive()
+     # (D) latched state read after every join: stop, scanner and threads (evaluate() vetoes PASS on any of them)
+     rec["lane_scanner"] = {"started": scan_started is not None, "scans": scanner.scans, "failures": scanner.failures,
+                            "failed": scanner.failure(), "alive_after_join": scanner.is_alive()}
+-    rec["threads"] = {"writers_started": sorted(writers), "relay_started": relay is not None,
+-                      "unfinished": ([n for n, (t, _r) in writers.items() if t.is_alive()]
+-                                     + (["relay"] if relay is not None and relay[0].is_alive() else []))}
++    rec["threads"] = {"writers_started": sorted(n for n, (_t, r) in writers.items() if r["thread_started"]),
++                      "relay_started": relay is not None and relay[1]["thread_started"],
++                      "unfinished": ([n for n, (_t, r) in sorted(writers.items()) if not r["thread_finished"]]
++                                     + (["relay"] if relay is not None and not relay[1]["thread_finished"] else []))}
+     rec["stop_latched_during_pipeline"] = stop.get("signal")
+     rec["helper_survivors"] = list(HELPER_SURVIVORS)
+     rel_res = dict(relay[1]) if relay is not None else {"ok": False, "relay_exception": "relay not started"}
++    if relay is not None and not rel_res["thread_started"]:
++        rel_res.setdefault("relay_exception", "relay thread not started")
+     c_mono = done.get("checker", {}).get("reaped_mono")
+     rel_res["checker_exited_before_relay_finished"] = (None if c_mono is None or "finished_mono" not in rel_res
+                                                        else c_mono < rel_res["finished_mono"])
+@@ -1517,6 +1564,8 @@
+     rec["peak_desk_aggregate_rss_bytes"] = peak_desk
+     rec["peak_lane_other_rss_bytes"] = peak_other
+     rec["peak_lane_total_rss_bytes"] = peak_lane
++    rec["peak_lane_reserved_rss_bytes"] = peak_lane_reserved  # (F4) other lane + max(desk, reservation)
++    rec["lane_rss_limit_bytes"] = STOP_LANE_RSS
+     rec["max_lane_other_busy_in_flight"] = max_other_busy
+     rec["min_free_bytes_in_flight"] = min_free
+     rec["safety_stop_reason"] = reason
+@@ -1687,10 +1736,58 @@
+     if os.environ.get("TMPDIR") != TMP + "/":
+         die("TMPDIR must be %s/" % TMP)
+     os.chdir(TMP)
++
++
++def validate_items(items):
++    """(F3) Shared item validator, applied to every PRE-EXEC this script writes or consumes (cmd_preexec before it
++    writes, cmd_run before any regeneration or launch, cmd_assemble before it reads receipts): a non-empty item
++    list of exactly one kind, no duplicate, 'item' == kind:name; selftest names in SELFTESTS with their mode, relay
++    mode, early-close flag and preregistered verdict; formula IDs in FORMULAS with their bound hash; leaf IDs in
++    DIRECT_LEAVES with the parent binding RESULT and MANIFEST hashes. Anything else is refused. -> problems."""
++    if not isinstance(items, list) or not items:
++        return ["no item list"]
++    problems, seen, kinds = [], set(), set()
++    for it in items:
++        if not isinstance(it, dict):
++            problems.append("item is not an object: %r" % (it,))
++            continue
++        kind = it.get("kind")
++        key = it.get("name") if kind == "selftest" else it.get("id")
++        spec = "%s:%s" % (kind, key)
++        kinds.add(str(kind))
++        if it.get("item") != spec:
++            problems.append("item field %r != %s" % (it.get("item"), spec))
++        if spec in seen:
++            problems.append("duplicate item " + spec)
++        seen.add(spec)
++        if kind == "selftest":
++            mode = SELFTESTS[key][2] if key in SELFTESTS else None
++            if mode is None:
++                problems.append("unknown selftest %s" % key)
++            elif (it.get("mode") != mode or it.get("relay_mode") != RELAY_MODES[mode]
++                  or it.get("early_close_control") != (mode == "early-close")
++                  or it.get("preregistered_verdict") != SELFTEST_WANT[mode]):
++                problems.append("selftest %s fields differ from SELFTESTS" % key)
++        elif kind == "formula":
++            if key not in FORMULAS:
++                problems.append("formula %s is not one of the six strengthened formulas" % key)
++            elif it.get("bound_cnf_sha256") != FORMULAS[key][2]:
++                problems.append("formula %s bound hash differs" % key)
++        elif kind == "leaf":
++            if key not in DIRECT_LEAVES:
++                problems.append("leaf %s is not one of the twelve direct F_one leaves" % key)
++            elif (it.get("parent_binding_result_sha256") != BIND_RESULT_SHA
++                  or it.get("manifest_sha256") != PINS[MANIFEST_REL]):
++                problems.append("leaf %s binding fields differ" % key)
++        else:
++            problems.append("unknown item kind %r" % (kind,))
++    if len(kinds) != 1:
++        problems.append("a PRE-EXEC holds exactly one item kind, found %s" % sorted(kinds))
++    return problems
+ 
+ 
+ def validate_controls(script_sha):
+-    """Admission prerequisite for formulas and leaves: the five v5b control receipts exist for THIS script sha, the
++    """Admission prerequisite for formulas and leaves: the five v5c control receipts exist for THIS script sha, the
+     pinned binaries and their own PRE-EXEC (sha re-hashed), each with its preregistered verdict and no latched stop.
+     -> (identities, problems)."""
+     out, problems = [], []
+@@ -1739,7 +1836,7 @@
+     started = now()
+     ctx = load_strengthened(load_inputs(print), print)
+     dtext = read_bytes(DIFF)
+-    if ("replay_v5b.py sha256 %s" % sha_file(SCRIPT)).encode() not in dtext:
++    if ("replay_v5c.py sha256 %s" % sha_file(SCRIPT)).encode() not in dtext:
+         die("the recorded diff does not name this script's sha256")
+     worker = worker_prefix(prefix_n, prefix_sha)
+     binaries = check_binaries()
+@@ -1829,10 +1926,13 @@
+                                             % (peak, floor),
+                           "acceptance": ACCEPTANCE})
+             continue
+-        die("bad item %s (v5b takes selftest:NAME, formula:ID and leaf:ID only)" % spec)
++        die("bad item %s (v5c takes selftest:NAME, formula:ID and leaf:ID only)" % spec)
+     kinds = {it["kind"] for it in items}
+     if not items or len(kinds) != 1:
+-        die("a v5b PRE-EXEC holds only controls, only formulas or only leaves, and at least one item")
++        die("a v5c PRE-EXEC holds only controls, only formulas or only leaves, and at least one item")
++    problems = validate_items(items)  # (F3) the same validator that run and assemble apply
++    if problems:
++        die("PRE-EXEC items refused: " + "; ".join(problems))
+     admission = None
+     if kinds & {"formula", "leaf"}:
+         admission, problems = validate_controls(sha_file(SCRIPT))
+@@ -1853,8 +1953,10 @@
+                       "sha256": sha_file(os.path.realpath(sys.executable)), "version": sys.version.split()[0],
+                       "flags": "-I -B"},
+            "binaries": binaries, "inputs": ctx["info"], "inputs_strengthened": ctx["strong_info"],
+-           "provenance": {"derived_from": V4_SCRIPT, "derived_from_sha256": V4_SCRIPT_SHA, "diff": rel(DIFF),
+-                          "diff_sha256": sha_bytes(dtext), "v3_script": V3_SCRIPT, "v3_script_sha256": V3_SCRIPT_SHA,
++           "provenance": {"derived_from": V5B_SCRIPT, "derived_from_sha256": V5B_SCRIPT_SHA, "diff": rel(DIFF),
++                          "diff_sha256": sha_bytes(dtext), "v4_script": V4_SCRIPT, "v4_script_sha256": V4_SCRIPT_SHA,
++                          "v4_to_v5b_diff": rel(DIFF_V4_V5B), "v4_to_v5b_diff_sha256": DIFF_V4_V5B_SHA,
++                          "v3_script": V3_SCRIPT, "v3_script_sha256": V3_SCRIPT_SHA,
+                           "v3_to_v4_diff": rel(DIFF_V3_V4), "v3_to_v4_diff_sha256": DIFF_V3_V4_SHA,
+                           "v2_script": V2_SCRIPT, "v2_script_sha256": V2_SCRIPT_SHA,
+                           "v2_to_v3_diff": rel(DIFF_V2_V3), "v2_to_v3_diff_sha256": DIFF_V2_V3_SHA,
+@@ -1871,6 +1973,7 @@
+            "limits": {"solver_seconds": SOLVER_SECONDS, "checker_seconds": CHECKER_SECONDS,
+                       "wall_backstop_seconds": BACKSTOP, "launch_floor_bytes": LAUNCH_FLOOR, "floor_bytes": FLOOR,
+                       "gate_lane_rss_bytes": GATE_RSS, "stop_lane_rss_bytes": STOP_LANE_RSS,
++                      "lane_rss_decision": lane_decision(),
+                       "desk_margin_bytes": DESK_MARGIN, "lane_busy_cap": LANE_BUSY_CAP, "mine": MINE,
+                       "wait_poll_seconds": WAIT_POLL, "wait_budget_seconds": WAIT_BUDGET,
+                       "gate_consecutive_passes": GATE_STREAK, "sigterm_grace_seconds": SIGTERM_GRACE,
+@@ -1889,7 +1992,7 @@
+                         "handed to worker threads through the Fds registry (claimed by the thread itself; whoever "
+                         "takes a descriptor first is its only closer).",
+            "sequencing": "one pipeline at a time, items in the listed order; a PRE-EXEC holds only controls, only "
+-                         "formulas or only leaves; formulas and leaves are admitted only with the five v5b control "
++                         "formulas or only leaves; formulas and leaves are admitted only with the five v5c control "
+                          "receipts of this script sha, re-validated before each gate and again after gate success "
+                          "together with the script, python, cadical and drat-trim hashes (post_gate_identity; a "
+                          "mismatch refuses and stops); a control whose verdict differs from its preregistered "
+@@ -1956,6 +2059,9 @@
+     py = os.path.realpath(sys.executable)
+     if (pre.get("python") or {}).get("realpath") != py or pre["python"].get("sha256") != sha_file(py):
+         die("python interpreter differs from the pre-exec record")
++    problems = validate_items(pre.get("items"))  # (F3) before any regeneration, log or launch
++    if problems:
++        die("PRE-EXEC items refused: " + "; ".join(problems))
+     runtag = datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
+     log_path = os.path.join(DESK, "logs", "driver-%s.log" % runtag)
+     logf = open(log_path, "x", buffering=1)
+@@ -1978,6 +2084,7 @@
+     log("run %s start; pre-exec %s sha256 %s; driver pid %d" % (runtag, rel(pre_path), pre_sha, os.getpid()))
+     ctx = load_strengthened(load_inputs(log), log)
+     summary["strengthened_verified"] = ctx["strong_info"]
++    summary["lane_rss_decision"] = lane_decision()  # (F4)
+     summary["inputs_verified"] = ctx["info"]
+     summary["driver_rss_after_load_bytes"] = rss(os.getpid())
+     for it in pre["items"]:
+@@ -2230,6 +2337,9 @@
+         pre = json.loads(raw)
+         if pre.get("script", {}).get("sha256") != sha_file(SCRIPT):
+             die("PRE-EXEC %s pins another script" % rel(p))
++        problems = validate_items(pre.get("items"))  # (F3)
++        if problems:
++            die("PRE-EXEC %s items refused: %s" % (rel(p), "; ".join(problems)))
+         for it in pre["items"]:
+             lab = item_label(it)
+             if lab in labels:

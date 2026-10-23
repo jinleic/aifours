@@ -1,0 +1,353 @@
+# Minimal SCV of ME(≤3) — integration proof, version 5 (worker candidate)
+
+Worker `MathPhaseType3`, lane `mathematics/evidence/six-lane-20261016/me3-minimum-scv/`, 2026-10-18 PDT.
+
+**Status.**
+* This is a worker candidate, pinned in `receipts/me3-candidate-pin-v3.json`.
+* Correctness only. There is no novelty, priority or "first" claim.
+* v1–v4 are kept unchanged. **v3 and pin v1 are INVALID.** Their corner chart SWC rested on run d02, whose library
+  `me3dual_v8.py:28` rounded the series coefficients 3(−1)^j/j to binary floats before ball arithmetic. Hostile review
+  `review/me3-charts-codex-v1.note.md` (sha 55caa19e…acfb), finding 1, FATAL.
+* **v4 and pin v2 are SUPERSEDED.** No certificate or evaluator changed, but three passages were wrong:
+  * v4 §2 wrote the D2 cone as `cone{…}`, which ordinarily means nonnegative generator coefficients, a strictly
+    smaller set;
+  * §4 said "Every dual leaf";
+  * §6 overstated the comparison contract.
+
+  These are findings of the hostile delta review `review/me3-charts-v2-delta-codex-v1.note.md` (sha df03a74a…e474).
+  Separately, the reductions review `review/me3-reductions-claude-v1.note.md` (sha 68cd8dd9…ed6e) returned
+  ACCEPT-WITH-FIXES with 6 MINOR findings.
+* v5 changes exactly the following; the complete diff is `proof/me3-theorem-v5.diff-from-v4.txt`.
+  1. §2 (delta finding 1, MAJOR): K is defined explicitly as all nonnegative functions in the real span, restoring
+     v3's definition.
+  2. §4 (delta finding 4): "Every CERT leaf". G's SKIP leaves are covered by P (Lemma M); LD2's SKIP leaves contain
+     no point of LD2's physical domain.
+  3. §4 and §6 (delta finding 3): the new provenance binding audit b04, with controls. Checker v3 is stated to be a
+     geometry and bookkeeping audit only.
+  4. §6 (delta finding 6): the comparison contract is restated (`proof/float-audit-v1-erratum-1.md`, smoke s04).
+  5. §1: reductions v4 is imported. It contains the resultant normalization Res = 432·h (delta finding 5) and the
+     Claude fixes:
+     * MINOR-1: Cor 5.7 equality for some minimizer;
+     * MINOR-2: an exact essential chain;
+     * MINOR-4: Cor 7.2, strictness per cone;
+     * MINOR-5: the lower bound relabelled conditional;
+     * MINOR-6: housekeeping.
+  6. §5 (Claude MINOR-3, MINOR-4): D1 cites Cor 5.7 (Lemma 2.4 + Lemma 5.1) instead of "by definition", and the strict
+     D2 conclusion cites Cor 7.2 cone by cone.
+  7. Pin v3 (delta finding 2) lists `proof/charts-spec-v1.md` and every receipt of the active runs and audits as
+     explicit key files.
+* Changes made in v4 and retained:
+  1. **SWC repaired.** The chart now uses `me3dual_v9.py`, exact coefficients, spec v3 and run d03-SWC (§4).
+  2. **Reductions v2 imported.** It adds an explicit positive-mass hypothesis, gives an exact rational upper
+     separation for v_cos and an exact certificate for Δ₃, relabels the contract-band check as exploratory, and keeps
+     the lower bound on v_cos optional and unused (§1). Source: review `review/me3-reductions-codex-v1.note.md` (sha
+     a6d34ecb…1328).
+  3. **Narrower LD1/LD2 quantifiers.** They now range over the physical domain, and the s-coverage is stated as a
+     union (`proof/charts-spec-v2.md`).
+  4. **Hardened coverage audits.** `check_cover_v3.py` is used for all seven charts.
+  5. **Float-contamination audits.** One audit is by the worker; an independent one is by a subagent (§6).
+  6. **Dependency closure.** The runtime identity and the binding-semantics smoke are recorded; trusted imports are
+     separated from audited code (§6).
+  7. **Parent replay.** The parent's full replay of chart P passed (§7).
+
+## 0. Statement
+
+**Theorem.** Let X be a continuous ME(≤3) law; its density f satisfies f ≥ 0, ∫f = 1 and ∫(1+t²)f < ∞. Then
+SCV(X) = m₀m₂/m₁² − 1 ≥ v_cos, where v_cos := min_{ω>0, φ∈ℝ} SCV(e^{−t}(1 − cos(ωt − φ))). Moreover:
+* the minimum is attained in the cos family (case D1);
+* densities with only real exponents have SCV ≥ Δ₃ > 553/2000;
+* every density in a strictly-dominant-real-pole cone (case D2) has SCV > v_cos.
+
+Imports:
+* finite-dimensional convexity, the mean value theorem, Taylor's theorem with remainder, and power series of log;
+* the correctness of FLINT 3.6.0 / Arb outward-rounded ball arithmetic;
+* the python-flint 0.9.0 conversion semantics listed in §6.
+
+## 1. Reductions imported (`reductions/proof/reductions-v4.md`, sha be1f7190…6eb1; `reductions/STATUS-v4.md`, sha 1ffe3de8…0e50)
+
+Kept unchanged:
+* reductions v1 (sha ad6c5091…5536);
+* v2 (sha bd497389…1e3f);
+* v3 (sha e5c75b24…b15c), which has the resultant fix only.
+
+v4 is v3 plus the Claude reductions-review fixes (diff `reductions/proof/reductions-v4.diff-from-v3.txt`, sha
+5a6a37f4…b08b). The parent audit passed reductions v1/v2: `review/me3-parent-primal-reductions-v1/RESULT-v1.json`,
+sha 9a72e3e7133de30301785af96604b31838b9726d94055717291f3111744c65e3, run x01-red-checks.
+
+* **L1–L2.**
+  * Domain: measurable f ≥ 0 with 0 < ∫f and ∫(1+t²)f < ∞ (positive-mass hypothesis; Remark 2.3a shows every
+    application satisfies it).
+  * Continuous ME(≤3) densities are the normalized nonzero elements of the cones K_E (|E| ≤ 3).
+  * SCV is scale- and time-scale invariant.
+  * SCV/(1+SCV) = min_θ R_θ, with R_θ(f) = ∫(t−θ)²f/(θ²∫f).
+  * Cone minima are attained on extreme rays of the same cone (Lemma 2.4).
+  * Assembly: inf over ME(≤3) = min(I_R, I_1, I_2).
+  * Inclusion K_E ⊆ K_{E′}.
+* **L3–L4, exact.** Real exponents give SCV ≥ Δ₃, where Δ₃ is the root in [1/4, 1/3] of
+  h(y) = 32y³ − 144y² + 135y − 27.
+  * h′(y) = 96(y − 3/2)² − 81 ≥ 149/3 > 0 on [1/4, 1/3].
+  * h(553/2000) = −1293623/250000000 < 0, hence Δ₃ > 553/2000 = 0.2765.
+  * Verification is exact (Fractions) in `reductions/runs/exact-certs-v1/exact_certs.json`, sha b18d5163…0a04: 47/47
+    checks, with wrong controls failing.
+  * The resultant remark of L4(4) reads Res_x(q(x), 24y − x(9 − x)² + 24) = 432·h(y), and its monic normalization is
+    h/32 (delta finding 5; exact run `resultant-check-v1`).
+* **L5, exact upper separation.** In the D1 moment formula with ω = 1, cos φ = 35/37 and sin φ = 12/37:
+  * (m₀, m₁, m₂) = (27, 62, 171)/74 and SCV = 773/3844 < 1007/5000 < 11/50.
+  * Hence **v_cos ≤ 773/3844 < T = 11/50 and v_cos < 553/2000 < Δ₃**.
+  * Attainment holds by continuity, the proven uniform tails and phase periodicity (Thm 5.6; every minimizer has
+    1/4 < ω < 4).
+    * The tails use only exact facts: Lemma 5.4 with the exact Lemma 4.2 gives SCV ≥ 428/2125 > 773/3844 for
+      ω ≤ 1/4.
+    * An alternative exact hand route is Remark 5.6a (run `alt-route-check-v1`). These are Claude MINOR-2.
+  * **Every D1 density** has SCV ≥ v_cos by Cor 5.7 (Lemma 2.4 + Lemma 5.1). Equality holds for some minimizer
+    (Thm 5.6), not necessarily the exploratory Newton point (Claude MINOR-1, MINOR-3).
+  * The Arb point bound U and the lower bound v_cos ≥ 0.20090156350055 are **optional and unused**. The lower bound
+    is conditional on (Claude MINOR-5):
+    * runs ctl-f-main-v1 / ctl-f-gradsym-v1: `ctl_f_d1bnb_v1.py`, sha 508b1488…41b7, empty-stack completion, code and
+      outputs pinned;
+    * the parent primal desk's independent check (RESULT-v1 run d1b-lower-worker-L).
+  * The contract-band check of `ctl_c_vcos_v2.py` is EXPLORATORY: it tests the Newton value, and its STOP only prints.
+* **L6.** In D2 (real pole 1, pair 1 + ξ and 1 + ξ̄, ξ = δ − iω, δ, ω > 0, r = δ/ω):
+  * the extreme rays are e^{−t}h_τ with φ = ωτ ∈ [0, θ₁(r)];
+  * θ₁ is C¹ and strictly decreasing, from 2π to π;
+  * m_k = k!(1 − Re(cζ^{k+1})), with c = (1 − ir)e^{(r−i)φ} and ζ = 1/(1 + δ − iω).
+* **Cor 7.2 (strictness per cone).** Fix δ, ω > 0 and let K be the D2 cone of §2. If S_2(δ/ω, ω, φ) > v_cos for every
+  φ ∈ [0, θ₁(δ/ω)], then SCV > v_cos on K∖0. This follows from Lemma 2.4(1),(3) (attainment inside the fixed cone) and
+  Lemmas 6.3/6.4 (the extreme rays are exactly these phases). Cor 7.1(2) gives only I_2 ≤ v_cos.
+
+Constants: T = 11/50, κ = 1/(1+T) = 50/61 and ρ = T/(1+T). By L5, v_cos ≤ 773/3844 < T.
+
+## 2. Lemma D (v3 §2 restored; v4's `cone{…}` notation corrected)
+
+Fix δ ≥ 0 and ω > 0, and put ξ = δ − iω. Let
+
+  K := {f = e^{−t}H : H(t) = a + Re(ce^{−ξt}) with a ∈ ℝ, c ∈ ℂ, and H(t) ≥ 0 for all t ≥ 0},
+
+the cone of ALL nonnegative functions in the real span of e^{−t}, e^{−(1+ξ)t} and e^{−(1+ξ̄)t}.
+* For δ > 0 this is the D2 cone K_E of reductions L1–L2 and Cor 7.2, with E = {−1, −(1+ξ), −(1+ξ̄)}. For δ = 0 it is
+  the D1 cone.
+* K is not the conic hull of the three generators. For example, e^{−t}(1 − e^{−δt}cos ωt) ∈ K has a = 1 and c = −1,
+  that is, coefficient −1/2 on each complex exponential.
+* Every f ∈ K has a ≥ 0: for δ > 0, a = lim_{t→∞} H(t) ≥ 0; for δ = 0, a = (ω/2π)∫₀^{2π/ω} H dt ≥ 0.
+
+Let Q_T(y) = (κy² − 2y + 2)/y³ > 0 for y > 0.
+
+**Lemma D.** Suppose that for every θ > 0, W(θ) := Q_T(θ(1+ξ))/Q_T(θ) equals some finite sum Σλ_k e^{−ξt_k} with
+λ_k ≥ 0, Σλ_k ≤ 1 and t_k ≥ 0. Then SCV ≥ T on K∖0.
+
+*Proof.* As in v3: ∫q_θ f = θ³Q_T(θ)[a + Re(cW)], and a + Re(cW) = (1 − Σλ_k)a + Σλ_k H(t_k) ≥ 0. ∎
+
+Certificate forms:
+* RADIAL: there is an argument α ≥ 0 of W with |W| ≤ e^{−δα/ω}.
+* SMALL: |W| ≤ e^{−2πδ/ω}.
+* TRIANGLE: W = a′ + b′e^{−ξt′} with a′, b′ ≥ 0, a′ + b′ ≤ 1 and t′ ≥ 0.
+
+Hostile review verdict: Lemma D and all three certificates are valid, including the zero cases.
+
+Parametrization: s = θ/(1+θ), W = zz(w₁ + zz(w₂ + zz·w₃)) with zz = 1/(1+ξ).
+
+## 3. Lemma M (unchanged from v3 §3; review verdict: valid)
+
+Chart P = [0, 3] × [1/5, 40] × [0, 31416/5000] in (r, ω, φ). Run c03 tiles P into 945,680 boxes:
+* INFEAS: 46,344;
+* SGE (S > T): 891,318;
+* DPOS (a₀, a₁, a₂ > 0 and ∂_r S > 0): 8,018.
+
+**Lemma M.** Every feasible (r₀, ω₀, φ₀) ∈ P with r₀ > 0 has S > v_cos.
+
+*Proof.* If S ≥ T > v_cos we are done. Otherwise put σ(r) = S(r, ω₀, φ₀) on [0, r₀].
+1. The path stays feasible and inside P, because θ₁ is decreasing.
+2. Let r* = inf{r : σ < T on [r, r₀]}. On (r*, r₀], every covering leaf is DPOS, so σ is strictly increasing there.
+3. r* > 0 would force σ(r*) ≥ T > σ(r₀) ≥ σ(r*), a contradiction. So r* = 0.
+4. Hence σ(r₀) > σ(r₀/2) ≥ σ(0) ≥ v_cos. ∎
+
+## 4. Far region: six dual charts, all certified (SWC repaired)
+
+Specification: `proof/charts-spec-v2.md` (sha d401774e…d5437). It supersedes v1 (5a43c252…1ff1) in exactly four
+points: the SWC coefficients, the LD physical-domain quantifiers with the s-union, the checker v3, and the version
+table.
+
+| Chart | Assigned set | Run (spec; driver + library) | Leaves (outcomes) | Audit (check_cover_v3) |
+|---|---|---|---|---|
+| P | ω ∈ [1/5, 40], δ ≤ 3ω | c03 (spec_primal_P_v1; cert_primal_v3) | 945,680 (SGE 891,318 / DPOS 8,018 / INFEAS 46,344) | b03-cover-P ✓ |
+| G | δ ∈ [0, 64], ω ∈ [1/5, 640] minus P | d01-G (spec_dual_v1; cert_dual_v5 + me3dual_v7) | 20,579,480 (radial 10,348,560 / small 10,202,984 / radial-mvf 8,385 / SKIP-in-P 19,551) | b03-cover-G ✓, 19,551 SKIP re-checked |
+| SWB | δ ∈ [3/10, 64], 0 < ω ≤ 1/5 | d01-SWB (spec_dual_v1; cert_dual_v5 + me3dual_v7) | 8,196,408 (bedge 8,144,675 / bedge-mvf 51,733) | b03-cover-SWB ✓ |
+| **SWC** | δ ∈ [0, 3/10], 0 < ω ≤ 1/5 | **d03-SWC (spec_dual_v3; cert_dual_v7 + me3dual_v9)** | 34,304 (corner 815 / corner-mvf 33,489) | b03-cover-SWC ✓ |
+| LW | δ ∈ [0, 64], ω ≥ 640 | d01-LW (spec_dual_v1) | 1,250 (small) | b03-cover-LW ✓ |
+| LD1 | δ ≥ 64, s ∈ [1/16, 1), physical points | d01-LD1 (spec_dual_v1) | 5,954 (ld1) | b03-cover-LD1 ✓ |
+| LD2 | δ ≥ 64, s ∈ (0, 1/16], physical points | d01-LD2 (spec_dual_v1) | 57,813 (ld2 56,933 / SKIP 880) | b03-cover-LD2 ✓, 880 SKIP re-checked |
+
+Every run has certificate_ok, 0 FAIL and no cap hit.
+
+**Audits.** Checker v3 hard-codes each chart's outcome set, domain, parameters and variable order. It rejects FAIL
+unconditionally, checks every depth against max_depth, and verifies each leaf file's line hash and counts against the
+run summary. Index: `runs/i02-index/certificate_index.json`, sha 0880b038…4020.
+
+Checker v3 is a geometry and bookkeeping audit only. It evaluates no predicate, and it does not authenticate which
+spec, summary and run belong together (delta finding 3). For example, d02's summary would pass next to spec v3, and
+an interior breakpoint could change without breaking the leaf-hash and count checks.
+
+**Provenance binding (run b04-bind).** Code: `code/bind_audit_v1.py`, sha 41b3ed03…7ca0. Output:
+`runs/b04-bind/binding.json`, sha 99beab1c…e23b. The audit is anchored at pin v2 (sha c9a1eb6d…796c) and checks each
+of the seven active charts as follows:
+* **B1:** every bound file against the pin-v2 manifest and key files.
+* **B2:** the spec SHA-256 against the pre-run freeze receipt; the freeze time precedes the run start, and the frozen
+  code hashes equal the launch hashes. P has no pre-run freeze receipt, so its spec hash must instead equal every
+  recorded value from 05:18 on, including the parent primal desk's.
+* **B3:** the launch argv, interpreter and code hashes, and the post-receipt hashes of the summary and the leaf file.
+* **B4:** summary identity: spec name, chart, kind, cell count, no FAIL, the certificate flags, and
+  evaluations = 2·leaves − cells.
+* **B5:** the geometry audit's own argv, checker hash and cover.json against this run.
+* **B6:** the index i02 row.
+
+**Result: all seven charts bound.** Every control is rejected with its required reasons:
+* C1: the d02 summary swapped in;
+* C1b: the d02 summary path;
+* C2: an interior SWC breakpoint changed from 1/16 to 1/17. It is rejected only by the hash bindings B1, B2 and B6,
+  with no identity- or geometry-level failure, exactly the gap the review identified in checker v3;
+* C3: spec v2 content;
+* C4: LD1's summary in G;
+* C5: the P initial split permuted;
+* C6: a tampered pin.
+
+**SWC repair.**
+* Spec v3 (sha 43d2e22e…d936) was frozen at 05:50:53 in `receipts/spec-dual-freeze-v3.json`, with the transitive code
+  hashes, before d03 ran.
+* d03 computes c_j = (−2Re(p^j) + 3(−1)^j)/j in ball arithmetic.
+* Its leaf record is byte-identical to d02's (leaves sha 0b0f7640…db75, lines sha b664505e…f77c). The rounding
+  flipped no decision, but validity rests on d03 alone.
+
+**Coverage of D2** (charts-spec-v2):
+* δ ≥ 64: LD1 ∪ LD2, physical points, all s ∈ (0, 1).
+* δ < 64 and ω ≥ 640: LW.
+* δ < 64 and ω ∈ [1/5, 640]: P or G.
+* δ < 64 and ω < 1/5: SWC (δ ≤ 3/10) or SWB (δ ≥ 3/10).
+
+**Certification of the dual-assigned set.** Every CERT leaf certifies RADIAL, SMALL or TRIANGLE at each physical
+point of its box. SKIP leaves carry no certificate and need none:
+* G's `SKIP:in-primal-P` leaves satisfy ω_h ≤ 40, ω_l ≥ 1/5 and δ_h ≤ 3ω_l exactly; the audits re-checked this. So all
+  their pole configurations lie in P and are handled by Lemma M (§3), not by Lemma D. A configuration in G's assigned
+  set, which is outside P, therefore lies in a CERT leaf for every s.
+* LD2's `SKIP:skip-s` and `SKIP:skip-d` leaves contain no point of LD2's physical domain
+  (0 < s ≤ 1/16, 0 < d ≤ 1/65, 0 < β < π/2). A skip-s box has s > 1/16 throughout; such s are physical points of LD1,
+  whose leaves are all CERT. A skip-d box has d > 1/65 or cos β ≤ 0 throughout (charts-spec-v2).
+
+Hence, for every dual-assigned (δ, ω) and every s ∈ (0, 1), the corresponding chart point is a physical point of a
+CERT leaf. By Lemma D, every density with these poles has SCV ≥ T > v_cos.
+
+## 5. Assembly
+
+Let X be a continuous ME(≤3) law.
+* Real exponents: SCV ≥ Δ₃ > 553/2000 > 773/3844 ≥ v_cos.
+* Otherwise, after time scaling, X lies in a D cone.
+  * D1: SCV ≥ v_cos by Cor 5.7. A general D1 density is a mixture of cos-family rays: Lemma 2.4 attains the cone
+    minimum on an extreme ray, and Lemma 5.1 identifies the extreme rays as the cos family.
+  * D2 with dual-assigned poles: SCV ≥ T > 773/3844 ≥ v_cos.
+  * The remaining D2 cones (ω ∈ [1/5, 40], r ≤ 3): every extreme ray, i.e. every φ ∈ [0, θ₁(r)], is a feasible point
+    of R_P with S > v_cos by Lemma M. So SCV > v_cos on the whole cone by Cor 7.2.
+  * The chart assignment depends on (δ, ω) only, so each cone is handled whole. Dual-assigned cones get SCV ≥ T > v_cos
+    for every element directly from Lemma D.
+* Attainment: L5. ∎
+
+## 6. Dependencies, trusted imports and audited code
+
+**Trusted (imported, not proved here).**
+* FLINT 3.6.0 / Arb outward-correct ball arithmetic: elementary functions, comparisons, union, intersection and
+  upper().
+* Python 3.14.3 semantics.
+* python-flint 0.9.0 conversions:
+  * Python ints enter exactly or as enclosing balls, never via float;
+  * fmpq becomes an enclosing ball;
+  * a float becomes its exact binary value;
+  * comparisons `<`, `<=`, `>` and `>=` (Arb arb_lt/le/gt/ge) return True only when the relation is certified,
+    i.e. holds for every pair of points of the two stored balls. A False result carries no information.
+    * A strict comparison of overlapping balls is False.
+    * A non-strict comparison of overlapping balls is True only when the relation still holds for every pair, e.g.
+      for equal exact points.
+    * Every comparison involving an indeterminate (NaN-midpoint) ball is False.
+    * The certified code accepts only on True comparisons; negated comparisons only reject or fall back
+      (`proof/float-audit-v1-erratum-1.md`).
+
+These binding semantics were **smoke-tested** on the installed build:
+* run s02 (`code/binding_smoke_v2.py`, sha 8db84074…eaccc; `binding.json`, sha e4414ccc…19e7; 16/16);
+* the comparison contract in run s04 (`code/binding_smoke_v4.py`, sha 2453d319…97dd; `binding.json`, sha
+  963d31b9…6dc5; 6/6). On this build, the logs of [−1, 1], of [0, 1] and of exact 0 are all nan, with every
+  comparison False.
+
+This is not a proof. Two failed attempts are kept:
+* s01, with a wrong expectation about a big integer;
+* s03, with a wrong expectation about a union-built touching endpoint.
+
+**Runtime identity** (run r01, `runtime.json`, sha 679b845e…7ce2):
+* interpreter `/opt/homebrew/Cellar/python@3.14/3.14.3_1/…/bin/python3.14` with its sha;
+* the framework library sha;
+* sha and size of every file of the python-flint package and distribution (103 + 12 files).
+
+All certified runs used this venv (`run_v1.sh`).
+
+**Audited (Python code on certified paths).**
+* **Float contamination, worker audit** `proof/float-audit-v1.md` (sha e04753f8…1c8c), run f01, with erratum 1
+  (`proof/float-audit-v1-erratum-1.md`, comparison contract):
+  * 269 static sites;
+  * a dynamic type trace over 906 sites, 0 outcome mismatches.
+* **Independent subagent audit** `independent-float-audit/report-v1.md` (sha 6c9aa985…2ded): 556 sites classified,
+  **0 DEFECT on certified paths**, with an AST-scan cross-check. Its errata, which the file cannot correct because it
+  is create-once, were reported in its final message: check_cover_v1's hash ends …0b9e, and the header time should
+  read 06:15.
+* **Concordance.** Both audits find exactly one defect class, the corner coefficient 3(−1)^j/j:
+  * live only in v8:28 (d02, invalid);
+  * dead in v7:35, v3:220 and v3:217.
+
+  Both find floats only in the G-chart TRIANGLE-angle heuristic. That heuristic gives θ′ ≥ 31415/10⁴ > 0, which is
+  all TRIANGLE needs, and in logging.
+* **Unused v3 B-edge test.** The independent audit also notes that unused `me3dual_v3.test_bedge` could map a NaN C
+  to 0. The live `me3dual_v6.test_bedge` guards this with finiteness checks.
+* **lane_guard.py** (sha 5589b0a7…a484; source pinned) has no arithmetic. On import it disables deletion, rename and
+  tempfile creation, and provides exclusive-create helpers.
+* **Run, spec and summary binding.** These are bound by the binding audit b04 (§4). Its residual limits:
+  * the receipts are written by this lane's own launcher, with no third-party timestamping;
+  * the runtime build was hashed once, at 05:58 (r01);
+  * the P spec's pre-run existence rests only on its unauthenticated mtime: 03:32:03, before the c03 pre-receipt at
+    03:32:09.
+
+  The P certificate does not depend on that timing. The parent primal desk's independent full replay re-derived every
+  P leaf box from this spec and verified its predicate.
+
+**Not done.** No Lean or kernel check; no human referee. This is not the book's general minimal-representation
+question.
+
+## 7. Controls and replays
+
+* **n01 controls** (v3): M1–M6 as intended.
+* **n04 controls** (v9):
+  * the corner test FAILs at T′ = 3/10, with 70 FAIL boxes;
+  * a positive control certifies;
+  * coefficient exactness: the exact Ig₂₀ = 1048575/524288 at (s, ξ) = (0, 1/2) lies inside the v9 ball and outside
+    the v8 ball.
+* **Checker mutants** n02/n03 (v2) and n06/n07 (v3). All nine v3 mutants are rejected for the intended reason:
+  * an unknown CERT tag, and FAIL;
+  * depth 25 > 24;
+  * a CERT:corner leaf in G, and a SKIP:in-primal-P leaf in LD2;
+  * a wrong SWC δ-domain, and a wrong G P_r_hi;
+  * a summary not certificate_ok, and a mismatched summary.
+* **Parent primal desk**, own evaluator (RESULT-v1, sha 9a72e3e7…65e3):
+  * full replay of chart P: 945,680/945,680 leaves, 61,440/61,440 cells;
+  * reductions audit: PASS.
+* **ME3Reductions point replay** (`reductions/replay/REPLAY-STATUS-v2.md`): 0 violations in P and in every dual sample.
+  The SWC samples apply to d03's identical boxes.
+* **Parent dual desk replay** of all dual charts, with SWC against d03: status with the parent. The parent's pin-v2
+  closure bound all 686 pin-v2 manifest files (`review/me3-v2-parent-pin-closure-v1.json`, sha 5beb7c30…b075).
+* **Hostile delta review of pin v2** (sha df03a74a…e474). It found that the SWC repair passes statically and that no
+  live float defect remains. Findings 1–6 are addressed in v5 (see Status).
+* **Binding-audit controls** C1–C6: all rejected as required (§4).
+
+## 8. Invalid or superseded evidence (kept)
+
+* Pin v1 (`receipts/me3-candidate-pin-v1.json`) and proof v3.
+* Run d02-SWC, with `me3dual_v8.py`, `cert_dual_v6.py`, `spec_dual_v2.json` and `receipts/spec-dual-freeze-v2.json`.
+* Calibrations k01–k05; the damaged or never-executed libraries me3dual_v1 and me3dual_v5; and index_certificates_v1.
+  `me3dual_v4.py` was never executed as its own chart library. Its `test_ld1` and `test_ld2` are superseded (dead),
+  while its `W_generic`, `W_enclosure` and `test_general` are live in chart G via `me3dual_v6`.
+* Binding smoke s01; reductions audit-bnb-v1.
+* Pin v2 and proof v4: superseded for document reasons only, with every certificate unchanged. Reductions v2 and v3
+  are superseded by v4. Binding smoke s03 had a wrong B10a expectation.

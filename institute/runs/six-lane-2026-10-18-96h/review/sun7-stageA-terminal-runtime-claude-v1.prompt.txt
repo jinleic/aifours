@@ -1,0 +1,455 @@
+You are the independent hostile reviewer of a held exact-checker terminal fix now exercised in a new owner-authorized research round. NO TOOLS, no further delegation. Report RESULT: QUALIFIED or HOLD first; FATAL/MAJOR/MINOR only for real defects. The mathematical/parser/pruning ASTs of v1 and v2 are byte/AST-equivalent per prior parent static audit; a prior Codex audit found the v1 math sound on clean complete executions, but final resource stop or late SIGTERM could leave false COMPLETE_VALID. The new v2 source is frozen SHA5b285da4078c9047917af637751872de6f5abe5645f3e2b0ca18500e86a3f2cf. The owner authorized resumption after disk cleanup. The parent executed the frozen16 control runs and a full positive-v2 replay; all exit/marker/parse outcomes are embedded below. Accept only normal0 plus recorded exit0, COMPLETE_VALID, no cancellation marker. SIGTERM after the final check must not permit a normal0. Assess whether observed controls are discriminating and the terminal contract sound; identify any untested material race. Do not require a second mathematical checker for this narrow qualification; final Sun7 theorem still requires it and no full Sun7 claim is made. F-1 late-freeze violation is permanent. A class disposition would use the already accepted written X1=>K5.3 implication; no new mathematical bridge is being inferred from exits alone.
+FROZEN V2 TERMINAL SOURCE:
+
+CANCEL_SUFFIX = '.CANCELLED.json'
+PUBLICATION_CONTRACT = ('This result counts only if the process exited normally with status equal to '
+                        'exit_code and no file <result path>' + CANCEL_SUFFIX + ' exists; a process '
+                        'ended by a signal publishes no result.')
+
+
+def _sigterm_pending():
+    """SIGTERM pending for this single-threaded process while SIGTERM is blocked."""
+    return signal.SIGTERM in signal.sigpending()
+
+
+def _finish(args, res, outf, guard, code):
+    """Terminal decision, publication and exit status (the only part of v2 that differs from v1).
+
+    1. SIGTERM is blocked before the decision.  CPython's pthread_sigmask runs any Python handler
+       already tripped, so STOP records every earlier SIGTERM; a later one stays pending.
+    2. The terminal resource sample is taken before the decision.  A latched stop (SIGTERM, free-space
+       floor, RSS, self budget) or a pending SIGTERM makes the overall result UNKNOWN with exit 3.
+    3. The result is serialised, flushed, fsynced and closed and the summary printed with SIGTERM
+       still blocked; then resources are sampled once more.
+    4. SIGTERM is reset to SIG_DFL while still blocked and pending SIGTERM is read a last time.  A
+       SIGTERM pending then, a stop latched after the decision or a publication error creates the
+       exclusive external marker <out>.CANCELLED.json and forces exit 3 (5 for a publication error);
+       the serialised file must then not be used.
+    5. Only then is SIGTERM unblocked: a SIGTERM arriving after the last check terminates the process
+       by the default action, so a late delivery can never end in a normal exit.
+    """
+    signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGTERM})
+    term = {'sigterm_blocked_for_decision': True,
+            'overall_before_terminal_decision': res.get('overall'),
+            'exit_code_before_terminal_decision': code}
+    try:
+        guard.sample()
+    except Exception as e:
+        if not STOP['flag']:
+            STOP.update(flag=True, why='terminal resource sample failed: %s: %s' % (type(e).__name__, e))
+    pending = _sigterm_pending()
+    if pending:
+        signal.sigwait({signal.SIGTERM})
+        if not STOP['flag']:
+            STOP.update(flag=True, why='SIGTERM pending at terminal decision')
+    term['sigterm_pending_at_decision'] = pending
+    term['stop_latched_at_decision'] = STOP['flag']
+    term['stop_reason_at_decision'] = STOP['why']
+    if STOP['flag']:
+        res['overall'], code = 'UNKNOWN', 3
+    term['decided_overall'] = res['overall']
+    term['decided_exit_code'] = code
+    res['terminal'] = term
+    res['resources'] = guard.report()
+    res['finished_host_clock'] = time.strftime('%Y-%m-%dT%H:%M:%S%z')
+    res['exit_code'] = code
+    res['publication_contract'] = PUBLICATION_CONTRACT
+    stop_at_decision = STOP['flag']
+    problem, final = None, code
+    try:
+        json.dump(res, outf, indent=1, sort_keys=False, default=str)
+        outf.write('\n')
+        outf.flush()
+        os.fsync(outf.fileno())
+        outf.close()
+        summ = {'overall': res['overall'], 'exit_code': code}
+        for U, r in (res.get('universes') or {}).items():
+            summ[U] = r.get('status')
+        if 'controls' in res:
+            summ['controls'] = res['controls'].get('status')
+        print(json.dumps(summ), flush=True)
+    except Exception as e:
+        problem, final = 'publication error: %s: %s' % (type(e).__name__, e), 5
+    if problem is None:
+        try:
+            guard.sample()
+        except Exception as e:
+            problem, final = 'post-publication resource sample failed: %s: %s' % (type(e).__name__, e), 3
+    signal.signal(signal.SIGTERM, signal.SIG_DFL)
+    late = _sigterm_pending()
+    if late:
+        signal.sigwait({signal.SIGTERM})
+        if problem is None:
+            problem, final = 'SIGTERM received during or after serialisation', 3
+    if problem is None and STOP['flag'] and not stop_at_decision:
+        problem, final = 'stop latched after the decision: %s' % STOP['why'], 3
+    if problem is not None:
+        marker = {'cancelled': True, 'result_path': os.path.abspath(args.out), 'reason': problem,
+                  'sigterm_pending_after_serialisation': late, 'decided_overall': res['overall'],
+                  'decided_exit_code': code, 'process_exit_code': final, 'checker': VERSION,
+                  'pid': os.getpid(), 'host_clock': time.strftime('%Y-%m-%dT%H:%M:%S%z')}
+        try:
+            with open(args.out + CANCEL_SUFFIX, 'x') as mf:
+                json.dump(marker, mf, indent=1, default=str)
+                mf.write('\n')
+                mf.flush()
+                os.fsync(mf.fileno())
+        except Exception:
+            pass
+        try:
+            print(json.dumps({'cancelled': True, 'reason': problem, 'exit_code': final}), flush=True)
+        except Exception:
+            pass
+    signal.pthread_sigmask(signal.SIG_UNBLOCK, {signal.SIGTERM})
+    return final
+FROZEN CONTROL EXPECTATIONS:
+{
+ "manifest": "sun-coset7-stageA-independent-v1 / manifest_v2 (frozen before any v2 or harness execution)",
+ "frozen_host_clock_approx": "2026-10-18T15:35 PDT (bash date 15:34:38 immediately before writing)",
+ "requested_by": "parent IRC after the Codex audit sun-coset7-stageA-checker-codex-v1.note.md 81ab8c60d35dd6d9c3c2ad556d5123f78a0e5d34e788768882a4dfe2f2526d8f (MAJOR stop/publication finding)",
+ "checker_v1_retained": {"path": "checker_v1.py", "sha256": "2676c7d58039908d6cf1d69062552c53ed424262df042bedcaef0c9e423afcb2", "bytes": 77812},
+ "checker_v2": {"path": "checker_v2.py", "sha256": "5b285da4078c9047917af637751872de6f5abe5645f3e2b0ca18500e86a3f2cf", "bytes": 82854,
+                "created": "cp -n checker_v1.py checker_v2.py (hash checked equal to v1), then edited"},
+ "diff_v1_to_v2": {"path": "checker_v1-to-v2.diff", "sha256": "64e4a8de4338a1d3a4944210273af7b57f0f6e24c47876b26ac163bb950cc289", "bytes": 7666,
+                   "lines_added": 113, "lines_removed": 16, "generator": "python difflib.unified_diff, written with open(...,'x')"},
+ "change_scope": [
+  "docstring: version line and five lines on terminal semantics",
+  "VERSION constant -> sun-coset7-stageA-independent-checker-v2",
+  "new CANCEL_SUFFIX, PUBLICATION_CONTRACT, _sigterm_pending(), _finish()",
+  "main(): the v1 tail (terminal sample after the decision, serialisation, print, return) replaced by return _finish(...)",
+  "no change to mathematics, parsing, universes, pruning, witnesses, controls, Guard, tick checkpoints or admission"
+ ],
+ "terminal_semantics_v2": [
+  "SIGTERM blocked before the decision; terminal resource sample taken before the decision",
+  "latched stop or pending SIGTERM at the decision -> overall UNKNOWN, exit 3 (pending SIGTERM consumed with sigwait)",
+  "serialisation, fsync, close and summary print happen with SIGTERM blocked; second resource sample afterwards",
+  "SIGTERM reset to SIG_DFL while blocked; last pending check; SIGTERM pending then, stop latched after the decision, or publication error -> exclusive <out>.CANCELLED.json and exit 3 (5 for publication error)",
+  "unblock last: a SIGTERM after the last check ends the process by the default action (never a normal exit)",
+  "consumer rule: accept only a normal exit whose status equals the recorded exit_code (0), COMPLETE_VALID, and no marker"
+ ],
+ "unchanged_known_minor": "cooperative checkpoints remain sparse (Codex MINOR 2); not in the parent-authorised change set",
+ "harness": {"path": "terminal_controls_v2.py", "sha256": "6b6c948b4fa70e5734cb7895709ec41d3b92669aa2077fa9254aeb0b793bec12", "bytes": 22505,
+             "method": "executes the verified checker bytes as a module in ONE process per control and injects faults by monkeypatching from outside (checker source unchanged); expectations frozen in EXPECT"},
+ "controls": {
+  "input": "L/evidence/stageA-MSP45 (receipt pins: run.json 74a00dfb..., survivors.json 4f53cda1..., vfc_killed.json.gz c8fd962c..., lp_duals.json.gz 62aeb758..., leaves.jsonl.gz 74420f89...), verify mode",
+  "v2": ["H0", "C1", "C2", "C3", "C4", "C5", "C6", "C7", "C8"],
+  "v1_before_sensitivity": ["H0", "C1", "C2", "C3", "C4", "C5", "C8"],
+  "expected_v2": {"H0": "rc0 COMPLETE_VALID no marker", "C1": "rc3 UNKNOWN no marker", "C2": "rc3 UNKNOWN no marker", "C3": "rc3 UNKNOWN (pending) no marker",
+                  "C4": "rc3 marker", "C5": "rc3 marker", "C6": "rc143 killed by SIGTERM, no marker", "C7": "rc3 marker", "C8": "rc5 marker, partial result"},
+  "predicted_v1": "H0 rc0; C1-C5 rc0 COMPLETE_VALID despite the injected stop/signal (the audited defect); C8 rc1 traceback, partial result"
+ },
+ "planned_commands": [
+  "cd RUN/review/sun-coset7-stageA-independent-v1 && mkdir terminal-controls-v2 && for V in v2 v1; do if [ $V = v2 ]; then S=5b285da4078c9047917af637751872de6f5abe5645f3e2b0ca18500e86a3f2cf; else S=2676c7d58039908d6cf1d69062552c53ed424262df042bedcaef0c9e423afcb2; fi; for C in H0 C1 C2 C3 C4 C5 C6 C7 C8; do if [ $V = v1 ] && { [ $C = C6 ] || [ $C = C7 ]; }; then continue; fi; env TMPDIR=$PWD/tmp /opt/homebrew/bin/python3 terminal_controls_v2.py one --label $V --checker checker_$V.py --checker-sha $S --control $C --input-dir L/evidence/stageA-MSP45 --outdir terminal-controls-v2/$V-$C; rc=$?; /opt/homebrew/bin/python3 terminal_controls_v2.py record --outdir terminal-controls-v2/$V-$C --rc $rc; if [ $rc -eq 90 ]; then break 2; fi; done; done",
+  "/opt/homebrew/bin/python3 terminal_controls_v2.py evaluate --dir terminal-controls-v2 --v1-sha 2676c7d58039908d6cf1d69062552c53ed424262df042bedcaef0c9e423afcb2 --v2-sha 5b285da4078c9047917af637751872de6f5abe5645f3e2b0ca18500e86a3f2cf --out terminal-controls-v2/evaluation.json",
+  "mkdir positive-v2 && env TMPDIR=$PWD/tmp /usr/bin/time -l /opt/homebrew/bin/python3 checker_v2.py all --lane L --out positive-v2/result.json; rc=$?; /opt/homebrew/bin/python3 terminal_controls_v2.py record --outdir positive-v2 --rc $rc; /opt/homebrew/bin/python3 terminal_controls_v2.py compare --a positive-v1/result.json --b positive-v2/result.json --rc $rc --out positive-v2/compare-v1.json"
+ ],
+ "L": "/Users/jinleic/repos/aifours/mathematics/evidence/six-lane-20261016/sun-coset7",
+ "resource_policy": "one Python process at a time; fresh statvfs admission >= 12,216,777,216 B at every launch (harness exit 90 = refused, loop stops, no retry); checker in-flight floor 12e9, RSS 1 GiB, self budget 1800 s unchanged; no tool/subprocess deadline, ulimit, SIGKILL or deletion; TMPDIR = this directory's tmp/",
+ "hold_status_at_freeze": "parent HOLD (15:26:44 monitor 10,765,082,624 B); statvfs here 9,313,492,992 B at 15:34:38 < 12,216,777,216 B, so no launch yet",
+ "boundaries": "Stage A outputs stay EXPLORATORY (CERT-FORMAT 13:38:43 and RPLP addendum 14:00:41 postdate the 13:35:02-05 run; permanent late-freeze deviation). v2 changes no mathematics. No class accepted; parent owns disposition."
+}
+
+OBSERVED RESULTS:
+{
+  "controls": [
+    {
+      "label": "v2",
+      "control": "C1",
+      "rc_shell": 3,
+      "overall": "UNKNOWN",
+      "exit_code": 3,
+      "marker": false,
+      "as_expected": true,
+      "consumer_accepts": false,
+      "injections": [
+        "2026-10-18T23:06:12-0700 t=1232622.412365 INJECT C1: terminal resource stop: statvfs reads 12e9-1 B (below the in-flight floor) after the universe completed"
+      ],
+      "reasons": []
+    },
+    {
+      "label": "v2",
+      "control": "C2",
+      "rc_shell": 3,
+      "overall": "UNKNOWN",
+      "exit_code": 3,
+      "marker": false,
+      "as_expected": true,
+      "consumer_accepts": false,
+      "injections": [
+        "2026-10-18T23:06:13-0700 t=1232622.749088 INJECT C2: SIGTERM delivered after the universe completed and before the terminal decision (handler path) (os.kill SIGTERM to self)"
+      ],
+      "reasons": []
+    },
+    {
+      "label": "v2",
+      "control": "C3",
+      "rc_shell": 3,
+      "overall": "UNKNOWN",
+      "exit_code": 3,
+      "marker": false,
+      "as_expected": true,
+      "consumer_accepts": false,
+      "injections": [
+        "2026-10-18T23:06:13-0700 t=1232623.078196 INJECT C3: SIGTERM sent at the first resource sample after the universe completed (v2: inside the blocked decision window) (os.kill SIGTERM to self)"
+      ],
+      "reasons": []
+    },
+    {
+      "label": "v2",
+      "control": "C4",
+      "rc_shell": 3,
+      "overall": "COMPLETE_VALID",
+      "exit_code": 0,
+      "marker": true,
+      "as_expected": true,
+      "consumer_accepts": false,
+      "injections": [
+        "2026-10-18T23:06:13-0700 t=1232623.417471 INJECT C4: SIGTERM sent during result serialisation, after 2048 bytes (os.kill SIGTERM to self)"
+      ],
+      "reasons": []
+    },
+    {
+      "label": "v2",
+      "control": "C5",
+      "rc_shell": 3,
+      "overall": "COMPLETE_VALID",
+      "exit_code": 0,
+      "marker": true,
+      "as_expected": true,
+      "consumer_accepts": false,
+      "injections": [
+        "2026-10-18T23:06:14-0700 t=1232623.763957 INJECT C5: SIGTERM sent right after the summary line is printed (os.kill SIGTERM to self)"
+      ],
+      "reasons": []
+    },
+    {
+      "label": "v2",
+      "control": "C6",
+      "rc_shell": 143,
+      "overall": "COMPLETE_VALID",
+      "exit_code": 0,
+      "marker": false,
+      "as_expected": true,
+      "consumer_accepts": false,
+      "injections": [
+        "2026-10-18T23:06:14-0700 t=1232624.098397 INJECT C6: SIGTERM sent at the final SIGTERM unblock, after the last check (v2 only) (os.kill SIGTERM to self)"
+      ],
+      "reasons": []
+    },
+    {
+      "label": "v2",
+      "control": "C7",
+      "rc_shell": 3,
+      "overall": "COMPLETE_VALID",
+      "exit_code": 0,
+      "marker": true,
+      "as_expected": true,
+      "consumer_accepts": false,
+      "injections": [
+        "2026-10-18T23:06:14-0700 t=1232624.439860 INJECT C7: resource stop after publication: statvfs reads 12e9-1 B once result.json is closed (v2 only; v1 never samples after publication)"
+      ],
+      "reasons": []
+    },
+    {
+      "label": "v2",
+      "control": "C8",
+      "rc_shell": 5,
+      "overall": null,
+      "exit_code": null,
+      "marker": true,
+      "as_expected": true,
+      "consumer_accepts": false,
+      "injections": [
+        "2026-10-18T23:06:15-0700 t=1232624.773326 INJECT C8: publication error: OSError(ENOSPC) raised during result serialisation after 2048 bytes"
+      ],
+      "reasons": []
+    },
+    {
+      "label": "v2",
+      "control": "H0",
+      "rc_shell": 0,
+      "overall": "COMPLETE_VALID",
+      "exit_code": 0,
+      "marker": false,
+      "as_expected": true,
+      "consumer_accepts": true,
+      "injections": [],
+      "reasons": []
+    },
+    {
+      "label": "v1",
+      "control": "C1",
+      "rc_shell": 0,
+      "overall": "COMPLETE_VALID",
+      "exit_code": 0,
+      "marker": false,
+      "as_expected": true,
+      "consumer_accepts": true,
+      "injections": [
+        "2026-10-18T23:06:15-0700 t=1232625.454917 INJECT C1: terminal resource stop: statvfs reads 12e9-1 B (below the in-flight floor) after the universe completed"
+      ],
+      "reasons": []
+    },
+    {
+      "label": "v1",
+      "control": "C2",
+      "rc_shell": 0,
+      "overall": "COMPLETE_VALID",
+      "exit_code": 0,
+      "marker": false,
+      "as_expected": true,
+      "consumer_accepts": true,
+      "injections": [
+        "2026-10-18T23:06:16-0700 t=1232625.789963 INJECT C2: SIGTERM delivered after the universe completed and before the terminal decision (handler path) (os.kill SIGTERM to self)"
+      ],
+      "reasons": []
+    },
+    {
+      "label": "v1",
+      "control": "C3",
+      "rc_shell": 0,
+      "overall": "COMPLETE_VALID",
+      "exit_code": 0,
+      "marker": false,
+      "as_expected": true,
+      "consumer_accepts": true,
+      "injections": [
+        "2026-10-18T23:06:16-0700 t=1232626.132943 INJECT C3: SIGTERM sent at the first resource sample after the universe completed (v2: inside the blocked decision window) (os.kill SIGTERM to self)"
+      ],
+      "reasons": []
+    },
+    {
+      "label": "v1",
+      "control": "C4",
+      "rc_shell": 0,
+      "overall": "COMPLETE_VALID",
+      "exit_code": 0,
+      "marker": false,
+      "as_expected": true,
+      "consumer_accepts": true,
+      "injections": [
+        "2026-10-18T23:06:16-0700 t=1232626.477807 INJECT C4: SIGTERM sent during result serialisation, after 2048 bytes (os.kill SIGTERM to self)"
+      ],
+      "reasons": []
+    },
+    {
+      "label": "v1",
+      "control": "C5",
+      "rc_shell": 0,
+      "overall": "COMPLETE_VALID",
+      "exit_code": 0,
+      "marker": false,
+      "as_expected": true,
+      "consumer_accepts": true,
+      "injections": [
+        "2026-10-18T23:06:17-0700 t=1232626.822558 INJECT C5: SIGTERM sent right after the summary line is printed (os.kill SIGTERM to self)"
+      ],
+      "reasons": []
+    },
+    {
+      "label": "v1",
+      "control": "C8",
+      "rc_shell": 1,
+      "overall": null,
+      "exit_code": null,
+      "marker": false,
+      "as_expected": true,
+      "consumer_accepts": false,
+      "injections": [
+        "2026-10-18T23:06:17-0700 t=1232627.156482 INJECT C8: publication error: OSError(ENOSPC) raised during result serialisation after 2048 bytes"
+      ],
+      "reasons": []
+    },
+    {
+      "label": "v1",
+      "control": "H0",
+      "rc_shell": 0,
+      "overall": "COMPLETE_VALID",
+      "exit_code": 0,
+      "marker": false,
+      "as_expected": true,
+      "consumer_accepts": true,
+      "injections": [],
+      "reasons": []
+    }
+  ],
+  "positive": {
+    "exit": 0,
+    "overall": "COMPLETE_VALID",
+    "universes": {
+      "X1": "COMPLETE_VALID",
+      "MSP45": "COMPLETE_VALID",
+      "CORE5": "COMPLETE_VALID"
+    },
+    "controls": "PASS",
+    "terminal": {
+      "sigterm_blocked_for_decision": true,
+      "overall_before_terminal_decision": "COMPLETE_VALID",
+      "exit_code_before_terminal_decision": 0,
+      "sigterm_pending_at_decision": false,
+      "stop_latched_at_decision": false,
+      "stop_reason_at_decision": null,
+      "decided_overall": "COMPLETE_VALID",
+      "decided_exit_code": 0
+    },
+    "marker": false
+  },
+  "comparison": {
+    "compared_host_clock": "2026-10-18T23:06:47-0700",
+    "harness_sha256": "6b6c948b4fa70e5734cb7895709ec41d3b92669aa2077fa9254aeb0b793bec12",
+    "a": {
+      "path": "/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-16/review/sun-coset7-stageA-independent-v1/positive-v1/result.json",
+      "sha256": "8096235e3bf8e839b9f72d4663d4ca6c26c04c41393ef851e4b90bae26361e46"
+    },
+    "b": {
+      "path": "/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/review/sun7-stageA-v2-qualification-v1/positive-v2/result.json",
+      "sha256": "b49afa288223e6da0091fad3319ae0976ceebc6106729506ba0559db1eb0dccc"
+    },
+    "b_rc_shell": 0,
+    "volatile_keys_removed": [
+      "seconds",
+      "walk_seconds"
+    ],
+    "section_equal": {
+      "frozen_texts": true,
+      "receipt_audit": true,
+      "top_issues": true,
+      "universes": true,
+      "controls": true,
+      "overall": true,
+      "exit_code": true
+    },
+    "universe_keys_differing": {
+      "CORE5": [],
+      "MSP45": [],
+      "X1": []
+    },
+    "keys_only_in_b": [
+      "publication_contract",
+      "terminal"
+    ],
+    "keys_only_in_a": [],
+    "b_terminal": {
+      "sigterm_blocked_for_decision": true,
+      "overall_before_terminal_decision": "COMPLETE_VALID",
+      "exit_code_before_terminal_decision": 0,
+      "sigterm_pending_at_decision": false,
+      "stop_latched_at_decision": false,
+      "stop_reason_at_decision": null,
+      "decided_overall": "COMPLETE_VALID",
+      "decided_exit_code": 0
+    },
+    "b_marker": false,
+    "b_overall": "COMPLETE_VALID",
+    "b_exit_code": 0,
+    "b_universe_status": {
+      "X1": "COMPLETE_VALID",
+      "MSP45": "COMPLETE_VALID",
+      "CORE5": "COMPLETE_VALID"
+    },
+    "b_controls_status": "PASS",
+    "b_consumer_accepts": true,
+    "equal_modulo_timing": true,
+    "status": "PASS"
+  }
+}

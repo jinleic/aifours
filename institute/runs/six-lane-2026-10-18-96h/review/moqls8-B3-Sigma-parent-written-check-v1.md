@@ -1,0 +1,11 @@
+# B3 Sigma — parent written check pending second family
+
+Recorded 2026-10-21T05:43:12-0700 (`/bin/date`). Directly read all142LFcandidate and181LFfirst-familyreview. CandidateSHA256adad9baeb814f85a370a5b1c62cb9fb883b6166d366556a121d4f7ed0771ddd3. No code/assertion/enumeration; no acceptance yet.
+
+H1/H2 and explicitH4(part) requireq1,q7 orthonormal andfullsupportinA. This is a mathematical hypothesis, not guaranteed solely by the JSONkey. The A/Zparenterratum2 separately derivesq1fullsupportfromfullexactH4; no hiddennormalisationbridge is assumed here. The conjugatedcrossproduct line has Gram−a1_c'conjugate(a7_c) for all9crosspairs. At a strictlymixedcell square1consumesbothAcoordinatesotherthanc, F1removescfromtheother4squares;5nonemptydisjointcomplementarysupports in5coordinates areallsingletons. The fifthsingleton is ONLYsquare1'sprojection, notwholevectorpurity.
+
+Samecolumnorthogonalityforces equalleftoverdelta; differentdelta offdiagonal givesnonzeroG1, so noothersquarecanmatchthepair. Eachsquarehas3distinctcomplementarycoordinatesineachrow. Withdelta multiplicities111or21 eachneeds>=1match; respectively0or2orderedpairsavailablefor4squares. Withmultiplicity3 eachneeds>=2matchesinthecommon4-set, total>=8against6orderedpairs. Pairownershipisunique evenifdifferentphysicalcoordinatesmatch, because tensorGramproductswouldbenonzero. This excludesall6strictlymixedcells.
+
+UnderSigma-prime BOTHrows have noAcontentincolumns4..7. Comparing offdiagonal12/13/23entries in theprojectedresolution forces all3weights|z|²=1, since allqcoordinatesnonzero. Eachprojectionnorm²=1−|a_c|² liesstrictlybetween0and1, soall6cellsstrictlymixed, contradiction. No assumptionofnonzeroAprojections isneeded beforehand. ThecorollaryforcesexternalAcontentsomewhereinATLEASTONEofrows1/7, not separatelyineachrow.
+
+OriginalAZLF73'samplitudeglosswaswithdrawnbyworkererr1andparenterr2; itsconditionalLwasacceptedaspossiblyvacuous. Sigma'shistorical`AZunreviewed`statusis nowstale, notamathematicalpremise. IfthisseparateSigmagatepasses,itwouldproveL'spremiseimpossibleunderexactH4part,butwouldNOTmakeLfalse, provefullB3, establishresidualpatternfeasibility, orchangeGB15/18/threeUNKNOWNs. Remainexplicit: at leastonenonmixedcell; pureAforcesoppositepartnerAfree; allotherpatternsunresolved.

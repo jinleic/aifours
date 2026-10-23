@@ -1,0 +1,15 @@
+# S56W parent erratum v2 — all second-family wording findings
+
+Recorded 2026-10-19T21:11:22-0700 (`/bin/date`). Governs immutable S56W-v1.md 9dfa360e6b54d6075e79f240bf2375e9049a66ae02fc14f375946e0bed61b894 together with erratumv1. No proof step changes. Claude review 66e753124fc11253b188ad8824fe9449712fcf02b711fe34a3d23e44898b04b1 has 0F/0M/9m; Codexv2 has0F/0M/0m.
+
+1. **m1:** LF16 means “identical mathematical statements, notation normalized”; LF190 means mathematically identical statements/scopes with trailing remarks omitted. Package LF37 means the same, not verbatim text.
+2. **m2:** H5/H6 proof dependencies are claims discharged by their own gates, not audited by S56W. LF155/156 and packageLF12–13/42 are conditional on those gates. LF162–163 means claimed imports only Sun2 and Zhu3/4. The circularity sentenceLF165–167 reads: no proof here uses the historical accepted Sun5/Sun6; S5W in the optional LF140–141 route is upstream of S6W. Non-circularity of H5/H6 is discharged separately.
+3. **m3:** ConsumedH5/H6scope: every finite group, no minimal-order restriction, possibly equal subgroups, all pairwise-coprime positive cofactors including absent/coincident E2/E3/E5, arbitrary 2-powers and r_i=1. H5 must not use Sun5/S5W/Sun6/S6W anywhere, including inside subgroups; H6 must not use Sun6/S6W. The accepted C5W/C56W proofs in fact use neither Sun5 nor Sun6. A minimal-order-only core would NOT satisfy these literal imports; no minimal-counterexample fallback is silently substituted.
+4. **m4:** LF172–174 permits statement-only substitution AFTER its gates, at individually checked sites; listed sites are examples, not pre-cleared. UntilH5/H6discharged, the two conclusions are conditional onH5 resp.H5andH6.
+5. **m5:** LF184 means Prop4.5/R1/R1(6) qualify only through their written re-proofs here once this composition is accepted, not from their old computational records.
+6. **m6:** LF186: indices are in the ambient group where applied, e.g.U_v; right cosets are inverted first with the same subgroups. No Sun5/Sun6 minimal-order frames or results proved only within those frames, notably oldC18, are imported.
+7. **m7:** Acceptance gates are composition+C5W forS5W, composition+C5W+C56W forS6W. Neither an old historical gate nor a core acceptance alone suffices.
+8. **m8:** LF35: G finite in section2 and R1/R1(6), with all-group reductionR0. Add tau=T/L atLF49. LF84/85'sT is T_124=[G:U_1 cap U_2 cap U_4]. LF86's second 'likewise' is triangle{1,3,4}. LF96 invokes(c), then(c)with3and4interchanged. LF63'sharmonicisunused/disjointnessdirect. LF112/135means at leasttwoindices.
+9. **m9:** PackageLF15range138–141, not138–143; stray R0 heading inside packageLF28codefence is ignored as packaging.
+
+Notes: Prop4.5 IS in Sun5's DAG despite its omission in the earlier assigned scope. Zhu's classical theorem is imported at the explicitly stated every-group scope; this erratum does not independently certify Zhu's provenance. Historical Sun5/Sun6 remain computer-assisted; no internal certificate/bridge lemma is renamed, no Sun7 result or runtime authority follows.

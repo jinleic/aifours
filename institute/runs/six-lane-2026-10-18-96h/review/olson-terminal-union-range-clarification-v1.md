@@ -1,0 +1,7 @@
+# Olson terminal-union range — provenance clarification
+
+Recorded 2026-10-20T07:32:17-0700 (`/bin/date`). Applies to composed terminal-cell unions in TCW (17f6d80d664c4e3b60bb7be5aba560502f5597350b025b3d058d7d989fef0c29) and P7L (57664b53b35aa0de0729d7ec7b2c2ff4d9b7e738155612c5ffcb43ec169a8569). No new cell theorem or independent review is claimed.
+
+The range 0≤kappa_hat≤p−1 is not taken from LOWER's p≥11 standing range when p=7. It is the already-recorded general NF/GRX argument: NF gives H=(F−k)/2≥0 and kappa_hat=p−1−H, so kappa_hat≤p−1; if H≥p, the GRX all-plus pattern (m=0,target0,C=2p,n=0) is admissible and gives an identity2p-subword, contradicting avoidance. Equivalently choose p reflection pairs within the constant blocks; each selected block has even reflection length, product1. Thus H≤p−1 and kappa_hat≥0. This argument is recorded for p≥7 at ASSEMBLY-LS parent verdict LF37–38 (/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/review/olson-ASSEMBLY-LS-parent-verdict-v1.md, 249e07658762e7e3efe346063851b243369f14dadf6fbaedf121944a18db6a22); its k≤p−1 restriction applies to the later DAV/LS consequence, not to the all-plus GRX argument itself.
+
+Hence the terminal unions at p7 and p11 exhaust their integer kappa_hat ranges using NF/GRX at their literal scopes, without importing Theorem S below p11 or adding an NF-existence theorem. The statement is existential in SOME admissible NF with the specified terminal k; other terminal k remain outside these unions.

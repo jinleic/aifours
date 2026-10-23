@@ -1,0 +1,57 @@
+{
+ "at": "2026-10-19T18:01:43-0700",
+ "at_basis": "actual /bin/date immediately before this exclusive write",
+ "authority": {
+  "finding": {
+   "path": "/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/review/parent-release-cp2-finding-sr6-v1.json",
+   "sha256": "329c3cfb6197f4e3b76d403506ff7cfc815e337babf3b0abc2939642698696d0"
+  },
+  "parent_irc": "Main ~18:00: CP2 v4 review launched 17:58 (bg2917) must not be cancelled or altered; SR-6 independently blocks source acceptance; freeze a minimal v5 repair PLAN for SR-6 (safe metadata, complete exception retention, identity preflight) and wait for the in-flight v4 review before writing v5 source so its findings join ONE new freeze; no unchanged re-review, no runtime; full exception-object preservation remains required and deleting explicit context links must not silently discard promised prior evidence; Main sends the joined repair scope on receipt.",
+  "pattern": {
+   "finding": "PRT v4 MAJOR 3",
+   "path": "/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/review/parent-release-v4-codex-v1.prompt.stdout.txt",
+   "sha256": "b38745818f96a032106eea3da675a40adf640d19c483c83dac64691f7228a8e8"
+  },
+  "subject_v4": {
+   "path": "/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/control/parent_release_identity_v4.py",
+   "sha256": "39c51017a6f01fad779d40c22ad0912cde2d0384e4ed7e7baad2206bc8e93d7c",
+   "state": "immutable; under review"
+  }
+ },
+ "format": "parent-release-cp2-v5-sr6-repair-plan-v1",
+ "owner": "ParentIdentityCP2",
+ "plan": {
+  "P10_deliverables": "v5 source, exact v4->v5 diff, design freeze v5 (merged with the v4 review findings), controls v5, notes v5, disposition v5, review prompt <220000 B, CP1 pins (source sha, freeze sha, module 'parent_release_identity_v5.py'); API and formats unchanged unless the joined scope says otherwise.",
+  "P1_type_name": "_tname(obj): type.__dict__['__name__'].__get__(type(obj)) (type() and the type getset are not overridable by a metaclass), under except BaseException -> '<type-name-unavailable>'. Replaces type(x).__name__ at v4 lines 269, 271, 439, 443, 457, 676 and 751.",
+  "P2_safe_why": "_why(exc): _tname(exc) + ': ' + BaseException.__str__(exc) (the base C implementation, not a subclass override), under except BaseException -> '<unprintable>'; same NUL/CR/LF scrub and 512-char bound. Used unchanged at every v4 call site (436, 453, 476, 666, 1663-1676, 1884, 1909-1911).",
+  "P3_attach": "_attach(exc, name, value): store into the exception's real instance dict via BaseException.__dict__['__dict__'].__get__(exc)[name] = value under except BaseException; returns True/False; never raises and never replaces exc (v4 lines 484-488, callers 1680 and 1918 keep their bare raise of the original).",
+  "P4_native_context": "_native: delete the Python-level secondary.__context__ read/write (v4 lines 511-512). Nothing promised is discarded: the completion check runs inside the primary's except handler, so the interpreter's implicit chaining (C-level PyException_SetContext, not overridable by a Python property) already sets the failing check's exception context to the primary at raise time; v4's 'if __context__ is None' branch could therefore never fire. The docstring will state the interpreter-level guarantee, and P5 records the chain in the census journal.",
+  "P5_chain_retention": "_chain(exc): bounded (<=8 links) cycle-safe walk of __context__ and __cause__ read through BaseException.__dict__['__context__'] / ['__cause__'].__get__ (non-overridable getsets), each link described with P2, the whole walk under except BaseException -> marker. Census attempt_end and refusal journal entries gain 'error_chain' (JOURNAL_KEYS and _census_evidence key sets updated), so a double failure (native primary plus failing completion check) keeps both descriptions in the immutable journal; the propagating object keeps both in its interpreter-set chain.",
+  "P6_census_journaling": "v4 676 and 750-751: error = _why(exc) and error_chain = _chain(exc) for every exception (no isinstance or __name__ branching on foreign objects); each step guarded so exactly one attempt_end per attempt and one refusal per exceptional call are journaled; if a guarded step fails its field becomes a fixed marker instead of skipping the entry.",
+  "P7_event_details": "_Io.tick/_Io.read event details use _tname/_why (v4 439, 443, 457), so the M4 completion tick on the read_bytes BaseException branch can no longer be skipped by formatting.",
+  "P8_identity_preflight": "evaluate_endedness: before comparison, detach identities through an exact-JSON-type preflight (exact dict with exact-str keys, list, str, exact int within 64-bit range, bool, None; no float; node/depth/byte caps sized for <=200000 PRT rows) using only type() checks, then canonical bytes and strict re-parse; any non-conforming input is E_IDENTITIES_MISMATCH and no foreign __hash__/__eq__/__str__ ever runs (v4 line 1838).",
+  "P9_controls": [
+   "H01 read_bytes raises an Exception whose __str__ raises KeyboardInterrupt -> union HELD with the owning U_ cause, the read completion tick still runs, no escape",
+   "H02 deadline_check raises an exception whose __context__ is a raising property after a native failure -> that deadline exception propagates, interpreter chain holds the primary, journal error_chain lists both",
+   "H03 propagating BaseException whose class overrides __setattr__ to raise -> the original object propagates; attachment stored via the instance dict or absent",
+   "H04 metaclass whose __name__ property raises -> event details use the real type name",
+   "H05 identities with a non-str dict key, a dict subclass, a float or over-cap size -> E_IDENTITIES_MISMATCH without calling foreign hash/eq",
+   "H06 census attempt aborted by a hostile-metadata deadline exception -> exactly one attempt_end and one refusal, fields possibly markers",
+   "H07 BaseException.__str__ on our own IdentityRefusal and _NativeError -> unchanged evidence text shape",
+   "H08 trade-off: a genuine interrupt arriving inside guarded bookkeeping may be absorbed there; the original exception still propagates or the result is HELD, never a positive (documented, not exercised)"
+  ]
+ },
+ "principles": [
+  "Never run Python-level attribute reads/writes, str(), repr(), __name__ or isinstance on a foreign (callback-supplied) object outside a BaseException guard; use interpreter-level non-overridable accessors where they exist.",
+  "The propagating exception object is always the original one: optional bookkeeping (formatting, attachment, journaling) can fail but can never replace or swallow the propagating exception.",
+  "Every exception the module observes stays retained: in the propagating object's interpreter-set context chain and, where the module keeps a journal or log, as bounded descriptions of the whole chain. A bookkeeping failure is itself recorded as a fixed marker wherever a record still exists."
+ ],
+ "process_disclosure": "Planning only: source read/grep and this exclusive-create write; no v5 source, no execution.",
+ "residuals": [
+  "Foreign __str__ reached through BaseException.__str__ on a foreign args element can still loop forever; non-termination by hostile parent code stays under PARENT_CODE_PROVENANCE.",
+  "Same-process adversaries with registry access stay out of scope (parent clarification).",
+  "SR-4 and SR-5 stay out of scope unless the joined repair scope includes them."
+ ],
+ "sequencing": "No v5 source, diff or controls until the v4 review result and Main's joined repair scope arrive; then ONE v5 design freeze merges this plan with the review findings, frozen before code.",
+ "status": "V5_SR6_REPAIR_PLAN_FROZEN_SOURCE_DEFERRED"
+}

@@ -1,0 +1,79 @@
+{
+  "verdict": "needs-rework",
+  "linesChecked": 1196,
+  "summary": "R2#1 RESOLVED: pre-boundary cancellation selects UNKNOWN; serialization and destination opening precede the counter boundary (src/pilot_file_drat_v9.py:956-974). R2#2 UNRESOLVED: emergency cleanup can escape without reaping and omits survivor quarantine (src/pilot_file_drat_v9.py:435-448). R2#3 RESOLVED: sink finalization, hashes and successful receipt writing now precede settled=true; receipt failures retain false (src/pilot_file_drat_v9.py:568-626). R2#4 UNRESOLVED: terminal/sink failures now latch, but native MEMOUT diagnostics do not (src/pilot_file_drat_v9.py:755-758,1148-1153). R2#5 RESOLVED for the original output-preparation, admission-order and post-spawn deadline defects (src/pilot_file_drat_v9.py:465-483); a separate settlement-budget defect remains below. R2#6 RESOLVED: registration requires identity checks and includes input, GO, source and immutable run-record bindings (src/pilot_file_drat_v9.py:219-229,489-497). R2#7 UNRESOLVED: census cannot establish absence of escaped/reparented descendants (src/pilot_file_drat_v9.py:543-548,580-594). R2#8 UNRESOLVED: signal crashes are rejected, but checker MEMOUT/TIMEOUT exits can still pass C2 (src/pilot_file_drat_v9.py:819-822,868-873). Fail-open kissat assumptions remain: no helpers escaping census, preservation of the FIFO pathname, and no uncapped side outputs. Static imports do not establish those behavior invariants. Status/exit conventions, binary-proof format and FIFO rejection otherwise fail closed. Healthy controls can also fail closed if C5 finishes before supervision observes its cap trip or C6 solves within one second (src/pilot_file_drat_v9.py:901-927). Identity/ps uncertainty, nonsimultaneous RSS samples and reused PGIDs can cause conservative refusals or safety stops. Successful settlement and sink finalization are cached; interrupted settlement retries can instead produce fail-closed join or exclusive-receipt errors. SHA-256 matched the supplied v9 pin. Verification used source inspection and in-memory stubs; no pinned binaries were launched.",
+  "findings": [
+    {
+      "severity": "blocker",
+      "category": "safety",
+      "location": "src/pilot_file_drat_v9.py:435-448; src/pilot_file_drat_v9.py:501-509; src/pilot_file_drat_v9.py:704-708",
+      "problem": "R2#2 UNRESOLVED: Emergency cleanup can still abandon an unregistered child, and its survivor path never writes quarantine.",
+      "evidence": "Only latch() and send_signal() are protected inside emergency_cleanup; time calculations, polling, sleeping and wait() can escape. A constructor failure leaves run_child's ch=None, so its finally cannot retry child settlement. An in-memory ownership-append MemoryError followed by an emergency-poll MemoryError produced an empty OWNED list and zero wait calls. Independently, a TERM survivor reaches an unbounded wait after 60 seconds without any quarantine receipt; the later self.settle() is unreachable until it exits.",
+      "suggestedFix": "Retain ownership independently of fallible registration, use one exception-resistant cleanup state machine, and record quarantine at the bounded-wait transition. Cleanup failures must preserve the live Popen and capacity rather than unwind to final_code."
+    },
+    {
+      "severity": "blocker",
+      "category": "safety",
+      "location": "src/pilot_file_drat_v9.py:140-143",
+      "problem": "The Python signal handler can deadlock on a repeated cancellation signal.",
+      "evidence": "Python handlers execute on the main thread and can re-enter an earlier handler. threading.Event.set() holds a non-reentrant Condition lock while executing Python code. A second SIGTERM or SIGINT in that interval re-enters on_term and blocks on the same lock, preventing the supervisor from terminating, quarantining or reaping an active child. In-memory profiling confirmed the handler executes Python while this lock is held.",
+      "suggestedFix": "Keep the handler lock-free: stamp a plain cancellation scalar/order and return. Perform Event publication, if needed, from ordinary runner code."
+    },
+    {
+      "severity": "blocker",
+      "category": "control",
+      "location": "src/pilot_file_drat_v9.py:755-758; src/pilot_file_drat_v9.py:1148-1153; checker/drat-trim.c:85",
+      "problem": "R2#4 UNRESOLVED: A native memory failure can permit subsequent scientific launches and exit 0.",
+      "evidence": "The checker explicitly prints MEMOUT and exits 0. qualify_unsat recognizes MEMOUT only as a qualification defect; it does not latch the required memory-resource stop. run_plan therefore writes UNKNOWN and continues when CANCEL and LATCH remain clear. An in-memory full-plan run with MEMOUT checker results launched both successive items and returned EXIT_PLAN_COMPLETE with an empty LATCH.",
+      "suggestedFix": "Classify native resource diagnostics before scientific qualification. Latch MEMOUT and memory-allocation failures in controls and items, block subsequent launches, and return EXIT_SAFETY_STOP."
+    },
+    {
+      "severity": "blocker",
+      "category": "assumption",
+      "location": "src/pilot_file_drat_v9.py:543-548; src/pilot_file_drat_v9.py:580-594; src/pilot_file_drat_v9.py:656-668; evidence/binary-process-imports-v1.json:107-115",
+      "problem": "R2#7 UNRESOLVED: Escaped descendants can remain running while settlement and whole-lane RSS appear clear.",
+      "evidence": "Census matches only PPID==direct child or PGID==original child group. A helper that changes group/session, reparents and closes inherited streams before sampling is absent from both census and RSS; after leader reap, killpg can also report the original group empty. Static evidence establishes kissat's _popen import, while the claim that plain filenames avoid that path is explicitly an inference without inspected kissat source. This is a conditional fail-open assumption, not evidence that the pinned binary actually escapes.",
+      "suggestedFix": "Establish the pinned binary's relevant process behavior with parent-reviewed evidence, or track descendant ownership across group and parent changes throughout the process lifetime."
+    },
+    {
+      "severity": "blocker",
+      "category": "assumption",
+      "location": "src/pilot_file_drat_v9.py:352-369; src/pilot_file_drat_v9.py:711-719; evidence/binary-process-imports-v1.json:98",
+      "problem": "The hard proof bound assumes kissat preserves the FIFO and creates no uncapped side outputs.",
+      "evidence": "The cap governs only writes by ProofSink to its separate retained file. Kissat receives a pathname with -f and has no enforced filesystem write boundary. If it unlinks/recreates the FIFO as a regular file, or writes a side file, those bytes bypass the sink and reservation. Later sink failure prevents qualification but cannot undo an uncapped write during that launch. The snapshot does not establish the necessary pathname/output behavior.",
+      "suggestedFix": "Provide pinned, auditable evidence that these exact arguments open the existing FIFO in place and produce only the accounted outputs, or enforce a transport/write boundary that prevents pathname replacement and side-output bypass."
+    },
+    {
+      "severity": "blocker",
+      "category": "resource",
+      "location": "src/pilot_file_drat_v9.py:97-118; src/pilot_file_drat_v9.py:343-345; src/pilot_file_drat_v9.py:555-598",
+      "problem": "Per-child admission reserves less settlement time than the settlement path permits.",
+      "evidence": "Admission accepts a child cutoff at OWNED_SETTLED_BY-180 using 120 seconds settlement plus 60 seconds margin. Subsequent serial bounds allow TERM_WAIT 60, capture join 60, sink unblock 10 and sink join 60: 190 seconds before hashing and receipt work. Thus settlement can consume the margin and cross the absolute bound. The nominal plan arithmetic, 10,070+180=10,250 seconds, fits 10,800, but late admission after delays can clamp a child deadline to abs_end without preserving this longer tail.",
+      "suggestedFix": "Enforce one aggregate settlement budget, or reserve the complete serial settlement tail when freezing and checking each launch cutoff."
+    },
+    {
+      "severity": "blocker",
+      "category": "resource",
+      "location": "src/pilot_file_drat_v9.py:102-108; src/pilot_file_drat_v9.py:180-185; src/pilot_file_drat_v9.py:747-749; src/pilot_file_drat_v9.py:1103; src/pilot_file_drat_v9.py:1129-1141",
+      "problem": "The 2 MiB metadata allowance is neither enforced nor a valid bound on retained JSON.",
+      "evidence": "A capture may contain up to 16 MiB of status text. run_plan copies status lines into the item record, and qualify_unsat can duplicate checker status text into defects. JSON serialization can therefore exceed RECORD_ALLOW while capture caps still hold; UNKNOWN records are also written this way. With proof and captures near their allowed maxima, ITEM_RESERVE underestimates retained output. The proof-copy, mutation-byte, capture and CNF arithmetic otherwise totals the stated 4,072,810,249-byte run reservation.",
+      "suggestedFix": "Bound diagnostic fields and serialized record sizes before writing, reference capped captures by hash/offset, and reserve the proven maximum for every retained JSON artifact."
+    },
+    {
+      "severity": "major",
+      "category": "control",
+      "location": "src/pilot_file_drat_v9.py:819-822; src/pilot_file_drat_v9.py:868-873; checker/drat-trim.c:85; checker/drat-trim.c:905",
+      "problem": "R2#8 UNRESOLVED: C2 still passes when the checker aborts for an unrelated resource or timeout reason.",
+      "evidence": "healthy() accepts every nonnegative self-exit. The checker uses exit(0) for MEMOUT and TIMEOUT. C2 requires only healthy(dr2) and the independently guaranteed CNF digest defect, ignoring the additional fatal qualification defects. In-memory checks confirmed both MEMOUT and TIMEOUT pass the exact C2 predicate without a completed checker verification.",
+      "suggestedFix": "Require a documented completed checker outcome and reject fatal/resource diagnostics independently of the expected digest mutation."
+    },
+    {
+      "severity": "major",
+      "category": "correctness",
+      "location": "src/pilot_file_drat_v9.py:1159-1187",
+      "problem": "Cancellation during closeout can disappear from both the exit code and the final summary.",
+      "evidence": "final_code computes code and snapshots cancel/cancel_order before the blocking clock() and summary write. Cancellation during clock() does not update either snapshot or code. An in-memory injection there returned exit 0 and saved cancel=false/cancel_order=null while CANCEL was set.",
+      "suggestedFix": "Collect blocking closeout metadata before selecting the code and cancellation snapshot, and define an explicit closeout boundary so cancellation before it is recorded and cannot return success."
+    }
+  ]
+}

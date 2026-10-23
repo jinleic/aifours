@@ -1,0 +1,661 @@
+--- src/run_m2h_v6_2.py
++++ src/run_m2h_v6_3.py
+@@ -1,13 +1,15 @@
+ #!/usr/bin/env python3
+-"""Historical-M2 (A2 ms01..ms08) measured re-solve over the v6_2 transport (parent Codex review v2 HOLD fixes).
++"""Historical-M2 (A2 ms01..ms08) measured re-solve over the v6_3 transport (parent Codex review v2 HOLD fixes, plus the
++v6_2 re-review fixes: ONE shared predicate for all five admissions; any signal/cancellation never qualifies, and the
++publication window is signal-blocked with a final cancellation check; exact covered/excluded universe).
+ Each item regenerates its ORIGINAL independent-B formula; a mismatch with the bound historical receipt CNF is an
+ explicit pre-pin BindingRefusal (no pin/job/group, unattempted, chunk ends, no veto). CaDiCaL at the original 300/600
+ limit, drat-trim 1200, the same exact measured predicate, one attempt, no automatic retry, ONE pipeline (singleton
+-lock). Frozen policy clocks: no admission at/after 17:20 PDT (independent of STOP-K1; the v6_2 gates also refuse every
++lock). Frozen policy clocks: no admission at/after 17:20 PDT (independent of STOP-K1; the v6_3 gates also refuse every
+ later worker/solver/checker phase); the chunk deadline is the 17:57 native end minus a 120 s cleanup allowance and
+ the runtime refuses any group whose 2400 s budget does not fit before it.
+ Historical receipts are validated per revision (5, 9, 12, 14, 15) with explicit layouts, and stay ORIGINAL-QUALIFIED
+-only. The M2H reader accepts ONLY the exact measured v6_2 schema with every primary/pin/commit binding; there is no
++only. The M2H reader accepts ONLY the exact measured v6_3 schema with every primary/pin/commit binding; there is no
+ historical fallback. Whole-plan retained bound = runtime plan bound + every M2H item at the ordinary per-item bound.
+ Parent source GO required before running.
+ """
+@@ -18,21 +20,22 @@
+ import json
+ import os
+ import re
++import signal
+ import time
+ 
+ import encode_skel_b as ENC
+-import m2_item_owner_v6_2 as OWNER
+-import m2_ms09_contract_v6_2 as COMMON
+-import m2_ms09_evidence_v6_2 as E
+-import m2_supervised_runtime_v6_2 as R
+-import run_m2_ms09_k1_v6_2 as TX
++import m2_item_owner_v6_3 as OWNER
++import m2_ms09_contract_v6_3 as COMMON
++import m2_ms09_evidence_v6_3 as E
++import m2_supervised_runtime_v6_3 as R
++import run_m2_ms09_k1_v6_3 as TX
+ 
+ L = COMMON.LANE
+-SCHEMA = 'PA19-M2H-A2-v6_2'
+-RUNNER = 'run_m2h_v6_2.py'
+-EXTRA_SOURCES = ('src/freeze_m2h_v6_2.py','src/run_m2h_v6_2.py','src/final_m2h_inventory_v6_2.py')
++SCHEMA = 'PA19-M2H-A2-v6_3'
++RUNNER = 'run_m2h_v6_3.py'
++EXTRA_SOURCES = ('src/freeze_m2h_v6_3.py','src/run_m2h_v6_3.py','src/final_m2h_inventory_v6_3.py')
+ POLICY_CLOCKS = {'admission_cutoff':'2026-10-18T17:20:00-07:00','native_end':'2026-10-18T17:57:00-07:00','cleanup_allowance_seconds':120}
+-SINGLETON = 'cycle2/m2h-v6_2-singleton.lock'
++SINGLETON = 'cycle2/m2h-v6_3-singleton.lock'
+ SHA_RE = re.compile(r'[0-9a-f]{64}')
+ STAGED = r'^/opt/homebrew/bin/cadical -q -t (300|600) CNF PROOF; binary DRAT staged \(zstd-1 in memory\) then drat-trim -i -t 1200$'
+ STREAMED = r'^/opt/homebrew/bin/cadical -q -t (600) CNF PROOF; binary DRAT streamed to drat-trim -i -t %d$'
+@@ -41,6 +44,38 @@
+               ('partbatch',9):(STREAMED % 1200,['s VERIFIED'],False),('direct',12):(STAGED,['s VERIFIED'],True),
+               ('direct',14):(STAGED,['s VERIFIED'],True),('partbatch',14):(STAGED,['s VERIFIED'],True),
+               ('direct',15):(STAGED,['s VERIFIED'],True),('partbatch',15):(STAGED,['s VERIFIED'],True)}
++
++
++REQUIRED_ADMISSIONS = (('owner_preconstruction_gate','construct'),('owner_prespawn_gate','worker'),
++                       ('worker_preconstruction_gate','construct'),('worker_solver_gate','solver'),('worker_checker_gate','checker'))
++
++
++def admission_records(r):
++    native = r.get('native_result') if isinstance(r.get('native_result'),dict) else {}
++    gates = native.get('gates') if isinstance(native.get('gates'),list) else []
++    return ({'owner_preconstruction_gate':r.get('owner_preconstruction_gate'),'owner_prespawn_gate':r.get('owner_prespawn_gate'),
++             'worker_preconstruction_gate':native.get('worker_preconstruction_gate'),
++             'worker_solver_gate':gates[0] if len(gates) > 0 else None,'worker_checker_gate':gates[1] if len(gates) > 1 else None},len(gates))
++
++
++def admission_errors(r,cut,require_all):
++    """ONE shared predicate for the five admissions of an item: every present admission record carries its phase and the
++    frozen cutoff; every admitted one is timestamped strictly before the cutoff; a qualifying UNSAT needs all five admitted."""
++    errors = []
++    by,n = admission_records(r)
++    if n > 2: errors.append('unexpected worker phase gate count %d' % n)
++    for name,phase in REQUIRED_ADMISSIONS:
++        g = by[name]
++        if g is None:
++            if require_all: errors.append('required admission missing: '+name)
++            continue
++        if not isinstance(g,dict): errors.append('admission record invalid: '+name); continue
++        if g.get('phase') != phase: errors.append('admission phase differs: '+name)
++        if g.get('admission_cutoff_epoch') != cut: errors.append('admission cutoff differs: '+name)
++        if g.get('admitted') is True:
++            if type(g.get('at_epoch')) not in (int,float) or not g['at_epoch'] < cut: errors.append('admission at/after the frozen cutoff or untimed: '+name)
++        elif require_all: errors.append('required admission not admitted: '+name)
++    return errors
+ 
+ 
+ def epochs(c=None):
+@@ -91,12 +126,12 @@
+ 
+ def task(item):
+     if item['mode'] == 'direct':
+-        base = 'cycle2/m2skel_drat/ms%02d_b%05d_h6_2' % (item['multiset'],item['b_index'])
+-        claim = 'cycle2/claims/m2h6_2_ms%02d_b%05d.claim' % (item['multiset'],item['b_index'])
++        base = 'cycle2/m2skel_drat/ms%02d_b%05d_h6_3' % (item['multiset'],item['b_index'])
++        claim = 'cycle2/claims/m2h6_3_ms%02d_b%05d.claim' % (item['multiset'],item['b_index'])
+     else:
+         lo,hi = item['indices']
+-        base = 'cycle2/m2part_drat/ms%02d_b%05d/batch_%05d_%05d_h6_2' % (item['multiset'],item['b_index'],lo,hi)
+-        claim = 'cycle2/claims/m2h6_2_ms%02d_b%05d_%05d_%05d.claim' % (item['multiset'],item['b_index'],lo,hi)
++        base = 'cycle2/m2part_drat/ms%02d_b%05d/batch_%05d_%05d_h6_3' % (item['multiset'],item['b_index'],lo,hi)
++        claim = 'cycle2/claims/m2h6_3_ms%02d_b%05d_%05d_%05d.claim' % (item['multiset'],item['b_index'],lo,hi)
+     return {'id':item['id'],'indices':item['indices'],'new_record':base+'.json','pin':base+'.cnf-pin.json',
+             'commit':base+'.receipt.json','claim':claim}
+ 
+@@ -148,7 +183,10 @@
+     assert c['cases_direct'] == len(direct) and c['cases_split'] == len(split) and c['split_intervals'] == sum(x['mode'] == 'partbatch' for x in c['items'])
+     excluded = [e['case'] for e in c['excluded_cases']]
+     covered = {'ms%02d_b%05d' % k for k in set(direct) | split}
+-    assert len(set(excluded)) == len(excluded) and not (set(excluded) & covered) and len(excluded)+len(covered) == sum(totals.values())
++    universe = {'ms%02d_b%05d' % (mi,bi) for mi,n in totals.items() for bi in range(n)}
++    assert len(set(excluded)) == len(excluded), 'duplicate excluded case'
++    assert not (set(excluded) & covered), 'excluded case is also covered'
++    assert set(excluded) | covered == universe, 'covered/excluded is not exactly the A2 ms01..ms08 skeleton universe'
+ 
+ 
+ def recipe(c,x):
+@@ -160,20 +198,20 @@
+ 
+ 
+ def inspect(c,h,x):
+-    """EXACT measured v6_2 reader: every binding must hold; nothing historical can qualify here."""
++    """EXACT measured v6_3 reader: every binding must hold; nothing historical can qualify here."""
+     it = task(x)
+     if not (L/it['new_record']).exists(): return {'state':'MISSING','record':None,'errors':[]}
+     try:
+         raw = (L/it['new_record']).read_bytes(); r = json.loads(raw)
+         pin,k = COMMON.read(L/it['pin']),COMMON.read(L/it['commit'])
+-        assert pin['schema'] == 'PA19-K1-CNF-PIN-v6_2' and k['schema'] == 'PA19-K1-RECEIPT-v6_2'
++        assert pin['schema'] == 'PA19-K1-CNF-PIN-v6_3' and k['schema'] == 'PA19-K1-RECEIPT-v6_3'
+         assert pin['production_contract_sha256'] == k['production_contract_sha256'] == h
+         assert type(pin['multiset']) is int and pin['multiset'] == x['multiset'] and type(pin['b_index']) is int and pin['b_index'] == k['b_index'] == x['b_index']
+         assert pin['indices'] == x['indices'] == k['indices'] and pin['recipe'] == recipe(c,x)
+         assert pin['source_sha256'] == c['source_sha256'] and pin['binary_authority'] == c['binary_authority'] and pin['supervisor_sha256'] == R.SUP_SHA
+         assert pin['cnf_sha256'] == x['expected_cnf_sha256'] and pin['cnf_bytes'] == x['expected_cnf_bytes']
+         assert k['pin_sha256'] == E.digest(L/it['pin']) and k['record_sha256'] == hashlib.sha256(raw).hexdigest()
+-        assert isinstance(r,dict) and r.get('pipeline_schema') == 'PA19-SUPERVISED-DRAT-v6_2'
++        assert isinstance(r,dict) and r.get('pipeline_schema') == 'PA19-SUPERVISED-DRAT-v6_3'
+         assert r.get('production_contract_sha256') == h and r.get('pre_child_pin_sha256') == k['pin_sha256'] and r.get('pre_child_pin_path') == it['pin']
+         assert r.get('runner') == RUNNER and r.get('count_for_scientific_coverage') is True and r.get('historical_receipt') == x['historical']
+         assert r.get('multiset') == x['multiset'] and r.get('b_index') == x['b_index'] and r.get('indices') == x['indices']
+@@ -182,11 +220,11 @@
+         else:
+             assert not any(key in r for key in ('list_sha256','complete_denominator','enumerator'))
+         if r.get('group_started'): assert (r.get('supervisor') or {}).get('supervisor_sha256') == R.SUP_SHA
+-        cut = epochs(c)[0]
+-        gates = [r.get('owner_preconstruction_gate'),r.get('owner_prespawn_gate')]+list((r.get('native_result') or {}).get('gates') or [])
+-        for g in gates:
+-            if isinstance(g,dict) and g.get('admitted'):
+-                assert g.get('admission_cutoff_epoch') == cut and type(g.get('at_epoch')) in (int,float) and g['at_epoch'] < cut, 'admitted gate violates the frozen cutoff'
++        errs = admission_errors(r,epochs(c)[0],r.get('status') == 'UNSAT')
++        assert not errs, errs
++        if r.get('status') == 'UNSAT':
++            assert not r.get('owner_cancelled') and not r.get('observed_signal') and not (r.get('supervisor') or {}).get('observed_signal'), \
++                'UNSAT record carries a signal/cancellation'
+     except (OSError,ValueError,KeyError,TypeError,AssertionError,StopIteration) as exc:
+         return {'state':'INTEGRITY_VETO','errors':[repr(exc)]}
+     enc = 'encode_skel_b.build_v2' if x['mode'] == 'direct' else 'encode_skel_b.build_partbatch'
+@@ -212,12 +250,12 @@
+     ap = argparse.ArgumentParser(); ap.add_argument('contract'); ap.add_argument('sha256'); ap.add_argument('--max-attempts',type=int)
+     args = ap.parse_args(); R.install_handlers()
+     cut,end,cleanup = epochs()
+-    logs = L/'cycle2/m2h6_2-chunks'/('%s-%d' % (time.strftime('%Y%m%dT%H%M%S'),time.time_ns())); logs.mkdir(parents=True,exist_ok=False)
++    logs = L/'cycle2/m2h6_3-chunks'/('%s-%d' % (time.strftime('%Y%m%dT%H%M%S'),time.time_ns())); logs.mkdir(parents=True,exist_ok=False)
+     stage = L/'scratch/m2h-publish'/logs.name
+     lock = os.open(L/SINGLETON,os.O_CREAT|os.O_RDWR,0o644)
+     try: fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+     except BlockingIOError:
+-        COMMON.publish_json(logs/'singleton-refusal.json',{'status':'REFUSED','reason':'another M2H v6_2 pipeline holds the singleton lock',
++        COMMON.publish_json(logs/'singleton-refusal.json',{'status':'REFUSED','reason':'another M2H v6_3 pipeline holds the singleton lock',
+             'host_clock':time.strftime('%Y-%m-%dT%H:%M:%S%z')},stage)
+         print('M2H singleton refusal',flush=True); os.close(lock); return
+     try:
+@@ -294,12 +332,20 @@
+         if not r.get('pre_child_pin_sha256'):
+             COMMON.publish_json(logs/('binding-or-construction-'+x['id'].replace(':','_')+'.json'),r,stage)
+             TX.release_unattempted(it['claim'],'M2H construction refused before immutable pin/native'); stop = 'construction refusal'; break
+-        r.update(runner=RUNNER,count_for_scientific_coverage=True,historical_receipt=x['historical'])
+-        if x['mode'] == 'partbatch': r.update(list_sha256=x['list']['sha256'],complete_denominator=x['list']['n'],enumerator='extend_b.py')
+-        raw = (json.dumps(r,indent=1)+'\n').encode(); rh = hashlib.sha256(raw).hexdigest()
+-        COMMON.publish_json(L/it['commit'],{'schema':'PA19-K1-RECEIPT-v6_2','production_contract_sha256':args.sha256,'b_index':x['b_index'],
+-            'indices':x['indices'],'record_sha256':rh,'pin_sha256':r['pre_child_pin_sha256']},stage)
+-        COMMON.publish_bytes(L/it['new_record'],raw,stage)  # primary LAST
++        blocked = signal.pthread_sigmask(signal.SIG_BLOCK,{signal.SIGTERM,signal.SIGINT})  # v6_3 publication window
++        try:
++            if R._CANCEL[0] and not r.get('owner_cancelled'):  # a cancellation after the owner composed the outcome
++                r.update(status='UNKNOWN',checked=False,owner_cancelled=True,halt_production=True,chunk_stop=True,
++                         safety_veto=list(r.get('safety_veto') or [])+['cancellation before publication'])
++                OWNER.persist_veto(r,paths,args.sha256,recipe(c,x))
++            r.update(runner=RUNNER,count_for_scientific_coverage=True,historical_receipt=x['historical'])
++            if x['mode'] == 'partbatch': r.update(list_sha256=x['list']['sha256'],complete_denominator=x['list']['n'],enumerator='extend_b.py')
++            raw = (json.dumps(r,indent=1)+'\n').encode(); rh = hashlib.sha256(raw).hexdigest()
++            COMMON.publish_json(L/it['commit'],{'schema':'PA19-K1-RECEIPT-v6_3','production_contract_sha256':args.sha256,'b_index':x['b_index'],
++                'indices':x['indices'],'record_sha256':rh,'pin_sha256':r['pre_child_pin_sha256']},stage)
++            COMMON.publish_bytes(L/it['new_record'],raw,stage)  # primary LAST
++        finally:
++            signal.pthread_sigmask(signal.SIG_SETMASK,blocked)  # a signal in this window now reaches the cancel handler
+         attempts += 1
+         item = {'id':x['id'],'record':it['new_record'],'sha256':rh,'status':r['status'],'checked':r['checked'],'integrity_status':r['integrity_status'],
+                 'host_clock':time.strftime('%Y-%m-%dT%H:%M:%S%z')}
+--- src/freeze_m2h_v6_2.py
++++ src/freeze_m2h_v6_3.py
+@@ -1,13 +1,13 @@
+ #!/usr/bin/env python3
+-"""Freeze the HISTORICAL-M2 measured re-solve contract (M2H, A2 ms01..ms08) over the v6_2 transport.
++"""Freeze the HISTORICAL-M2 measured re-solve contract (M2H, A2 ms01..ms08) over the v6_3 transport.
+ Every item is bound to its immutable historical checked-UNSAT receipt (path+SHA) whose identity is validated with
+-the EXPLICIT per-revision layout of run_m2h_v6_2.historical_errors (revisions 5, 9, 12, 14, 15; multiset, B index,
++the EXPLICIT per-revision layout of run_m2h_v6_3.historical_errors (revisions 5, 9, 12, 14, 15; multiset, B index,
+ exact integer interval, encoder, CNF SHA/positive bytes, native limit, checker verdict). Production regenerates
+ with the ORIGINAL independent-B encoder and must reproduce the bound bytes before any pin.
+ Direct cases: one build_v2 item. Split cases: the exact B100 partition of the frozen list whose source/index/
+ denominator are validated; every interval must have a validated historical checked-UNSAT batch receipt, otherwise
+ the whole case is excluded (reported, never silently covered). Frozen policy clocks and the whole-plan bound are
+-taken from run_m2h_v6_2. ms09 belongs to the M9 contract; E0 needs a reviewed encode_q0b worker mode.
++taken from run_m2h_v6_3. ms09 belongs to the M9 contract; E0 needs a reviewed encode_q0b worker mode.
+ Metadata only (JSON reads + hashes); no regeneration, solver or checker here.
+ """
+ import hashlib
+@@ -18,9 +18,9 @@
+ import time
+ from pathlib import Path
+ 
+-import m2_ms09_contract_v6_2 as COMMON
+-import m2_supervised_runtime_v6_2 as R
+-import run_m2h_v6_2 as H
++import m2_ms09_contract_v6_3 as COMMON
++import m2_supervised_runtime_v6_3 as R
++import run_m2h_v6_3 as H
+ 
+ L = COMMON.LANE
+ 
+@@ -103,7 +103,7 @@
+         'scope':'A2 ms01..ms08 only; ms09 in M9 contract; E0 pending reviewed worker mode; historical receipts remain ORIGINAL-QUALIFIED',
+         'automatic_retry_allowed':False,'single_pipeline':True,'deviation':'rev5/rev9 recorded checker 1800s run at reviewed 1200s (stricter)'}
+     H.verify(out)
+-    dest = L/'cycle2'/('m2h-a2-v6_2-contract-%s.json' % time.strftime('%Y%m%dT%H%M%S'))
++    dest = L/'cycle2'/('m2h-a2-v6_3-contract-%s.json' % time.strftime('%Y%m%dT%H%M%S'))
+     stage = L/'scratch/m2h-publish'/('contract-'+str(time.time_ns()))
+     h = COMMON.publish_json(dest,out,stage)
+     print(dest,h,'items',len(items),'direct',out['cases_direct'],'split_cases',out['cases_split'],'intervals',out['split_intervals'],
+--- src/final_m2h_inventory_v6_2.py
++++ src/final_m2h_inventory_v6_3.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Fail-closed M2H (historical A2 ms01..ms08) component inventory. Counts ONLY measured-v6_2 qualified items.
++"""Fail-closed M2H (historical A2 ms01..ms08) component inventory. Counts ONLY measured-v6_3 qualified items.
+ A case is covered iff its direct item, or every interval of its exact complete B100 partition, is QUALIFIED.
+ --verify-formulas regenerates every consumed formula and compares it to the pinned bytes. Historical receipts remain
+ ORIGINAL-QUALIFIED only. Persistent vetoes or unknown records block final readiness. Not a global PA19 verdict.
+@@ -9,10 +9,10 @@
+ import json
+ import time
+ 
+-import m2_ms09_contract_v6_2 as COMMON
+-import m2_ms09_evidence_v6_2 as E
+-import m2_supervised_runtime_v6_2 as R
+-import run_m2h_v6_2 as H
++import m2_ms09_contract_v6_3 as COMMON
++import m2_ms09_evidence_v6_3 as E
++import m2_supervised_runtime_v6_3 as R
++import run_m2h_v6_3 as H
+ 
+ L = COMMON.LANE
+ 
+@@ -36,7 +36,7 @@
+             cases.setdefault((x['multiset'],x['b_index']),[]).append(ok)
+         covered = sum(all(v) for v in cases.values())
+         union = R.admission_union(L)
+-        out = {'schema':'PA19-M2H-INVENTORY-v6_2','host_clock':time.strftime('%Y-%m-%dT%H:%M:%S%z'),'contract_sha256':args.sha256,
++        out = {'schema':'PA19-M2H-INVENTORY-v6_3','host_clock':time.strftime('%Y-%m-%dT%H:%M:%S%z'),'contract_sha256':args.sha256,
+             'cases':len(cases),'covered_cases':covered,'open_cases':len(cases)-covered,'issues':issues,'admission_union':union,
+             'formula_verification_mode':args.verify_formulas,'excluded_cases_from_contract':len(c['excluded_cases']),
+             'final_component_ready':bool(args.verify_formulas and covered == len(cases) and not issues and not union['persistent_vetoes']),
+--- src/m2h_binding_census_v6_2.py
++++ src/m2h_binding_census_v6_3.py
+@@ -1,11 +1,11 @@
+ #!/usr/bin/env python3
+-"""Pre-production binding census for the frozen M2H v6_2 contract: regenerate EVERY item's ORIGINAL independent-B
+-formula in memory (run_m2h_v6_2.formula, the exact production constructor path) and compare bytes/SHA-256 with the
++"""Pre-production binding census for the frozen M2H v6_3 contract: regenerate EVERY item's ORIGINAL independent-B
++formula in memory (run_m2h_v6_3.formula, the exact production constructor path) and compare bytes/SHA-256 with the
+ historical receipt CNF bound in the contract. No solver, checker, helper or child process; no CNF is written.
+ A mismatch would make production refuse that item before pin and end the chunk, so it is reported up front.
+ One lane token held (metadata Capacity). SIGTERM sets the cooperative cancel flag; the census then stops at an item
+-boundary and writes a partial receipt (status STOPPED). Output: cycle2/m2h-v6_2-binding-census-<stamp>.json (creation-only).
+-Usage: m2h_binding_census_v6_2.py CONTRACT SHA256
++boundary and writes a partial receipt (status STOPPED). Output: cycle2/m2h-v6_3-binding-census-<stamp>.json (creation-only).
++Usage: m2h_binding_census_v6_3.py CONTRACT SHA256
+ """
+ import argparse
+ import hashlib
+@@ -13,10 +13,10 @@
+ import os
+ import time
+ 
+-import m2_ms09_contract_v6_2 as COMMON
+-import m2_ms09_evidence_v6_2 as E
+-import m2_supervised_runtime_v6_2 as R
+-import run_m2h_v6_2 as H
++import m2_ms09_contract_v6_3 as COMMON
++import m2_ms09_evidence_v6_3 as E
++import m2_supervised_runtime_v6_3 as R
++import run_m2h_v6_3 as H
+ 
+ L = COMMON.LANE
+ 
+@@ -41,7 +41,7 @@
+         'census_source_sha256':E.digest(__file__),'items':len(c['items']),'checked':checked,'matches':checked-len(mismatches),'mismatches':mismatches,
+         'status':'STOPPED' if stopped else 'COMPLETE','no_cnf_written':True,'production_coverage':False,
+         'scope':'formula/receipt binding only; says nothing about satisfiability'}
+-    dest = L/'cycle2'/('m2h-v6_2-binding-census-%s.json' % time.strftime('%Y%m%dT%H%M%S'))
++    dest = L/'cycle2'/('m2h-v6_3-binding-census-%s.json' % time.strftime('%Y%m%dT%H%M%S'))
+     with dest.open('x') as f: json.dump(out,f,indent=1); f.write('\n')
+     print(dest,E.digest(dest),out['status'],'checked',checked,'mismatches',len(mismatches),flush=True)
+ 
+--- src/m2h_gate_preview_v6_2.py
++++ src/m2h_gate_preview_v6_3.py
+@@ -1,20 +1,20 @@
+ #!/usr/bin/env python3
+-"""Fresh post-binding admission evidence for the frozen M2H v6_2 contract (parent Codex v2 requirement), metadata only.
++"""Fresh post-binding admission evidence for the frozen M2H v6_3 contract (parent Codex v2 requirement), metadata only.
+ Under one lane token: verify the contract, scan the shared veto/STOP registry, take a FRESH exact allocated-data census,
+-build the same lease the v6_2 owner builds, and evaluate the real v6_2 full_gate for the 'construct' and 'worker'
++build the same lease the v6_3 owner builds, and evaluate the real v6_3 full_gate for the 'construct' and 'worker'
+ phases. Nothing is constructed, pinned, claimed or spawned; no solver/checker. The receipt records the census bytes
+ against the whole-plan reservation (usage must be <= DATA_CAP - bound - margin), floor, RSS headroom, binary identities,
+-census TTL, COUNT, policy cutoff and the 2400 s budget fit. Usage: m2h_gate_preview_v6_2.py CONTRACT SHA256
++census TTL, COUNT, policy cutoff and the 2400 s budget fit. Usage: m2h_gate_preview_v6_3.py CONTRACT SHA256
+ """
+ import argparse
+ import json
+ import os
+ import time
+ 
+-import m2_ms09_contract_v6_2 as COMMON
+-import m2_ms09_evidence_v6_2 as E
+-import m2_supervised_runtime_v6_2 as R
+-import run_m2h_v6_2 as H
++import m2_ms09_contract_v6_3 as COMMON
++import m2_ms09_evidence_v6_3 as E
++import m2_supervised_runtime_v6_3 as R
++import run_m2h_v6_3 as H
+ 
+ L = COMMON.LANE
+ 
+@@ -33,7 +33,7 @@
+              'force_census_refresh':False,'binary_authority':c['binary_authority'],'group_rss_cap_bytes':R.GROUP_RSS_CAP,'busy_units':2,
+              'lane_busy_ceiling':4,'chunk_deadline_monotonic':deadline,'item_deadline_monotonic':now+2400,'admission_cutoff_epoch':cut}
+     gates = {phase:R.full_gate(dict(lease),phase) for phase in ('construct','worker')}
+-    out = {'schema':'PA19-M2H-V6_2-GATE-PREVIEW-v1','host_clock':time.strftime('%Y-%m-%dT%H:%M:%S%z'),'contract_sha256':args.sha256,
++    out = {'schema':'PA19-M2H-V6_3-GATE-PREVIEW-v1','host_clock':time.strftime('%Y-%m-%dT%H:%M:%S%z'),'contract_sha256':args.sha256,
+         'admission_union':union,'census':{'reference':reference,'current_data_upper_bytes':census['current_data_upper_bytes'],'age_seconds':census['age_seconds']},
+         'whole_plan_remaining_bound_bytes':bound,'usage_limit_bytes':R.DATA_CAP-bound-R.OTHER_WRITER_MARGIN,
+         'usage_within_reservation':census['current_data_upper_bytes'] <= R.DATA_CAP-bound-R.OTHER_WRITER_MARGIN,
+@@ -42,7 +42,7 @@
+         'gates':{k:{kk:g.get(kk) for kk in ('admitted','errors','count','free_bytes','required_free_bytes','rss','binary_observations',
+                                              'at_epoch','admission_cutoff_epoch')} for k,g in gates.items()},
+         'nothing_constructed_pinned_claimed_or_spawned':True,'production_coverage':False}
+-    dest = L/'cycle2'/('m2h-v6_2-gate-preview-%s.json' % time.strftime('%Y%m%dT%H%M%S'))
++    dest = L/'cycle2'/('m2h-v6_3-gate-preview-%s.json' % time.strftime('%Y%m%dT%H%M%S'))
+     h = COMMON.publish_json(dest,out,L/'scratch/m2h-publish'/('gate-preview-'+str(time.time_ns())))
+     print(dest,h,json.dumps({k:out[k] for k in ('usage_within_reservation','budget_2400_fits','cutoff_remaining_seconds')}),
+           {k:(g['admitted'],g['errors']) for k,g in gates.items()},flush=True)
+--- src/check_m2h_v6_2.py
++++ src/check_m2h_v6_3.py
+@@ -1,8 +1,12 @@
+ #!/usr/bin/env python3
+-"""PRIVATE M2H v6_2 control suite (parent Codex review v2 requirements); excluded from scientific coverage.
++"""PRIVATE M2H v6_3 control suite (parent Codex review v2 + v6_2 re-review requirements); excluded from scientific coverage.
++New in v6_3: O3/O4 settlement-window signal in the REAL owner; T12 publication-window signal (deferred, record consistent,
++runner stops); T13 cancellation between owner return and publication (UNKNOWN + persistent HALT); R15-R19 the shared
++five-admission predicate (worker preconstruction gate missing/wrong cutoff/post-cutoff, valid five, UNSAT with cancellation);
++V1-V3 exact covered/excluded universe (out-of-domain, duplicate, overlapping exclusion names).
+ No solver, checker or native child is started. All writes go to private shadow lanes under
+-cycle2/m2h-v6_2-controls-<ns>/ (symlinked read-only inputs, real new directories for outputs); module-global lane roots
+-of run_m2h_v6_2 / run_m2_ms09_k1_v6_2 / m2_item_owner_v6_2 / final_m2h_inventory_v6_2 are rebound to the shadow for one
++cycle2/m2h-v6_3-controls-<ns>/ (symlinked read-only inputs, real new directories for outputs); module-global lane roots
++of run_m2h_v6_3 / run_m2_ms09_k1_v6_3 / m2_item_owner_v6_3 / final_m2h_inventory_v6_3 are rebound to the shadow for one
+ test and restored. Stubs replace ONLY the stated component (owner execute, census, gate, formula bytes, reader),
+ never the code under test. One real lane token at a time (metadata Capacity / owner Capacity).
+ Families:
+@@ -16,25 +20,27 @@
+      recorded UNKNOWN, existing UNKNOWN never retried, duplicate claim skipped, singleton lock, frozen 17:20 cutoff,
+      existing record veto / resource STOP / persistent flag defer initialization
+   I  inventory: a split case with one MISSING interval stays open; readiness false
+-Usage: check_m2h_v6_2.py CONTRACT SHA256
++Usage: check_m2h_v6_3.py CONTRACT SHA256
+ """
+ import argparse
+ import fcntl
+ import hashlib
+ import json
++import copy
+ import os
++import signal
+ import sys
+ import time
+ import types
+ from pathlib import Path
+ 
+-import final_m2h_inventory_v6_2 as INV
+-import m2_item_owner_v6_2 as OWNER
+-import m2_ms09_contract_v6_2 as COMMON
+-import m2_ms09_evidence_v6_2 as E
+-import m2_supervised_runtime_v6_2 as R
+-import run_m2_ms09_k1_v6_2 as TX
+-import run_m2h_v6_2 as H
++import final_m2h_inventory_v6_3 as INV
++import m2_item_owner_v6_3 as OWNER
++import m2_ms09_contract_v6_3 as COMMON
++import m2_ms09_evidence_v6_3 as E
++import m2_supervised_runtime_v6_3 as R
++import run_m2_ms09_k1_v6_3 as TX
++import run_m2h_v6_3 as H
+ 
+ REAL = COMMON.LANE
+ SELF = Path(__file__).resolve()
+@@ -144,18 +150,73 @@
+     return rows
+ 
+ 
++def settlement_controls(root,c,h):
++    """O3/O4: the REAL owner composes the outcome after a (fake) clean supervision; O3 delivers SIGTERM during settlement."""
++    rows, x = [], next(i for i in c['items'] if i['mode'] == 'direct')
++    orig = (R.full_gate,R.supervisor,R.Capacity._settle)
++    try:
++        R.full_gate = lambda lease,phase,lane=None,providers=None: {'admitted':True,'errors':[],'phase':phase}
++        for name,signal_in_settle in [('O3 SIGTERM during settlement -> owner_cancelled UNKNOWN + HALT',True),('O4 same flow without a signal -> no cancellation, no veto',False)]:
++            sub = root/name.split()[0]; make_shadow(sub,{'items':[x]})
++            with Rebind(sub):
++                it = H.task(x); paths = TX.item_paths(it,sub/'scratch/stage')
++                def fake_supervise(command,nm,wall,cap,floor,lane,record,quarantine,grace=60,owner_child=None):
++                    rec = {'leader_pid':None,'completed_cleanly':True,'uncertain':False,'observed_signal':None,'trip_reason':None,'stop':None,
++                           'supervisor_sha256':R.SUP_SHA,'CONTROL':True}
++                    dump(record,rec)
++                    dump(paths['worker_result'],{'schema':'PA19-NATIVE-RESULT-v6_3','status':'UNKNOWN','integrity_status':'NOT_EVALUATED',
++                         'integrity_errors':[],'sat_candidate':False,'halt_production':False,'bounded_unknown':'CONTROL'})
++                    return rec
++                R.supervisor = lambda: types.SimpleNamespace(supervise=fake_supervise)
++                def fake_settle(self,rec,_sig=signal_in_settle):
++                    if _sig: os.kill(os.getpid(),signal.SIGTERM)
++                    self.settlement = {'group_quiescent':True,'leader_reaped':True,'explicit_owned_popen_wait':True,'owned_leader_pid':None,'CONTROL':True}
++                    self.safe = True
++                R.Capacity._settle = fake_settle
++                admission = {'binary_authority':c['binary_authority'],'census_reference':{'path':'x'},'whole_plan_remaining_bound_bytes':R.ALL_PLANNED_RETAINED_BOUND,
++                             'admission_cutoff_epoch':time.time()+3600}
++                r = OWNER.execute(lambda: b'p cnf 1 1\n1 0\n',H.recipe(c,x),h,c['source_sha256'],paths,time.monotonic()+5000,admission,'cadical',600)
++            cancelled = R._CANCEL[0]; R._CANCEL[0] = False
++            flags = sorted(p.name for p in (sub/'cycle2').glob('m2k3-*.flag'))
++            ok = (r.get('owner_cancelled') is True and r.get('status') == 'UNKNOWN' and r.get('halt_production') is True and flags == ['m2k3-HALT.flag'] and cancelled) \
++                 if signal_in_settle else (not r.get('owner_cancelled') and r.get('status') == 'UNKNOWN' and not r.get('halt_production') and not flags)
++            rows.append({'name':name,'owner_cancelled':r.get('owner_cancelled'),'status':r.get('status'),'halt':r.get('halt_production'),'flags':flags,'ok':ok})
++    finally:
++        R.full_gate,R.supervisor,R.Capacity._settle = orig
++        R._CANCEL[0] = False
++    return rows
++
++
++def five_gates(cut):
++    g = lambda phase: {'phase':phase,'admitted':True,'errors':[],'admission_cutoff_epoch':cut,'at_epoch':cut-3600.0}
++    return g('construct'),g('worker'),{'worker_preconstruction_gate':g('construct'),'gates':[g('solver'),g('checker')]}
++
++
++def universe_controls(c):
++    rows = []
++    covered = next(i for i in c['items'] if i['mode'] == 'direct')
++    for name,mut,msg in [('V1 out-of-domain excluded name',lambda cc: cc['excluded_cases'][0].update(case='ms01_b99999'),'skeleton universe'),
++                         ('V2 duplicate excluded name',lambda cc: cc['excluded_cases'].append(dict(cc['excluded_cases'][0])),'duplicate excluded case'),
++                         ('V3 excluded name that is also covered',lambda cc: cc['excluded_cases'][0].update(case='ms%02d_b%05d' % (covered['multiset'],covered['b_index'])),'also covered')]:
++        cc = copy.deepcopy(c); cc.pop('_path',None); mut(cc)
++        try: H.verify(cc); err = None
++        except AssertionError as exc: err = repr(exc)
++        rows.append({'name':name,'error':err,'ok':err is not None and msg in err})
++    return rows
++
++
+ def bound_record(c,h,x,root,mutate=None,record_override=None):
+     it = H.task(x)
+     enc = 'encode_skel_b.build_v2' if x['mode'] == 'direct' else 'encode_skel_b.build_partbatch'
+-    pin = {'schema':'PA19-K1-CNF-PIN-v6_2','production_contract_sha256':h,'multiset':x['multiset'],'b_index':x['b_index'],'indices':x['indices'],
++    pin = {'schema':'PA19-K1-CNF-PIN-v6_3','production_contract_sha256':h,'multiset':x['multiset'],'b_index':x['b_index'],'indices':x['indices'],
+            'cnf_sha256':x['expected_cnf_sha256'],'cnf_bytes':x['expected_cnf_bytes'],'recipe':H.recipe(c,x),'source_sha256':c['source_sha256'],
+            'supervisor_sha256':R.SUP_SHA,'binary_authority':c['binary_authority']}
+-    rec = {'pipeline_schema':'PA19-SUPERVISED-DRAT-v6_2','status':'UNKNOWN','checked':False,'integrity_status':'NOT_EVALUATED','integrity_errors':[],
++    rec = {'pipeline_schema':'PA19-SUPERVISED-DRAT-v6_3','status':'UNKNOWN','checked':False,'integrity_status':'NOT_EVALUATED','integrity_errors':[],
+            'sat_candidate':False,'halt_production':False,'group_started':False,'production_contract_sha256':h,'multiset':x['multiset'],
+            'b_index':x['b_index'],'indices':x['indices'],'encoder':enc,'cnf_sha256':x['expected_cnf_sha256'],'cnf_bytes':x['expected_cnf_bytes'],
+            'pre_child_pin_path':it['pin'],'runner':H.RUNNER,'count_for_scientific_coverage':True,'historical_receipt':x['historical']}
+     if x['mode'] == 'partbatch': rec.update(list_sha256=x['list']['sha256'],complete_denominator=x['list']['n'],enumerator='extend_b.py')
+-    commit = {'schema':'PA19-K1-RECEIPT-v6_2','production_contract_sha256':h,'b_index':x['b_index'],'indices':x['indices']}
++    commit = {'schema':'PA19-K1-RECEIPT-v6_3','production_contract_sha256':h,'b_index':x['b_index'],'indices':x['indices']}
+     if mutate: mutate(pin,rec,commit)
+     ph = dump(root/it['pin'],pin)
+     rec.setdefault('pre_child_pin_sha256',ph)
+@@ -187,6 +248,20 @@
+              ('R11 pin binds the v3 supervisor',d[8],lambda p,r,k:p.update(supervisor_sha256='79c463589c9c5d60fddff7c4397a4e90339bdb0f5a0b2542c865c02a387573b3'),None,'INTEGRITY_VETO'),
+              ('R12 direct record carrying list fields',d[9],lambda p,r,k:r.update(list_sha256='5'*64),None,'INTEGRITY_VETO'),
+              ('R13 evidence-free UNSAT',d[10],unsat,None,'INTEGRITY_VETO')]
++    def gated(kind):
++        def m(p,r,k):
++            unsat(p,r,k); g1,g2,nat = five_gates(cut); r.update(owner_preconstruction_gate=g1,owner_prespawn_gate=g2,native_result=nat)
++            w = r['native_result']
++            if kind == 'missing': del w['worker_preconstruction_gate']
++            if kind == 'cutoff': w['worker_preconstruction_gate']['admission_cutoff_epoch'] = cut+1.0
++            if kind == 'late': w['worker_preconstruction_gate']['at_epoch'] = cut+5.0
++            if kind == 'cancelled': r['owner_cancelled'] = True
++        return m
++    predicate = [('R15 UNSAT missing worker preconstruction admission',d[12],gated('missing'),'required admission missing: worker_preconstruction_gate'),
++                 ('R16 worker preconstruction admission with a wrong cutoff',d[13],gated('cutoff'),'admission cutoff differs: worker_preconstruction_gate'),
++                 ('R17 worker preconstruction admission after the cutoff',d[14],gated('late'),'admission at/after the frozen cutoff or untimed: worker_preconstruction_gate'),
++                 ('R18 UNSAT carrying an owner cancellation',d[15],gated('cancelled'),'UNSAT record carries a signal/cancellation'),
++                 ('R19 all five admissions valid: predicate passes, evidence reader still rejects',d[16],gated('valid'),None)]
+     sub = root/'R'; make_shadow(sub,c)
+     with Rebind(sub):
+         for name,x,mut,special,want in cases:
+@@ -194,6 +269,13 @@
+             bound_record(c,h,x,sub,mut,override)
+             q = H.inspect(c,h,x)
+             rows.append({'name':name,'id':x['id'],'state':q['state'],'errors':[str(e)[:200] for e in q.get('errors') or []][:3],'ok':q['state'] == want})
++        for name,x,mut,msg in predicate:
++            bound_record(c,h,x,sub,mut,None)
++            q = H.inspect(c,h,x); text = ' '.join(str(e) for e in q.get('errors') or [])
++            own = ('required admission missing','admission cutoff differs','admission at/after the frozen cutoff','admission phase differs',
++                   'required admission not admitted','admission record invalid','UNSAT record carries a signal/cancellation')
++            ok = q['state'] == 'INTEGRITY_VETO' and ((msg in text) if msg else not any(o in text for o in own))
++            rows.append({'name':name,'id':x['id'],'state':q['state'],'errors':[str(e)[:240] for e in q.get('errors') or []][:3],'ok':ok})
+         q = H.inspect(c,h,d[11])
+         rows.append({'name':'R14 missing record','id':d[11]['id'],'state':q['state'],'ok':q['state'] == 'MISSING'})
+     return rows
+@@ -204,50 +286,60 @@
+     def __init__(self,c,h,mode): self.c,self.h,self.mode,self.calls = c,h,mode,[]
+     def execute(self,constructor,recipe,contract_sha,source_sha,paths,deadline,admission,solver='kissat',seconds=600):
+         self.calls.append(paths['id'])
+-        base = {'pipeline_schema':'PA19-SUPERVISED-DRAT-v6_2','status':'UNKNOWN','checked':False,'integrity_status':'NOT_EVALUATED','integrity_errors':[],
++        base = {'pipeline_schema':'PA19-SUPERVISED-DRAT-v6_3','status':'UNKNOWN','checked':False,'integrity_status':'NOT_EVALUATED','integrity_errors':[],
+                 'sat_candidate':False,'halt_production':False,'group_started':False,'production_contract_sha256':contract_sha,
+                 'multiset':recipe['multiset'],'b_index':recipe['b_index'],'indices':recipe.get('indices'),
+                 'encoder':'encode_skel_b.build_v2' if recipe['mode'] == 'direct' else 'encode_skel_b.build_partbatch'}
+         if self.mode == 'pre-pin': return dict(base,unattempted='before-pin',chunk_stop=True,resource_refusal=['CONTROL refusal'])
+         x = next(i for i in self.c['items'] if i['id'] == paths['id'])
+-        pin = {'schema':'PA19-K1-CNF-PIN-v6_2','production_contract_sha256':contract_sha,'multiset':recipe['multiset'],'b_index':recipe['b_index'],
++        pin = {'schema':'PA19-K1-CNF-PIN-v6_3','production_contract_sha256':contract_sha,'multiset':recipe['multiset'],'b_index':recipe['b_index'],
+                'indices':recipe.get('indices'),'cnf_sha256':x['expected_cnf_sha256'],'cnf_bytes':x['expected_cnf_bytes'],'recipe':recipe,
+                'source_sha256':source_sha,'supervisor_sha256':R.SUP_SHA,'binary_authority':admission['binary_authority']}
+         ph = dump(paths['pin'],pin)
+         base.update(cnf_sha256=x['expected_cnf_sha256'],cnf_bytes=x['expected_cnf_bytes'],pre_child_pin_sha256=ph,pre_child_pin_path=str(Path(paths['pin']).relative_to(H.L)))
+         if self.mode == 'pre-worker':
+-            dump(paths['job'],{'schema':'PA19-NATIVE-JOB-v6_2','CONTROL':True})
++            dump(paths['job'],{'schema':'PA19-NATIVE-JOB-v6_3','CONTROL':True})
+             return dict(base,unattempted='after-pin-before-worker',chunk_stop=True,resource_refusal=['CONTROL refusal'])
++        if self.mode in ('unknown-continue','unknown-continue-cancel'):
++            if self.mode == 'unknown-continue-cancel': os.kill(os.getpid(),signal.SIGTERM)  # cancel handler runs before the runner publishes
++            return dict(base,chunk_stop=False,bounded_unknown='CONTROL native limit')
+         return dict(base,chunk_stop=True,resource_refusal=['CONTROL worker admission refusal'])
+ 
+ 
+-def run_main(c,h,sub,owner=None,max_attempts=2,formula=None,epochs=None,real_gate_admit=False):
+-    saved = (H.OWNER,H.formula,H.epochs,H.verify,R.create_census,R.census_for_gate,R.full_gate,sys.argv)
++def run_main(c,h,sub,owner=None,max_attempts=2,formula=None,epochs=None,real_gate_admit=False,publish_signal=False):
++    saved = (H.OWNER,H.formula,H.epochs,H.verify,R.create_census,R.census_for_gate,R.full_gate,sys.argv,COMMON.publish_bytes)
+     orig_verify = H.verify
+     def verify_real(cc):
+         keep = H.L; H.L = REAL
+         try: return orig_verify(cc)
+         finally: H.L = keep
+     try:
+-        if owner is not None: H.OWNER = types.SimpleNamespace(execute=owner.execute,BindingRefusal=OWNER.BindingRefusal)
++        if owner is not None: H.OWNER = types.SimpleNamespace(execute=owner.execute,BindingRefusal=OWNER.BindingRefusal,persist_veto=OWNER.persist_veto)
++        if publish_signal:
++            orig_pb, sent = COMMON.publish_bytes, []
++            def pb(path,raw,stage):
++                if str(path).endswith('_h6_3.json') and not sent: sent.append(1); os.kill(os.getpid(),signal.SIGTERM)
++                return orig_pb(path,raw,stage)
++            COMMON.publish_bytes = pb
+         if formula is not None: H.formula = formula
+         if epochs is not None: H.epochs = epochs
+         H.verify = verify_real
+         R.create_census = lambda: {'path':'cycle2/accounting-v3/CONTROL'}
+         R.census_for_gate = lambda ref,force=False,lane=None: {'reference':ref,'current_data_upper_bytes':0,'age_seconds':0.0,'finished_monotonic':time.monotonic(),'record':{}}
+         if real_gate_admit: R.full_gate = lambda lease,phase,lane=None,providers=None: {'admitted':True,'errors':[],'phase':phase}
+-        sys.argv = ['run_m2h_v6_2.py',str(c['_path']),h,'--max-attempts',str(max_attempts)]
++        sys.argv = ['run_m2h_v6_3.py',str(c['_path']),h,'--max-attempts',str(max_attempts)]
+         with Rebind(sub): H.main()
+     finally:
+-        H.OWNER,H.formula,H.epochs,H.verify,R.create_census,R.census_for_gate,R.full_gate,sys.argv = saved
+-    chunks = sorted((sub/'cycle2/m2h6_2-chunks').glob('*'))
++        H.OWNER,H.formula,H.epochs,H.verify,R.create_census,R.census_for_gate,R.full_gate,sys.argv,COMMON.publish_bytes = saved
++        R._CANCEL[0] = False
++    chunks = sorted((sub/'cycle2/m2h6_3-chunks').glob('*'))
+     return chunks[-1] if chunks else None
+ 
+ 
+ def flow_controls(root,c,h):
+     rows, first, second = [], c['items'][0], c['items'][1]
+     def summary(chunk): return json.loads((chunk/'summary.json').read_bytes()) if chunk and (chunk/'summary.json').exists() else None
+-    def archived(sub): return sorted(p.name.split('.claim')[0] for p in (sub/'archive/k1-v6_2-unattempted').glob('*')) if (sub/'archive/k1-v6_2-unattempted').exists() else []
++    def archived(sub): return sorted(p.name.split('.claim')[0] for p in (sub/'archive/k1-v6_3-unattempted').glob('*')) if (sub/'archive/k1-v6_3-unattempted').exists() else []
+     # T1 pre-pin refusal
+     sub = make_shadow(root/'T1',c); own = StubOwner(c,h,'pre-pin'); ch = run_main(c,h,sub,own)
+     sm = summary(ch); it = H.task(first)
+@@ -310,6 +402,21 @@
+         with Rebind(sub): setup(sub)
+         own = StubOwner(c,h,'pre-pin'); ch = run_main(c,h,sub,own)
+         rows.append({'name':name,'calls':own.calls,'ok':own.calls == [] and ch is not None and (ch/'initialization-deferred.json').exists()})
++    # T12 signal inside the publication window: deferred, the published record stays consistent, the runner then stops
++    sub = make_shadow(root/'T12',c); own = StubOwner(c,h,'unknown-continue'); ch = run_main(c,h,sub,own,max_attempts=3,publish_signal=True)
++    sm = summary(ch); it = H.task(first); q = H_inspect_in(sub,c,h,first)
++    rec = json.loads((sub/it['new_record']).read_bytes()) if (sub/it['new_record']).exists() else {}
++    rows.append({'name':'T12 signal in the publication window is deferred; runner stops','calls':own.calls,'stop':sm and sm['stop_reason'],'state':q['state'],
++                 'ok':own.calls == [first['id']] and sm['stop_reason'] == 'deadline/cancellation; no new native' and q['state'] == 'UNQUALIFIED'
++                      and 'owner_cancelled' not in rec and not list((sub/'cycle2').glob('m2k3-*.flag'))})
++    # T13 cancellation after the owner returned and before publication: UNKNOWN + persistent HALT, never qualified
++    sub = make_shadow(root/'T13',c); own = StubOwner(c,h,'unknown-continue-cancel'); ch = run_main(c,h,sub,own,max_attempts=3)
++    sm = summary(ch); it = H.task(first)
++    rec = json.loads((sub/it['new_record']).read_bytes()) if (sub/it['new_record']).exists() else {}
++    flags = sorted(p.name for p in (sub/'cycle2').glob('m2k3-*.flag'))
++    rows.append({'name':'T13 cancellation before publication marks UNKNOWN + HALT','stop':sm and sm['stop_reason'],'flags':flags,
++                 'ok':own.calls == [first['id']] and rec.get('owner_cancelled') is True and rec.get('status') == 'UNKNOWN'
++                      and rec.get('halt_production') is True and flags == ['m2k3-HALT.flag'] and sm['stop_reason'] == 'persistent veto'})
+     return rows
+ 
+ 
+@@ -328,7 +435,7 @@
+     try:
+         H.inspect = lambda cc,hh,x: {'state':'QUALIFIED' if x['id'] in qualified else 'MISSING'}
+         H.verify = lambda cc: orig_verify(cc)
+-        sys.argv = ['final_m2h_inventory_v6_2.py',str(c['_path']),h]
++        sys.argv = ['final_m2h_inventory_v6_3.py',str(c['_path']),h]
+         with Rebind(sub,(INV,)): INV.main()
+     finally:
+         H.inspect, sys.argv = saved, argv
+@@ -342,19 +449,21 @@
+     assert E.digest(args.contract) == args.sha256
+     with R.Capacity(time.monotonic()+3600,metadata=True,wait_allowance=60):
+         c = COMMON.read(args.contract); H.verify(c); c['_path'] = Path(args.contract).resolve()
+-    root = REAL/'cycle2'/('m2h-v6_2-controls-%d' % time.time_ns()); root.mkdir()
++    root = REAL/'cycle2'/('m2h-v6_3-controls-%d' % time.time_ns()); root.mkdir()
+     started = time.strftime('%Y-%m-%dT%H:%M:%S%z')
+     fams = {}
+     with R.Capacity(time.monotonic()+3600,metadata=True,wait_allowance=60):  # one token; tests below never nest tokens
+         fams['G_runtime_gates'] = gate_controls(root)
+     fams['C_capacity'] = capacity_controls(root)
+-    fams['O_owner'] = owner_controls(root,c,args.sha256)
++    fams['O_owner'] = owner_controls(root,c,args.sha256)+settlement_controls(root,c,args.sha256)
+     with R.Capacity(time.monotonic()+3600,metadata=True,wait_allowance=60):
+         fams['R_exact_reader'] = reader_controls(root,c,args.sha256)
+     fams['T_runner_flow'] = flow_controls(root,c,args.sha256)
+     fams['I_inventory'] = inventory_controls(root,c,args.sha256)
++    with R.Capacity(time.monotonic()+3600,metadata=True,wait_allowance=60):
++        fams['V_exact_universe'] = universe_controls(c)
+     allok = all(r['ok'] for rows in fams.values() for r in rows)
+-    out = {'schema':'PA19-M2H-V6_2-CONTROLS-v1','started_host_clock':started,'finished_host_clock':time.strftime('%Y-%m-%dT%H:%M:%S%z'),
++    out = {'schema':'PA19-M2H-V6_3-CONTROLS-v1','started_host_clock':started,'finished_host_clock':time.strftime('%Y-%m-%dT%H:%M:%S%z'),
+         'control_source_sha256':E.digest(SELF),'contract':str(c['_path'].relative_to(REAL)),'contract_sha256':args.sha256,
+         'sources':{k:E.digest(REAL/k) for k in c['source_sha256']},'families':fams,'all_expected':allok,'native_children_started':0,
+         'production_coverage':False,'scope':'private shadow lanes; stubs only for the named component; no solver/checker/native child'}

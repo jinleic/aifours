@@ -1,0 +1,2185 @@
+--- code/owned_supervisor_v7.py	2026-10-19 06:47:25
++++ code/owned_supervisor_v9.py	2026-10-19 07:24:49
+@@ -1,99 +1,102 @@
+ #!/usr/bin/env python3
+-"""owned_supervisor_v7: run ONE child process under a fail-closed guard. Standard library only (ctypes for read-only
+-macOS libproc/sysctl process metadata). Supersedes the never-run v3-v6 (v6 = v5 + evidence digests). v5 was reviewed by
+-Codex (RUN/review/rqls10-owned-supervisor-v5-source-codex-v1.prompt.stdout.txt, HOLD: 9 FATAL, 5 MAJOR, 1 MINOR); the
+-per-finding disposition is review/rqls10-owned-supervisor-v7-disposition-v1.json. code/owned_supervisor_v2.py untouched.
++"""owned_supervisor_v9: run ONE child process under a fail-closed guard. Standard library only (ctypes for read-only
++macOS libproc/sysctl process metadata). v9 = v8 (472fddf9...27a3, frozen, never run; Codex v7 findings disposed in
++review/rqls10-owned-supervisor-v8-disposition-v1.json) with the owner-required /bin/date clock restored as the SOLE
++metadata helper under a repaired owned and bounded lifecycle (parent objection 07:2x: Python-formatted wall-clock
++timestamps do not satisfy "/bin/date before timestamp writes"). code/owned_supervisor_v2.py untouched.
+ 
+-Outcomes (three only): SETTLED, UNSETTLED, NOT_LAUNCHED. Every uncertain outcome is UNSETTLED.
+- 1. Failure latch. Any failure of identity, observation (census, free space, output size, lane walk, any budget), helper,
+-    capture (sink threads, samples), GO delivery, launch-record publication, grace expiry, evidence binding or an
+-    unexpected exception is appended to a monotonic latch that is never cleared, and requests a stop. A non-empty latch
+-    makes a launched run UNSETTLED. Resource trips (DEADLINE, RSS, BUSY, FREE, OUTPUT, STREAM_CAP, LANE_CEILING,
+-    SUPERVISOR_CANCEL) request a stop and are recorded, but are not failures by themselves.
+- 2. Stop and grace. The first stop request (trip or failure) is latched with a monotonic time; at most one SIGTERM goes to
+-    the child's process group, only after the identity check of item 4. The observation grace (settle_s) runs from the
+-    first stop request and from the reaping of the child; every decision reads a fresh monotonic clock. Grace expiry
+-    with anything unresolved is latched (GRACE_EXPIRED_*) and is irreversible: later cleanup cannot settle the run.
+-    No SIGKILL, no escalation, no subprocess or tool timeouts, no ulimit, no deletion.
+- 3. Single reaper. SIGCHLD is reset to SIG_DFL before any spawn. The child and every /bin/date helper are spawned with
+-    subprocess.Popen; the Popen objects stay referenced for the whole run and are never polled, waited or communicated;
+-    only this supervisor reaps them, with os.waitpid(pid, WNOHANG). ECHILD (lost wait status) is a failure and disables
+-    signalling. (At interpreter exit, after publication, Popen finalizers may poll; no decision depends on that.)
+- 4. Identity = (pid, p_uniqueid, p_idversion, pgid, uid) from libproc PROC_PIDUNIQIDENTIFIERINFO and
+-    PROC_PIDT_SHORTBSDINFO (zombie-inclusive queries), captured immediately after spawn, before any other fallible
+-    setup. A signal is sent only to an unreaped process whose tuple is re-read equal immediately before killpg (the
+-    child; a /bin/date helper in its own group likewise). Otherwise no signal and IDENTITY_UNVERIFIED is latched.
+- 5. Lineage census (every sample; libproc and sysctl only, no ps/lsof). XNU assigns p_uniqueid at fork from a global
+-    increasing counter, keeps it across exec, records the parent's p_uniqueid at fork (p_puniqueid) and does not change
+-    it on reparenting (xnu bsd/kern/kern_fork.c, kern_proc.c pinsertchild, kern_exit.c proc_reparentlocked; copies in
+-    lane tmp/). Every observed (uniqueid -> puniqueid) is remembered for the run. With U0 = the child's uniqueid, a
+-    process u is OWNED if u == U0 or its parent is OWNED; OTHER if u < U0, or its parent is OTHER, or its parent was never
+-    observed and has a uniqueid < U0; UNRESOLVED if its parent is UNRESOLVED or was never observed and has a uniqueid
+-    > U0 (for example the dead intermediate of a fast double fork). Live OWNED, UNRESOLVED and child-group processes,
+-    zombies included (proc_listallpids lists zombies; the queries above pass a nonzero arg so zombies are found), block
+-    settlement. UNRESOLVED processes of unrelated programs also block (fail-closed). Every listed pid must yield both
+-    records (ESRCH = gone, rechecked for pid reuse) or the census fails.
+- 6. Lane accounting (RSS sum, busy count) covers live non-zombie processes of this uid that are OWNED, UNRESOLVED or whose
+-    cwd or argv references a lane root. Exclusion needs BOTH a successful cwd read and a completely parsed argv without
+-    a match; one positive read includes; any other unreadable process of this uid fails the census. Busy = CPU time
+-    over wall time since the previous sample of the same uniqueid, or since process start when first seen, >=
+-    busy_cpu_fraction; the FIRST observed excess over busy_limit trips BUSY (the limit is sampled, not enforced between
+-    samples). OWNED or UNRESOLVED processes of another uid block settlement but cannot be RSS/CPU-accounted (recorded).
+- 7. Bounded observation. Files are read or hashed only if regular (lstat and fstat agree; O_NOFOLLOW|O_NONBLOCK), within
+-    a byte limit and a monotonic time budget, and must not grow or change while read; the lane walk has an entry and
+-    time budget; helper output is read non-blocking after reaping; every write checks progress and a time budget.
+-    Overruns are failures. Native libproc/sysctl/statvfs/listdir calls cannot be time-bounded from Python (limitation
+-    stated in the HOLD); they are only made between budget checks.
+- 8. Admission (else NOT_LAUNCHED): strict JSON config (duplicate keys, NaN/Infinity, non-finite numbers and unknown keys
+-    rejected; the hashed bytes are exactly the parsed bytes) within the hard policy (lane ceiling <= 10737418240,
+-    free_trip >= 12e9, launch free minimum >= 12.2e9, busy_limit <= 2, rss_trip <= 48 GiB, positive bounded durations,
+-    nonnegative reservations, reservation >= samples, stream and output caps plus a 4 MiB receipt allowance); pins;
+-    single parent authority, one use: the GO file (strict JSON, bounded read; its sha256 is recorded) must say
+-    decision "GO" for this item, must not be expired (not_after_epoch) and must list THIS config's sha256 under
+-    "configs" with exactly the config's output_roots, argv, max_wall_s, reservation_bytes,
+-    outstanding_reservations_bytes and lane_outstanding_reservations_bytes (GO_BOUND_KEYS); the output roots must be
+-    existing, EMPTY, real directories under lane_disk_root (so a GO entry admits one launch), opened once as directory
+-    fds; every evidence and output path a direct child of an output root; fresh stability receipt (path outside the
+-    output roots, verdict PASS, age by /bin/date; its sha256 recorded); TMPDIR an existing real directory under
+-    lane_disk_root outside the output roots; free-space and lane-ceiling checks including the reservation; two complete
+-    censuses 2 s apart with busy and RSS headroom; libproc setup; working /bin/date; no latched failure. Commit boundary
+-    immediately before spawn: fresh /bin/date and stability age, GO expiry, cancel, free space and chunk fit
+-    (now + max_wall_s + settle_s + FINALIZE_ALLOWANCE_S within the chunk and 180 s before the settled-by epoch).
+-    Reservations and busy slots are allocated and released only by the parent (itemGO, parent release after its
+-    commit); this supervisor never releases anything and keeps no second ledger.
+- 9. GO is written only if the identity was captured, both sink threads started, the launch record was published and
+-    verified, one complete lineage census succeeded after spawn, no failure is latched, no cancel arrived and the spawn
+-    was at most GO_MAX_DELAY_S ago. GO must be written and flushed and stdin closed; otherwise GO_NOT_DELIVERED is
+-    latched. Any exception after spawn: failure latched, stop requested, bounded observation, publication attempted.
+-10. Disk: fresh statvfs floor; declared-output bytes (plus sinks and samples) <= output_trip_bytes; capped sinks; capped
+-    samples (reaching the cap is a failure); lane-walk bytes + lane outstanding reservations + this run's unused
+-    reservation (reservation minus bytes written so far) <= ceiling; fresh floor check before final publication.
+-    Sampling cannot enforce a hard ceiling against child writes between samples; the child's own caps and the
+-    reservation are the bound.
+-11. Evidence binding: the config hash is of the parsed bytes; launch record, samples and both sinks must re-hash at
+-    settlement to the supervisor's own digests (EVIDENCE_MUTATED); pins re-hashed; each output root unchanged (device,
+-    inode, real directory chain) and holding only declared names; child outputs regular files with one link, born
+-    after the spawn.
+-12. Publication: the receipt by exclusive create through the output-root directory fd, writes with progress checks, fsync,
+-    close, bounded re-read. The settlement record is written in full to NAME.staged the same way and then hard-linked to
+-    NAME (atomic; NAME never holds partial content), then the directory is fsynced and NAME re-read. Neither file is
+-    authoritative by itself: the outcome becomes authoritative only when the supervising parent has received the exit
+-    code and the stdout summary line and has verified the receipt and settlement sha256 values (parent commit). This
+-    supervisor no longer reads earlier settlement records (no require_settled).
+-13. Timeliness and helpers (lessons shared from RUN/review/pa19-PSTREAM-v2-source-codex-v1.prompt.stdout.txt):
+-    SETTLED additionally requires that the child's exit was observed by abs_end_epoch + sample_s + 5 s, or that the
+-    DEADLINE trip was raised by then (DEADLINE_NOT_ENFORCED_IN_TIME otherwise), and that the settlement decision is
+-    taken before the chunk limit fixed at admission (SETTLEMENT_PAST_CHUNK_LIMIT). A /bin/date helper is not started
+-    after any latched failure (null date, recorded as skipped) or after the chunk limit (failure); after reaping, its
+-    process group must be empty (proc_listpgrppids; HELPER_GROUP_LIVE otherwise). A supervisor cancel that arrives
+-    after the loop is recorded as SUPERVISOR_CANCEL_LATE at the decision boundary. /bin/date helpers (cwd /, no lane
+-    path in argv) are not lane processes and are not RSS-accounted.
+-Exit codes: 0 SETTLED, 10 NOT_LAUNCHED, 11 UNSETTLED, 12 receipt publication failed, 13 settlement record failed,
+-2 unusable config or output roots (nothing written).
++Outcomes: SETTLED, UNSETTLED, NOT_LAUNCHED; every uncertain outcome is UNSETTLED. No birth-ancestry inference
++(p_puniqueid is not used); every unproved new identity blocks settlement.
++ 0. Clock and helper. Every written timestamp (*_date) is the output of /bin/date "+%Y-%m-%dT%H:%M:%S%z" or null (never
++    invented); raw time.monotonic() (mono_*) and time.time() (epoch_*) values are telemetry, labelled as such. A helper
++    call: refused (null, recorded) after any latched failure, after a supervisor cancel, after the chunk limit or
++    beyond helper_budget.max_calls; otherwise spawned in its own session with cwd /, stdin /dev/null and stdout a pipe,
++    REGISTERED immediately after Popen returns (pid, Popen object, pipe), its full identity (pid, uniqueid, idversion,
++    pgid = pid, uid) read with zombie-inclusive queries (a fast exit leaves an unreaped zombie, so identity stays
++    readable; unreadable identity is a failure even if the helper then exits cleanly), reaped only by this supervisor
++    (os.waitpid WNOHANG polling within call_budget_s; on overrun one identity-checked SIGTERM to its group and
++    term_grace_s more), then checked: process group empty, stdout at EOF after a non-blocking read of at most 256 bytes,
++    rc 0 and a well-formed date. Any failure or exception latches a failure; a helper that is not verified reaped stays
++    registered and makes the outcome UNSETTLED (also when the child was never launched).
++ 1. Failure latch (monotonic, never cleared): identity, observation (census coverage, free space, output size, lane
++    walk), capture, GO delivery, launch-record publication, grace expiry, evidence binding, publication budget and
++    unexpected exceptions. A launched run with a non-empty latch is UNSETTLED. Resource trips (DEADLINE, RSS, BUSY,
++    FREE, OUTPUT, STREAM_CAP, LANE_CEILING, SUPERVISOR_CANCEL) request a stop and are recorded; they are not failures.
++ 2. Stop and grace: the first stop request is latched with a monotonic time; at most one SIGTERM goes to the child's
++    process group, after the identity check of item 4. The grace (settle_s) runs from the first stop request and from
++    the reaping of the child. A clear observation is accepted only if the census that established it completed before
++    every applicable grace cutoff; otherwise GRACE_EXPIRED_* is latched (irreversible). Sleeps are clamped to the
++    remaining grace. No SIGKILL, no escalation, no subprocess or tool timeouts, no ulimit, no deletion.
++ 3. Single reaper: SIGCHLD is reset to SIG_DFL before the spawn; the child's Popen object stays referenced and is never
++    polled or waited; only os.waitpid(pid, WNOHANG) reaps it; ECHILD is a failure and disables signalling. The child is
++    registered inside the protected post-spawn block.
++ 4. Identity = (pid, p_uniqueid, p_idversion, pgid, uid) read with zombie-inclusive libproc queries immediately after the
++    spawn and re-read equal immediately before the one killpg; otherwise no signal and IDENTITY_UNVERIFIED.
++ 5. Census (libproc and sysctl only, no ps/lsof). Every listed pid is identified by uniqueid, short info and uniqueid
++    again (bracket); every later measurement of that pid (cwd, argv, task, start) is followed by another uniqueid read.
++    A listed pid that disappears or changes before it is identified or measured makes the census INCOMPLETE (failed
++    coverage, never absence). Classification relative to U0 (the child's uniqueid; p_uniqueid is assigned at fork from
++    an increasing counter and kept across exec): uniqueid < U0 OLD; == U0 CHILD; > U0 NEW. A NEW process whose effective
++    and real uid both differ from this supervisor's is FOREIGN_NEW (recorded, not blocking; a descendant that drops both
++    uids is outside this guarantee, which relies on the reviewed child caps). Any other NEW process is UNRELATED only
++    if its chain of CURRENT parents (ppid) consists of identified, untraced NEW processes none of which has ppid <= 1
++    and ends at an identified OLD process other than launchd; it is OWNED if the chain reaches the child; otherwise it
++    is UNPROVED. This uses only current-parent edges and the kernel rule that an orphan is reparented to initproc (or a
++    traced process to its original parent; xnu kern_exit.c, copy in lane tmp/); traced processes are UNPROVED. CHILD,
++    OWNED, UNPROVED and child-group members (zombies included) block settlement. NEW processes started by launchd
++    (ppid 1) are UNPROVED and therefore block while alive (fail-closed; the receipt names them).
++ 6. Lane accounting (RSS sum, busy count, busy pids) covers live non-zombie same-uid blocking processes and same-uid
++    processes whose cwd or argv references a lane root (exclusion needs a successful cwd read AND a completely parsed
++    argv without a match). Busy = CPU over wall time since the previous sample of the same uniqueid, or since process
++    start when first seen, >= busy_cpu_fraction. Every census applies the limits: admission and the pre-GO census
++    require lane_busy + cpu_slots <= 2 and lane_rss + rss_projection <= rss_trip; running and final censuses trip BUSY
++    (lane_busy > busy_limit) and RSS (lane_rss > rss_trip). The limits are sampled, not enforced between samples.
++ 7. Bounded operations share absolute monotonic deadlines that are checked before and after every operation (also
++    after the final write, fsync and close); files are read only if regular (lstat/fstat agree, O_NOFOLLOW|O_NONBLOCK)
++    within a byte limit and must not change; directories are traversed only through O_DIRECTORY|O_NOFOLLOW descriptors
++    with entry and time limits, refusing mount boundaries. Native calls cannot be interrupted; an overrun detected on
++    return fails closed.
++ 8. Admission (else NOT_LAUNCHED): strict JSON config within the hard policy; pins; single parent authority, one use:
++    the GO file must say decision GO for this item, be unexpired and list THIS config's sha256 with exactly
++    output_roots, argv, max_wall_s, cpu_slots and the three reservation values; output roots EMPTY real directories
++    strictly under lane_disk_root; every charged location (lane, lane_disk_root, output roots, TMPDIR) on one filesystem
++    (same st_dev) and every lane root a real directory chain; fresh stability receipt (age = /bin/date reading minus the
++    receipt's now_date; no reading -> STABILITY_AGE_UNVERIFIABLE); free space (fstatvfs on the output root) and lane
++    ceiling including the reservation; two complete censuses 2 s apart within the limits; no cancel. Commit boundary
++    immediately before spawn re-checks, with a fresh /bin/date reading, stability age, GO expiry (epoch telemetry),
++    free space, cancel and chunk fit (now + max_wall_s + settle_s + FINALIZE_ALLOWANCE_S within the chunk and 180 s
++    before the settled-by epoch).
++ 9. GO linearization: after the spawn, the identity capture, the sink threads and the launch-record publication, the
++    supervisor re-validates immediately before GO: a complete census whose only blocking process is the child and which
++    satisfies the admission limits, stability age (commit-boundary age plus monotonic time elapsed since that reading),
++    GO expiry, free space, spawn age <= min(60 s, max_wall_s / 2), no stop, no latched failure and no cancel; the
++    cancel flag is read once more immediately before the single write of "GO\n" (the linearization point). A cancel
++    after that point is a stop request. GO must be written, flushed and stdin closed, else GO_NOT_DELIVERED.
++10. Disk: free space by fstatvfs on the output root; declared-output bytes (plus sinks and samples) <= output_trip_bytes;
++    capped sinks; capped samples (cap reached = failure); anchored lane walk + lane outstanding reservations + this
++    run's unused reservation <= ceiling. Finalization repeats the aggregate output, overflow, lane, RSS and busy
++    checks, then serializes the receipt and settlement record and requires the exact publication bytes to fit the free
++    floor, the lane ceiling and the remaining reservation (PUBLICATION_BUDGET otherwise). Sampling cannot stop child
++    writes between samples; the reviewed child caps and the reservation are the bound. No OS sandbox is provided.
++11. Evidence binding: config hash of the parsed bytes; supervisor-created files keep their (device, inode) from creation
++    and must still be those inodes with one link; launch record, samples and sinks must re-hash to the supervisor's own
++    digests; pins re-hashed; each output root unchanged and holding exactly its own declared names (per-root manifest);
++    child outputs must be regular files with one link and birth time >= the spawn epoch (recorded check; exclusive
++    creation itself is the reviewed child's contract).
++12. Publication and acknowledgment: receipt and settlement record are published by exclusive create through the root
++    fd, complete writes, fsync, close and bounded re-read; the settlement record is written to NAME.staged, hard-linked
++    to NAME and checked to be the same inode; then EVERY output root directory is fsynced. Only after all of that is
++    post_publish_mono read and ONE stdout summary line printed with the verified receipt and settlement sha256 values.
++    Any publication, re-read or directory-fsync failure gives exit 12 or 13 with an unsuccessful summary; a supervisor
++    cancel that was not handled as a stop during the run (arriving after the observation loop, before the summary)
++    suppresses success (exit 14). The files and the exit code are not authoritative: only the parent's own verified
++    commit is, and only it releases reservations. /bin/date helpers are not lane processes (cwd /, no lane path).
++Exit codes: 0 SETTLED and acknowledged, 10 NOT_LAUNCHED, 11 UNSETTLED, 12 receipt publication failed, 13 settlement
++publication or directory sync failed, 14 cancel before acknowledgment, 2 unusable config or output roots (nothing written).
+ """
+ import ctypes, datetime, errno, hashlib, json, math, os, re, signal, stat, struct, subprocess, sys, threading, time
+ 
+-VERSION = "owned_supervisor_v7"
++VERSION = "owned_supervisor_v9"
+ CANCEL = [None]
+ FINALIZE_ALLOWANCE_S = 120.0
+ GO_MAX_DELAY_S = 60.0
+@@ -103,12 +106,14 @@
+ HASH_BUDGET_S = 60.0
+ PUBLISH_BUDGET_S = 30.0
+ WALK_MAX_ENTRIES = 500000
++WALK_MAX_DEPTH = 64
+ WALK_BUDGET_S = 30.0
+-ROOT_MAX_ENTRIES = 10000
+-SEEN_MAX = 200000
++ROOT_MAX_ENTRIES = 4096
++CENSUS_BUDGET_S = 10.0
++CENSUS_RETRIES = 3
+ DEADLINE_SLACK_EXTRA_S = 5.0
+ HARD = {"lane_ceiling_max": 10737418240, "free_floor_min": 12000000000, "launch_free_min_min": 12200000000,
+-        "busy_limit_max": 2, "rss_trip_max": 51539607552, "max_chunk_max": 10800, "stability_age_max": 300}
++        "busy_max": 2, "rss_trip_max": 51539607552, "max_chunk_max": 10800, "stability_age_max": 300}
+ CONFIG_KEYS = {
+     "item": str, "owner": str, "purpose": str, "lane": str, "argv": list, "env": dict, "stdout": str, "stderr": str,
+     "stdout_cap_bytes": "int", "stderr_cap_bytes": "int", "outputs": list, "launch_record": str, "samples": str,
+@@ -117,12 +122,13 @@
+     "owned_compute_settled_by_epoch": "num", "rss_trip_bytes": "int", "free_trip_bytes": "int",
+     "output_trip_bytes": "int", "launch_free_min_bytes": "int", "lane_roots": list, "lane_disk_root": str,
+     "lane_disk_ceiling_bytes": "int", "lane_walk_s": "num", "busy_limit": "int", "busy_cpu_fraction": "num",
+-    "rss_projection_bytes": "int", "admission": dict, "helper_budget": dict, "fault_injection": dict}
++    "cpu_slots": "int", "rss_projection_bytes": "int", "admission": dict, "helper_budget": dict,
++    "fault_injection": dict}
+ ADMISSION_KEYS = {"go_path": str, "reservation_bytes": "int", "outstanding_reservations_bytes": "int",
+                   "lane_outstanding_reservations_bytes": "int", "stability_receipt_path": str,
+                   "stability_max_age_s": "num"}
+-GO_BOUND_KEYS = ("output_roots", "argv", "max_wall_s", "reservation_bytes", "outstanding_reservations_bytes",
+-                 "lane_outstanding_reservations_bytes")
++GO_BOUND_KEYS = ("output_roots", "argv", "max_wall_s", "cpu_slots", "reservation_bytes",
++                 "outstanding_reservations_bytes", "lane_outstanding_reservations_bytes")
+ HELPER_KEYS = {"max_calls": "int", "call_budget_s": "num", "term_grace_s": "num"}
+ FAULTS = ("identity_check_fails", "date_helper_fails")
+ DATE_RE = re.compile(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d[+-]\d{4}$")
+@@ -138,6 +144,24 @@
+     """an observation or publication that is not a complete, bounded, regular-file operation."""
+ 
+ 
++class Deadline:
++    def __init__(self, seconds):
++        self.t = time.monotonic() + seconds
++
++    def check(self, what):
++        if time.monotonic() > self.t:
++            raise Bounded("deadline exceeded: %s" % what)
++
++    def left(self):
++        return self.t - time.monotonic()
++
++
++def date_age_s(later, earlier):
++    """seconds between two /bin/date strings (both carry their UTC offset)."""
++    fmt = "%Y-%m-%dT%H:%M:%S%z"
++    return (datetime.datetime.strptime(later, fmt) - datetime.datetime.strptime(earlier, fmt)).total_seconds()
++
++
+ # ---------------------------------------------------------------- read-only process metadata (macOS libproc, sysctl)
+ _LP = ctypes.CDLL("/usr/lib/libproc.dylib", use_errno=True)
+ _LP.proc_pidinfo.argtypes = (ctypes.c_int, ctypes.c_int, ctypes.c_uint64, ctypes.c_void_p, ctypes.c_int)
+@@ -152,18 +176,17 @@
+ _LC.sysctl.restype = ctypes.c_int
+ _LC.mach_timebase_info.argtypes = (ctypes.c_void_p,)
+ _LC.mach_timebase_info.restype = ctypes.c_int
+-# sys/proc_info.h: PROC_PIDTBSDINFO 3 (struct proc_bsdinfo, 136 bytes; pbi_uid uint32 at 20, pbi_pgid uint32 at 100,
+-# pbi_start_tvsec and pbi_start_tvusec uint64 at 120 and 128), PROC_PIDTASKINFO 4 (struct proc_taskinfo, 96 bytes;
+-# pti_resident_size uint64 at 8, pti_total_user and pti_total_system uint64 at 16 and 24 in mach time units),
+-# PROC_PIDVNODEPATHINFO 9 (struct proc_vnodepathinfo, 2352 bytes; pvi_cdir.vip_path char[1024] at 152),
+-# PROC_PIDT_SHORTBSDINFO 13 (struct proc_bsdshortinfo, 64 bytes; pid, ppid, pgid, status uint32 at 0, 4, 8, 12,
+-# comm char[16] at 16, uid uint32 at 36). xnu bsd/sys/proc_info_private.h: PROC_PIDUNIQIDENTIFIERINFO 17 (struct
+-# proc_uniqidentifierinfo, 56 bytes; p_uuid[16] at 0, p_uniqueid uint64 at 16, p_puniqueid uint64 at 24, p_idversion
+-# int32 at 32), no same-user restriction. xnu proc_info.c: for flavors 3, 13, 17 and 18 a nonzero arg also finds
+-# zombies. sysctl {CTL_KERN, KERN_PROCARGS2, pid}: int argc, exec path, NUL padding, argc NUL-terminated strings.
++# sys/proc_info.h: PROC_PIDTBSDINFO 3 (136 bytes; pbi_start_tvsec/tvusec uint64 at 120/128), PROC_PIDTASKINFO 4 (96
++# bytes; pti_resident_size uint64 at 8, pti_total_user/system uint64 at 16/24 in mach time units), PROC_PIDVNODEPATHINFO
++# 9 (2352 bytes; pvi_cdir.vip_path char[1024] at 152), PROC_PIDT_SHORTBSDINFO 13 (64 bytes; pid, ppid, pgid, status
++# uint32 at 0/4/8/12, comm char[16] at 16, flags uint32 at 32 (PROC_FLAG_TRACED 2), uid at 36, ruid at 44). xnu
++# proc_info_private.h: PROC_PIDUNIQIDENTIFIERINFO 17 (56 bytes; p_uniqueid uint64 at 16, p_idversion int32 at 32), no
++# same-user restriction; a nonzero arg also finds zombies for flavors 3, 13, 17. sysctl KERN_PROCARGS2: int argc, exec
++# path, NUL padding, argc NUL-terminated strings.
+ PROC_PIDTBSDINFO, PROC_PIDTASKINFO, PROC_PIDVNODEPATHINFO, PROC_PIDT_SHORTBSDINFO = 3, 4, 9, 13
+ PROC_PIDUNIQIDENTIFIERINFO = 17
+ BSD_SIZE, TASK_SIZE, VNP_SIZE, SHORT_SIZE, UNIQ_SIZE = 136, 96, 2352, 64, 56
++PROC_FLAG_TRACED = 2
+ SZOMB = 5
+ CTL_KERN, KERN_ARGMAX, KERN_PROCARGS2 = 1, 8, 49
+ 
+@@ -211,18 +234,20 @@
+     if raw is None:
+         return None, e
+     p, pp, pg, status = struct.unpack_from("=IIII", raw, 0)
+-    uid = struct.unpack_from("=I", raw, 36)[0]
++    flags, uid = struct.unpack_from("=II", raw, 32)
++    ruid = struct.unpack_from("=I", raw, 44)[0]
+     comm = raw[16:32].split(b"\0")[0].decode("utf-8", "replace")
+-    return {"pid": p, "ppid": pp, "pgid": pg, "status": status, "uid": uid, "comm": comm}, 0
++    return {"pid": p, "ppid": pp, "pgid": pg, "status": status, "flags": flags, "uid": uid, "ruid": ruid,
++            "comm": comm}, 0
+ 
+ 
+ def uniq_info(pid):
+     raw, e = _pidinfo(pid, PROC_PIDUNIQIDENTIFIERINFO, UNIQ_SIZE, 1)
+     if raw is None:
+         return None, e
+-    u, pu = struct.unpack_from("=QQ", raw, 16)
++    u = struct.unpack_from("=Q", raw, 16)[0]
+     idv = struct.unpack_from("=i", raw, 32)[0]
+-    return {"uniqueid": u, "puniqueid": pu, "idversion": idv}, 0
++    return {"uniqueid": u, "idversion": idv}, 0
+ 
+ 
+ def bsd_start(pid):
+@@ -302,8 +327,7 @@
+ 
+ 
+ def pgrp_members(pgid):
+-    """pids (zombies included) in process group pgid, or None if unreadable. libproc returns a count and 0 on error,
+-    so errno decides between an empty group and a failure."""
++    """pids (zombies included) in process group pgid, or None if unreadable (libproc returns 0 on error; errno decides)."""
+     buf = (ctypes.c_int * 256)()
+     ctypes.set_errno(0)
+     m = _LP.proc_listpgrppids(pgid, buf, ctypes.sizeof(buf))
+@@ -313,8 +337,9 @@
+     return [buf[i] for i in range(m)]
+ 
+ 
+-# ---------------------------------------------------------------- bounded file operations
+-def _open_regular(path, max_bytes, dir_fd=None):
++# ---------------------------------------------------------------- bounded file operations (shared deadlines)
++def _open_regular(path, max_bytes, dl, dir_fd=None):
++    dl.check("before open %s" % path)
+     st0 = os.stat(path, dir_fd=dir_fd, follow_symlinks=False)
+     if not stat.S_ISREG(st0.st_mode):
+         raise Bounded("not a regular file: %s" % path)
+@@ -328,15 +353,13 @@
+     return fd, st1
+ 
+ 
+-def hash_regular(path, max_bytes, budget_s, dir_fd=None, keep=False):
+-    """sha256 of a regular file read completely within max_bytes and budget_s; returns (hex, size, bytes|None, stat)."""
+-    deadline = time.monotonic() + budget_s
+-    fd, st = _open_regular(path, max_bytes, dir_fd)
++def hash_regular(path, max_bytes, dl, dir_fd=None, keep=False):
++    """sha256 of a regular file read completely within max_bytes before dl; returns (hex, size, bytes|None, stat)."""
++    fd, st = _open_regular(path, max_bytes, dl, dir_fd)
+     h, got, parts = hashlib.sha256(), 0, []
+     try:
+         while got < st.st_size:
+-            if time.monotonic() > deadline:
+-                raise Bounded("time budget exceeded: %s" % path)
++            dl.check("reading %s" % path)
+             chunk = os.read(fd, min(1 << 20, st.st_size - got))
+             if not chunk:
+                 raise Bounded("short read: %s" % path)
+@@ -351,89 +374,116 @@
+             raise Bounded("changed while read: %s" % path)
+     finally:
+         os.close(fd)
++    dl.check("after reading %s" % path)
+     return h.hexdigest(), st.st_size, (b"".join(parts) if keep else None), st
+ 
+ 
+-def write_all(fd, data, deadline):
++def write_all(fd, data, dl):
+     view = memoryview(data)
+     while view:
+-        if time.monotonic() > deadline:
+-            raise Bounded("write time budget exceeded")
++        dl.check("write")
+         k = os.write(fd, view)
+         if k <= 0:
+             raise Bounded("zero-progress write")
+         view = view[k:]
++    dl.check("after write")
+ 
+ 
+ def jbytes(obj):
+     return (json.dumps(obj, indent=1, sort_keys=True, allow_nan=False, default=repr) + "\n").encode("utf-8")
+ 
+ 
+-def publish(dirfd, name, data):
+-    """exclusive create through dirfd, progress-checked write, fsync, close, bounded re-read; returns sha256."""
+-    deadline = time.monotonic() + PUBLISH_BUDGET_S
++def create_exclusive(dirfd, name):
++    """exclusive no-follow create through dirfd; returns (fd, (st_dev, st_ino))."""
+     fd = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644, dir_fd=dirfd)
++    st = os.fstat(fd)
++    return fd, (st.st_dev, st.st_ino)
++
++
++def publish(dirfd, name, data, dl):
++    """exclusive create, complete write, fsync, close, re-read within dl; returns (sha256, (dev, ino))."""
++    fd, ident = create_exclusive(dirfd, name)
+     try:
+-        write_all(fd, data, deadline)
++        write_all(fd, data, dl)
+         os.fsync(fd)
++        dl.check("after fsync %s" % name)
+     finally:
+         os.close(fd)
++    dl.check("after close %s" % name)
+     h = hashlib.sha256(data).hexdigest()
+-    got, size, _, _ = hash_regular(name, len(data), max(1.0, deadline - time.monotonic()), dir_fd=dirfd)
+-    if got != h or size != len(data):
++    got, size, _, st = hash_regular(name, len(data), dl, dir_fd=dirfd)
++    if got != h or size != len(data) or (st.st_dev, st.st_ino) != ident:
+         raise Bounded("re-read mismatch: %s" % name)
+-    return h
++    return h, ident
+ 
+ 
+-def publish_linked(dirfd, name, data):
+-    """write NAME.staged completely (publish), hard-link it to NAME (atomic, exclusive), fsync the directory, re-read
+-    NAME. Returns (sha256, directory fsync error or None)."""
+-    h = publish(dirfd, name + ".staged", data)
++def publish_linked(dirfd, name, data, dl):
++    """NAME.staged completely published, hard-linked to NAME (atomic, exclusive), same inode verified, re-read."""
++    h, ident = publish(dirfd, name + ".staged", data, dl)
+     os.link(name + ".staged", name, src_dir_fd=dirfd, dst_dir_fd=dirfd)
+-    dir_err = None
++    got, size, _, st = hash_regular(name, len(data), dl, dir_fd=dirfd)
++    if got != h or (st.st_dev, st.st_ino) != ident or st.st_nlink != 2:
++        raise Bounded("linked record mismatch: %s" % name)
++    return h, ident
++
++
++def walk_bytes(root, dl):
++    """regular-file bytes under root, traversed only through O_DIRECTORY|O_NOFOLLOW descriptors, refusing mount
++    boundaries; entries vanishing during the walk count 0; entry, depth and time limits (else Bounded)."""
++    fd0 = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
++    count = [0]
+     try:
+-        os.fsync(dirfd)
+-    except OSError as ex:
+-        dir_err = repr(ex)
+-    got, size, _, _ = hash_regular(name, len(data), PUBLISH_BUDGET_S, dir_fd=dirfd)
+-    if got != h or size != len(data):
+-        raise Bounded("linked record re-read mismatch: %s" % name)
+-    return h, dir_err
++        dev = os.fstat(fd0).st_dev
++        return _walk_fd(fd0, dev, dl, count, 0)
++    finally:
++        os.close(fd0)
+ 
+ 
+-def walk_bytes(root):
+-    """regular-file bytes under root by lstat; symlinks not followed; entries vanishing during the walk count 0; at
+-    most WALK_MAX_ENTRIES entries and WALK_BUDGET_S seconds (else Bounded)."""
+-    deadline = time.monotonic() + WALK_BUDGET_S
+-    total, n, stack, first = 0, 0, [root], True
+-    while stack:
+-        d = stack.pop()
++def _walk_fd(fd, dev, dl, count, depth):
++    if depth > WALK_MAX_DEPTH:
++        raise Bounded("lane walk depth limit")
++    total, subdirs = 0, []
++    with os.scandir(fd) as it:
++        for ent in it:
++            count[0] += 1
++            if count[0] > WALK_MAX_ENTRIES:
++                raise Bounded("lane walk entry limit")
++            dl.check("lane walk")
++            try:
++                st = os.stat(ent.name, dir_fd=fd, follow_symlinks=False)
++            except FileNotFoundError:
++                continue
++            if st.st_dev != dev:
++                raise Bounded("mount boundary at %s" % ent.name)
++            if stat.S_ISDIR(st.st_mode):
++                subdirs.append((ent.name, st.st_ino))
++            elif stat.S_ISREG(st.st_mode):
++                total += st.st_size
++    for name, ino in subdirs:
+         try:
+-            it = os.scandir(d)
+-        except FileNotFoundError:
+-            if first:
+-                raise
++            cfd = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
++        except (FileNotFoundError, NotADirectoryError):
+             continue
+-        first = False
+-        with it:
+-            for ent in it:
+-                n += 1
+-                if n > WALK_MAX_ENTRIES or time.monotonic() > deadline:
+-                    raise Bounded("lane walk budget exceeded after %d entries" % n)
+-                try:
+-                    st = ent.stat(follow_symlinks=False)
+-                except FileNotFoundError:
+-                    continue
+-                if stat.S_ISDIR(st.st_mode):
+-                    stack.append(ent.path)
+-                elif stat.S_ISREG(st.st_mode):
+-                    total += st.st_size
++        try:
++            cst = os.fstat(cfd)
++            if (cst.st_dev, cst.st_ino) != (dev, ino):
++                raise Bounded("directory replaced during walk: %s" % name)
++            total += _walk_fd(cfd, dev, dl, count, depth + 1)
++        finally:
++            os.close(cfd)
++    dl.check("lane walk directory end")
+     return total
+ 
+ 
+-def free_bytes(path):
+-    st = os.statvfs(path)
+-    return st.f_bavail * st.f_frsize
++def list_root(fd, dl):
++    names = []
++    with os.scandir(fd) as it:
++        for ent in it:
++            names.append(ent.name)
++            if len(names) > ROOT_MAX_ENTRIES:
++                raise Bounded("output root entry limit")
++            dl.check("root inventory")
++    return sorted(names)
+ 
+ 
+ def under(path, roots):
+@@ -468,18 +518,15 @@
+     raise ValueError("non-finite JSON constant %s" % name)
+ 
+ 
++def _float(s):
++    x = float(s)
++    if not math.isfinite(x):
++        raise ValueError("overflowing numeric literal %s" % s)
++    return x
++
++
+ def strict_json(raw):
+-    obj = json.loads(raw.decode("utf-8"), object_pairs_hook=_no_dup, parse_constant=_no_const)
+-    stack = [obj]
+-    while stack:
+-        x = stack.pop()
+-        if isinstance(x, float) and not math.isfinite(x):
+-            raise ValueError("non-finite number")
+-        if isinstance(x, dict):
+-            stack.extend(x.values())
+-        elif isinstance(x, list):
+-            stack.extend(x)
+-    return obj
++    return json.loads(raw.decode("utf-8"), object_pairs_hook=_no_dup, parse_constant=_no_const, parse_float=_float)
+ 
+ 
+ def _int(x):
+@@ -517,7 +564,7 @@
+     keys(cfg, CONFIG_KEYS, "config")
+     if bad:
+         return bad
+-    a, h, fi = cfg["admission"], cfg["helper_budget"], cfg["fault_injection"]
++    a, fi, h = cfg["admission"], cfg["fault_injection"], cfg["helper_budget"]
+     keys(a, ADMISSION_KEYS, "admission")
+     keys(h, HELPER_KEYS, "helper_budget")
+     if bad:
+@@ -539,7 +586,8 @@
+     rng("launch_free_min_bytes", cfg["launch_free_min_bytes"], HARD["launch_free_min_min"], 1 << 60)
+     rng("output_trip_bytes", cfg["output_trip_bytes"], 0, HARD["lane_ceiling_max"], True)
+     rng("lane_disk_ceiling_bytes", cfg["lane_disk_ceiling_bytes"], 0, HARD["lane_ceiling_max"], True)
+-    rng("busy_limit", cfg["busy_limit"], 1, HARD["busy_limit_max"])
++    rng("busy_limit", cfg["busy_limit"], 1, HARD["busy_max"])
++    rng("cpu_slots", cfg["cpu_slots"], 1, HARD["busy_max"])
+     rng("busy_cpu_fraction", cfg["busy_cpu_fraction"], 0, 1, True)
+     for k in ("stdout_cap_bytes", "stderr_cap_bytes", "samples_cap_bytes"):
+         rng(k, cfg[k], 0, 1 << 30, True)
+@@ -608,7 +656,7 @@
+     for p in paths:
+         if os.path.dirname(p) not in roots:
+             bad.append("%s is not a direct child of an output root" % p)
+-        if p == cfg["settlement_record"] + ".staged" or p.endswith(".staged"):
++        if p.endswith(".staged"):
+             bad.append("%s uses the reserved .staged suffix" % p)
+     return bad
+ 
+@@ -622,24 +670,20 @@
+     def __init__(self, cfg, cfg_path, cfg_sha):
+         self.cfg = cfg
+         try:
+-            self_sha = hash_regular(SELF, PIN_MAX_BYTES, HASH_BUDGET_S)[0]
++            self_sha = hash_regular(SELF, PIN_MAX_BYTES, Deadline(HASH_BUDGET_S))[0]
+             self_err = None
+         except OSError as ex:
+             self_sha, self_err = None, repr(ex)
+         self.rec = {"supervisor": VERSION, "supervisor_path": SELF, "supervisor_sha256": self_sha,
+                     "supervisor_hash_error": self_err, "config": cfg_path, "config_sha256": cfg_sha,
+                     "supervisor_pid": MY_PID, "uid": MY_UID, "timebase": TIMEBASE, "argmax": ARGMAX,
+-                    "authority": "not authoritative until the supervising parent verifies exit code, stdout summary, "
+-                                 "receipt and settlement sha256 (parent commit)",
+-                    "clock_note": "mono_* = time.monotonic() s, epoch_* = time.time() s (raw clock values); *_date = "
+-                                  "/bin/date output or null (never invented)"}
++                    "authority": "not authoritative: only the supervising parent's own verified commit is",
++                    "clock_note": "*_date = /bin/date +%Y-%m-%dT%H:%M:%S%z output or null (never invented); mono_* = "
++                                  "time.monotonic() s and epoch_* = time.time() s are raw telemetry"}
+         self.failures, self.failures_n = [], 0
+         self.trips, self.tripped = [], set()
+         self.stop = None
+         self.signal = None
+-        self.helper_calls = 0
+-        self.helper_log = []
+-        self.helper_open = []
+         self.keep = []
+         self.child = None
+         self.child_pid = None
+@@ -650,7 +694,6 @@
+         self.ident = None
+         self.u0 = None
+         self.pgid0 = None
+-        self.seen = {}
+         self.prev_cpu = {}
+         self.streams = {}
+         self.threads = []
+@@ -660,14 +703,21 @@
+         self.samples_dead = False
+         self.samples_hash = hashlib.sha256()
+         self.root_fds = {}
++        self.allow = {}
++        self.created = {}
+         self.lane_bytes = None
+         self.next_walk = 0.0
+         self.max = {"lane_rss": 0, "lane_busy": 0, "blocking_live": 0, "output_bytes": 0, "lane_bytes": 0}
+         self.min_free = None
+         self.loop_status = "NOT_STARTED"
+         self.epoch_spawn = None
+-        self.census_errors = 0
++        self.mono_spawn = None
+         self.fit_limit_epoch = None
++        self.clear = None
++        self.census_incomplete = 0
++        self.helpers = []
++        self.helper_calls = 0
++        self.helper_log = []
+ 
+     # ------------------------------------------------------------ latches
+     def fault(self, name):
+@@ -703,104 +753,46 @@
+             except Exception as ex:
+                 self.signal = {"sent": False, "why_not": "EXCEPTION %r" % ex}
+                 self.fail("SIGNAL_PATH_EXCEPTION %r" % ex)
+-        self.stop["date"] = self.date_now()
++        self.stop["date"] = self.date_now("stop")
+ 
+-    # ------------------------------------------------------------ reaping and identity
+-    def _waitpid(self, pid):
+-        try:
+-            got, status = os.waitpid(pid, os.WNOHANG)
+-        except ChildProcessError:
+-            return "LOST"
+-        if got == 0:
+-            return None
+-        return os.waitstatus_to_exitcode(status)
+-
+-    def _wait_bounded(self, pid, budget_s):
++    # ------------------------------------------------------------ /bin/date, the sole metadata helper
++    def _helper_reap(self, h, budget_s):
++        """poll os.waitpid(pid, WNOHANG) up to budget_s (monotonic); records rc or LOST in h."""
+         t0 = time.monotonic()
+         while True:
+-            r = self._waitpid(pid)
+-            if r is not None or time.monotonic() - t0 >= budget_s:
+-                return r
++            try:
++                got, status = os.waitpid(h["pid"], os.WNOHANG)
++            except ChildProcessError:
++                h["state"] = "LOST"
++                return
++            if got != 0:
++                h["rc"] = os.waitstatus_to_exitcode(status)
++                h["state"] = "REAPED"
++                return
++            if time.monotonic() - t0 >= budget_s:
++                return
+             time.sleep(0.005)
+ 
+-    def reap_child(self):
+-        if self.child_pid is None or self.child_rc is not None or self.child_lost:
+-            return
+-        r = self._waitpid(self.child_pid)
+-        if r == "LOST":
+-            self.child_lost = True
+-            self.fail("WAIT_STATUS_LOST child %d" % self.child_pid)
+-        elif r is not None:
+-            self.child_rc = r
+-            self.child_exit_mono = time.monotonic()
+-            self.child_exit_epoch = time.time()
+-
+-    @staticmethod
+-    def read_identity(pid):
+-        ui, e1 = uniq_info(pid)
+-        si, e2 = short_info(pid)
+-        if ui is None or si is None:
+-            return None, "unreadable %r %r" % (e1, e2)
+-        return {"pid": pid, "uniqueid": ui["uniqueid"], "idversion": ui["idversion"], "pgid": si["pgid"],
+-                "uid": si["uid"], "comm": si["comm"]}, None
+-
+-    @staticmethod
+-    def same_identity(a, b):
+-        return a is not None and b is not None and all(a[k] == b[k] for k in ("pid", "uniqueid", "idversion", "pgid",
+-                                                                                "uid"))
+-
+-    def try_signal(self):
+-        res = {"mono": time.monotonic(), "sent": False}
+-        if self.ident is None:
+-            res["why_not"] = "NO_CHILD_IDENTITY"
+-        elif self.child_rc is not None:
+-            res["why_not"] = "CHILD_ALREADY_REAPED"
+-        elif self.child_lost:
+-            res["why_not"] = "WAIT_STATUS_LOST"
+-        elif self.fault("identity_check_fails"):
+-            res["why_not"] = "FAULT_INJECTED_IDENTITY_FAILURE"
+-            self.signal = res
+-            self.fail("IDENTITY_UNVERIFIED fault injected")
+-            return
+-        else:
+-            now_id, why = self.read_identity(self.child_pid)
+-            ok = self.same_identity(now_id, self.ident) and self.child_rc is None and not self.child_lost
+-            res["identity_ok"] = ok
+-            if ok:
+-                try:
+-                    os.killpg(self.ident["pgid"], signal.SIGTERM)
+-                    res["sent"] = True
+-                    res["mono_sent"] = time.monotonic()
+-                except ProcessLookupError as ex:
+-                    res["error"] = repr(ex)
+-                except OSError as ex:
+-                    res["error"] = repr(ex)
+-                    self.signal = res
+-                    self.fail("SIGNAL_FAILED %r" % ex)
+-                    return
+-            else:
+-                res["why_not"] = "IDENTITY_MISMATCH_OR_UNREADABLE %s" % (why or now_id)
+-                self.signal = res
+-                self.fail("IDENTITY_UNVERIFIED %s" % res["why_not"])
+-                return
+-        self.signal = res
+-
+-    # ------------------------------------------------------------ /bin/date helper
+-    def date_now(self):
++    def date_now(self, purpose):
++        """one /bin/date reading or None; see item 0 of the module docstring."""
+         hb = self.cfg["helper_budget"]
+-        entry = {"n": len(self.helper_log) + 1, "mono_start": time.monotonic()}
++        entry = {"purpose": purpose, "mono_start": time.monotonic()}
++        h = None
+         try:
+             if self.failures_n:
+-                entry["outcome"] = "SKIPPED_AFTER_FAILURE_LATCH"
++                entry["outcome"] = "REFUSED_AFTER_FAILURE_LATCH"
+                 return None
+-            if self.fault("date_helper_fails"):
+-                entry["outcome"] = "FAULT_INJECTED"
+-                self.fail("HELPER_FAULT_INJECTED")
++            if CANCEL[0] is not None:
++                entry["outcome"] = "REFUSED_AFTER_CANCEL"
+                 return None
+             if self.fit_limit_epoch is not None and time.time() > self.fit_limit_epoch:
+                 entry["outcome"] = "REFUSED_PAST_CHUNK_LIMIT"
+                 self.fail("HELPER_REFUSED_PAST_CHUNK_LIMIT")
+                 return None
++            if self.fault("date_helper_fails"):
++                entry["outcome"] = "FAULT_INJECTED"
++                self.fail("HELPER_FAULT_INJECTED")
++                return None
+             if self.helper_calls >= hb["max_calls"]:
+                 entry["outcome"] = "BUDGET_EXHAUSTED"
+                 self.fail("HELPER_BUDGET_EXHAUSTED")
+@@ -814,140 +806,235 @@
+                 entry["outcome"] = "SPAWN_FAILED %r" % ex
+                 self.fail("HELPER_SPAWN_FAILED %r" % ex)
+                 return None
++            h = {"pid": p.pid, "popen": p, "state": "OPEN", "rc": None, "entry": entry}
++            self.helpers.append(h)
+             self.keep.append(p)
+             entry["pid"] = p.pid
+             ident, why = self.read_identity(p.pid)
+             entry["identity"] = ident
+-            rc = self._wait_bounded(p.pid, hb["call_budget_s"])
+-            if rc is None:
+-                sent = False
++            if ident is None or ident["pgid"] != p.pid or ident["uid"] != MY_UID:
++                self.fail("HELPER_IDENTITY_UNVERIFIED %s" % (why or ident))
++            self._helper_reap(h, hb["call_budget_s"])
++            if h["state"] == "OPEN":
+                 now_id, _ = self.read_identity(p.pid)
+-                if ident is not None and ident["pgid"] == p.pid and ident["uid"] == MY_UID and \
+-                        self.same_identity(now_id, ident):
++                sent = False
++                if ident is not None and ident["pgid"] == p.pid and self.same_identity(now_id, ident):
+                     try:
+                         os.killpg(p.pid, signal.SIGTERM)
+                         sent = True
+                     except OSError as ex:
+                         entry["sigterm_error"] = repr(ex)
+                 entry["sigterm"] = sent
+-                rc = self._wait_bounded(p.pid, hb["term_grace_s"])
+-                if rc is None:
+-                    entry["outcome"] = "HELPER_UNSETTLED"
+-                    self.helper_open.append(p.pid)
+-                    self.fail("HELPER_UNSETTLED %d" % p.pid)
+-                    return None
+-            if rc == "LOST":
+-                entry["outcome"] = "WAIT_STATUS_LOST"
+-                self.fail("WAIT_STATUS_LOST helper %d" % p.pid)
++                self._helper_reap(h, hb["term_grace_s"])
++            if h["state"] != "REAPED":
++                entry["outcome"] = "HELPER_" + h["state"]
++                self.fail("HELPER_NOT_REAPED %d %s" % (p.pid, h["state"]))
+                 return None
+             members = pgrp_members(p.pid)
+             entry["group_after_reap"] = members
+-            if members is None or members:
+-                entry["outcome"] = "HELPER_GROUP_LIVE_OR_UNREADABLE"
+-                self.fail("HELPER_GROUP_LIVE_OR_UNREADABLE %d %r" % (p.pid, members))
+-                return None
+             fd = p.stdout.fileno()
+             os.set_blocking(fd, False)
+             try:
+                 out = os.read(fd, 257)
+             except BlockingIOError:
+-                out = b""
+-            finally:
+-                p.stdout.close()
+-            txt = out.decode("utf-8", "replace").strip()
+-            entry.update({"rc": rc, "mono_end": time.monotonic()})
+-            if rc != 0 or len(out) > 256 or not DATE_RE.match(txt):
+-                entry["outcome"] = "BAD_OUTPUT"
+-                self.fail("HELPER_BAD_OUTPUT rc %r" % rc)
++                out = None
++            try:
++                eof = os.read(fd, 1) == b"" if out is not None else False
++            except BlockingIOError:
++                eof = False
++            p.stdout.close()
++            entry.update({"rc": h["rc"], "mono_end": time.monotonic(), "stdout_eof": eof})
++            if members is None or members:
++                self.fail("HELPER_GROUP_LIVE_OR_UNREADABLE %d %r" % (p.pid, members))
++            if not eof:
++                self.fail("HELPER_STREAM_NOT_CLOSED %d" % p.pid)
++            txt = (out or b"").decode("utf-8", "replace").strip()
++            if h["rc"] != 0 or out is None or len(out) > 256 or not DATE_RE.match(txt):
++                self.fail("HELPER_BAD_OUTPUT rc %r" % h["rc"])
++            if members is None or members or not eof or ident is None or h["rc"] != 0 or not DATE_RE.match(txt) or \
++                    out is None or len(out) > 256 or ident["pgid"] != p.pid or ident["uid"] != MY_UID:
++                h["state"] = "REAPED_WITH_FAILURE"
++                entry["outcome"] = "FAILED"
+                 return None
++            h["state"] = "SETTLED"
+             entry["outcome"] = "OK"
++            entry["date"] = txt
+             return txt
+         except Exception as ex:
+             entry["outcome"] = "EXCEPTION %r" % ex
+             self.fail("HELPER_EXCEPTION %r" % ex)
+             return None
+         finally:
+-            if len(self.helper_log) < 256:
+-                self.helper_log.append(entry)
++            self.helper_log_append(entry)
+ 
++    def helper_log_append(self, entry):
++        if len(self.helper_log) < 256:
++            self.helper_log.append(entry)
++
++    def helpers_unreaped(self):
++        for h in self.helpers:
++            if h["state"] == "OPEN":
++                self._helper_reap(h, 0.0)
++        return [h["pid"] for h in self.helpers if h["state"] in ("OPEN", "LOST")]
++
++    # ------------------------------------------------------------ reaping and identity
++    def reap_child(self):
++        if self.child_pid is None or self.child_rc is not None or self.child_lost:
++            return
++        try:
++            got, status = os.waitpid(self.child_pid, os.WNOHANG)
++        except ChildProcessError:
++            self.child_lost = True
++            self.fail("WAIT_STATUS_LOST child %d" % self.child_pid)
++            return
++        if got != 0:
++            self.child_rc = os.waitstatus_to_exitcode(status)
++            self.child_exit_mono = time.monotonic()
++            self.child_exit_epoch = time.time()
++
++    @staticmethod
++    def read_identity(pid):
++        ui, e1 = uniq_info(pid)
++        si, e2 = short_info(pid)
++        if ui is None or si is None:
++            return None, "unreadable %r %r" % (e1, e2)
++        return {"pid": pid, "uniqueid": ui["uniqueid"], "idversion": ui["idversion"], "pgid": si["pgid"],
++                "uid": si["uid"], "comm": si["comm"]}, None
++
++    @staticmethod
++    def same_identity(a, b):
++        return a is not None and b is not None and all(a[k] == b[k] for k in ("pid", "uniqueid", "idversion", "pgid",
++                                                                                "uid"))
++
++    def try_signal(self):
++        res = {"mono": time.monotonic(), "sent": False}
++        if self.ident is None:
++            res["why_not"] = "NO_CHILD_IDENTITY"
++        elif self.child_rc is not None:
++            res["why_not"] = "CHILD_ALREADY_REAPED"
++        elif self.child_lost:
++            res["why_not"] = "WAIT_STATUS_LOST"
++        elif self.fault("identity_check_fails"):
++            res["why_not"] = "FAULT_INJECTED_IDENTITY_FAILURE"
++            self.signal = res
++            self.fail("IDENTITY_UNVERIFIED fault injected")
++            return
++        else:
++            now_id, why = self.read_identity(self.child_pid)
++            ok = self.same_identity(now_id, self.ident) and self.child_rc is None and not self.child_lost
++            res["identity_ok"] = ok
++            if not ok:
++                res["why_not"] = "IDENTITY_MISMATCH_OR_UNREADABLE %s" % (why or now_id)
++                self.signal = res
++                self.fail("IDENTITY_UNVERIFIED %s" % res["why_not"])
++                return
++            try:
++                os.killpg(self.ident["pgid"], signal.SIGTERM)
++                res["sent"] = True
++                res["mono_sent"] = time.monotonic()
++            except ProcessLookupError as ex:
++                res["error"] = repr(ex)
++            except OSError as ex:
++                res["error"] = repr(ex)
++                self.signal = res
++                self.fail("SIGNAL_FAILED %r" % ex)
++                return
++        self.signal = res
++
+     # ------------------------------------------------------------ census
+     def _proc(self, pid):
+-        """(record, None) or (None, errno); rechecks the uniqueid so the two reads describe one process."""
+-        for _ in range(3):
+-            u1, e = uniq_info(pid)
+-            if u1 is None:
+-                return None, e
+-            si, e = short_info(pid)
+-            if si is None:
+-                return None, e
+-            u2, e = uniq_info(pid)
+-            if u2 is None:
+-                return None, e
+-            if u1 == u2:
+-                si.update(u1)
+-                return si, 0
+-        return None, -8
++        """(record, 0) or (None, errno); uniqueid read before and after the short info (one process)."""
++        u1, e = uniq_info(pid)
++        if u1 is None:
++            return None, e
++        si, e = short_info(pid)
++        if si is None:
++            return None, e
++        u2, e = uniq_info(pid)
++        if u2 is None:
++            return None, e
++        if u1 != u2:
++            return None, -8
++        si.update(u1)
++        return si, 0
+ 
+-    def _class(self, u, memo):
+-        chain, cur = [], u
+-        while True:
+-            if cur in memo:
+-                res = memo[cur]
+-                break
+-            if cur == self.u0:
+-                res = "OWNED"
+-                break
+-            if cur < self.u0:
+-                res = "OTHER"
+-                break
+-            ent = self.seen.get(cur)
+-            if ent is None:
+-                res = "UNRESOLVED"
+-                break
+-            chain.append(cur)
+-            cur = ent["puniqueid"]
+-            if len(chain) > SEEN_MAX:
+-                res = "UNRESOLVED"
+-                break
+-        for c in chain:
+-            memo[c] = res
+-        memo[u] = res
+-        return res
++    def _still(self, pid, p):
++        u, _ = uniq_info(pid)
++        return u is not None and u["uniqueid"] == p["uniqueid"]
+ 
+-    def census(self):
+-        """one complete scan; raises RuntimeError on any failure (fail-closed)."""
++    def classify(self, procs):
++        U0, memo = self.u0, {}
++        for pid, p in procs.items():
++            if U0 is None:
++                p["class"] = "OLD"
++                continue
++            if p["uniqueid"] == U0:
++                p["class"] = "CHILD"
++                continue
++            if p["uniqueid"] < U0:
++                p["class"] = "OLD"
++                continue
++            if p["uid"] != MY_UID and p["ruid"] != MY_UID:
++                p["class"] = "FOREIGN_NEW"
++                continue
++            chain, cur, res = [], pid, None
++            while res is None:
++                if cur in memo:
++                    res = memo[cur]
++                    break
++                q = procs.get(cur)
++                if q is None or (q["flags"] & PROC_FLAG_TRACED) or q["ppid"] <= 1 or len(chain) > 4096:
++                    res = "UNPROVED"
++                    break
++                chain.append(cur)
++                a = procs.get(q["ppid"])
++                if a is None:
++                    res = "UNPROVED"
++                elif a["uniqueid"] == U0:
++                    res = "OWNED"
++                elif a["uniqueid"] < U0:
++                    res = "UNRELATED" if a["pid"] != 1 else "UNPROVED"
++                else:
++                    cur = q["ppid"]
++            for c in chain:
++                memo[c] = res
++            p["class"] = memo.get(pid, res)
++        for p in procs.values():
++            p["blocking"] = p["class"] in ("CHILD", "OWNED", "UNPROVED") or \
++                (self.pgid0 is not None and p["pgid"] == self.pgid0)
++
++    def census(self, dl):
++        """one scan; raises RuntimeError on a hard failure; 'complete' is False when any listed pid disappeared or
++        changed before identification or measurement (failed coverage)."""
+         pids = list_pids()
+         if pids is None:
+             raise RuntimeError("LISTPIDS_FAILED")
+-        procs = {}
+-        for pid in pids:
++        dl.check("census list")
++        procs, vanished = {}, []
++        for k, pid in enumerate(pids):
+             if pid <= 0:
+                 continue
++            if k % 64 == 0:
++                dl.check("census identify")
+             p, e = self._proc(pid)
+             if p is None:
+-                if e == errno.ESRCH:
++                if e in (errno.ESRCH, -8):
++                    vanished.append(pid)
+                     continue
+                 raise RuntimeError("PROCINFO pid %d errno %d" % (pid, e))
+             procs[pid] = p
+-            if p["uniqueid"] not in self.seen:
+-                if len(self.seen) >= SEEN_MAX:
+-                    raise RuntimeError("SEEN_TABLE_FULL")
+-                self.seen[p["uniqueid"]] = {"pid": pid, "puniqueid": p["puniqueid"], "comm": p["comm"],
+-                                            "uid": p["uid"]}
+-        memo = {}
+-        for p in procs.values():
+-            p["class"] = "OTHER" if self.u0 is None else self._class(p["uniqueid"], memo)
+-            p["blocking"] = p["class"] in ("OWNED", "UNRESOLVED") or (self.pgid0 is not None and p["pgid"] == self.pgid0)
+-        roots = self.cfg["lane_roots"]
+-        frac = self.cfg["busy_cpu_fraction"]
++        self.classify(procs)
++        roots, frac = self.cfg["lane_roots"], self.cfg["busy_cpu_fraction"]
+         now_m, now_e = time.monotonic(), time.time()
+-        lane, other_uid_blocking, cpu_now = {}, [], {}
+-        for pid, p in procs.items():
+-            if p["uid"] != MY_UID:
+-                if p["blocking"]:
+-                    other_uid_blocking.append(pid)
++        lane, cpu_now, unmeasured = {}, {}, []
++        for k, (pid, p) in enumerate(procs.items()):
++            if k % 64 == 0:
++                dl.check("census measure")
++            mine = p["uid"] == MY_UID
++            if p["status"] == SZOMB or (not mine and not p["blocking"]):
+                 continue
+-            if p["status"] == SZOMB:
++            if not mine:
++                unmeasured.append(pid)
+                 continue
+             member = p["blocking"]
+             if not member:
+@@ -959,65 +1046,112 @@
+                     if av is not None and any(r in x for x in av for r in roots):
+                         member = True
+                     elif cw is None or av is None:
+-                        if (cw is None and e1 == errno.ESRCH) or (av is None and e2 == errno.ESRCH):
++                        if not self._still(pid, p):
++                            vanished.append(pid)
+                             continue
+                         raise RuntimeError("UNREADABLE_SAME_UID pid %d comm %s cwd_err %r argv_err %r" %
+                                            (pid, p["comm"], None if cw is not None else e1,
+                                             None if av is not None else e2))
++                if not self._still(pid, p):
++                    vanished.append(pid)
++                    continue
+             if not member:
+                 continue
+             ti, e = task_info(pid)
+-            if ti is None:
+-                if e == errno.ESRCH:
+-                    continue
+-                raise RuntimeError("TASKINFO lane pid %d errno %d" % (pid, e))
+-            u = p["uniqueid"]
+-            prev = self.prev_cpu.get(u)
++            st0, e2 = bsd_start(pid) if p["uniqueid"] not in self.prev_cpu else (None, 0)
++            if ti is None or (p["uniqueid"] not in self.prev_cpu and st0 is None) or not self._still(pid, p):
++                if (ti is None and e not in (errno.ESRCH,)) or (st0 is None and p["uniqueid"] not in self.prev_cpu
++                                                                and e2 not in (errno.ESRCH,)):
++                    if self._still(pid, p):
++                        raise RuntimeError("MEASURE pid %d errno %r %r" % (pid, e, e2))
++                vanished.append(pid)
++                continue
++            prev = self.prev_cpu.get(p["uniqueid"])
++            ns_total = ti["cpu_ticks"] * TIMEBASE[0] / TIMEBASE[1]
+             if prev is None:
+-                st, e = bsd_start(pid)
+-                if st is None:
+-                    if e == errno.ESRCH:
+-                        continue
+-                    raise RuntimeError("BSDINFO lane pid %d errno %d" % (pid, e))
+-                age = now_e - st
+-                ns = ti["cpu_ticks"] * TIMEBASE[0] / TIMEBASE[1]
+-                busy = age <= 0.05 or ns >= frac * age * 1e9
++                age = now_e - st0
++                busy = age <= 0.05 or ns_total >= frac * age * 1e9
+             else:
+                 dt = now_m - prev[0]
+-                ns = (ti["cpu_ticks"] - prev[1]) * TIMEBASE[0] / TIMEBASE[1]
+-                busy = dt <= 0 or ns >= frac * dt * 1e9
+-            cpu_now[u] = (now_m, ti["cpu_ticks"])
+-            lane[pid] = {"rss": ti["rss"], "busy": busy, "class": p["class"]}
++                busy = dt <= 0 or (ti["cpu_ticks"] - prev[1]) * TIMEBASE[0] / TIMEBASE[1] >= frac * dt * 1e9
++            cpu_now[p["uniqueid"]] = (now_m, ti["cpu_ticks"])
++            lane[pid] = {"rss": ti["rss"], "busy": busy}
+         self.prev_cpu = cpu_now
++        dl.check("census end")
+         blocking = sorted(pid for pid, p in procs.items() if p["blocking"])
+-        unresolved = [[pid, procs[pid]["comm"], procs[pid]["uniqueid"], procs[pid]["puniqueid"]]
+-                      for pid in blocking if procs[pid]["class"] == "UNRESOLVED"]
+-        return {"pids": len(procs), "seen": len(self.seen), "blocking_live": blocking,
+-                "owned_live": sorted(pid for pid in blocking if procs[pid]["class"] == "OWNED"),
+-                "unresolved_live": sorted(x[0] for x in unresolved), "unresolved_detail": unresolved[:20],
+-                "group_live": sorted(pid for pid in blocking if self.pgid0 is not None and procs[pid]["pgid"] == self.pgid0),
+-                "blocking_zombies": sorted(pid for pid in blocking if procs[pid]["status"] == SZOMB),
+-                "other_uid_blocking": sorted(other_uid_blocking), "lane_pids": sorted(lane),
+-                "lane_rss": sum(v["rss"] for v in lane.values()),
+-                "lane_busy": sum(1 for v in lane.values() if v["busy"])}
++        out = {"pids": len(procs), "complete": not vanished, "vanished_n": len(vanished), "vanished": vanished[:20],
++               "blocking_live": blocking,
++               "blocking_detail": [[pid, procs[pid]["comm"], procs[pid]["class"], procs[pid]["ppid"],
++                                    procs[pid]["status"] == SZOMB] for pid in blocking[:40]],
++               "owned_live": sorted(pid for pid in blocking if procs[pid]["class"] == "OWNED"),
++               "unproved_live": sorted(pid for pid in blocking if procs[pid]["class"] == "UNPROVED"),
++               "group_live": sorted(pid for pid in blocking if self.pgid0 is not None and procs[pid]["pgid"] == self.pgid0),
++               "blocking_zombies": sorted(pid for pid in blocking if procs[pid]["status"] == SZOMB),
++               "blocking_unmeasured": sorted(unmeasured),
++               "foreign_new_n": sum(1 for p in procs.values() if p["class"] == "FOREIGN_NEW"),
++               "lane_pids": sorted(lane), "lane_rss": sum(v["rss"] for v in lane.values()),
++               "lane_busy": sum(1 for v in lane.values() if v["busy"]),
++               "lane_busy_pids": sorted(pid for pid, v in lane.items() if v["busy"]),
++               "mono_done": time.monotonic()}
++        return out
+ 
++    def census_complete(self, budget_s):
++        """up to CENSUS_RETRIES censuses until one is complete; returns the last census (complete or not)."""
++        dl = Deadline(budget_s)
++        c = None
++        for _ in range(CENSUS_RETRIES):
++            c = self.census(dl)
++            if c["complete"]:
++                return c
++            self.census_incomplete += 1
++            time.sleep(0.05)
++        return c
++
+     def streams_closed(self):
+         return len(self.streams) == 2 and all(st["closed"] for st in self.streams.values())
+ 
+     def is_clear(self, c):
+-        return c is not None and self.child_rc is not None and not c["blocking_live"] and self.streams_closed()
++        return c is not None and c["complete"] and self.child_rc is not None and not c["blocking_live"] and \
++            self.streams_closed()
+ 
++    def grace_cutoffs(self):
++        cuts = []
++        if self.stop is not None:
++            cuts.append(("GRACE_EXPIRED_AFTER_STOP_REQUEST", self.stop["mono"] + self.cfg["settle_s"]))
++        if self.child_exit_mono is not None:
++            cuts.append(("GRACE_EXPIRED_AFTER_CHILD_EXIT", self.child_exit_mono + self.cfg["settle_s"]))
++        return cuts
++
+     # ------------------------------------------------------------ evidence files
+     def root_for(self, path):
+-        d = os.path.dirname(path)
+-        return self.root_fds[d][0], os.path.basename(path)
++        return self.root_fds[os.path.dirname(path)][0], os.path.basename(path)
+ 
+     def open_roots(self):
+         for r in self.cfg["output_roots"]:
+             fd = os.open(r, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+             st = os.fstat(fd)
+             self.root_fds[r] = (fd, st.st_dev, st.st_ino)
++            self.allow[r] = set()
++        for p in evidence_paths(self.cfg) + [o["path"] for o in self.cfg["outputs"]]:
++            self.allow[os.path.dirname(p)].add(os.path.basename(p))
++        r = os.path.dirname(self.cfg["settlement_record"])
++        self.allow[r].add(os.path.basename(self.cfg["settlement_record"]) + ".staged")
+ 
++    def free_now(self):
++        fd = self.root_fds[self.cfg["output_roots"][0]][0]
++        st = os.fstatvfs(fd)
++        return st.f_bavail * st.f_frsize
++
++    def output_bytes(self):
++        ob = 0
++        for o in self.cfg["outputs"]:
++            fd, name = self.root_for(o["path"])
++            try:
++                ob += os.stat(name, dir_fd=fd, follow_symlinks=False).st_size
++            except FileNotFoundError:
++                pass
++        return ob + sum(st["bytes_written"] for st in self.streams.values()) + self.samples_bytes
++
+     def write_sample(self, obj):
+         if self.samples_fd is None or self.samples_dead:
+             return
+@@ -1027,7 +1161,7 @@
+                 self.samples_dead = True
+                 self.fail("SAMPLES_CAP")
+                 return
+-            write_all(self.samples_fd, line, time.monotonic() + 10.0)
++            write_all(self.samples_fd, line, Deadline(10.0))
+             self.samples_hash.update(line)
+             self.samples_bytes += len(line)
+             self.samples_n += 1
+@@ -1035,17 +1169,40 @@
+             self.samples_dead = True
+             self.fail("SAMPLES_WRITE_FAILED %r" % ex)
+ 
++    def limits_ok(self, c):
++        cfg = self.cfg
++        return c["lane_busy"] + cfg["cpu_slots"] <= HARD["busy_max"] and \
++            c["lane_rss"] + cfg["rss_projection_bytes"] <= cfg["rss_trip_bytes"]
+ 
++    def apply_trips(self, c, fr, ob):
++        cfg = self.cfg
++        if c is not None and c["lane_rss"] > cfg["rss_trip_bytes"]:
++            self.trip("RSS", c["lane_rss"])
++        if c is not None and c["lane_busy"] > cfg["busy_limit"]:
++            self.trip("BUSY", [c["lane_busy"], c["lane_busy_pids"]])
++        if fr is not None and fr < cfg["free_trip_bytes"]:
++            self.trip("FREE", fr)
++        if ob is not None and ob > cfg["output_trip_bytes"]:
++            self.trip("OUTPUT", ob)
++        if any(st["overflow"] for st in self.streams.values()):
++            self.trip("STREAM_CAP", {k: [v["bytes_seen"], v["bytes_written"]] for k, v in self.streams.items()})
++        if self.lane_bytes is not None and ob is not None:
++            unused = max(0, cfg["admission"]["reservation_bytes"] - ob)
++            if self.lane_bytes + cfg["admission"]["lane_outstanding_reservations_bytes"] + unused > \
++                    cfg["lane_disk_ceiling_bytes"]:
++                self.trip("LANE_CEILING", self.lane_bytes)
++
++
+ def sink_thread(name, pipe, dirfd, fname, cap, sup):
+     st = {"bytes_seen": 0, "bytes_written": 0, "overflow": False, "closed": False, "error": None, "eof": False,
+           "sha256_written": None}
+     digest = hashlib.sha256()
+     sup.streams[name] = st
++    fd, ident = create_exclusive(dirfd, fname)
++    sup.created[os.path.join(os.path.dirname(sup.cfg[name]), fname)] = ident
+ 
+     def run():
+-        fd = None
+         try:
+-            fd = os.open(fname, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644, dir_fd=dirfd)
+             while True:
+                 chunk = pipe.read1(65536)
+                 if not chunk:
+@@ -1055,7 +1212,7 @@
+                 room = cap - st["bytes_written"]
+                 if room > 0:
+                     part = chunk[:room]
+-                    write_all(fd, part, time.monotonic() + 30.0)
++                    write_all(fd, part, Deadline(30.0))
+                     digest.update(part)
+                     st["bytes_written"] += len(part)
+                 if len(chunk) > max(room, 0):
+@@ -1073,9 +1230,8 @@
+                 pass
+         finally:
+             try:
+-                if fd is not None:
+-                    os.fsync(fd)
+-                    os.close(fd)
++                os.fsync(fd)
++                os.close(fd)
+                 pipe.close()
+                 st["sha256_written"] = digest.hexdigest()
+                 st["closed"] = True
+@@ -1086,49 +1242,11 @@
+     return t
+ 
+ 
+-# ---------------------------------------------------------------- admission and commit boundary
+-def _stability_age(date, now_date):
+-    return (datetime.datetime.strptime(date, "%Y-%m-%dT%H:%M:%S%z")
+-            - datetime.datetime.strptime(now_date, "%Y-%m-%dT%H:%M:%S%z")).total_seconds()
+-
+-
+-def admission(sup):
+-    cfg, adm, R, reasons = sup.cfg, sup.cfg["admission"], {}, []
+-    R["date"] = sup.date_now()
+-    if R["date"] is None:
+-        reasons.append("DATE_HELPER_UNAVAILABLE")
+-    if TIMEBASE is None or ARGMAX is None:
+-        reasons.append("LIBPROC_SETUP_FAILED")
+-    if sup.rec["supervisor_sha256"] is None:
+-        reasons.append("SUPERVISOR_SOURCE_UNHASHABLE")
+-    pins = []
+-    for p in cfg["pins"]:
+-        try:
+-            ok = hash_regular(p["path"], PIN_MAX_BYTES, HASH_BUDGET_S)[0] == p["sha256"]
+-        except OSError:
+-            ok = False
+-        pins.append([p["path"], ok])
+-        if not ok:
+-            reasons.append("PIN_MISMATCH %s" % p["path"])
+-    R["pins"] = pins
+-    for r, (fd, dev, ino) in sorted(sup.root_fds.items()):
+-        try:
+-            st = os.lstat(r)
+-            names = os.listdir(fd)
+-        except OSError as ex:
+-            reasons.append("OUTPUT_ROOT_UNREADABLE %s %r" % (r, ex))
+-            continue
+-        if (st.st_dev, st.st_ino) != (dev, ino) or not real_dir_chain(r):
+-            reasons.append("OUTPUT_ROOT_NOT_REAL_DIR %s" % r)
+-        if names:
+-            reasons.append("OUTPUT_ROOT_NOT_EMPTY %s (%d entries)" % (r, len(names)))
+-    tmpd = cfg["env"]["TMPDIR"]
+-    if not real_dir_chain(tmpd):
+-        reasons.append("TMPDIR_NOT_REAL_DIR %s" % tmpd)
+-    if not real_dir_chain(cfg["lane"]) or not real_dir_chain(cfg["lane_disk_root"]):
+-        reasons.append("LANE_DIR_NOT_REAL_DIR")
++# ---------------------------------------------------------------- admission, commit boundary, GO revalidation
++def read_go(sup, R, reasons):
++    cfg, adm = sup.cfg, sup.cfg["admission"]
+     try:
+-        gh, _, graw, _ = hash_regular(adm["go_path"], SMALL_MAX_BYTES, HASH_BUDGET_S, keep=True)
++        gh, _, graw, _ = hash_regular(adm["go_path"], SMALL_MAX_BYTES, Deadline(HASH_BUDGET_S), keep=True)
+         R["go_sha256"] = gh
+         g = strict_json(graw)
+         entry = g.get("configs", {}).get(sup.rec["config_sha256"]) if isinstance(g, dict) and \
+@@ -1138,8 +1256,9 @@
+         elif not isinstance(entry, dict):
+             reasons.append("GO_DOES_NOT_NAME_THIS_CONFIG")
+         else:
+-            bound = {"output_roots": cfg["output_roots"], "argv": cfg["argv"], "max_wall_s": cfg["max_wall_s"]}
+-            bound.update({k: adm[k] for k in GO_BOUND_KEYS[3:]})
++            bound = {"output_roots": cfg["output_roots"], "argv": cfg["argv"], "max_wall_s": cfg["max_wall_s"],
++                     "cpu_slots": cfg["cpu_slots"]}
++            bound.update({k: adm[k] for k in GO_BOUND_KEYS[4:]})
+             for k in GO_BOUND_KEYS:
+                 if k not in entry or entry[k] != bound[k] or type(entry[k]) is bool:
+                     reasons.append("GO_BINDING_MISMATCH %s" % k)
+@@ -1152,25 +1271,77 @@
+                     reasons.append("GO_EXPIRED")
+     except (OSError, ValueError, UnicodeDecodeError) as ex:
+         reasons.append("GO_UNREADABLE %r" % ex)
++
++
++def stability_check(sup, R, reasons):
++    adm = sup.cfg["admission"]
+     try:
+-        sh, _, sraw, _ = hash_regular(adm["stability_receipt_path"], SMALL_MAX_BYTES, HASH_BUDGET_S, keep=True)
++        sh, _, sraw, _ = hash_regular(adm["stability_receipt_path"], SMALL_MAX_BYTES, Deadline(HASH_BUDGET_S), keep=True)
+         R["stability_sha256"] = sh
+         sr = strict_json(sraw)
+         if not isinstance(sr, dict) or sr.get("verdict") != "PASS":
+             reasons.append("STABILITY_NOT_PASS")
+         nd = sr.get("now_date") if isinstance(sr, dict) else None
+-        if R["date"] is None or not isinstance(nd, str) or not DATE_RE.match(nd):
++        if R.get("date") is None or not isinstance(nd, str) or not DATE_RE.match(nd):
+             reasons.append("STABILITY_AGE_UNVERIFIABLE")
+         else:
+             R["stability_now_date"] = nd
+-            R["stability_age_s"] = _stability_age(R["date"], nd)
++            R["stability_age_s"] = date_age_s(R["date"], nd)
+             if not (0 <= R["stability_age_s"] <= adm["stability_max_age_s"]):
+                 reasons.append("STABILITY_STALE")
+     except (OSError, ValueError, UnicodeDecodeError) as ex:
+         reasons.append("STABILITY_UNREADABLE %r" % ex)
++
++
++def admission(sup):
++    cfg, adm, R, reasons = sup.cfg, sup.cfg["admission"], {"epoch": time.time()}, []
++    R["date"] = sup.date_now("admission")
++    R["date_mono"] = time.monotonic()
++    if R["date"] is None:
++        reasons.append("DATE_HELPER_UNAVAILABLE")
++    if TIMEBASE is None or ARGMAX is None:
++        reasons.append("LIBPROC_SETUP_FAILED")
++    if sup.rec["supervisor_sha256"] is None:
++        reasons.append("SUPERVISOR_SOURCE_UNHASHABLE")
++    pins = []
++    for p in cfg["pins"]:
++        try:
++            ok = hash_regular(p["path"], PIN_MAX_BYTES, Deadline(HASH_BUDGET_S))[0] == p["sha256"]
++        except OSError:
++            ok = False
++        pins.append([p["path"], ok])
++        if not ok:
++            reasons.append("PIN_MISMATCH %s" % p["path"])
++    R["pins"] = pins
++    try:
++        devs = {"lane": os.stat(cfg["lane"]).st_dev, "lane_disk_root": os.stat(cfg["lane_disk_root"]).st_dev,
++                "TMPDIR": os.stat(cfg["env"]["TMPDIR"]).st_dev}
++        for r, (fd, dev, ino) in sorted(sup.root_fds.items()):
++            devs["root:" + r] = dev
++        R["devices"] = devs
++        if len(set(devs.values())) != 1:
++            reasons.append("CHARGED_LOCATIONS_ON_DIFFERENT_FILESYSTEMS")
++    except OSError as ex:
++        reasons.append("DEVICE_CHECK_FAILED %r" % ex)
++    for r, (fd, dev, ino) in sorted(sup.root_fds.items()):
++        try:
++            st = os.lstat(r)
++            names = list_root(fd, Deadline(10.0))
++        except OSError as ex:
++            reasons.append("OUTPUT_ROOT_UNREADABLE %s %r" % (r, ex))
++            continue
++        if (st.st_dev, st.st_ino) != (dev, ino) or not real_dir_chain(r):
++            reasons.append("OUTPUT_ROOT_NOT_REAL_DIR %s" % r)
++        if names:
++            reasons.append("OUTPUT_ROOT_NOT_EMPTY %s (%d entries)" % (r, len(names)))
++    for d in [cfg["env"]["TMPDIR"], cfg["lane"], cfg["lane_disk_root"]] + list(cfg["lane_roots"]):
++        if not real_dir_chain(d):
++            reasons.append("NOT_A_REAL_DIRECTORY_CHAIN %s" % d)
++    read_go(sup, R, reasons)
++    stability_check(sup, R, reasons)
+     res = adm["reservation_bytes"]
+     try:
+-        fr = free_bytes(cfg["lane"])
++        fr = sup.free_now()
+         R["free"] = fr
+         if fr < cfg["launch_free_min_bytes"] + res:
+             reasons.append("FREE_BELOW_LAUNCH_MIN")
+@@ -1179,29 +1350,31 @@
+     except OSError as ex:
+         reasons.append("STATVFS_FAILED %r" % ex)
+     try:
+-        lb = walk_bytes(cfg["lane_disk_root"])
++        lb = walk_bytes(cfg["lane_disk_root"], Deadline(WALK_BUDGET_S))
+         R["lane_bytes"] = lb
+         if lb + adm["lane_outstanding_reservations_bytes"] + res > cfg["lane_disk_ceiling_bytes"]:
+             reasons.append("LANE_CEILING")
+     except OSError as ex:
+         reasons.append("LANE_WALK_FAILED %r" % ex)
+     w0 = time.time()
+-    R["epoch_admission"] = w0
+     R["fit_limit_epoch"] = min(w0 + cfg["max_chunk_seconds"] - 120, cfg["owned_compute_settled_by_epoch"] - 180)
+     sup.fit_limit_epoch = R["fit_limit_epoch"]
+     if w0 + cfg["max_wall_s"] + cfg["settle_s"] + FINALIZE_ALLOWANCE_S > R["fit_limit_epoch"]:
+         reasons.append("CHUNK_FIT")
+     if TIMEBASE is not None and ARGMAX is not None:
+         try:
+-            sup.census()
++            c1 = sup.census_complete(CENSUS_BUDGET_S)
+             time.sleep(2.0)
+-            c2 = sup.census()
+-            R["census"] = {k: c2[k] for k in ("pids", "lane_pids", "lane_rss", "lane_busy")}
+-            if c2["lane_busy"] + 1 > cfg["busy_limit"]:
+-                reasons.append("LANE_BUSY")
+-            if c2["lane_rss"] + cfg["rss_projection_bytes"] > cfg["rss_trip_bytes"]:
+-                reasons.append("LANE_RSS")
+-        except RuntimeError as ex:
++            c2 = sup.census_complete(CENSUS_BUDGET_S)
++            R["census"] = [{k: c[k] for k in ("pids", "complete", "lane_pids", "lane_rss", "lane_busy",
++                                                "lane_busy_pids")} for c in (c1, c2)]
++            for c in (c1, c2):
++                if not c["complete"]:
++                    reasons.append("CENSUS_INCOMPLETE")
++                if not sup.limits_ok(c):
++                    reasons.append("LANE_LIMITS (busy %d + cpu_slots %d, rss %d)" % (c["lane_busy"], cfg["cpu_slots"],
++                                                                                    c["lane_rss"]))
++        except (RuntimeError, OSError) as ex:
+             reasons.append("CENSUS_FAILED %s" % ex)
+     if CANCEL[0] is not None:
+         reasons.append("CANCELLED %d" % CANCEL[0])
+@@ -1211,37 +1384,59 @@
+     return R
+ 
+ 
+-def commit_boundary(sup, adm_rec):
+-    cfg, adm, R, reasons = sup.cfg, sup.cfg["admission"], {}, []
+-    R["date"] = sup.date_now()
+-    if R["date"] is None:
+-        reasons.append("DATE_HELPER_UNAVAILABLE")
+-    else:
+-        try:
+-            R["stability_age_s"] = _stability_age(R["date"], adm_rec["stability_now_date"])
++def freshness(sup, adm_rec, R, reasons, spawn_mono=None):
++    """re-checks shared by the commit boundary (fresh /bin/date reading) and the GO linearization (commit-boundary age
++    plus monotonic time elapsed since that reading)."""
++    cfg, adm = sup.cfg, sup.cfg["admission"]
++    w = time.time()
++    R["epoch"] = w
++    nd = adm_rec.get("stability_now_date")
++    if spawn_mono is None:
++        R["date"] = sup.date_now("commit_boundary")
++        R["date_mono"] = time.monotonic()
++        if R["date"] is None or not isinstance(nd, str):
++            reasons.append("STABILITY_AGE_UNVERIFIABLE")
++        else:
++            R["stability_age_s"] = date_age_s(R["date"], nd)
+             if not (0 <= R["stability_age_s"] <= adm["stability_max_age_s"]):
+                 reasons.append("STABILITY_STALE")
+-        except (KeyError, ValueError) as ex:
+-            reasons.append("STABILITY_AGE_UNVERIFIABLE %r" % ex)
++    else:
++        cb = sup.rec.get("commit_boundary") or {}
++        if not _num(cb.get("stability_age_s")) or not _num(cb.get("date_mono")):
++            reasons.append("STABILITY_AGE_UNVERIFIABLE")
++        else:
++            R["stability_age_s_extrapolated"] = cb["stability_age_s"] + (time.monotonic() - cb["date_mono"])
++            if not (0 <= R["stability_age_s_extrapolated"] <= adm["stability_max_age_s"]):
++                reasons.append("STABILITY_STALE")
++    na = adm_rec.get("go_not_after_epoch")
++    if not _num(na) or w > na:
++        reasons.append("GO_EXPIRED_OR_INVALID")
+     res = adm["reservation_bytes"]
+     try:
+-        fr = free_bytes(cfg["lane"])
++        fr = sup.free_now()
+         R["free"] = fr
+         if fr < cfg["launch_free_min_bytes"] + res or fr - adm["outstanding_reservations_bytes"] - res < \
+                 HARD["free_floor_min"]:
+             reasons.append("FREE_BELOW_LAUNCH_MIN")
+     except OSError as ex:
+         reasons.append("STATVFS_FAILED %r" % ex)
+-    w = time.time()
+-    R["epoch"] = w
+-    if w + cfg["max_wall_s"] + cfg["settle_s"] + FINALIZE_ALLOWANCE_S > adm_rec["fit_limit_epoch"]:
+-        reasons.append("CHUNK_FIT")
+-    if not _num(adm_rec.get("go_not_after_epoch")) or w > adm_rec["go_not_after_epoch"]:
+-        reasons.append("GO_EXPIRED_OR_INVALID")
++    if spawn_mono is None:
++        if w + cfg["max_wall_s"] + cfg["settle_s"] + FINALIZE_ALLOWANCE_S > adm_rec["fit_limit_epoch"]:
++            reasons.append("CHUNK_FIT")
++    else:
++        age = time.monotonic() - spawn_mono
++        R["spawn_age_s"] = age
++        if age > min(GO_MAX_DELAY_S, cfg["max_wall_s"] / 2.0):
++            reasons.append("SPAWN_TOO_OLD_FOR_GO")
+     if CANCEL[0] is not None:
+         reasons.append("CANCELLED %d" % CANCEL[0])
+     if sup.failures_n:
+         reasons.append("FAILURE_LATCHED")
++
++
++def commit_boundary(sup, adm_rec):
++    R, reasons = {}, []
++    freshness(sup, adm_rec, R, reasons)
+     R["reasons"] = reasons
+     return R
+ 
+@@ -1249,6 +1444,8 @@
+ # ---------------------------------------------------------------- supervised run
+ def run_supervised(sup, child, mono0, epoch0, abs_end):
+     cfg = sup.cfg
++    sup.keep.append(child)
++    sup.child, sup.child_pid = child, child.pid
+     ident, why = sup.read_identity(child.pid)
+     if ident is None or ident["pgid"] != child.pid or ident["uid"] != MY_UID:
+         sup.fail("IDENTITY_CAPTURE_FAILED %s" % (why or ident))
+@@ -1258,13 +1455,16 @@
+     fd_err, n_err = sup.root_for(cfg["stderr"])
+     sup.threads = [sink_thread("stdout", child.stdout, fd_out, n_out, cfg["stdout_cap_bytes"], sup),
+                    sink_thread("stderr", child.stderr, fd_err, n_err, cfg["stderr_cap_bytes"], sup)]
+-    if sup.ident is not None:
++    if CANCEL[0] is not None:
++        sup.trip("SUPERVISOR_CANCEL_%d" % CANCEL[0])
++    if sup.ident is not None and sup.stop is None:
+         launch = {"item": cfg["item"], "owner": cfg["owner"], "purpose": cfg["purpose"], "identity": sup.ident,
+                   "argv": cfg["argv"], "argv_sha256": hashlib.sha256(json.dumps(cfg["argv"]).encode()).hexdigest(),
+                   "argv0_realpath": os.path.realpath(cfg["argv"][0]), "cwd": cfg["lane"], "env": cfg["env"],
+-                  "start_date": sup.rec.get("start_date"), "mono_spawn": mono0, "epoch_spawn": epoch0,
++                  "mono_spawn": mono0, "epoch_spawn": epoch0, "start_date": sup.rec["commit_boundary"].get("date"),
+                   "abs_end_epoch": abs_end, "max_wall_s": cfg["max_wall_s"], "settle_s": cfg["settle_s"],
+-                  "pins": cfg["pins"], "admission": sup.rec["admission"], "commit_boundary": sup.rec["commit_boundary"],
++                  "cpu_slots": cfg["cpu_slots"], "pins": cfg["pins"], "admission": sup.rec["admission"],
++                  "commit_boundary": sup.rec["commit_boundary"],
+                   "go": {"path": cfg["admission"]["go_path"], "sha256": sup.rec["admission"].get("go_sha256"),
+                          "not_after_epoch": sup.rec["admission"].get("go_not_after_epoch")},
+                   "stability_receipt": {"path": cfg["admission"]["stability_receipt_path"],
+@@ -1275,24 +1475,41 @@
+                   "config_sha256": sup.rec["config_sha256"], "fault_injection": cfg["fault_injection"]}
+         try:
+             fd, name = sup.root_for(cfg["launch_record"])
+-            sup.rec["launch_record_sha256"] = publish(fd, name, jbytes(launch))
++            h, ident_lr = publish(fd, name, jbytes(launch), Deadline(PUBLISH_BUDGET_S))
++            sup.rec["launch_record_sha256"] = h
++            sup.created[cfg["launch_record"]] = ident_lr
+         except Exception as ex:
+             sup.fail("LAUNCH_RECORD_FAILED %r" % ex)
+-    census_ok = False
++    G, reasons = {}, []
+     try:
+-        c = sup.census()
+-        sup.rec["pre_go_census"] = {k: c[k] for k in ("pids", "blocking_live", "lane_pids", "lane_rss", "lane_busy")}
+-        census_ok = True
+-    except RuntimeError as ex:
+-        sup.fail("CENSUS_FAILED pre-GO %s" % ex)
+-    go = (sup.ident is not None and "launch_record_sha256" in sup.rec and census_ok and not sup.failures_n and
+-          CANCEL[0] is None and time.time() - epoch0 <= GO_MAX_DELAY_S and sup.stop is None)
+-    sup.rec["go_decision"] = go
++        c = sup.census_complete(CENSUS_BUDGET_S)
++        G["census"] = {k: c[k] for k in ("pids", "complete", "blocking_live", "lane_pids", "lane_rss", "lane_busy",
++                                         "lane_busy_pids")}
++        if not c["complete"]:
++            reasons.append("CENSUS_INCOMPLETE")
++        if c["blocking_live"] != [child.pid]:
++            reasons.append("UNEXPECTED_BLOCKING_BEFORE_GO %s" % c["blocking_live"][:10])
++        lane_wo_child = dict(c, lane_busy=c["lane_busy"] - (1 if child.pid in c["lane_busy_pids"] else 0))
++        if not sup.limits_ok(lane_wo_child):
++            reasons.append("LANE_LIMITS_BEFORE_GO")
++    except (RuntimeError, OSError) as ex:
++        reasons.append("CENSUS_FAILED %s" % ex)
++    freshness(sup, sup.rec["admission"], G, reasons, spawn_mono=mono0)
++    if sup.ident is None or "launch_record_sha256" not in sup.rec:
++        reasons.append("NO_IDENTITY_OR_LAUNCH_RECORD")
++    if sup.stop is not None:
++        reasons.append("STOP_ALREADY_REQUESTED")
++    G["reasons"] = reasons
++    sup.rec["go_revalidation"] = G
++    go = not reasons
+     try:
+-        if go:
++        if go and CANCEL[0] is None:
++            sup.rec["go_linearization_mono"] = time.monotonic()
+             child.stdin.write(b"GO\n")
+             child.stdin.flush()
+             sup.rec["go_written_mono"] = time.monotonic()
++        else:
++            go = False
+     except Exception as ex:
+         sup.rec["go_error"] = repr(ex)
+         go = False
+@@ -1304,118 +1521,90 @@
+     sup.rec["stdin_closed"] = bool(child.stdin.closed)
+     sup.rec["go_delivered"] = bool(go and child.stdin.closed)
+     if not sup.rec["go_delivered"]:
+-        sup.fail("GO_NOT_DELIVERED")
++        sup.fail("GO_NOT_DELIVERED %s" % reasons[:5])
+     sup.loop_status = "RUNNING"
++    observe(sup, mono0, abs_end, write_samples=True)
++
++
++def observe(sup, mono0, abs_end, write_samples):
++    """bounded observation until a timely clear observation or an expired grace (both latched precisely)."""
++    cfg = sup.cfg
+     while True:
+         sup.reap_child()
+         if CANCEL[0] is not None:
+             sup.trip("SUPERVISOR_CANCEL_%d" % CANCEL[0])
++        c = None
+         try:
+-            c = sup.census()
++            c = sup.census(Deadline(CENSUS_BUDGET_S))
++            if not c["complete"]:
++                sup.census_incomplete += 1
++                if sup.child_rc is not None and not c["blocking_live"] and sup.streams_closed():
++                    c = sup.census_complete(CENSUS_BUDGET_S)
+             sup.max["lane_rss"] = max(sup.max["lane_rss"], c["lane_rss"])
+             sup.max["lane_busy"] = max(sup.max["lane_busy"], c["lane_busy"])
+             sup.max["blocking_live"] = max(sup.max["blocking_live"], len(c["blocking_live"]))
+-        except RuntimeError as ex:
++        except (RuntimeError, OSError) as ex:
+             c = None
+-            sup.census_errors += 1
+             sup.fail("CENSUS_FAILED %s" % str(ex)[:400])
+         fr = ob = None
+-        try:
+-            fr = free_bytes(cfg["lane"])
+-            sup.min_free = fr if sup.min_free is None else min(sup.min_free, fr)
+-        except OSError as ex:
+-            sup.fail("FREE_UNREADABLE %r" % ex)
+-        try:
+-            ob = 0
+-            for o in cfg["outputs"]:
+-                fd, name = sup.root_for(o["path"])
+-                try:
+-                    ob += os.stat(name, dir_fd=fd, follow_symlinks=False).st_size
+-                except FileNotFoundError:
+-                    pass
+-            ob += sum(st["bytes_written"] for st in sup.streams.values()) + sup.samples_bytes
+-            sup.max["output_bytes"] = max(sup.max["output_bytes"], ob)
+-        except OSError as ex:
+-            ob = None
+-            sup.fail("OUTPUT_UNREADABLE %r" % ex)
+-        if time.monotonic() >= sup.next_walk:
++        if write_samples:
+             try:
+-                sup.lane_bytes = walk_bytes(cfg["lane_disk_root"])
+-                sup.max["lane_bytes"] = max(sup.max["lane_bytes"], sup.lane_bytes)
++                fr = sup.free_now()
++                sup.min_free = fr if sup.min_free is None else min(sup.min_free, fr)
+             except OSError as ex:
+-                sup.fail("LANE_WALK_FAILED %r" % ex)
+-            sup.next_walk = time.monotonic() + cfg["lane_walk_s"]
++                sup.fail("FREE_UNREADABLE %r" % ex)
++            try:
++                ob = sup.output_bytes()
++                sup.max["output_bytes"] = max(sup.max["output_bytes"], ob)
++            except OSError as ex:
++                sup.fail("OUTPUT_UNREADABLE %r" % ex)
++            if time.monotonic() >= sup.next_walk:
++                try:
++                    sup.lane_bytes = walk_bytes(cfg["lane_disk_root"], Deadline(WALK_BUDGET_S))
++                    sup.max["lane_bytes"] = max(sup.max["lane_bytes"], sup.lane_bytes)
++                except OSError as ex:
++                    sup.fail("LANE_WALK_FAILED %r" % ex)
++                sup.next_walk = time.monotonic() + cfg["lane_walk_s"]
+         for name, st in sup.streams.items():
+             if st["error"] is not None and not st.get("error_reported"):
+                 st["error_reported"] = True
+                 sup.fail("STREAM_%s_ERROR %s" % (name.upper(), st["error"][:200]))
+-        if c is not None and c["lane_rss"] > cfg["rss_trip_bytes"]:
+-            sup.trip("RSS", c["lane_rss"])
+-        if c is not None and c["lane_busy"] > cfg["busy_limit"]:
+-            sup.trip("BUSY", c["lane_busy"])
+-        if fr is not None and fr < cfg["free_trip_bytes"]:
+-            sup.trip("FREE", fr)
+-        if ob is not None and ob > cfg["output_trip_bytes"]:
+-            sup.trip("OUTPUT", ob)
+-        if any(st["overflow"] for st in sup.streams.values()):
+-            sup.trip("STREAM_CAP")
+-        if sup.lane_bytes is not None and ob is not None:
+-            unused = max(0, cfg["admission"]["reservation_bytes"] - ob)
+-            if sup.lane_bytes + cfg["admission"]["lane_outstanding_reservations_bytes"] + unused > \
+-                    cfg["lane_disk_ceiling_bytes"]:
+-                sup.trip("LANE_CEILING", sup.lane_bytes)
++        sup.apply_trips(c, fr, ob)
+         sup.reap_child()
+         if sup.child_rc is None and (time.monotonic() - mono0 > cfg["max_wall_s"] or time.time() > abs_end):
+             sup.trip("DEADLINE")
+-        sup.write_sample({"mono": time.monotonic(), "epoch": time.time(), "rc": sup.child_rc, "free": fr, "out": ob,
+-                          "lane_bytes": sup.lane_bytes,
+-                          "census": None if c is None else {k: c[k] for k in (
+-                              "pids", "blocking_live", "owned_live", "unresolved_live", "group_live",
+-                              "blocking_zombies", "other_uid_blocking", "lane_pids", "lane_rss", "lane_busy")},
+-                          "streams": {k: [v["bytes_seen"], v["bytes_written"], v["overflow"], v["closed"]]
+-                                      for k, v in sup.streams.items()},
+-                          "stop": None if sup.stop is None else sup.stop["reason"], "trips_n": len(sup.trips),
+-                          "failures_n": sup.failures_n, "signal_sent": bool(sup.signal and sup.signal.get("sent"))})
++        if write_samples:
++            sup.write_sample({"mono": time.monotonic(), "epoch": time.time(), "rc": sup.child_rc, "free": fr,
++                              "out": ob, "lane_bytes": sup.lane_bytes,
++                              "census": None if c is None else {k: c[k] for k in (
++                                  "pids", "complete", "vanished_n", "blocking_live", "blocking_detail", "owned_live",
++                                  "unproved_live", "group_live", "blocking_zombies", "blocking_unmeasured",
++                                  "foreign_new_n", "lane_pids", "lane_rss", "lane_busy", "lane_busy_pids",
++                                  "mono_done")},
++                              "streams": {k: [v["bytes_seen"], v["bytes_written"], v["overflow"], v["closed"]]
++                                          for k, v in sup.streams.items()},
++                              "stop": None if sup.stop is None else sup.stop["reason"], "trips_n": len(sup.trips),
++                              "failures_n": sup.failures_n, "signal_sent": bool(sup.signal and sup.signal.get("sent"))})
+         if sup.is_clear(c):
+-            sup.loop_status = "EXITED"
++            late = [name for name, cut in sup.grace_cutoffs() if c["mono_done"] > cut]
++            if late:
++                sup.loop_status = late[0]
++                sup.fail(late[0] + " (clear observed after the cutoff)")
++            else:
++                sup.loop_status = "EXITED"
++                sup.clear = {"mono": c["mono_done"], "census_pids": c["pids"]}
+             return
+         t = time.monotonic()
+-        if sup.stop is not None and t - sup.stop["mono"] > cfg["settle_s"]:
+-            sup.loop_status = "GRACE_EXPIRED_AFTER_STOP_REQUEST"
+-            sup.fail("GRACE_EXPIRED_AFTER_STOP_REQUEST")
+-            return
+-        if sup.child_exit_mono is not None and t - sup.child_exit_mono > cfg["settle_s"]:
+-            sup.loop_status = "GRACE_EXPIRED_AFTER_CHILD_EXIT"
+-            sup.fail("GRACE_EXPIRED_AFTER_CHILD_EXIT")
+-            return
+-        time.sleep(cfg["sample_s"])
++        for name, cut in sup.grace_cutoffs():
++            if t > cut:
++                sup.loop_status = name
++                sup.fail(name)
++                return
++        cuts = [cut for _, cut in sup.grace_cutoffs()]
++        time.sleep(max(0.0, min([cfg["sample_s"]] + [cut - t for cut in cuts])))
+ 
+ 
+-def emergency_observe(sup):
+-    """after an exception: stop requested; observe (reap + census only) until clear or the grace has expired."""
+-    cfg = sup.cfg
+-    if sup.stop is None:
+-        sup.request_stop("SUPERVISOR_EXCEPTION")
+-    while True:
+-        sup.reap_child()
+-        try:
+-            c = sup.census()
+-        except Exception as ex:
+-            c = None
+-            sup.census_errors += 1
+-            if sup.census_errors <= 3:
+-                sup.fail("CENSUS_FAILED after exception %s" % str(ex)[:200])
+-        if sup.is_clear(c):
+-            sup.loop_status = "EXITED_AFTER_EXCEPTION"
+-            return
+-        if time.monotonic() - sup.stop["mono"] > cfg["settle_s"]:
+-            sup.loop_status = "GRACE_EXPIRED_AFTER_EXCEPTION"
+-            sup.fail("GRACE_EXPIRED_AFTER_EXCEPTION")
+-            return
+-        time.sleep(cfg["sample_s"])
+-
+-
+-# ---------------------------------------------------------------- finalization and publication
++# ---------------------------------------------------------------- finalization, publication, acknowledgment
+ def finalize(sup, status_note):
+     try:
+         return _finalize(sup, status_note)
+@@ -1423,39 +1612,38 @@
+         sys.stderr.write("FINALIZE_EXCEPTION %r\n" % ex)
+         try:
+             fd, name = sup.root_for(sup.cfg["settlement_record"])
+-            h, _ = publish_linked(fd, name, jbytes({"settlement": "UNSETTLED", "supervisor": VERSION,
+-                                                     "config_sha256": sup.rec.get("config_sha256"),
+-                                                     "receipt": None, "receipt_sha256": None,
+-                                                     "reasons": ["FINALIZE_EXCEPTION %r" % ex]}))
+-            sys.stdout.write(json.dumps({"settlement": "UNSETTLED", "settlement_record_sha256": h,
+-                                         "receipt_sha256": None, "reasons": ["FINALIZE_EXCEPTION"]}) + "\n")
++            publish_linked(fd, name, jbytes({"settlement": "UNSETTLED", "supervisor": VERSION,
++                                             "config_sha256": sup.rec.get("config_sha256"), "receipt": None,
++                                             "receipt_sha256": None, "reasons": ["FINALIZE_EXCEPTION %r" % ex]}),
++                           Deadline(PUBLISH_BUDGET_S))
+         except BaseException as ex2:
+             sys.stderr.write("SETTLEMENT_RECORD_FAILED %r\n" % ex2)
+-            return 13
+-        return 12
++        sys.stdout.write(json.dumps({"acknowledged": False, "exit_code": 13, "settlement": "UNSETTLED",
++                                     "reason": "FINALIZE_EXCEPTION"}) + "\n")
++        return 13
+ 
+ 
+ def _finalize(sup, status_note):
+     cfg, R = sup.cfg, sup.rec
+     launched = sup.child_pid is not None
+-    end_date = sup.date_now()
+-    for pid in list(sup.helper_open):
+-        r = sup._waitpid(pid)
+-        if r is not None and r != "LOST":
+-            sup.helper_open.remove(pid)
+-    if sup.helper_open:
+-        sup.fail("HELPER_ALIVE %s" % sup.helper_open)
++    R["end_date"] = sup.date_now("end")
++    R["end_date_mono"] = time.monotonic()
++    unreaped = sup.helpers_unreaped()
++    if unreaped:
++        sup.fail("HELPER_ALIVE %s" % unreaped)
+     if launched:
+         sup.reap_child()
+         if sup.child_rc is None:
+             sup.fail("CHILD_NOT_REAPED")
+         try:
+-            c = sup.census()
++            c = sup.census_complete(CENSUS_BUDGET_S)
+             R["final_census"] = c
++            if not c["complete"]:
++                sup.fail("FINAL_CENSUS_INCOMPLETE vanished %s" % c["vanished"])
+             if c["blocking_live"]:
+-                sup.fail("BLOCKING_LIVE owned %s unresolved %s group %s" % (c["owned_live"], c["unresolved_live"],
+-                                                                            c["group_live"]))
+-        except RuntimeError as ex:
++                sup.fail("BLOCKING_LIVE %s" % c["blocking_detail"][:10])
++            sup.apply_trips(c, None, None)
++        except (RuntimeError, OSError) as ex:
+             sup.fail("FINAL_CENSUS_FAILED %s" % ex)
+         if not sup.streams_closed():
+             sup.fail("STREAMS_NOT_CLOSED")
+@@ -1471,30 +1659,29 @@
+         except OSError as ex:
+             sup.fail("SAMPLES_CLOSE_FAILED %r" % ex)
+         sup.samples_fd = None
++    dl = Deadline(HASH_BUDGET_S + WALK_BUDGET_S)
+     pins_end = []
+     for p in cfg["pins"]:
+         try:
+-            pins_end.append([p["path"], hash_regular(p["path"], PIN_MAX_BYTES, HASH_BUDGET_S)[0] == p["sha256"]])
++            pins_end.append([p["path"], hash_regular(p["path"], PIN_MAX_BYTES, dl)[0] == p["sha256"]])
+         except OSError:
+             pins_end.append([p["path"], False])
+     R["pins_at_end"] = pins_end
+     if not all(ok for _, ok in pins_end):
+         sup.fail("PIN_CHANGED_OR_UNREADABLE")
+-    allowed = {os.path.basename(p) for p in evidence_paths(cfg) + [o["path"] for o in cfg["outputs"]]}
+-    allowed.add(os.path.basename(cfg["settlement_record"]) + ".staged")
+     inventory = {}
+     for r, (fd, dev, ino) in sorted(sup.root_fds.items()):
+         try:
+             st_fd, st_path = os.fstat(fd), os.lstat(r)
+-            names = os.listdir(fd)
++            names = list_root(fd, dl)
+         except OSError as ex:
+             sup.fail("OUTPUT_ROOT_UNREADABLE %s %r" % (r, ex))
+             continue
+         if (st_fd.st_dev, st_fd.st_ino) != (dev, ino) or (st_path.st_dev, st_path.st_ino) != (dev, ino) or \
+                 not real_dir_chain(r):
+             sup.fail("OUTPUT_ROOT_CHANGED %s" % r)
+-        inventory[r] = sorted(names)[:ROOT_MAX_ENTRIES]
+-        stray = sorted(n for n in names if n not in allowed)
++        inventory[r] = names
++        stray = [n for n in names if n not in sup.allow[r]]
+         if stray:
+             sup.fail("UNDECLARED_ENTRIES %s %s" % (r, stray[:20]))
+     R["output_root_inventory"] = inventory
+@@ -1502,7 +1689,7 @@
+     for p in [cfg["stdout"], cfg["stderr"], cfg["launch_record"], cfg["samples"]] + [o["path"] for o in cfg["outputs"]]:
+         fd, name = sup.root_for(p)
+         try:
+-            st = os.stat(name, dir_fd=fd, follow_symlinks=False)
++            os.stat(name, dir_fd=fd, follow_symlinks=False)
+         except FileNotFoundError:
+             arts[p] = None
+             continue
+@@ -1511,12 +1698,16 @@
+             sup.fail("ARTIFACT_STAT_FAILED %s" % p)
+             continue
+         try:
+-            h, size, _, st2 = hash_regular(name, max(cfg["output_trip_bytes"], 1 << 30), HASH_BUDGET_S, dir_fd=fd)
+-            arts[p] = {"bytes": size, "sha256": h, "nlink": st2.st_nlink, "birthtime": st2.st_birthtime}
++            h, size, _, st2 = hash_regular(name, max(cfg["output_trip_bytes"], cfg["samples_cap_bytes"],
++                                                     cfg["stdout_cap_bytes"], cfg["stderr_cap_bytes"]), dl, dir_fd=fd)
++            arts[p] = {"bytes": size, "sha256": h, "nlink": st2.st_nlink, "birthtime": st2.st_birthtime,
++                       "inode": [st2.st_dev, st2.st_ino]}
+             if st2.st_nlink != 1:
+                 sup.fail("ARTIFACT_LINK_COUNT %s %d" % (p, st2.st_nlink))
+-            if sup.epoch_spawn is not None and st2.st_birthtime < sup.epoch_spawn - 2.0:
+-                sup.fail("ARTIFACT_OLDER_THAN_SPAWN %s" % p)
++            if p in sup.created and (st2.st_dev, st2.st_ino) != sup.created[p]:
++                sup.fail("EVIDENCE_REPLACED %s" % p)
++            if p not in sup.created and sup.epoch_spawn is not None and st2.st_birthtime < sup.epoch_spawn:
++                sup.fail("OUTPUT_OLDER_THAN_SPAWN %s" % p)
+         except OSError as ex:
+             arts[p] = {"error": repr(ex)}
+             sup.fail("ARTIFACT_HASH_FAILED %s %r" % (p, ex))
+@@ -1535,6 +1726,7 @@
+         a = arts.get(p)
+         if not isinstance(a, dict) or a.get("sha256") != h:
+             sup.fail("EVIDENCE_MUTATED %s" % p)
++    ob = None
+     if launched:
+         for o in cfg["outputs"]:
+             if o["required"] and arts.get(o["path"]) is None:
+@@ -1542,72 +1734,109 @@
+         for p in (cfg["launch_record"], cfg["samples"], cfg["stdout"], cfg["stderr"]):
+             if arts.get(p) is None:
+                 sup.fail("EVIDENCE_MISSING %s" % p)
+-    try:
+-        fr = free_bytes(cfg["lane"])
+-        R["final_free"] = fr
+-        if fr < cfg["free_trip_bytes"]:
+-            sup.fail("FINAL_FREE_BELOW_FLOOR %d" % fr)
+-    except OSError as ex:
+-        sup.fail("FINAL_FREE_UNREADABLE %r" % ex)
++        try:
++            ob = sup.output_bytes()
++            sup.max["output_bytes"] = max(sup.max["output_bytes"], ob)
++            sup.lane_bytes = walk_bytes(cfg["lane_disk_root"], Deadline(WALK_BUDGET_S))
++        except OSError as ex:
++            sup.fail("FINAL_ACCOUNTING_FAILED %r" % ex)
++        sup.apply_trips(None, None, ob)
+     if launched and R.get("abs_end_epoch") is not None:
+         bound = R["abs_end_epoch"] + cfg["sample_s"] + DEADLINE_SLACK_EXTRA_S
+-        dl = next((t for t in sup.trips if t["trip"] == "DEADLINE"), None)
++        dlt = next((t for t in sup.trips if t["trip"] == "DEADLINE"), None)
+         exit_ok = sup.child_exit_epoch is not None and sup.child_exit_epoch <= bound
+-        trip_ok = dl is not None and dl["epoch"] <= bound
++        trip_ok = dlt is not None and dlt["epoch"] <= bound
+         R["deadline_timeliness"] = {"bound_epoch": bound, "exit_observed_epoch": sup.child_exit_epoch,
+-                                    "deadline_trip_epoch": None if dl is None else dl["epoch"]}
++                                    "deadline_trip_epoch": None if dlt is None else dlt["epoch"]}
+         if not (exit_ok or trip_ok):
+             sup.fail("DEADLINE_NOT_ENFORCED_IN_TIME")
+-    if CANCEL[0] is not None and not any(t["trip"].startswith("SUPERVISOR_CANCEL") for t in sup.trips):
+-        sup.trips.append({"trip": "SUPERVISOR_CANCEL_LATE", "detail": CANCEL[0], "mono": time.monotonic(),
++    cancel_at_decision = CANCEL[0]
++    if cancel_at_decision is not None and not any(t["trip"].startswith("SUPERVISOR_CANCEL") for t in sup.trips):
++        sup.trips.append({"trip": "SUPERVISOR_CANCEL_LATE", "detail": cancel_at_decision, "mono": time.monotonic(),
+                           "epoch": time.time()})
+-    R["epoch_decision"] = time.time()
+-    if sup.fit_limit_epoch is not None and R["epoch_decision"] > sup.fit_limit_epoch:
+-        sup.fail("SETTLEMENT_PAST_CHUNK_LIMIT")
+-    if not launched:
+-        settlement = "NOT_LAUNCHED" if not sup.helper_open else "UNSETTLED"
+-    else:
+-        settlement = "SETTLED" if sup.failures_n == 0 else "UNSETTLED"
+-    R.update({"end_date": end_date, "mono_end": time.monotonic(), "epoch_end": time.time(),
+-              "helper_calls": sup.helper_calls, "helper_log": list(sup.helper_log), "helper_open": sup.helper_open,
+-              "trips": sup.trips, "stop_request": sup.stop, "signal": sup.signal, "failures": sup.failures,
+-              "failures_n": sup.failures_n, "child_pid": sup.child_pid, "child_returncode": sup.child_rc,
+-              "child_wait_status_lost": sup.child_lost, "child_exit_mono": sup.child_exit_mono,
+-              "child_exit_epoch": sup.child_exit_epoch, "streams": sup.streams, "max": sup.max,
+-              "min_free": sup.min_free, "samples_written": sup.samples_n, "samples_bytes": sup.samples_bytes,
+-              "lineage_seen": len(sup.seen), "loop_status": sup.loop_status, "status_note": status_note,
+-              "settlement": settlement})
+-    code = {"SETTLED": 0, "NOT_LAUNCHED": 10}.get(settlement, 11)
+     fd_r, n_r = sup.root_for(cfg["receipt"])
+     fd_s, n_s = sup.root_for(cfg["settlement_record"])
++
++    def decide():
++        if sup.helpers_unreaped():
++            return "UNSETTLED"
++        if not launched:
++            return "NOT_LAUNCHED"
++        return "SETTLED" if sup.failures_n == 0 else "UNSETTLED"
++
++    def serialize(settlement):
++        R.update({"mono_decision": time.monotonic(), "epoch_decision": time.time(),
++                  "helper_calls": sup.helper_calls, "helper_log": list(sup.helper_log),
++                  "helpers": [{k: h[k] for k in ("pid", "state", "rc")} for h in sup.helpers],
++                  "trips": sup.trips, "stop_request": sup.stop, "signal": sup.signal, "failures": sup.failures,
++                  "failures_n": sup.failures_n, "child_pid": sup.child_pid, "child_returncode": sup.child_rc,
++                  "child_wait_status_lost": sup.child_lost, "child_exit_mono": sup.child_exit_mono,
++                  "child_exit_epoch": sup.child_exit_epoch, "streams": sup.streams, "max": sup.max,
++                  "min_free": sup.min_free, "samples_written": sup.samples_n, "samples_bytes": sup.samples_bytes,
++                  "clear": sup.clear, "census_incomplete_count": sup.census_incomplete, "loop_status": sup.loop_status,
++                  "status_note": status_note, "cancel_at_decision": cancel_at_decision, "settlement": settlement})
++        rb = jbytes(R)
++        sb = jbytes({"settlement": settlement, "receipt": cfg["receipt"],
++                     "receipt_sha256": hashlib.sha256(rb).hexdigest(), "supervisor": VERSION,
++                     "config_sha256": R["config_sha256"], "child_returncode": sup.child_rc, "status_note": status_note,
++                     "failures": [f["reason"] for f in sup.failures], "failures_n": sup.failures_n,
++                     "trips": [t["trip"] for t in sup.trips], "authority": R["authority"]})
++        return rb, sb
++
++    if sup.fit_limit_epoch is not None and time.time() > sup.fit_limit_epoch:
++        sup.fail("SETTLEMENT_PAST_CHUNK_LIMIT")
++    rb, sb = serialize(decide())
++    projected = len(rb) + len(sb)
+     try:
+-        rsha = publish(fd_r, n_r, jbytes(R))
++        fr = sup.free_now()
++        R["final_free"] = fr
++        lane_now = sup.lane_bytes if sup.lane_bytes is not None else walk_bytes(cfg["lane_disk_root"],
++                                                                                 Deadline(WALK_BUDGET_S))
++        remaining_res = cfg["admission"]["reservation_bytes"] - (ob if ob is not None else 0)
++        R["publication_budget"] = {"projected_bytes": projected, "free": fr, "lane_bytes": lane_now,
++                                   "remaining_reservation": remaining_res}
++        if fr - projected < cfg["free_trip_bytes"] or \
++                lane_now + cfg["admission"]["lane_outstanding_reservations_bytes"] + projected > \
++                cfg["lane_disk_ceiling_bytes"] or projected > remaining_res:
++            sup.fail("PUBLICATION_BUDGET")
++    except OSError as ex:
++        sup.fail("PUBLICATION_BUDGET_UNCHECKABLE %r" % ex)
++    settlement = decide()
++    rb, sb = serialize(settlement)
++    code = {"SETTLED": 0, "NOT_LAUNCHED": 10}.get(settlement, 11)
++    pub = Deadline(2 * PUBLISH_BUDGET_S)
++    try:
++        rsha, _ = publish(fd_r, n_r, rb, pub)
+     except Exception as ex:
+         sys.stderr.write("RECEIPT_PUBLICATION_FAILED %r\n" % ex)
+-        try:
+-            h, _ = publish_linked(fd_s, n_s, jbytes({"settlement": "UNSETTLED", "receipt": cfg["receipt"],
+-                                                      "receipt_sha256": None, "supervisor": VERSION,
+-                                                      "config_sha256": R["config_sha256"],
+-                                                      "reasons": ["RECEIPT_PUBLICATION_FAILED %r" % ex]}))
+-            sys.stdout.write(json.dumps({"settlement": "UNSETTLED", "settlement_record_sha256": h,
+-                                         "receipt_sha256": None, "reasons": ["RECEIPT_PUBLICATION_FAILED"]}) + "\n")
+-        except Exception as ex2:
+-            sys.stderr.write("SETTLEMENT_RECORD_FAILED %r\n" % ex2)
+-            return 13
++        sys.stdout.write(json.dumps({"acknowledged": False, "exit_code": 12, "settlement": settlement,
++                                     "reason": "RECEIPT_PUBLICATION_FAILED"}) + "\n")
+         return 12
+-    final = {"settlement": settlement, "receipt": cfg["receipt"], "receipt_sha256": rsha, "supervisor": VERSION,
+-             "config_sha256": R["config_sha256"], "child_returncode": sup.child_rc, "status_note": status_note,
+-             "failures": [f["reason"] for f in sup.failures], "failures_n": sup.failures_n,
+-             "trips": [t["trip"] for t in sup.trips], "authority": R["authority"]}
+     try:
+-        ssha, dir_err = publish_linked(fd_s, n_s, jbytes(final))
++        ssha, _ = publish_linked(fd_s, n_s, sb, pub)
++        for r, (fd, dev, ino) in sorted(sup.root_fds.items()):
++            os.fsync(fd)
++        pub.check("after directory fsync")
+     except Exception as ex:
+-        sys.stderr.write("SETTLEMENT_RECORD_FAILED %r\n" % ex)
++        sys.stderr.write("SETTLEMENT_PUBLICATION_FAILED %r\n" % ex)
++        sys.stdout.write(json.dumps({"acknowledged": False, "exit_code": 13, "settlement": settlement,
++                                     "receipt_sha256": rsha, "reason": "SETTLEMENT_PUBLICATION_OR_DIRECTORY_SYNC_FAILED"})
++                         + "\n")
+         return 13
+-    sys.stdout.write(json.dumps({"settlement": settlement, "receipt_sha256": rsha, "settlement_record_sha256": ssha,
+-                                 "settlement_dir_fsync_error": dir_err, "child_returncode": sup.child_rc,
+-                                 "trips": [t["trip"] for t in sup.trips],
+-                                 "failures": [f["reason"] for f in sup.failures][:10]}) + "\n")
++    post_publish_mono = time.monotonic()
++    ack = {"acknowledged": True, "exit_code": code, "settlement": settlement, "receipt": cfg["receipt"],
++           "receipt_sha256": rsha, "settlement_record": cfg["settlement_record"], "settlement_record_sha256": ssha,
++           "post_publish_mono": post_publish_mono, "child_returncode": sup.child_rc,
++           "trips": [t["trip"] for t in sup.trips], "failures": [f["reason"] for f in sup.failures][:10],
++           "supervisor": VERSION, "config_sha256": R["config_sha256"]}
++    run_cancel = any(t["trip"].startswith("SUPERVISOR_CANCEL_") and t["trip"] != "SUPERVISOR_CANCEL_LATE"
++                     for t in sup.trips)
++    if CANCEL[0] is not None and not run_cancel:
++        ack.update({"acknowledged": False, "exit_code": 14, "cancel_before_acknowledgment": CANCEL[0],
++                    "cancel_seen_at_decision": cancel_at_decision})
++        code = 14
++    sys.stdout.write(json.dumps(ack, sort_keys=True) + "\n")
++    sys.stdout.flush()
+     return code
+ 
+ 
+@@ -1616,11 +1845,11 @@
+         signal.signal(s, _cancel)
+     signal.signal(signal.SIGCHLD, signal.SIG_DFL)
+     if len(sys.argv) != 2:
+-        sys.stderr.write("usage: owned_supervisor_v7.py CONFIG.json\n")
++        sys.stderr.write("usage: owned_supervisor_v8.py CONFIG.json\n")
+         return 2
+     cfg_path = os.path.abspath(sys.argv[1])
+     try:
+-        cfg_sha, _, raw, _ = hash_regular(cfg_path, SMALL_MAX_BYTES, HASH_BUDGET_S, keep=True)
++        cfg_sha, _, raw, _ = hash_regular(cfg_path, SMALL_MAX_BYTES, Deadline(HASH_BUDGET_S), keep=True)
+         cfg = strict_json(raw)
+         if not isinstance(cfg, dict):
+             raise ValueError("config is not a JSON object")
+@@ -1646,16 +1875,19 @@
+         return finalize(sup, "NOT_LAUNCHED_COMMIT_BOUNDARY")
+     try:
+         fd, name = sup.root_for(cfg["samples"])
+-        sup.samples_fd = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644, dir_fd=fd)
++        sup.samples_fd, ident_s = create_exclusive(fd, name)
++        sup.created[cfg["samples"]] = ident_s
+         sup.rec["samples_opened"] = True
+     except OSError as ex:
+         cb["reasons"].append("SAMPLES_OPEN_FAILED %r" % ex)
+         return finalize(sup, "NOT_LAUNCHED_SAMPLES")
+-    sup.rec["start_date"] = cb["date"]
++    if CANCEL[0] is not None:
++        cb["reasons"].append("CANCELLED %d" % CANCEL[0])
++        return finalize(sup, "NOT_LAUNCHED_CANCEL")
+     mono0, epoch0 = time.monotonic(), time.time()
+     abs_end = epoch0 + cfg["max_wall_s"]
+-    sup.rec.update({"mono_spawn": mono0, "epoch_spawn": epoch0, "abs_end_epoch": abs_end})
+-    sup.epoch_spawn = epoch0
++    sup.rec.update({"mono_spawn": mono0, "epoch_spawn": epoch0, "start_date": cb.get("date"), "abs_end_epoch": abs_end})
++    sup.epoch_spawn, sup.mono_spawn = epoch0, mono0
+     try:
+         child = subprocess.Popen(cfg["argv"], cwd=cfg["lane"], env=dict(cfg["env"]), stdin=subprocess.PIPE,
+                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True, close_fds=True)
+@@ -1663,15 +1895,18 @@
+         sup.rec["spawn_error"] = repr(ex)
+         cb["reasons"].append("SPAWN_FAILED %r" % ex)
+         return finalize(sup, "NOT_LAUNCHED_SPAWN")
+-    sup.keep.append(child)
+-    sup.child, sup.child_pid = child, child.pid
+     try:
+         run_supervised(sup, child, mono0, epoch0, abs_end)
+     except BaseException as ex:
+         sup.rec["exception"] = repr(ex)
++        if sup.child_pid is None:
++            sup.keep.append(child)
++            sup.child, sup.child_pid = child, child.pid
+         sup.fail("SUPERVISOR_EXCEPTION %r" % ex)
+         try:
+-            emergency_observe(sup)
++            if sup.stop is None:
++                sup.request_stop("SUPERVISOR_EXCEPTION")
++            observe(sup, mono0, abs_end, write_samples=False)
+         except BaseException as ex2:
+             sup.fail("EMERGENCY_OBSERVE_EXCEPTION %r" % ex2)
+     return finalize(sup, sup.loop_status)

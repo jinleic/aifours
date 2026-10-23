@@ -1,0 +1,81 @@
+{
+ "kind": "rqls10-base-postcheck-draft2-finding-change-plan-v1",
+ "at": "2026-10-19T22:08:28-0700",
+ "agent": "RQBaseGuardRepair",
+ "status": "FROZEN_PLAN_BEFORE_DRAFTING_SOURCE_ONLY_NOEXEC",
+ "scope_freeze": {
+  "path": "/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10/continuations/guard-v10-repair/base-postcheck/draft2-repair-v1/00-scope-freeze-v1.json",
+  "sha256": "4ee064492adf99468cf11c861ac127bd52801a5f3c5dbc9e8a904e25c8ab3bcc"
+ },
+ "subject": {
+  "path": "/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10/continuations/guard-v10-repair/base-postcheck/guard_qual_postcheck_v1.py",
+  "sha256": "ded1e7ac8ff5521d0a34b7185834bcdc904dc73a33988cb2c6cba6af92773c8f"
+ },
+ "draft2": "/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/rqls10/continuations/guard-v10-repair/base-postcheck/guard_qual_postcheck_v1_draft2.py",
+ "knowledge_exposure": {
+  "read_full": [
+   "scope 4771dda7",
+   "HOLD 3ab06e0b",
+   "PC1/PC2/PC3 v1 Codex stdout (07c886c7, 6dff08df, 632eb43d)",
+   "owner throttle 3ba3ca96",
+   "postchecker v1 L238-329, L478-545, L714-814, L1380-1463, L1500-1533 (and the full file earlier this session)"
+  ],
+  "producer_read": [
+   "code/owned_supervisor_v19.py L116 MY_UID=os.getuid(); L120 GuardError(OSError); L180 SZOMB=5; L634-703 spawn_registered (term_attempted False init, mono_spawn read before posix_spawn, setsid); L720 rec uid; L985-1043 retain_identity flag; L1135-1145 register_owned; L1147-1209 scan_identities (pid_scan, group registration, edge proof then register); L1235-1365 census membership/measurement/OSError handling; L1430-1547 helper_probe/helper_term (term_attempted then signal record); L2184-2255 main initial/recovery anchor; child12 L391-461 join_child (earlier this session)"
+  ]
+ },
+ "plan": [
+  {
+   "id": "PC1-M1",
+   "where": "histories measurement loop (v1 L518-527)",
+   "change": "Additionally require identity_event_ref < identity_after_event_ref and before_task_event_ref < identity_after_event_ref in the retained one-based event sequence; existing timestamp bracket kept (equal clocks no longer establish order between an acquisition and itself).",
+   "producer": "census resolves identity_event_ref/before_task_event_ref (L1277, L1288) before the task and retains the final bracket afterwards (L1336), so the final ref is strictly larger."
+  },
+  {
+   "id": "PC1-M2",
+   "where": "unresolved_coverage direction (a) (v1 L794-801)",
+   "change": "An unflagged post-baseline acquisition of a non-baseline uid must be retained strictly after its registration in sequence: ref > max(registration identity_event_ref, current-parent proof refs) and not ending before first_seen_mono; the only exemption is the known MAIN/helper registration acquisition itself (ref == its identity_event_ref). Timestamp equality no longer counts as registration.",
+   "producer": "retain_identity flags before register_owned (L1005 then L1135-1145); group registration follows the scan's pid_scan retentions; edge registration follows parent_after retention; root anchors are known acquisitions."
+  },
+  {
+   "id": "PC1-M3",
+   "where": "histories census loop (after measurement loop); histories gains a uid argument supplied from receipt uid by both integrated_v19_evidence calls (PC2 v1 L935, L947)",
+   "change": "For a completed census, every owned_live/unproved_live identity with status != 5 and receipt uid equal to its real or effective UID must have exactly one completed measurement with the same full identity. Partial and aborted censuses unchanged.",
+   "producer": "census L1257-1266 measures every non-zombie owned/unproved process with euid or ruid == MY_UID; any OSError (GuardError included) leaves the census incomplete; other exceptions abort it."
+  },
+  {
+   "id": "PC1-M4",
+   "where": "rooted_registry (v1 L719-723, L748-751)",
+   "change": "owned_group: member registration acquisition ref must be strictly greater than the root's registration acquisition ref. MAIN root anchor bound (receipt view) to receipt main_initial_identity_event_ref, required present, beginning at/after receipt mono_spawn; helper anchors already bound to h.identity_event_ref (and after mono_pid_registered in helper_deadline_evidence).",
+   "producer": "groups map pgid->root only after the root's initial acquisition is retained and registered (install_main_identity / helper install then retain then register_owned); mono_spawn read before posix_spawn(setsid=True)."
+  },
+  {
+   "id": "PC1-M5",
+   "where": "helper_evidence signal block (v1 L312)",
+   "change": "Require h.term_attempted is True exactly when a helper signal record exists (sent or unsent); returns False otherwise.",
+   "producer": "helper_term sets term_attempted=True (L1522) before creating any signal record (L1525/L1527); no other helper signal creation site."
+  },
+  {
+   "id": "PC2-M1",
+   "where": "private_join after the pre-wait bracket check (v1 L1436)",
+   "change": "For the zombie join, the intended held-zombie identity and the later pre-wait target observation must both have status 5.",
+   "producer": "child12 zombie join targets the held status-5 incarnation before any wait call (L684-709, join_precheck L369-388)."
+  },
+  {
+   "id": "PC2-M2",
+   "where": "private_join after first/final call join (v1 L1460)",
+   "change": "interruptions must lie in [k, k + calls - |retained endpoints|], k = retained endpoints with error; with calls<=2 this is exact (two normal endpoints => 0).",
+   "producer": "child12 join_child increments interruptions only for InterruptedError calls; the final reaping call returns normally."
+  }
+ ],
+ "unchanged": [
+  "VERSION, VERIFIER, CHECKER legacy role, approval.verifier check, main fixed path",
+  "SC/FAULTS/NEGATIVE_PROCESS/config_for/expectations",
+  "all BASE-PC3 owned bytes",
+  "all prior Invalid messages kept; new messages added only for new checks"
+ ],
+ "not_done_by_design": [
+  "baseline-boundary and census-edge clock equality (PC1 review section E) stay timestamp-bound: not among the 7 findings; owner throttle forbids scope expansion",
+  "no repackaging of BASE-PC3 if its owned bytes stay byte-identical (it is mapped in the coverage index)"
+ ]
+}

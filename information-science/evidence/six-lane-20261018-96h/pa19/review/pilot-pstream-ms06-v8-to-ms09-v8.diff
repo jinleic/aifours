@@ -1,0 +1,50 @@
+--- code/pilot_stream_drat_ms06_v8.py
++++ code/pilot_stream_drat_ms09_v8.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""PA19 96h P-STREAM v8 (ms06), minimal combined successor of immutable P-STREAM v7 (2fad976a...).
++"""PA19 96h P-STREAM v8 (ms09), minimal combined successor of immutable P-STREAM v7 (feddecb4...).
+ v8/v36 SOURCE-ONLY repair of all six v7/v35 HOLD reviews (2F/21M/2m): every readable, null-shadowed or
+ contradictory nested/runner identity is retained; a missing CURRENT closeout needs explicit failure disposal
+ (legacy audit only for proven pre-closeout launches); every raw read/walk/dup/anchor/verify acquisition is
+@@ -73,7 +73,7 @@
+ KNOWN_SUMMARY_SCHEMAS = {'PA19-96H-PILOT-SUMMARY-v14', 'PA19-96H-PILOT-SUMMARY-v32', 'PA19-96H-PILOT-SUMMARY-v33', 'PA19-96H-PILOT-SUMMARY-v34', 'PA19-96H-PILOT-SUMMARY-v35', 'PA19-96H-PSTREAM-SUMMARY-v4', 'PA19-96H-PSTREAM-SUMMARY-v5', 'PA19-96H-PSTREAM-SUMMARY-v6', 'PA19-96H-PSTREAM-SUMMARY-v7', 'PA19-96H-PSTREAM-SUMMARY-v8', 'PA19-96H-PILOT-SUMMARY-v36'}
+ DISPOSITION_SCHEMA = "PA19-96H-PARENT-RELEASE-v2"
+ ENC = (LANE + "/code/vendor/encode_skel_b.py", "d0002e60d11ef5cba568309fde5b15e29280ca127bc0e6bb1f4d22929a5628e5")
+-SKEL = (OLD + "/cycle2/skel-b/skeletons-b-ms06.json", "9ec0fd1dd036cbddf197f495684c2d6a54bc36feff35cb6466799a13493e0488")
++SKEL = (OLD + "/cycle2/skel-b/skeletons-b-ms09.json", "7c46ebbad3389476407e99807593287a8b3bb6c6a80f34574f0e9c00134293d0")
+ REGISTRY = (LANE + "/evidence/inherited-stop-registry-v1.json", "ee370929f20ffe514e71bce6961e31ed32faaf243e0433d9268179956a0e9873")
+ LAUNCH_CONTRACT = (RUN + "/control/launch-contract-tightening-v1.json", "8ac556699352a42f3d97f83861039e21f57db0646da2f38391ee1f11e330aa20")
+ BINARY_IMPORTS = (LANE + "/evidence/probes/binary-process-imports-v1.json", "c822c4f07974b3f107c18c91bd910a972aa6ddee025e8087c256917492b7cffc")
+@@ -93,7 +93,7 @@
+     "STOP-m2r12": "94b56f04b59849923b41db6929760de00a33c12f077983faa2670a2080015bb2",
+     "STOP-K1": "b05f12b9587bb89a8b30d3d040074e1958463109d866bddeb96527d79c9716bf",
+ }
+-FAMILY = "ms06"                       # V12: item shape family of this runner
++FAMILY = "ms09"                       # V12: item shape family of this runner
+ P0 = [4, 3, 3, 3, 3, 3]
+ ITEMS = []  # Separate science pin + exact GO required after controls qualification
+ SOLVER_SECONDS = 300
+@@ -4318,8 +4318,12 @@
+             summary["stopped"] = {"phase": "required_item_clock", "item": it["id"]}
+             outcome["refused"] = True
+             return
++        Ej = json.loads(read_pinned(*it["list"]))
++        if not (Ej["num_placements"] == len(Ej["placements"]) == it["denominator"]):
++            raise RuntimeError("list denominator mismatch " + it["id"])
+         sk = D["skeletons"][it["b"]]
+-        nv, cl = E.build_v2(D["c0"], [tuple(t) for t in sk["types"]], sk["empty"], special)
++        nv, cl = E.build_partbatch(D["c0"], [tuple(t) for t in sk["types"]], sk["empty"], special,
++                                   [Ej["placements"][i] for i in range(it["lo"], it["hi"] + 1)])
+         cnf = E.cnf_bytes(nv, cl)
+         del cl
+         got = (hashlib.sha256(cnf).hexdigest(), len(cnf), cnf.split(b"\n", 1)[0].decode())
+@@ -4330,7 +4334,7 @@
+         del cnf
+         if sha_tree(cnf_path) != (it["cnf"][0], it["cnf"][1]):
+             raise RuntimeError("CNF file re-hash mismatch")
+-        inputs = {"item": it["id"], "cnf_pin": [it["cnf"][0], it["cnf"][1]], "case_b": it["b"],
++        inputs = {"item": it["id"], "cnf_pin": [it["cnf"][0], it["cnf"][1]], "list_pin": it["list"][1],
+                   "skeleton_pin": SKEL[1], "encoder_pin": ENC[1]}
+         buf = None
+         item_bufs = []                             # N6: owns the item's buffer from its creation

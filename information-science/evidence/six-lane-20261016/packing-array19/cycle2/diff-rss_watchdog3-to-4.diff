@@ -1,0 +1,252 @@
+--- src/rss_watchdog3.py	2026-10-17 16:02:07.302660025 -0700
++++ src/rss_watchdog4.py	2026-10-17 16:23:10.472235994 -0700
+@@ -1,39 +1,24 @@
+ #!/usr/bin/env python3
+-"""Aggregate lane RSS watchdog, revision 3 (= revision 2 with the trip order fixed, parent re-review ~16:0x):
+-on a trip, NEW ADMISSIONS ARE STOPPED FIRST (cycle2/tokens/COUNT := 0 and the stop files in STOPS --
+-cycle2/STOP-hard12, STOP-m2r12, STOP-hard11, STOP-m2r11 -- are created) and only then is a PROVEN token owner signalled: a lane runner whose pid is recorded
+-in a token file that it currently holds open (lsof). If no such owner exists nothing is signalled; admissions stay
+-paused, the record says so and the case is left for the operator (no largest-group fallback). Admissions are never
+-re-enabled by the watchdog. Revision-2 text follows.
+-Aggregate lane RSS watchdog, revision 2 (for the revision-11 staged runners; parent audit 15:4x-15:5x).
+-Every INTERVAL (<= 2 s) one `ps` snapshot is taken. Lane processes are grouped by OWNER: each lane runner
+-(Python process running a script named in RUNNERS) together with all of its descendants (solver, checker,
+-extend helper, any other child) forms one group; lane processes not under a runner (command line contains the
+-lane path) form the group 'other'. The group RSS includes the runner itself (CNF construction, compressed
+-proof buffers) and every descendant.
+-  * Trip (sum over all groups > LIMIT_KB = 8 GiB): the target is the runner holding the most recently acquired
+-    CPU token (token files cycle2/tokens/tN record 'pid time stage' at acquisition; the holder must currently
+-    have the file open, checked with lsof); if no runner holds a token, the runner of the largest group. The
+-    target RUNNER gets SIGTERM; its revision-11 handler forwards SIGTERM to its live children and releases its
+-    token only after they have exited (quarantine otherwise). Bounded wait 60 s for the runner's group to
+-    shrink or exit (no SIGKILL). COUNT is then lowered by one (minimum 1). Record cycle2/RSS-WATCHDOG2-<time>.json
+-    with every group (pid, kind, RSS) and the outcome.
+-  * Disk floor: if free bytes < 12e9 the stop files cycle2/STOP-hard11 and cycle2/STOP-m2r11 are created (rev-11
+-    runners re-check them at every admission).
+-  * Every WINDOW seconds one line is appended to the samples log: clock span of the window (first and last sample
+-    time), samples, lane RSS max (KB), busy_all max/mean (state R among runners and their descendants), busy
+-    solver/checker max/mean, number of lane runners/groups max, token COUNT. These are samples, not a proof of a
+-    bound; the bound comes from the token admission (COUNT <= 2, <= 2 busy processes per token).
+-Matching uses the FULL command line (records keep a 240-character prefix): a first smoke run matched on the
+-truncated prefix, missed the test runner (long absolute paths) and targeted the largest group instead.
+-Runner discovery requires the EXACT absolute lane path of a runner script as a command-line argument (runners are
+-started as `python3 <LANE>/src/<runner>.py ...`); a relative or foreign path is not a lane runner. Only a proven
+-token owner (pid recorded in a token file that it holds open) is ever signalled.
+-Usage: rss_watchdog3.py [--limit-kb N] [--log FILE] [--once] [INTERVAL_S [WINDOW_S]]
++"""Aggregate lane RSS watchdog, revision 4 (REV11b, parent decision 2026-10-17 ~16:1x). It never sends a signal to
++any process: there is no os.kill / signal-module / terminate code path in this file.
++
++Every INTERVAL (<= 2 s) one `ps` snapshot is taken. Lane processes are grouped by owner: a lane runner is a Python
++process whose argv contains the exact absolute path <LANE>/src/<name> for a name in RUNNERS; its group is itself plus
++all of its descendants (ppid chain). Lane processes not under a runner whose command line contains the lane path form
++the group 'other'. Lane RSS = sum over all groups.
++  * Trip (lane RSS > LIMIT_KB, default 8 GiB): admissions are paused -- cycle2/tokens/COUNT := 0 and the stop files in
++    STOPS are created -- an alert JSON cycle2/RSS-ALERT4-<time>.json (or next to --log) is written with the time, the
++    lane RSS, every group (pid, kind, RSS of each member) and the token metadata (content of each token file and the
++    pids that have it open, informational only), and the watchdog exits. Running stages stay bounded by their native
++    solver limits and checker budgets; recovery (resuming admissions) is a parent decision.
++  * Disk floor: free bytes < 12e9 -> the stop files are created (admissions refused by the revision-12 runners).
++  * Every WINDOW seconds one line is appended to the samples log: first and last sample clock of the window, samples,
++    lane RSS max (KB), busy_all max/mean (state R among runners and descendants), busy solver/checker max/mean,
++    runners max, token COUNT. Samples are observations, not a proof of any bound.
++Usage: rss_watchdog4.py [--limit-kb N] [--log FILE] [INTERVAL_S [WINDOW_S]]
+ """
+ import json
+ import os
+-import signal
+ import subprocess
+ import sys
+ import time
+@@ -41,11 +26,10 @@
+ LANE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ C2 = os.path.join(LANE, "cycle2")
+ TOK = os.path.join(C2, "tokens")
+-RUNNERS = ("run_hard12.py", "run_m2_12.py", "run_hard11.py", "run_m2_11.py", "smoke_rev12.py", "smoke12_runner.py",
+-           "smoke_stream11.py", "smoke11_helper_runner.py")
++RUNNERS = ("run_hard12.py", "run_m2_12.py", "smoke_rev12b.py", "smoke12_runner.py")
+ SOLVERS = ("kissat", "cadical", "drat-trim")
++STOPS = ("STOP-hard12", "STOP-m2r12")
+ FLOOR = 12000000000
+-STOPS = ("STOP-hard12", "STOP-m2r12", "STOP-hard11", "STOP-m2r11")
+ 
+ 
+ def snapshot():
+@@ -58,9 +42,8 @@
+         pid, ppid, stat, rss, cmd = int(parts[0]), int(parts[1]), parts[2], int(parts[3]), parts[4]
+         procs[pid] = {"pid": pid, "ppid": ppid, "stat": stat, "rss": rss, "cmd": cmd[:240], "full": cmd,
+                       "exe": os.path.basename(cmd.split()[0]) if cmd.split() else ""}
+-    runners = [p for p in procs.values() if "python" in p["exe"].lower() and
+-               any(os.path.join(LANE, "src", r) in p["full"].split() for r in RUNNERS)]
+-    rset = {p["pid"] for p in runners}
++    rset = {p["pid"] for p in procs.values() if "python" in p["exe"].lower() and
++            any(os.path.join(LANE, "src", r) in p["full"].split() for r in RUNNERS)}
+     owner = {}
+     for pid in procs:
+         cur, seen = pid, 0
+@@ -71,7 +54,7 @@
+             cur = procs[cur]["ppid"]
+             seen += 1
+     groups = {r: {"runner": r, "cmd": procs[r]["cmd"], "members": []} for r in rset}
+-    other = {"runner": None, "members": []}
++    other = {"runner": None, "cmd": None, "members": []}
+     for pid, p in procs.items():
+         if pid in owner:
+             groups[owner[pid]]["members"].append(p)
+@@ -79,24 +62,22 @@
+             other["members"].append(p)
+     for g in list(groups.values()) + [other]:
+         g["rss_kb"] = sum(m["rss"] for m in g["members"])
+-    return procs, groups, other
++    return groups, other
+ 
+ 
+-def token_holders():
+-    hold = []
++def token_metadata():
++    meta = []
+     for i in range(8):
+         p = os.path.join(TOK, "t%d" % i)
+         if not os.path.exists(p):
+             continue
+         try:
+-            txt = open(p).read().split()
+-            pid, since = int(txt[0]), float(txt[1])
+-        except (OSError, ValueError, IndexError):
+-            continue
+-        lo = subprocess.run(["lsof", "-t", p], capture_output=True, text=True).stdout.split()
+-        if str(pid) in lo:
+-            hold.append({"token": "t%d" % i, "pid": pid, "since": since, "stage": txt[2] if len(txt) > 2 else None})
+-    return hold
++            content = open(p).read().strip()
++        except OSError:
++            content = None
++        opened_by = subprocess.run(["lsof", "-t", p], capture_output=True, text=True).stdout.split()
++        meta.append({"token": "t%d" % i, "content": content, "open_by_pids": opened_by})
++    return meta
+ 
+ 
+ def token_count():
+@@ -106,62 +87,38 @@
+         return None
+ 
+ 
+-def pause_admissions(rec):
+-    """stop new admissions FIRST: COUNT := 0 and both rev-11 stop files"""
+-    try:
+-        prev = token_count()
+-        with open(os.path.join(TOK, "COUNT"), "w") as f:
+-            f.write("0\n")
+-        rec["actions"].append({"token_count": [prev, 0], "time": time.time()})
+-    except OSError as e:
+-        rec["actions"].append({"token_count_failed": str(e)})
++def create_stops(reason):
++    made = []
+     for n in STOPS:
+         p = os.path.join(C2, n)
+         if not os.path.exists(p):
+             with open(p, "w") as f:
+-                f.write("%s watchdog3 RSS trip: admissions paused\n" % time.strftime("%Y-%m-%dT%H:%M:%S%z"))
+-            rec["actions"].append({"created": n, "time": time.time()})
++                f.write("%s watchdog4 %s\n" % (time.strftime("%Y-%m-%dT%H:%M:%S%z"), reason))
++            made.append(n)
++    return made
+ 
+ 
+-def trip(groups, other, total, limit, log_dir):
+-    t = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+-    rec = {"time": t, "lane_rss_kb": total, "limit_kb": limit, "actions": []}
+-    pause_admissions(rec)
+-    hold = token_holders()
+-    rec["token_holders"] = hold
+-    live_holders = [h for h in hold if h["pid"] in groups]
+-    target = max(live_holders, key=lambda h: h["since"])["pid"] if live_holders else None
+-    rec["target_runner"] = target
+-    rec["groups"] = [{"runner": g["runner"], "cmd": g.get("cmd"), "rss_kb": g["rss_kb"],
++def trip(groups, other, total, limit, alert_dir):
++    rec = {"time": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "lane_rss_kb": total, "limit_kb": limit, "signals_sent": 0}
++    prev = token_count()
++    with open(os.path.join(TOK, "COUNT"), "w") as f:
++        f.write("0\n")
++    rec["token_count"] = [prev, 0]
++    rec["stop_files_created"] = create_stops("RSS trip: admissions paused")
++    rec["token_metadata"] = token_metadata()
++    rec["groups"] = [{"runner": g["runner"], "cmd": g["cmd"], "rss_kb": g["rss_kb"],
+                       "members": [{k: m[k] for k in ("pid", "ppid", "stat", "rss", "exe")} for m in g["members"]]}
+                      for g in list(groups.values()) + [other]]
+-    if target is None:
+-        rec["outcome"] = "no proven token owner: nothing signalled; admissions paused (COUNT=0 + stop files); operator review"
+-    else:
+-        try:
+-            os.kill(target, signal.SIGTERM)
+-            rec["actions"].append({"SIGTERM": target, "time": time.time()})
+-        except OSError as e:
+-            rec["actions"].append({"SIGTERM_failed": target, "err": str(e)})
+-        t0 = time.time()
+-        while time.time() - t0 < 60:
+-            time.sleep(1)
+-            procs, g2, _ = snapshot()
+-            if target not in g2:
+-                rec["runner_exit_after_s"] = round(time.time() - t0, 1)
+-                break
+-        else:
+-            rec["runner_still_alive_after_60s"] = True
+-        rec["outcome"] = "owner signalled; admissions remain paused (COUNT=0 + stop files) until the operator resumes"
+-    with open(os.path.join(log_dir, "RSS-WATCHDOG3-%s.json" % time.strftime("%Y%m%dT%H%M%S")), "w") as f:
++    rec["outcome"] = "admissions paused; no process signalled; recovery is a parent decision"
++    path = os.path.join(alert_dir, "RSS-ALERT4-%s.json" % time.strftime("%Y%m%dT%H%M%S"))
++    with open(path, "w") as f:
+         json.dump(rec, f, indent=1)
+-    return rec
++    return path
+ 
+ 
+ def main():
+     args = sys.argv[1:]
+-    limit, logp, once = 8 * 1024 * 1024, os.path.join(C2, "watchdog3-samples.log"), False
+-    rest = []
++    limit, logp, rest = 8 * 1024 * 1024, os.path.join(C2, "watchdog4-samples.log"), []
+     i = 0
+     while i < len(args):
+         if args[i] == "--limit-kb":
+@@ -170,9 +127,6 @@
+         elif args[i] == "--log":
+             logp = args[i + 1]
+             i += 2
+-        elif args[i] == "--once":
+-            once = True
+-            i += 1
+         else:
+             rest.append(args[i])
+             i += 1
+@@ -184,7 +138,7 @@
+     w = None
+     while True:
+         now = time.time()
+-        procs, groups, other = snapshot()
++        groups, other = snapshot()
+         total = sum(g["rss_kb"] for g in groups.values()) + other["rss_kb"]
+         mem = [m for g in groups.values() for m in g["members"]]
+         busy_all = sum(1 for m in mem if m["stat"].startswith("R"))
+@@ -200,18 +154,13 @@
+         try:
+             st = os.statvfs(LANE)
+             if st.f_bavail * st.f_frsize < FLOOR:
+-                for n in STOPS:
+-                    p = os.path.join(C2, n)
+-                    if not os.path.exists(p):
+-                        with open(p, "w") as f:
+-                            f.write("%s watchdog3 disk floor\n" % time.strftime("%Y-%m-%dT%H:%M:%S%z"))
++                create_stops("disk floor")
+         except OSError:
+             pass
+         if total > limit:
+-            rec = trip(groups, other, total, limit, os.path.dirname(logp))
+-            if once:
+-                print(json.dumps({"tripped": True, "target": rec["target_runner"], "lane_rss_kb": total}), flush=True)
+-                return
++            path = trip(groups, other, total, limit, os.path.dirname(logp))
++            print(json.dumps({"tripped": True, "lane_rss_kb": total, "alert": path, "signals_sent": 0}), flush=True)
++            return
+         if now - w["first"] >= window:
+             with open(logp, "a") as f:
+                 f.write("%s %s %d %d %d %.2f %d %.2f %d %s\n" % (

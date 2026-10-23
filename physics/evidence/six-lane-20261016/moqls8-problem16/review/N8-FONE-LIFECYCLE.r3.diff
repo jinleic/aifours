@@ -1,0 +1,313 @@
+--- controller5ef65aa8-parent-HOLD
++++ /Users/jinleic/repos/aifours/physics/evidence/six-lane-20261016/moqls8-problem16/code/run_n8_fone_refine.py
+@@ -3,19 +3,21 @@
+ All outputs are producer candidates; parent measured-feed replay alone counts
+ final refutations. Source16 pass finishes first; pilot closure gates later
+ families. L1 then L2 BFS, no L3/retry, shared10400active-s/80MB family budget.
++This worker is never launched directly: launch_n8_fone_refine_r3.py holds the
++capacity lock and the pinned external supervisor around ALL preparation and
++native work. Its post-qualification alone can close a producer tree.
+ """
+ from __future__ import annotations
+ 
+ import argparse
+-import fcntl
+ import hashlib
+ import importlib.util
+ import io
+ import json
+ import os
+ import shutil
+-import signal
+ import subprocess
++import stat
+ import threading
+ import time
+ from datetime import datetime
+@@ -23,7 +25,7 @@
+ 
+ ROOT = Path(__file__).resolve().parent.parent
+ RUNS = ROOT / 'evidence/n8_one_p4_template_runs_v1'
+-REFINES = RUNS / 'refine_v2'
++REFINES = RUNS / 'refine_v3'
+ SOURCE_SHA = '374d6fb46ab2a1f7a77bdf6699aa67792c126b2e2dcdf65ad37074be9fc5eeb9'
+ DESIGN_SHA = 'bf9f71937d7fcc98fceb26b3aaf05505d8df68bdc5005fe90b61c9fb74422d1a'
+ R_SHA = '90b6f5928058db04315534640dba556486a969441009f0e680f5de0873558484'
+@@ -61,6 +63,14 @@
+ def disk_bytes(path):
+     r = subprocess.run(['du', '-sk', str(path)], capture_output=True, text=True, check=True)
+     return int(r.stdout.split()[0]) * 1024
++
++
++def family_bytes(out, template):
++    total = disk_bytes(out)
++    for path in (ROOT / 'evidence').glob('N8_FONE_R3.' + template + '.*'):
++        if path.is_file():
++            total += path.stat().st_blocks * 512
++    return total
+ 
+ 
+ def source_cases(B, C):
+@@ -99,7 +109,7 @@
+ 
+ def closure(L):
+     ts = leaves(L)
+-    return bool(ts) and all(n['state'] == 'LEGACY_CANDIDATE' for n in ts)
++    return bool(ts) and all(n['state'] == 'LEGACY_CANDIDATE' and n.get('outer_completed_cleanly') is True for n in ts)
+ 
+ 
+ def model_check(text, body, units, nv):
+@@ -124,16 +134,6 @@
+     return all(values[abs(x)] == (1 if x > 0 else 2) for x in units)
+ 
+ 
+-def native_children():
+-    raw = subprocess.run(['ps', '-axo', 'pid=,ppid=,command='], capture_output=True, text=True).stdout
+-    found = []
+-    for line in raw.splitlines():
+-        z = line.split(None, 2)
+-        if len(z) == 3 and int(z[1]) == os.getpid():
+-            binary = Path(z[2].split()[0]).name
+-            if binary in ('cadical', 'drat-trim'):
+-                found.append(int(z[0]))
+-    return found
+ 
+ 
+ def read_admission(path, expected):
+@@ -175,9 +175,43 @@
+             'foreign_native_count': len(native - own), 'joint_native_count': len(native)}
+ 
+ 
+-def capacity_available(snapshot):
+-    return (snapshot['foreign_RSS_bytes'] + 6 * 2 ** 30 <= 8 * 2 ** 30
++def capacity_available(snapshot, own_cap=6 * 2 ** 30):
++    return (snapshot['foreign_RSS_bytes'] + own_cap <= 8 * 2 ** 30
+             and snapshot['foreign_native_count'] + 2 <= 4)
++
++
++def require_supervisor():
++    script = Path('/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261016/moqls7-maximum/code/supervise_r3.py')
++    expected = '0ee8f39496fa3d6051639e99f10d907b8adadcb5d3446f2bb6242c924a83ec4d'
++    if (os.environ.get('K3_SUPERVISOR_PID') != str(os.getppid())
++            or os.environ.get('K3_SUPERVISOR_SCRIPT') != str(script)
++            or not os.environ.get('K3_SUPERVISOR_RECORD') or sha(script.read_bytes()) != expected
++            or os.getpgrp() != os.getpid() or os.getsid(0) != os.getpid()):
++        raise RuntimeError('whole-controller pinned owned-group supervisor required')
++    return {'script': str(script), 'sha256': expected, 'record': os.environ['K3_SUPERVISOR_RECORD'],
++            'PID': os.getppid()}
++
++
++def prepare_directories(out, template, pins, source_hash, init_root, init_family):
++    root_identity = {'schema': 'n8-fone-refinement-root/3', 'base_sha256': SOURCE_SHA, 'design_sha256': DESIGN_SHA}
++    if init_root:
++        REFINES.mkdir()
++        new_json(REFINES / 'INIT.json', root_identity)
++    elif json.loads((REFINES / 'INIT.json').read_bytes()) != root_identity:
++        raise RuntimeError('existing refinement root has no matching recorded identity')
++    identity = {'schema': 'n8-fone-refinement-family/3', 'template': template,
++                'source16_results_sha256': source_hash, 'source_pins': pins}
++    if init_family:
++        out.mkdir()
++        for name in ('cnf_s', 'cnf_c', 'proof'):
++            os.mkfifo(out / ('w0.%s.fifo' % name))
++        new_json(out / 'INIT.json', identity)
++    else:
++        if not out.is_dir() or json.loads((out / 'INIT.json').read_bytes()) != identity:
++            raise RuntimeError('reuse requires the recorded existing family identity')
++        for name in ('cnf_s', 'cnf_c', 'proof'):
++            if not stat.S_ISFIFO((out / ('w0.%s.fifo' % name)).stat().st_mode):
++                raise RuntimeError('recorded FIFO absent or replaced')
+ 
+ 
+ def main():
+@@ -186,8 +220,16 @@
+     ap.add_argument('--release', action='store_true', help='only after explicit parent resource release')
+     ap.add_argument('--admission', required=True, help='parent-owned live DRAINED_RESERVED receipt')
+     ap.add_argument('--admission-sha256', required=True)
++    mode = ap.add_mutually_exclusive_group(required=True)
++    mode.add_argument('--init-family', action='store_true')
++    mode.add_argument('--reuse-family', action='store_true')
++    ap.add_argument('--init-root', action='store_true')
++    ap.add_argument('--rss-cap', type=int, required=True)
+     a = ap.parse_args()
+     step_start = time.monotonic()
++    supervisor = require_supervisor()
++    if not 0 < a.rss_cap <= 6 * 2 ** 30:
++        raise RuntimeError('invalid admitted own RSS cap')
+     admission = read_admission(a.admission, a.admission_sha256)
+     if a.template not in admission['grant']['family_scope']:
+         raise RuntimeError('this parent reservation does not cover the requested family')
+@@ -205,15 +247,13 @@
+                 or old.get('WMAN_sha256') != B.WMAN_SHA or old.get('base_sha256') != SOURCE_SHA):
+             raise SystemExit('DEFERRED: earlier family/pilot has not closed under these inputs: ' + prev)
+     out = REFINES / a.template
+-    out.mkdir(parents=True, exist_ok=True)
+-    lock = (REFINES / 'pipeline.lock').open('a+b')
+-    fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+-    L, lh = latest(out)
+     source_pins = {'controller_sha256': sha(Path(__file__).read_bytes()),
+                    'helper_sha256': sha((ROOT / 'code/n8_fone_refine_bytes.py').read_bytes()),
+                    'legacy_executor_sha256': R_SHA, 'strict_predicate_sha256': C_SHA, 'producer_sha256': F_SHA}
+     if B.DESIGN_SHA != DESIGN_SHA:
+         raise RuntimeError('helper design identity differs')
++    prepare_directories(out, a.template, source_pins, source_hash, a.init_root, a.init_family)
++    L, lh = latest(out)
+     if L is None:
+         initial_defer = out / 'INITIAL_DEFERRED.json'
+         if initial_defer.exists() and not a.release:
+@@ -282,7 +322,7 @@
+         return
+     n = pending[0]
+     free = shutil.disk_usage(ROOT).free
+-    if (free - CHILD_BYTES < FLOOR or disk_bytes(out) + CHILD_BYTES > FAMILY_BYTES
++    if (free - CHILD_BYTES < FLOOR or family_bytes(out, a.template) + CHILD_BYTES > FAMILY_BYTES
+             or disk_bytes(ROOT) + CHILD_BYTES > LANE_CAP):
+         L['status'] = 'DEFERRED_DISK'
+         save()
+@@ -308,7 +348,7 @@
+         raise RuntimeError('actual weak base mismatch')
+     admission = read_admission(a.admission, a.admission_sha256)
+     before_native = shared_snapshot(shared_markers)
+-    if not capacity_available(before_native):
++    if not capacity_available(before_native, a.rss_cap):
+         L['status'] = 'DEFERRED_SHARED'
+         L['shared_deferral'] = {'admission': admission, 'snapshot': before_native}
+         L['active_seconds'] += time.monotonic() - step_start
+@@ -321,6 +361,14 @@
+     tag = n['id']
+     n.update(state='RUNNING', units=units, expected_CNF_sha256=expected,
+              clause_count=base.nc + len(units), start=datetime.now().astimezone().isoformat())
++    n['outer_record'] = supervisor['record']
++    n['outer_completed_cleanly'] = None
++    if n['level'] == 1:
++        n['planned_L2_children'] = [
++            {'id': tag + '.L2.%03d' % c, 'level': 2, 'b': n['b'], 'c': c, 'ancestor': tag,
++             'state': 'UNSTARTED', 'units': B.path_units(cases[a.template]['units'], n['b'], c),
++             'expected_CNF_sha256': base.leaf_sha(B.path_units(cases[a.template]['units'], n['b'], c)),
++             'receipt': None} for c in range(8)]
+     save()
+     child_meta = {'id': tag, 'template': a.template, 'ancestor': n['ancestor'], 'level': n['level'],
+                   'units': units, 'expected_CNF_sha256': expected, 'header': B.header(units).decode(),
+@@ -332,69 +380,42 @@
+     child_meta['runtime_binaries'] = runtime_binaries
+     child_meta['parent_admission'] = admission
+     child_meta['shared_prelaunch'] = before_native
++    child_meta['outer_supervisor'] = supervisor
+     new_json(out / (tag + '.input.json'), child_meta)
+     fifos = tuple(str(out / ('w0.%s.fifo' % x)) for x in ('cnf_s', 'cnf_c', 'proof'))
+-    for p in fifos:
+-        if not Path(p).exists():
+-            os.mkfifo(p)
+-    done = threading.Event()
+-    wall = {'tripped': False, 'signalled': []}
+-    shared = {'tripped': False, 'reason': None, 'observed_peak_RSS_bytes': before_native['joint_RSS_bytes']}
+-
+-    def guard():
+-        while not done.is_set():
++    stop_request = Path(supervisor['record'] + '.stop.json')
++    observer_done = threading.Event()
++
++    def request_owner_stop(reason, snapshot=None):
++        if not stop_request.exists():
++            new_json(stop_request, {'id': tag, 'reason': reason, 'snapshot': snapshot,
++                                    'method': 'file-only request to the pinned group owner; no PID signals'})
++
++    def observe_shared_capacity():
++        while not observer_done.wait(2):
+             try:
+                 read_admission(a.admission, a.admission_sha256)
+                 snapshot = shared_snapshot(shared_markers)
+-                shared['last_snapshot'] = snapshot
+-                shared['observed_peak_RSS_bytes'] = max(shared['observed_peak_RSS_bytes'], snapshot['joint_RSS_bytes'])
+                 if snapshot['joint_RSS_bytes'] > 8 * 2 ** 30 or snapshot['joint_native_count'] > 4:
+-                    shared.update(tripped=True, reason='joint lane capacity exceeded')
+-            except Exception as ex:
+-                shared.update(tripped=True, reason='admission/capacity observation failed: ' + repr(ex))
+-            if time.monotonic() - step_start >= 1200:
+-                wall['tripped'] = True
+-            if shared['tripped'] or wall['tripped']:
+-                break
+-            if done.wait(2):
++                    request_owner_stop('shared8GiB/4native limit exceeded', snapshot)
++                    return
++            except BaseException as ex:
++                request_owner_stop('admission/capacity observation failed: ' + repr(ex))
+                 return
+-        if done.is_set():
+-            return
+-        # Only THIS controller's native children receive SIGTERM. Never preempt
+-        # the parent proof. Re-scan during the bounded wait to cover spawn races.
+-        stop_by = time.monotonic() + 30
+-        signalled = set()
+-        while not done.is_set() and time.monotonic() < stop_by:
+-            for pid in native_children():
+-                if pid not in signalled:
+-                    try:
+-                        os.kill(pid, signal.SIGTERM)
+-                        signalled.add(pid)
+-                    except ProcessLookupError:
+-                        pass
+-            wall['signalled'] = sorted(signalled)
+-            done.wait(0.5)
+-        if done.is_set():
+-            return
+-        new_json(out / ('EMERGENCY.' + str(int(time.time())) + '.json'),
+-                 {'id': tag, 'expected_CNF_sha256': expected, 'wall': wall, 'shared': shared,
+-                  'parent_admission': admission, 'still_observed_native_children': native_children(),
+-                  'active_step_seconds': time.monotonic() - step_start,
+-                  'status': 'UNKNOWN; cooperative stop did not return; parent action required'})
+-        os.kill(os.getpid(), signal.SIGTERM)
+-
+-    threading.Thread(target=guard, daemon=True).start()
++
++    threading.Thread(target=observe_shared_capacity, daemon=True).start()
+     try:
+-        r = R.certify(tag, units, base.nv, base.nc, base.body, str(out), fifos, 300, 6 * 2 ** 30, checker_limit=900)
++        r = R.certify(tag, units, base.nv, base.nc, base.body, str(out), fifos, 300, a.rss_cap, checker_limit=900)
+     except Exception as ex:
+-        done.set()
+         L['status'] = 'STOP_IMPLEMENTATION_ERROR'
+         n['state'] = 'UNKNOWN'
+         n['error'] = repr(ex)
+         L['active_seconds'] += time.monotonic() - step_start
+         save()
++        request_owner_stop('legacy execution raised: ' + repr(ex))
+         raise
+-    done.set()
++    finally:
++        observer_done.set()
+     if r['cnf_sha256'] != expected:
+         L['status'] = 'STOP_BINDING_ERROR'
+         n['state'] = 'UNKNOWN'
+@@ -402,7 +423,7 @@
+         L['active_seconds'] += time.monotonic() - step_start
+         save()
+         raise RuntimeError('legacy executor input differs from planned child')
+-    candidate = C.strict_ok(r) and not wall['tripped'] and not shared['tripped']
++    candidate = C.strict_ok(r)
+     sat = r['solver_returncode'] == 10 and 's SATISFIABLE' in r['solver_status_lines']
+     stored_logs = {}
+     for kind in ('solver', 'drat-trim'):
+@@ -415,7 +436,7 @@
+     rec.update(r)
+     rec.update(legacy_worker_strict=candidate, full_F4_worker_measurements_available=False,
+                worker_measured_solver_feed_sha256=None, worker_measured_checker_feed_sha256=None,
+-               wall_guard=wall, shared_guard=shared, stored_logs=stored_logs, SAT_model_checked=sat_model_valid,
++               outer_qualification='PENDING_SUPERVISOR', stored_logs=stored_logs, SAT_model_checked=sat_model_valid,
+                step_active_seconds=time.monotonic() - step_start)
+     receipt_name = tag + '.receipt.json'
+     receipt_sha = new_json(out / receipt_name, rec)
+@@ -437,12 +458,10 @@
+                                'expected_CNF_sha256': base.leaf_sha(child_units), 'receipt': None}
+     else:
+         n['state'] = 'UNKNOWN'
+-    if shared['tripped'] and L['status'] != 'STOP_SAT_PATTERN':
+-        L['status'] = 'DEFERRED_SHARED'
+     L['active_seconds'] += time.monotonic() - step_start
+     pending_left = any(x['state'] == 'UNSTARTED' for x in L['nodes'].values())
+     if L['status'] == 'OPEN' and not pending_left:
+-        L['status'] = 'CANDIDATE_CLOSED' if closure(L) else 'STOP_OPEN_UNKNOWN'
++        L['status'] = 'AWAITING_SUPERVISOR'
+     save()
+     summary = {'family': a.template, 'id': tag, 'child_CNF_sha256': expected,
+                'solver_status': r['solver_status_lines'], 'checker_status': r['checker_status_lines'],

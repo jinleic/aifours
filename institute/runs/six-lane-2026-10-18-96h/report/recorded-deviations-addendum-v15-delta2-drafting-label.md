@@ -1,0 +1,5 @@
+# Recorded deviations addendum v15 — DELTA2 ARC drafting-label precision
+
+Recorded 2026-10-21T22:06:09-0700 after `/bin/date`. The immutableARCproofheader “draftedafter20:20:50”conflictedwiththeworker'sowncp04reportthat§§0–6weredraftedby20:15:04andcp05that20:20:50wastheobservedheaderclockBEFOREexclusivecreation. CompleteClaudereviewclassifiesERR4as a process/documentary MINOR; parentdirectlyreadbothrecordsandretainsitpermanently.
+
+[olson-DELTA2-parent-erratum-v1.md](/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/review/olson-DELTA2-parent-erratum-v1.md) — SHA256 `b1e0a04274a35931abd3093e52a888713d5da3d54345fd23413fef36e87860dd`readstheheaderas **“clockobservedbeforeexclusivecreation;draftingbeganearlier”**. Thisisnobackdatedexactcreationtimestampordraft-startcertificate. Itsmathematical/writtenproofcontentisunchanged. The1674scp01→02gapremains474sabovetargetandbelow1800hardceiling;intermediateclockwasnotcheckpoint. FullDELTA2acceptanceat2026-10-21T22:06:09-0700doesnotcureeitherqualificationoranyolderdeparture. Sourcepartial-rangeclaims/NOTPASTEDlistarealsoexplicitlycorrectedbyERR3/5,nohiddenloadbearingbodyorwaiverfoundbybothfamilies.

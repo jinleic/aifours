@@ -1,0 +1,100 @@
+--- src/supervise_pa19_v3.py
++++ src/supervise_pa19_v5.py
+@@ -1,5 +1,12 @@
+ #!/usr/bin/env python3
+ """supervise_r3.py: minimal single-threaded supervisor for one command and its process group (macOS libproc).
++PA19 supervise_pa19_v5.py = supervise_pa19_v3.py (sha256 79c463589c9c...573b3) plus the delayed-reap repair (parent
++review of v4, 2026-10-18): when the monitor ends with reason None after its zombie-completion branch and the single
++poll() has not reaped the leader, delayed_reap() re-checks the signal flag, wall, floor, RSS and strict-sample
++problems BEFORE every poll for at most 5 s (no poll after the bound; sleeps bounded by the remaining time). Any trip
++stays nonclean; the stop then runs only while the leader is still unreaped (its zombie reserves the PGID), never
++after reaping. A signal flagged before the completion record makes the record nonclean, and the observed signal
++is returned to the caller (observed_signal) so an outer cancellation is never swallowed.
+ 
+ New version of supervise_r2.py (0b023e2c...8c37), whose controls FAILED on this host (receipt
+ evidence/k3cubes/supervise_controls_r2.json, 8313d092...18a1). Observed macOS facts behind this version:
+@@ -309,6 +316,41 @@
+         time.sleep(PERIOD)
+ 
+ 
++def delayed_reap(child, state, wall, rss_cap, floor, lane, probe_fn, flag, t0, limit=5.0, period=0.01):
++    """PA19 v5: the leader was classified exited, but waitpid has not reaped it yet. Until it is reaped, for at most
++    `limit` seconds, every iteration first runs the strict sample plus floor/wall/signal checks and only then polls;
++    no poll happens after the bound. A trip sets the reason (nonclean) and returns with the leader still unreaped."""
++    pgid, observed = child.pid, state["observed"]
++    end = time.monotonic() + limit
++    while True:
++        s = sample(pgid, child.pid, probe_fn, observed)
++        state["samples"] += 1
++        state["peak"] = max(state["peak"], s["total_rss"])
++        st = os.statvfs(lane)
++        free, elapsed = st.f_bavail * st.f_frsize, time.monotonic() - t0
++        if s["problems"]:
++            state["reason"], state["uncertain"] = s["problems"][0]
++        elif s["alive_others"]:
++            state["reason"] = "group member alive during delayed reap: %r" % (s["alive_others"],)
++        elif s["total_rss"] > rss_cap:
++            state["reason"] = "aggregate RSS %d above %d during delayed reap" % (s["total_rss"], rss_cap)
++        elif free < floor:
++            state["reason"] = "free bytes %d below floor %d during delayed reap" % (free, floor)
++        elif elapsed > wall:
++            state["reason"] = "wall cap %s s during delayed reap" % wall
++        elif "signal" in flag:
++            state["reason"] = "external %s during delayed reap" % flag["signal"]
++        if state["reason"] is not None or time.monotonic() >= end:
++            return
++        child.poll()
++        if child.returncode is not None:
++            return
++        remaining = end - time.monotonic()
++        if remaining <= 0:
++            return
++        time.sleep(min(period, remaining))
++
++
+ def supervise(command, name, wall, rss_cap, floor, lane, record_path, quarantine_path, grace=30.0, probe_fn=probe, owner_child=None):
+     if os.path.exists(quarantine_path):
+         raise SystemExit("quarantine record %s exists; admission refused" % quarantine_path)
+@@ -344,11 +386,15 @@
+         exception = repr(exc)
+     finally:
+         try:
+-            if child is not None and state["reason"] is not None:
++            if child is not None and state["reason"] is None and state["final"] is not None:
++                child.poll()  # PA19 v5: the single v3 poll, now before the stop decision
++                if child.returncode is None:
++                    delayed_reap(child, state, wall, rss_cap, floor, lane, probe_fn, flag, t0)
++            if child is not None and state["reason"] is not None and child.returncode is None:
+                 stop, stop_error = stop_with_fallback(child.pid, grace, probe_fn, state["observed"])
+                 if stop_error is not None:
+                     state["uncertain"] = True
+-            if child is not None:
++            if child is not None and state["reason"] is not None:  # PA19 v5: clean path already polled (bounded)
+                 child.poll()
+             survivors = stop is not None and (stop["survivors"] or not stop["listing_ok"])
+             if child is not None and (state["uncertain"] or survivors):
+@@ -370,6 +416,8 @@
+                 except Exception as exc2:
+                     rec["quarantine_write_error"] = repr(exc2)
+         finally:
++            if "signal" in flag and state["reason"] is None:  # PA19 v5: a flagged cancellation is never clean
++                state["reason"] = "external %s before the completion record" % flag["signal"]
+             rec.update({"finished_at": now(), "seconds": round(time.monotonic() - t0, 3),
+                         "samples": state["samples"], "peak_sampled_rss_bytes": state["peak"],
+                         "leader_identity_at_start": state["leader_identity_at_start"],
+@@ -378,6 +426,7 @@
+                         "leader_pid": child.pid if child is not None else None,
+                         "leader_returncode": child.returncode if child is not None else None,
+                         "observed_identities": state["observed"], "quarantine_record": quarantined,
++                        "observed_signal": flag.get("signal"),
+                         "completed_cleanly": state["reason"] is None and child is not None
+                         and child.returncode == 0 and not rec.get("cleanup_exception")})
+             try:
+@@ -394,6 +443,7 @@
+                     pass
+             for s_, handler in previous.items():
+                 signal.signal(s_, handler)
++            rec["observed_signal"] = flag.get("signal")  # PA19 v5: returned to the owner, also for late signals
+     return rec
+ 
+ 

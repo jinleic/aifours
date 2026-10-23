@@ -1,0 +1,23 @@
+You are a hostile, read-only source re-reviewer. Read ONLY files inside the current working directory (this snapshot). Do not read outside it. Do not modify anything. Do not delegate, and do not use the network. Report only real problems, highest severity first, citing file:line.
+
+## Context
+`src/pilot_file_drat_v8.py` (SHA-256 6821847a3ae77a8e687689b3be6a5a2bf2002423d099421eae5da8d3219a8f26) is the revised research runner. A parent will decide, using it, whether to allow one bounded native launch: same-binary controls C1-C7, then three SAT items run sequentially with kissat, with the proof sent through a hard-capped FIFO sink to a retained file, and checked by drat-trim on the retained files.
+
+`src/pilot_file_drat_v5.py` was reviewed in round 1. Its prompt and result are in `previous-review/`, and the round-1 verdict was needs-rework with 7 blockers and 2 majors. The exact v5->v8 diff is `src/pilot-runner-v5-to-v8.diff`. v6 and v7 were intermediate drafts that were never run or sent; v8's docstring lists them.
+
+The binding rules are unchanged from round 1; `previous-review/r1-prompt.txt` restates them, and `control/launch-contract-tightening-v1.json` is authoritative.
+
+## Tasks
+1. For EACH of the nine round-1 findings, say RESOLVED or UNRESOLVED (or resolved wrongly), with evidence at file:line in v8. Encode this in the findings list: report every unresolved or wrongly-resolved item as a finding whose `problem` starts with `R1#<n> UNRESOLVED:`. In `summary`, list R1#1..R1#9 with their status.
+2. Report any NEW correctness, safety, resource or settlement problem introduced or still present in v8. Focus on:
+   - exception paths after Popen and sink creation;
+   - LATCH semantics;
+   - per-child admission and absolute deadlines;
+   - the commit ordering and its cancel window;
+   - the exit-code computation, including early returns;
+   - control intended-reason checks, including whether any control can now fail spuriously on a healthy pinned toolchain (drat-trim exit codes are in `checker/drat-trim.c` main);
+   - reservation arithmetic;
+   - the monitor parser against `control/resource_observer_v3.py`.
+3. Kissat is not in the snapshot. Flag only those kissat-behaviour assumptions that could make the runner FAIL OPEN, meaning produce a wrong UNSAT/count or an unsettled child. Assumptions that only make controls or items fail closed are acceptable; list them briefly in `summary`.
+
+Use severity `blocker` only for issues that could produce a wrong UNSAT/count, an unsettled or abandoned child, an unbounded write, or a rule violation. An empty findings list is a valid answer. Return JSON matching the schema.

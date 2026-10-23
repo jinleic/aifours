@@ -1,0 +1,7 @@
+# B3 row1 — direct primary-source check and count precision
+
+Recorded 2026-10-21T05:06:24-0700 (`/bin/date`). Parent directly read candidate LF9–175 and source/ledger LF177–217 (8450649494d32f566a0b98a8fb7cadadb8afd1281cf6fa441b3260d04bb15f67), after the earlier verdict, to confirm the already model-reviewed construction against the actual primary text. This records the present source check; it does not claim a new earlier reading timestamp.
+
+Primary counts: R has22 cells. The disjoint pair classes have91 same-line pairs,49 axis off-line pairs,49 TypeI pairs (including the c0 overlap) and42 remaining TypeII pairs:231. Each phi column lists0,2,3,4,5,6,7 exactly once and each row has five distinct entries. Substitution in the displayed pi table gives every support in LF144–150; none contains its column j and the five supports are disjoint. Reusing the own-column ONB makes each T-support the singleton phi_s(j). Hence all amplitudes/phases allowed by D's ONB constraints satisfy the same Gram equations. The explicit three-dimensional block has norms1 and inner products0 by1/2−1/4−1/4 and(1/2−1/2)/sqrt2; the two other±pairs and e0 are orthogonal. No full-grid completion follows.
+
+**Count precision:** the original Codex review has MATHEMATICAL0F/0M/1m but a SEPARATE PROCESS MAJOR (combined0F/1M/1m). The parent verdict's mathematical counts do not erase that process finding; it is permanent and must be reported with the unauthorized Python-assertion history. Claude mathematical0F/0M/5m likewise leaves it intact.

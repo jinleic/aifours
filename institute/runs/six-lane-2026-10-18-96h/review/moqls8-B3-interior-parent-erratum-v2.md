@@ -1,0 +1,7 @@
+# B3 interior — acceptance excludes extra reviewer lemmas
+
+Recorded 2026-10-21T08:15:08-0700 (`/bin/date`). Governs erratumv1/disposition/verdict without overwriting them. The core original partial theorems have both families' review; this correction removes an unnecessary extra claim from the acceptance scope.
+
+Erratumv1 item7's equivalence of the ALL-PSD inequality(8) to a mixed-density feasibility relaxation, and the stronger hierarchy(8)=>(7)=>(9), were added from the Claude review rather than separately reviewed as new propositions by both families. They are retained ONLY as unaccepted reviewer observations, NOT as accepted theorem claims. The governing accepted implication list is the original one: (6) implies each necessary condition(7),(8),(9). The corrected warning stays: the displayed example establishes only the insufficiency of(7); it fails(8), so it proves no insufficiency assertion about(8). No sufficiency or exact mixed-relaxation characterization is promoted.
+
+Item8's block-capacity statement uses actual supports or an allowed family realizing(6). The original derivation of(9) from(6) by its block-projector/Rayleigh argument remains accepted; no extra derivation via(7) is required. All exact one-cell/one-row criteria, phase-scope restrictions, two-nontrivial-block channels and the named one-cell diagnostic retain their original reviewed scopes. No full B3/n8/GB change. This is not a refutation of the reviewer's optional observations, just an acceptance-scope limit.

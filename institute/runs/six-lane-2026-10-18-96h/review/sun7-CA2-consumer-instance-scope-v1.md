@@ -1,0 +1,7 @@
+# Sun7 CA2 consumer-instance closure scope v1
+
+Frozen 2026-10-20T09:43:19-0700 (`/bin/date`) before new parent derivation of CA2 m3/m6 repairs. Parent has read Claude CA2 findings and F5 LF1–110, ledger keys and CRICH erratum v11 for routing, but has not yet checked every F5 E8/RICH re-instantiation.
+
+Target: dispose CA2 m1–m6, n1–n3, B1–B3 from /Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/review/sun7-LEDGER-CA2-claude-v3.prompt.note.md (b0c96ecab6ccdc046edbf818b355fdb24bb0befafa6c74a50e39c7b3eed0e099). In particular, census every actual E8 call in N49 F5 (including RICH argument imports and TRANSFER under OV2), identify the chosen label set/apex/orientation, and prove the abstract N14 gcd premise at that exact use; do NOT assert it for arbitrary z/t-labelled sets. Match N41's argument exports (G0, FG7 chain, Cor5/6, section4 read with R1E and CE1) to F5 B1–B4 and the exact (a2) scope. Confirm literal provider statements and scope-only A12C, no unapproved source change after OV2.
+
+All existing source files remain immutable. A new parent erratum/disposition may add missing provider/consumer cells only after literal source confirmation. Any genuine new lemma or unresolved proof gap requires a separately frozen candidate and both-family review; metadata alone does not discharge it. Full Sun7 remains UNACCEPTED; CK62, CUT2-M12 if necessary, and N59 remain separate gates. No computation over mathematical objects or runtime; written source checks only.

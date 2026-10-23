@@ -1,0 +1,13 @@
+# Report v12 — final review-history completion erratum v11
+
+Recorded 2026-10-21T20:03:30-0700 after `/bin/date`. Read after actual report-history erratum10. ThisprospectivelyincorporatestheadditionalboundedreviewaccountsidentifiedinReportRuntimev2(0F/2M/0m);itsfirstMAJORrefinescountcoverage,notanewscientificfinding. Thev2inputitselfaccidentallyomittederratum10despiteitsopeningclaim;v3actuallypastesit. Oldfilesareunchangedandtheomissionremainshistorical.
+
+After reportLF342–346 append:
+
+- **V7confirmation:** 0F/0M/0m **NEWLY CONFIRMED ONLY in pasted regions**; complete inventoryconfirmationremainedUNESTABLISHED. Broadwhole-windowchainclosurewaswithdrawnbythegoverningcorrection, not an actualall-recordpass. Distinguishthisreturnfromthewholev7Claudereview0F/1M/9m/4UNDETERMINED.
+- **FragmentedClaudeFINALpartA:** **Complete-inputverdictUNDETERMINED**; locally0F/0M/10MINORwithFIVEdependencies(U1–U5). ItpossessedonlypartA,notinitial124/v2/partB/instructions. No fullcollectionapproval;itsvalidboundedfindingsweredisposedbylatercomplete-sourcecorrections.
+- **Oversizedwhole-stdinCodexattempt:** actualreceiptNO_VERDICT,rc1,duration1.0571923339739442s;notapproval/notmathematicalrejection. Theactualstderrreportedturn/start input_too_large, maximum1048576characters, actual2334960;stdinremovedOSargvlimitbutNOTprovidercharcap. Nooversizedretry; sixself-containedscope-ownedshardsreplacedtheinvalidcontextdesignprospectively.
+
+Erratum10alreadyincorporatesv3operations0F1M3m/claims0F1M2m(revisionrequired,stagedClaudeUNLAUNCHED),156coverage0F3MAJORgroups/15rows/3MINORgroups,v5repair0F0M1mwithmandatoryliteralstatuserratum,v6auditB0F0M0mlimitedscope+39recordmapdisposal,acceptance-boundary0F1M0m(existingpermanentenumeration),andthepermanentcontextMAJOR/2294sformalcheckpoint-filegapwithinterveningartifactlimits. Theseareactualsubstantiveaccounts,notbarelinksorclaimedcleanhistory.
+
+Alloldreviewrunners/inputs/receiptsremainpreserved;no oldsourcehistoryiscuredbyanewcompleteaudit. Recordcountsarefrozensnapshot/navigationmetadata,notcurrentorfuturecensus. Twelveobligationsblocked,observerunsettled,finalsource/settlement/deliverypending. No human/Lean/priority/runtime/fullreportclearancefromthiserratum.

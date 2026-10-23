@@ -1,0 +1,53 @@
+{
+ "at": "2026-10-19T12:58:14-0700",
+ "status": "IMPLEMENTATION_SCOPE_FROZEN_NOEXEC",
+ "owner": "parent; delegated source remains untrusted until independent review and finite qualification",
+ "purpose": "Implement the independent parent five-part release transaction (PRT) demanded by reviews ed931892/339ed81c (RQLS10), mols39-n1-lifecycle eba73533 and beta consumer reviews: (1) current authority/allocation; (2) execution/publication: parent-observed actual exit, complete captures, actual artifact identities and the immutable publication; (3) separately admitted oracle/checker PASS with actual exit0 bound to the exact artifacts; (4) independent endedness of every applicable incarnation (driver, main child, helpers, descendants, unproved/unknown identities); (5) fresh whole-RUN late-artifact/resource audit, then a NEW exclusive disposition stamped by an owned bounded /bin/date reading with successful readback acknowledgement. Any missing, late, malformed or failed part yields HELD (immutable UNSETTLED/NOT_RELEASED); never RELEASED by default, waiver or receipt syntax.",
+ "not_in_scope": "No scheduler, no launcher, no science or checker execution, no automatic next admission, no raw supervisor-receipt parsing (a separate raw adapter maps supervisor/driver outputs into the generic observation records below), no deletion/overwrite, no global config.",
+ "module": {
+  "path": "RUN/control/parent_release_v1.py",
+  "entry": "decide_and_commit(spec:dict, read_bytes:callable, census:callable, owned_date:callable, commit_dir:str, deadline_check:callable)->dict",
+  "import_time": "definitions only; no I/O, subprocess, date, signal or environment reads at import",
+  "stdlib_only": true
+ },
+ "callbacks": {
+  "read_bytes": "(path:str, cap:int)->bytes via the pinned beta_parent_reader_v1 anchored reader semantics (normalized absolute path, NOFOLLOW, regular one-link leaf, cap+1 bounded read, post-read identity); failures raise and become HELD causes",
+  "census": "()->{complete:bool, processes:[{pid:int,ppid:int,pgid:int,uid:int,start_fingerprint:str}], observed_at_mono:float} independent parent process snapshot; incomplete census => HELD",
+  "owned_date": "()->{settled:bool, text:str|None, child:{pid,pgid,start_fingerprint}, reaped:bool, group_empty:bool, stdout_eof:bool, term_sent:int (0 or 1)} reading /bin/date through an owned bounded child (own process group, identity-checked, at most one identity-checked SIGTERM, bounded grace, no SIGKILL); unsettled or unparsable => HELD",
+  "deadline_check": "()->None or raise; original deadline checked after every blocking callback and after decision assembly"
+ },
+ "spec_fields": {
+  "item": "exact item id",
+  "go": "{path,sha256}: GO record; its item/argv/pins/reservation must equal the launch record",
+  "allocation": "{registry_path, line_sha256, record}: the RUNNING registry record for this item (reservation_bytes, driver pid/pgid, abs_end)",
+  "gate": "{path,sha256}: stability_gate_v2 receipt with PASS, observed before launch",
+  "launch": "{path,sha256}: launch record (argv, cwd, env digest, pins, start time)",
+  "exit": "{actual_exit:int, observed_by:\"parent\", wait_record:{path,sha256}} actual driver exit observed by the parent waiter (negative=signal)",
+  "captures": "{stdout,stderr: {path,sha256,bytes_seen,bytes_stored,eof:true,overflow:false,error:null}} complete parent captures of the driver",
+  "publication": "{path,sha256,expected_state} the driver/supervisor immutable publication; expected_state must be consistent with actual_exit via an explicit exit table supplied in spec (no defaults)",
+  "artifacts": "{job_dir, declared:{name:{sha256,bytes}}} compared against actual directory census (exact name set, sha, bytes, nlink==1, regular, positive ino)",
+  "oracle": "{go:{path,sha256}, actual_exit:0 required, captures:{...}, verdict_path:{path,sha256}, verdict:\"PASS\", bound_artifact_digests:{name:sha256}} separately admitted checker run; its own endedness identities are included in part4",
+  "identities": "list of {role, pid, pgid, start_fingerprint, source} for every applicable incarnation including helpers, descendants and unproved/unknown ones reported by the supervisor or parent; empty list only if spec states explicit evidence of none",
+  "late_audit": "{roots:[paths], baseline_manifest:{path,sha256}, allowed_new:[paths or exact names]}: fresh census of RUN and lane roots after settlement; every new or changed entry must be declared; free bytes >= 12.2e9",
+  "reservation": "{bytes:int, cpu_slots:int} to be released only on RELEASED"
+ },
+ "decision": {
+  "states": [
+   "RELEASED",
+   "HELD"
+  ],
+  "causes": "ordered unique strings P1_* .. P5_* with evidence; HELD whenever any cause fires or any callback raises Exception; BaseException propagates after an attempted HELD record only if the commit callback is still safe (document exact behavior)",
+  "record": "exclusive JSON written to commit_dir (mode x, fsync file then directory), then read back via read_bytes and sha compared (ACK); readback failure => ACK_FAILED and the caller must treat it as HELD; never overwrite or remove an existing disposition",
+  "registry": "On RELEASED only, append one registry release line (json, fsync) referencing the disposition sha; on HELD append a HELD line; append-only, never rewrite."
+ },
+ "invariants": [
+  "Parts evaluated in order 1..5 but all independent causes accumulate; no early PASS",
+  "No inference of endedness from exit code or receipt text; only independent census by identity (pid+start_fingerprint+pgid) and empty owned process groups",
+  "No fabricated or default timestamps; owned_date text is the only disposition timestamp",
+  "UNSETTLED/HELD is immutable: later evidence can only produce a NEW record, never mutate the old",
+  "Caps on every read; no unbounded memory; total decision < 1 MiB",
+  "Strict types: bool is never int; hashes lowercase 64-hex; ints nonnegative where counts"
+ ],
+ "write_scope": "Worker writes only new files: RUN/control/parent_release_v1.py, RUN/control/parent-release-v1-design-notes.md, RUN/review/parent-release-v1-source-disposition-v1.json and checkpoints RUN/review/parent-release-checkpoint-NNN-v1.json. Exclusive create; no execution/import/compile/tests.",
+ "review_plan": "Independent Codex source review, then finite controls under a separate GO. No runtime authority from this contract."
+}

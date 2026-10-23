@@ -1,0 +1,39 @@
+{
+  "verdict": "needs-rework",
+  "linesChecked": 1326,
+  "summary": "R4#1 UNRESOLVED: cleanup still has escape, signal-delivery and quarantine-publication holes (src/pilot_file_drat_v12.py:592-636,812-816).\nR4#2 RESOLVED: the exact unit-stack allocation diagnostic matches RESOURCE_DIAG and latches during settlement (src/pilot_file_drat_v12.py:149,703-713).\nR4#3 RESOLVED: census precedes admission, followed by final latch/cancel/deadline checks immediately before Popen (src/pilot_file_drat_v12.py:520-540).\nR4#4 RESOLVED: cwd creation is inside the cleanup guard; an injected mkdir failure reached sink.finish() (src/pilot_file_drat_v12.py:791-818).\nR4#5 RESOLVED: each child receives its cwd as TMPDIR, and the census excludes shared LANE/tmp (src/pilot_file_drat_v12.py:281,521,539-540).\nThe supplied SHA-256 matches. Verification used snapshot source and in-memory fault probes; no native solver/checker was launched.",
+  "findings": [
+    {
+      "severity": "blocker",
+      "category": "safety",
+      "location": "src/pilot_file_drat_v12.py:803-805; src/pilot_file_drat_v12.py:812-816",
+      "problem": "R4#1 UNRESOLVED: The settle-all finally can escape before terminating or reaping an owned child.",
+      "evidence": "The newly added c.proc.poll() executes outside the protected reaper. If supervision escapes and latch() fails before termination is requested, stop remains None. A subsequent poll exception then escapes the finally before c.settle(). An in-memory probe injecting latch and final-poll MemoryErrors observed zero termination requests, zero settlement calls and returncode=None. main proceeds to closeout without another cleanup attempt.",
+      "suggestedFix": "Set the emergency stop state without polling first, then enter the protected reaper. Keep fallible polling inside its retry guard."
+    },
+    {
+      "severity": "blocker",
+      "category": "control",
+      "location": "src/pilot_file_drat_v12.py:592-597; src/pilot_file_drat_v12.py:607-609",
+      "problem": "R4#1 UNRESOLVED: The revised delivery bookkeeping can send SIGTERM twice.",
+      "evidence": "Both paths call time.time() after send_signal() succeeds but before recording term_sent_at. If that timestamp allocation raises MemoryError, the delivery marker remains None and the next attempt sends again. In-memory probes reproduced two deliveries through both term() and reap_robust(); the corresponding v11 term() probe delivered once. This violates the single-SIGTERM rule.",
+      "suggestedFix": "Compute the timestamp before sending, then assign the delivery marker immediately after successful send_signal() return, with no intervening fallible call."
+    },
+    {
+      "severity": "blocker",
+      "category": "evidence",
+      "location": "src/pilot_file_drat_v12.py:200-205; src/pilot_file_drat_v12.py:618-627",
+      "problem": "R4#1 UNRESOLVED: Receipt retry accepts a partial quarantine file as successful publication.",
+      "evidence": "write_x() exclusively creates the file before writing, flushing and syncing it. A failure after creation leaves that pathname behind. The next retry gets FileExistsError and unconditionally clears receipt_pending without validating the file. An in-memory probe retained only three JSON bytes, then accepted FileExistsError and stopped retrying. A surviving child can consequently remain without the required complete quarantine record.",
+      "suggestedFix": "Treat an existing file as success only after validating a complete matching receipt. Otherwise explicitly report publication failure while retaining quarantine and capacity; preserve the partial artifact."
+    },
+    {
+      "severity": "major",
+      "category": "resource",
+      "location": "src/pilot_file_drat_v12.py:618-631",
+      "problem": "NEW: Persistent quarantine-publication failure prevents closeout even after the child is reaped.",
+      "evidence": "If receipt creation keeps failing before a file exists, receipt_pending remains true. poll() can reap the child, but the return condition still fails, so the loop retries forever and never reaches the remaining settlement work. A recovery probe observed repeated publication attempts with returncode=0 and no wait() call until publication recovered. Permanent failure makes that delay unbounded.",
+      "suggestedFix": "Once the child is reaped, carry publication failure into explicit UNSETTLED closeout with the latch held. Bound receipt retries instead of making successful publication a permanent condition for leaving the reaper."
+    }
+  ]
+}

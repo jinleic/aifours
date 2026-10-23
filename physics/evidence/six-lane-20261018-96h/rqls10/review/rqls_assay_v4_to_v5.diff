@@ -1,0 +1,382 @@
+--- code/rqls_assay_v4.py
++++ code/rqls_assay_v5.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""rqls_assay_v4: float feasibility assay for maximal 1-RQLS(10) (NOT a certificate; numeric results are UNKNOWN).
++"""rqls_assay_v5: float feasibility assay for maximal 1-RQLS(10) (NOT a certificate; numeric results are UNKNOWN).
+ 
+ Representation: a Latin square B (resolution) and unit vectors q_p, p in [v]^2, with every row, column and B-class an
+ orthonormal basis. Problems are given by representatives z_r and line slots (r, k) meaning the vector U^k z_r with U
+@@ -39,7 +39,14 @@
+ "sens1"/"sens2" = gates + long unsymmetric calibration/target runs (v = 9 Cay(Z_9); v = 10 Parker-type B with known
+ classical mates; v = 10 Cay(Z_10) and Cay(D_5)), to measure whether RRR converges at all at v = 10.
+ 
+-Usage: rqls_assay_v4.py OUT.jsonl GLOBAL_BUDGET_S CLASSICAL_JSON EX24_JSON EX24_SHA256 STOP_RECEIPT MODE(smoke|sens1|sens2)
++v5 change: same gates (A, C1, C1p, C2) and verifier; new solver for the forced Z_n + h ansatze: Levenberg-Marquardt on a
++reduced parametrisation in which the inf-lines are solved analytically (W2 Lemmas), with an exact-anchor A5 (the
++classical Parker point is a zero of the reduced residual and verifies with 10 rays) and a sensitivity calibration
++(random-start recovery of solutions for Parker-type B data, where classical solutions are known to exist).
++Modes: smoke (gates + A5 + 8 calibration starts) | red1 (gates + A5 + calibration + random forced Z_7+3 targets +
++Z_9+1 targets).
++
++Usage: rqls_assay_v5.py OUT.jsonl GLOBAL_BUDGET_S CLASSICAL_JSON EX24_JSON EX24_SHA256 STOP_RECEIPT MODE(smoke|red1)
+ Exit codes: 0 completed (or ended by budget), 2 exception, 3 gate failure, 4 cap stop, 5 terminated by SIGTERM.
+ """
+ import hashlib, itertools, json, math, os, signal, sys, time
+@@ -48,7 +55,7 @@
+ SRC_SHA = hashlib.sha256(open(os.path.abspath(__file__), "rb").read()).hexdigest()
+ OUT, GLOBAL_BUDGET, CLASSICAL_JSON, EX24_JSON, EX24_SHA, STOP_RECEIPT, MODE = (sys.argv[1], float(sys.argv[2]), sys.argv[3],
+                                                                               sys.argv[4], sys.argv[5], sys.argv[6], sys.argv[7])
+-if MODE not in ("smoke", "sens1", "sens2"):
++if MODE not in ("smoke", "red1"):
+     sys.exit(7)
+ TERM = [False]
+ STAGE = ["init"]
+@@ -704,23 +711,260 @@
+     return Dinf, beta, gam, dlt, Lc, D2, M
+ 
+ 
++
++
++# ====================================================================== v5: reduced Levenberg-Marquardt, forced Z_n + h
++class Reduced:
++    """Forced-form Z_n + h with the inf-lines eliminated analytically (W2 Lemmas 1-2, 5-7): flat representatives have
++    |P_m x| = 1/sqrt(n) on every eigenspace and, on each 2-dimensional E_m, component (1/sqrt n) e^{i psi} c_perp(kappa),
++    kappa = the corner cell with label m on that inf-line. Unknowns: general v_d (d in Dfin), two angles per corner ray,
++    phases psi. Residual: Gram - I of R0, C0, S0 (3 v^2 reals). Verification uses the full sym() configuration."""
++
++    def __init__(self, n, h, Dinf, beta, gamma, delta, Lc, lab, M):
++        self.n, self.h, self.v = n, h, n + h
++        self.Dinf, self.beta, self.gamma, self.delta, self.Lc, self.lab, self.M = Dinf, beta, gamma, delta, Lc, list(lab), M
++        self.P = sym("reduced_check", n, h, Dinf, beta, gamma, delta, Lc, lab, M)
++        self.Dfin = [d for d in range(n) if d not in Dinf]
++        labn = np.array(lab) % n
++        two = {}
++        one = {}
++        for m in range(n):
++            idx = np.nonzero(labn == m)[0]
++            if len(idx) == 2:
++                two[m] = (int(idx[0]), int(idx[1]))
++            elif len(idx) == 1:
++                one[m] = int(idx[0])
++            else:
++                raise AssertionError("eigen-multiplicity must be 1 or 2")
++        if len(two) != h:
++            raise AssertionError("need exactly h two-dimensional eigenspaces")
++        flats = [("u", c) for c in range(h)] + [("w", a) for a in range(h)] + [("wp", b) for b in range(h)]
++        self.nv, self.nflat, self.ncorner = len(self.Dfin), len(flats), h * h
++        FI, MI, I0, I1, KA = [], [], [], [], []
++        for fi, (kind, i) in enumerate(flats):
++            for m, (i0, i1) in two.items():
++                cells = [(a, b) for a in range(h) for b in range(h) if M[a][b] % n == m and
++                         ((kind == "u" and Lc[a][b] == i) or (kind == "w" and a == i) or (kind == "wp" and b == i))]
++                if len(cells) != 1:
++                    raise AssertionError("corner labelling must give one cell of each label per inf-line")
++                FI.append(fi); MI.append(m); I0.append(i0); I1.append(i1); KA.append(cells[0][0] * h + cells[0][1])
++        self.FI, self.MI, self.I0, self.I1, self.KA = map(np.array, (FI, MI, I0, I1, KA))
++        self.F1 = np.array([fi for fi in range(self.nflat) for m in one])
++        self.M1 = np.array([m for fi in range(self.nflat) for m in one])
++        self.P1 = np.array([one[m] for fi in range(self.nflat) for m in one])
++        self.cpos = np.array([[two[M[a][b] % n][0], two[M[a][b] % n][1]] for a in range(h) for b in range(h)])
++        self.flats = flats
++        fidx = {f: self.nv + k for k, f in enumerate(flats)}
++        vidx = {d: j for j, d in enumerate(self.Dfin)}
++        lines = [[(vidx[d], 0) for d in self.Dfin] + [(fidx[("u", c)], 0) for c in range(h)] + [(fidx[("wp", b)], 0) for b in range(h)],
++                 [(vidx[d], (-d) % n) for d in self.Dfin] + [(fidx[("u", c)], (-Dinf[c]) % n) for c in range(h)] + [(fidx[("w", a)], 0) for a in range(h)],
++                 [(vidx[d], (-beta[d]) % n) for d in self.Dfin] + [(fidx[("w", a)], (-gamma[a]) % n) for a in range(h)] + [(fidx[("wp", b)], (-delta[b]) % n) for b in range(h)]]
++        self.LI = np.array([[r for r, s in L] for L in lines])
++        self.SH = np.array([[s for r, s in L] for L in lines])
++        self.Upow = np.exp(2j * np.pi * np.outer(np.arange(n), labn) / n)
++        self.fwd = self.Upow[self.SH]                                   # (3, v, v)
++        self.npar = 2 * self.nv * self.v + 2 * self.ncorner + self.nflat * n
++        self.iu = np.triu_indices(self.v, 1)
++
++    def build(self, TH):
++        TH = np.atleast_2d(TH)
++        b, v, n = TH.shape[0], self.v, self.n
++        k = self.nv * v
++        V = (TH[:, :k] + 1j * TH[:, k:2 * k]).reshape(b, self.nv, v)
++        ang = TH[:, 2 * k:2 * k + 2 * self.ncorner].reshape(b, self.ncorner, 2)
++        psi = TH[:, 2 * k + 2 * self.ncorner:].reshape(b, self.nflat, n)
++        t, f = ang[:, :, 0], ang[:, :, 1]
++        cp0 = -np.exp(-1j * f) * np.sin(t)
++        cp1 = np.cos(t) + 0j
++        E = np.exp(1j * psi) / math.sqrt(n)
++        X = np.zeros((b, self.nflat, v), dtype=complex)
++        if len(self.F1):
++            X[:, self.F1, self.P1] = E[:, self.F1, self.M1]
++        X[:, self.FI, self.I0] = E[:, self.FI, self.MI] * cp0[:, self.KA]
++        X[:, self.FI, self.I1] = E[:, self.FI, self.MI] * cp1[:, self.KA]
++        S = np.concatenate([V, X], axis=1)
++        return S, t, f
++
++    def resid_batch(self, TH):
++        S, t, f = self.build(TH)
++        Mx = S[:, self.LI] * self.fwd[None]                              # (b, 3, v, v)
++        G = np.einsum("blia,blja->blij", Mx.conj(), Mx) - np.eye(self.v)[None, None]
++        d = np.arange(self.v)
++        b = G.shape[0]
++        return np.concatenate([G[:, :, d, d].real.reshape(b, -1), G[:, :, self.iu[0], self.iu[1]].real.reshape(b, -1),
++                               G[:, :, self.iu[0], self.iu[1]].imag.reshape(b, -1)], axis=1)
++
++    def resid(self, th):
++        return self.resid_batch(th[None])[0]
++
++    def jac(self, th, h=1e-6):
++        p = len(th)
++        E = np.eye(p) * h
++        Fp = self.resid_batch(th[None] + E)
++        Fm = self.resid_batch(th[None] - E)
++        return ((Fp - Fm) / (2 * h)).T
++
++    def random_theta(self, rng):
++        k = 2 * self.nv * self.v
++        th = np.empty(self.npar)
++        th[:k] = rng.standard_normal(k) / math.sqrt(2 * self.v)
++        th[k:] = rng.uniform(0, 2 * math.pi, self.npar - k)
++        return th
++
++    def Z_full(self, th):
++        S, t, f = self.build(th)
++        S = S[0]
++        n, h = self.n, self.h
++        Z = np.zeros((self.P.nrep, self.v), dtype=complex)
++        fidx = {fl: self.nv + k for k, fl in enumerate(self.flats)}
++        for d in range(n):
++            Z[d] = S[fidx[("u", self.Dinf.index(d))]] if d in self.Dinf else S[self.Dfin.index(d)]
++        for a in range(h):
++            Z[n + a] = S[fidx[("w", a)]]
++            Z[n + h + a] = S[fidx[("wp", a)]]
++        for a in range(h):
++            for b in range(h):
++                kk = a * h + b
++                z = np.zeros(self.v, dtype=complex)
++                z[self.cpos[kk, 0]] = math.cos(t[0, kk])
++                z[self.cpos[kk, 1]] = np.exp(1j * f[0, kk]) * math.sin(t[0, kk])
++                Z[n + 2 * h + kk] = z
++        nr = np.linalg.norm(Z, axis=1, keepdims=True)
++        return Z / np.maximum(nr, 1e-300)
++
++
++def lm(R, th, iters, end, tol=1e-13):
++    lam = 1e-3
++    f = R.resid(th)
++    nf = float(f @ f)
++    it = 0
++    status = "MAX_ITER"
++    for it in range(1, iters + 1):
++        if TERM[0] or over(end):
++            status = "TERM" if TERM[0] else "TIME"
++            break
++        if nf < tol * tol:
++            status = "CONVERGED"
++            break
++        J = R.jac(th)
++        A = J.T @ J
++        g = J.T @ f
++        D = np.diag(A) + 1e-12
++        while True:
++            try:
++                step = np.linalg.solve(A + lam * np.diag(D), -g)
++            except np.linalg.LinAlgError:
++                step = None
++            if step is not None:
++                th2 = th + step
++                f2 = R.resid(th2)
++                n2 = float(f2 @ f2)
++                if n2 < nf:
++                    th, f, nf = th2, f2, n2
++                    lam = max(lam / 3, 1e-12)
++                    break
++            lam *= 4
++            if lam > 1e10:
++                return th, math.sqrt(nf), it, "STALL"
++    if status == "MAX_ITER" and nf < tol * tol:
++        status = "CONVERGED"
++    return th, math.sqrt(nf), it, status
++
++
++def run_reduced(R, tag, seeds, iters, end, extra=None):
++    out = []
++    for seed in seeds:
++        if over(end):
++            W.write({"tag": tag, "seed": seed, "status": "SKIPPED_TERM" if TERM[0] else "SKIPPED_TIME"})
++            out.append("SKIPPED")
++            continue
++        t0 = time.monotonic()
++        rng = np.random.default_rng(seed)
++        th, res, it, status = lm(R, R.random_theta(rng), iters, end)
++        Z = R.Z_full(th)
++        maxdev, rays, minsep = R.P.verify(Z)
++        maximal = bool(maxdev < 1e-8 and rays == R.v * R.v and minsep > 1e-6)
++        rec = {"tag": tag, "seed": seed, "status": status, "iters": it, "resid": res, "maxdev": maxdev, "rays": rays,
++               "minsep": minsep, "secs": round(time.monotonic() - t0, 3), "maximal_candidate": maximal}
++        if extra is not None:
++            rec["config"] = extra
++        if maximal:
++            rec["theta"] = np.round(th, 15).tolist()
++            rec["Z_re"] = np.round(Z.real, 15).tolist()
++            rec["Z_im"] = np.round(Z.imag, 15).tolist()
++            rec["B"] = R.P.B
++        W.write(rec)
++        out.append(rec)
++    return out
++
++
++def summary_red(tag, recs):
++    st, rays, maxc = {}, {}, 0
++    for r in recs:
++        if r == "SKIPPED":
++            st["SKIPPED"] = st.get("SKIPPED", 0) + 1
++            continue
++        st[r["status"]] = st.get(r["status"], 0) + 1
++        if r["maxdev"] < 1e-8:
++            rays[str(r["rays"])] = rays.get(str(r["rays"]), 0) + 1
++        maxc += int(r["maximal_candidate"])
++    W.write({"summary": tag, "status_counts": st, "verified_ray_counts": rays, "maximal_candidates": maxc, "elapsed_s": round(elapsed(), 2)})
++    return rays
++
++
++def parker_reduced(hit, resolution, mlab):
++    R_ = hit[resolution]
++    Q = hit["A_array"] if resolution == "B" else hit["B_array"]
++    Lc = [[x - 7 for x in row] for row in R_["corner"]]
++    beta = {int(k): v for k, v in R_["beta"].items()}
++    lab = list(range(7)) + list(mlab)
++    M = [[mlab[Q[7 + a][7 + b] - 7] for b in range(3)] for a in range(3)]
++    R = Reduced(7, 3, R_["Dinf"], beta, R_["gamma"], R_["delta"], Lc, lab, M)
++    # classical theta: v_d = enc7(Q[0][d]); corners e_inf (t = pi/2, f = 0); flat phases from the symbol
++    th = np.zeros(R.npar)
++    k = R.nv * R.v
++    for j, d in enumerate(R.Dfin):
++        z = enc7(Q[0][d])
++        th[j * R.v:(j + 1) * R.v] = z.real
++        th[k + j * R.v:k + (j + 1) * R.v] = z.imag
++    base = 2 * k
++    for kk in range(R.ncorner):
++        th[base + 2 * kk] = math.pi / 2
++        th[base + 2 * kk + 1] = 0.0
++    base2 = base + 2 * R.ncorner
++    syms = {}
++    for c in range(3):
++        syms[("u", c)] = Q[0][R_["Dinf"][c]]
++    for a in range(3):
++        syms[("w", a)] = Q[7 + a][0]
++        syms[("wp", a)] = Q[0][7 + a]
++    twos = set(int(x) for x in R.MI)
++    for fi, fl in enumerate(R.flats):
++        s_ = syms[fl]
++        for m in range(7):
++            ph = 2 * math.pi * m * s_ / 7
++            if m in twos:
++                ph += math.pi
++            th[base2 + fi * 7 + m] = ph
++    return R, th, lab, M
++
++
+ def main():
+-    W.write({"assay": "rqls_assay_v4", "mode": MODE, "polish_err": POLISH_ERR, "polish_iters": POLISH_ITERS, "traj_every": TRAJ,
++    W.write({"assay": "rqls_assay_v5", "mode": MODE, "polish_err": POLISH_ERR, "polish_iters": POLISH_ITERS,
+              "src_sha256": SRC_SHA, "numpy": np.__version__, "python": sys.version,
+              "flags": {"optimize": sys.flags.optimize, "isolated": sys.flags.isolated, "dont_write_bytecode": sys.flags.dont_write_bytecode},
+-             "budget_s": GLOBAL_BUDGET, "tol": TOL, "beta": BETA, "argv": sys.argv[1:],
++             "budget_s": GLOBAL_BUDGET, "argv": sys.argv[1:],
+              "env": {k: os.environ.get(k) for k in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "MKL_NUM_THREADS", "TMPDIR")}})
+     if sys.flags.optimize:
+         W.write({"GATE": "python_optimize_flag", "pass": False})
+         raise GateFail("optimize flag set")
+     classical = json.load(open(CLASSICAL_JSON))
+-    gates = [("A", 30), ("C1", 25), ("C1p", 40), ("C2", 30)]
++    gates = [("A", 30), ("C1", 25), ("C1p", 40), ("C2", 30), ("A5", 20)]
+     if MODE == "smoke":
+-        plan = gates
+-    elif MODE == "sens1":
+-        plan = gates + [("S9", 300), ("S10P", GLOBAL_BUDGET - 125 - 300 - 30)]
++        plan = gates + [("K", 90)]
+     else:
+-        plan = gates + [("S10Z", (GLOBAL_BUDGET - 125 - 30) / 2), ("S10D", (GLOBAL_BUDGET - 125 - 30) / 2)]
++        rest = GLOBAL_BUDGET - 145 - 30
++        plan = gates + [("K", 0.25 * rest), ("R7", 0.5 * rest), ("R9", 0.25 * rest)]
+     ends, acc, t0 = {}, 0, time.monotonic()
+     for tag, b in plan:
+         acc += b
+@@ -750,23 +994,65 @@
+     sols = [r for r in ran if r["maxdev"] < 1e-8]
+     gate("C2_v5_classical_only", len(sols) >= 1 and all(r["rays"] == 5 for r in sols),
+          {"runs": len(ran), "verified_solutions": len(sols), "rays": [r["rays"] for r in sols], "rule": ">=1 verified solution (non-vacuous), every verified solution has exactly 5 rays"})
++    STAGE[0] = "A5"
++    hit0 = classical["pairs"][0]
++    R0_, th0, lab0, M0 = parker_reduced(hit0, "B", (0, 1, 3))
++    r0 = float(np.linalg.norm(R0_.resid(th0)))
++    md, ry, ms = R0_.P.verify(R0_.Z_full(th0))
++    gate("A5_reduced_classical_anchor", r0 < 1e-12 and md < 1e-12 and ry == 10,
++         {"reduced_resid": r0, "maxdev": md, "rays": ry, "npar": R0_.npar, "rule": "reduced residual < 1e-12 at the classical Parker point; full verify maxdev < 1e-12, 10 rays"})
++    STAGE[0] = "K"
++    rk = np.random.default_rng(31337)
++    recs, k = [], 0
++    nK = 8 if MODE == "smoke" else 10 ** 6
++    while k < nK and not over(ends["K"]):
++        hi = int(rk.integers(len(classical["pairs"])))
++        res = "B" if rk.integers(2) == 0 else "A"
++        a_, b_ = [int(x) for x in rk.choice(np.arange(1, 7), 2, replace=False)]
++        R, thc, lab, M = parker_reduced(classical["pairs"][hi], res, (0, a_, b_))
++        recs += run_reduced(R, "K_cal_parker_forced", [7000 + k], 200, ends["K"], extra={"hit": hi, "resolution": res, "mlab": [0, a_, b_]})
++        k += 1
++    rays = summary_red("K_cal_parker_forced", recs)
+     if MODE == "smoke":
+         W.write({"end": True, "mode": "smoke", "gates": "PASS", "elapsed_s": round(elapsed(), 2), "records": W.records, "bytes": W.n})
+         return 0
+-    hit0 = classical["pairs"][0]
+-    if MODE == "sens1":
+-        STAGE[0] = "S9"
+-        summary("S9_cal_v9_cayley", run(unsym("v9_cayley", cayley_cyclic(9)), "S9_cal_v9_cayley", [901, 902, 903, 904], 40000, ends["S9"]))
+-        STAGE[0] = "S10P"
+-        summary("S10P_v10_parkerB", run(unsym("v10_parkerB", hit0["B_array"]), "S10P_v10_parkerB", [1101, 1102, 1103, 1104, 1105, 1106], 300000,
+-                                        ends["S10P"], extra={"B": "parker hit0 B_array (classical mates exist)"}))
+-    else:
+-        STAGE[0] = "S10Z"
+-        summary("S10Z_v10_cayZ10", run(unsym("v10_cayZ10", cayley_cyclic(10)), "S10Z_v10_cayZ10", [1201, 1202, 1203], 300000, ends["S10Z"],
+-                                       extra={"B": "Cay(Z_10)"}))
+-        STAGE[0] = "S10D"
+-        summary("S10D_v10_cayD5", run(unsym("v10_cayD5", cayley_d5()), "S10D_v10_cayD5", [1301, 1302, 1303], 300000, ends["S10D"],
+-                                      extra={"B": "Cay(D_5)"}))
++    STAGE[0] = "R7"
++    L3 = latin3_all()
++    rcfg = np.random.default_rng(4242)
++    recs, cfg = [], 0
++    while not over(ends["R7"]):
++        Dinf, beta, gam, dlt, Lc, D2, M = T1_config(rcfg, L3)
++        conf = {"Dinf": Dinf, "beta": {str(kk): vv for kk, vv in beta.items()}, "gamma": gam, "delta": dlt, "L": Lc, "D2": D2, "M": M, "cfg": cfg}
++        try:
++            R = Reduced(7, 3, Dinf, beta, gam, dlt, Lc, list(range(7)) + D2, M)
++        except AssertionError as ex:
++            W.write({"tag": "R7_forced_reduced", "config": conf, "status": "BAD_CONFIG", "why": repr(ex)})
++            cfg += 1
++            continue
++        recs += run_reduced(R, "R7_forced_reduced", [8000 + 4 * cfg + j for j in range(4)], 200, ends["R7"], extra=conf)
++        cfg += 1
++    summary_red("R7_forced_reduced", recs)
++    STAGE[0] = "R9"
++    recs, cfg = [], 0
++    while not over(ends["R9"]):
++        Dfin = list(range(1, 9))
++        bl = valid_betas(9, Dfin, rcfg, 1)
++        if not bl:
++            continue
++        beta = bl[0]
++        gam = sorted(set(range(9)) - {(beta[d] - d) % 9 for d in Dfin})
++        dlt = sorted(set(range(9)) - set(beta.values()))
++        mstar = int(rcfg.integers(9))
++        conf = {"Dinf": [0], "beta": {str(kk): vv for kk, vv in beta.items()}, "gamma": gam, "delta": dlt, "mstar": mstar, "cfg": cfg}
++        try:
++            R = Reduced(9, 1, [0], beta, gam, dlt, [[0]], list(range(9)) + [mstar], [[mstar]])
++        except AssertionError as ex:
++            W.write({"tag": "R9_9p1_reduced", "config": conf, "status": "BAD_CONFIG", "why": repr(ex)})
++            cfg += 1
++            continue
++        recs += run_reduced(R, "R9_9p1_reduced", [9000 + 4 * cfg + j for j in range(4)], 200, ends["R9"], extra=conf)
++        cfg += 1
++    summary_red("R9_9p1_reduced", recs)
+     W.write({"end": True, "mode": MODE, "terminated": TERM[0], "elapsed_s": round(elapsed(), 2), "records": W.records, "bytes": W.n})
+     return 0
+ 

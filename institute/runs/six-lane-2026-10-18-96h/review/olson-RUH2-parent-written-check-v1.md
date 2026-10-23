@@ -1,0 +1,13 @@
+# RUH2 — parent hand check
+
+Recorded 2026-10-21T06:19:59-0700 (`/bin/date`). Directly read all175LF proof, review package, errata list, Codexv1(0F/1M/5m) and Codexv2(0F/0M/0m aftererrata, erratum2last). Candidate[proof-RUH2-v1.md](/Users/jinleic/repos/aifours/mathematics/evidence/six-lane-20261018-96h/olson/continuations/upperhalf-RUH-round2/proof-RUH2-v1.md) SHA256f391b08f2df02036b4a7cfc66c1f118e7f20c6dfb8d89af2a10e121ea58df4e2. No scientificcode. Second-familyClauderemains ungoverned-by-parent until its actual run; this check is aparent input only.
+
+1. Parameters: R=3p−1−2e from F=p+2e−1; A=2p−2e+c, b=p−1−c, Lambda−lambda=2p−2e+2−c−A'=p−2e+3+delta with delta=p−1−c−A'. SHrange5<=e<=(p+2)/3 makes every j in[m,m+e−1] admissible and keeps (p+1+g)/2>=(3e−1+g)/2.
+2. Lemmas M/P/U re-derived: capped pairing gives p−1 unequal pairs; fillers and RS(b) K=p−1 give the dominant signed value; 2(2kappa+1)>R forces one nonzero class{a,−a}; the zero-class arc exclusion uses n=2kappa. All-plus A'<=kappa and A<=2p−1 hold inSH.
+3. MW/MWe: omission sums give |G_s|>=w0+1 and CD w0+q; at m=e the K_j run p−1..p+2e−3, r<=e−2 forces 3e>=p+4−eps, impossible, so phi>=p+kappa and the two-type split has gap p+1+delta. Toggle path keeps m=e; an added run h has d_h>=p+1+delta>beta_i−alpha_i bound for removals; light sets then have d<=c−1; E+|Q|>=c+1 and |Q|<=c−1 force E>=2.
+4. LemmaL: with w0=p−1−g, K_j>=w0 iff j>=e−g/2 and K_j<=phi iff j<=(p+1+c)/2; both interval counts give >=g+1 admissible j, contradicting MW's q<=g; hence d(P)<=c−min(e,2m−1). CaseA count floor((e+1+g)/2)>=g+1 uses g<=e−1; CaseB counts m+floor(g/2) and floor((e−1+g)/2)+floor(g/2)+1 use g<=2m−2 and e−1>=g.
+5. TheoremA: S=E u Q on the cycle minus h has independence<=floor((c+1)/2); path arithmetic forces c odd, |S|=c+1, even components, Q empty, E=c+1; free j=e for every nonempty empty-run set Y puts t(Y)+e in M; RS(b) K=c+1 gives c+1 distinct nonempty sums in M−e, contradicting |M|<=c.
+6. TheoremB e=5: window/endgame arithmetic for c=5..9 re-verified at the cited steps, including c=8's no-t=3/E<=3, c=9's t>=5 isolation argument, s(Y)+m<=5, E<=4, and the final six-block {q1,q2}u{q4,q5,q6}u{e2} with m=3 and d>=5>4. CorollaryB combines UH-A(c<=2) with A<=2p−1 (c<=9=2e−1).
+7. Imports only NF/GRX-if/RS(b)/CD plus UH-A for CorollaryB; UH-SH/MW re-derived, KP3/KP4/R7 uncited. Residual R1(3e>p+2, incl p11 and p13 e6,7) and R2(SH, e>=6, e<=c<=2e−1) remain exact and unproved; no UH-EXCL claim.
+
+Full antecedent preserved: SOME admissible NF, terminal k=p+1, kappa_hat=kappa, original index order, arbitrary extra pairs, genuine empty-run rule. No novelty/Lean/human/runtime claim. Parent hand check only; acceptance requires the actual Claude second-family run on the frozen v2 packet.

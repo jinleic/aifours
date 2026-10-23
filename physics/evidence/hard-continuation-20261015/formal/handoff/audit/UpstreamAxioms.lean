@@ -1,0 +1,4 @@
+import SatUpper
+#check @SatUpper.satisfiabilityProbability_4268_tendsto_zero
+#print axioms SatUpper.satisfiabilityProbability_4268_tendsto_zero
+#print axioms SatUpper.upperBound_4268

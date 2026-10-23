@@ -1,0 +1,164 @@
+--- checker_v1.py
++++ checker_v2.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""sun-coset7 Stage A independent checker, version 1 (Python standard library only).
++"""sun-coset7 Stage A independent checker, version 2 (Python standard library only).
+ 
+ Written only from the frozen definition texts
+   README.md               2a6d6d6e1dadbad522c8c8f9322c17eae719fb01fe373e6b1caf8c40cadc3fd1
+@@ -31,6 +31,11 @@
+   verify  --universe U --input-dir D --out F        one universe directory (no pins)
+ Exit codes: 0 COMPLETE_VALID, 1 INVALID, 2 INCOMPLETE, 3 UNKNOWN (stopped), 4 NOT_STARTED,
+ 5 internal error.
++v2 differs from v1 (2676c7d5...afcb2) only in the terminal decision/publication/exit handling
++(_finish): a stop or SIGTERM seen before the decision gives UNKNOWN/3; one seen during or after
++serialisation, or a publication error, creates <out>.CANCELLED.json and a nonzero exit; a SIGTERM
++after the last check ends the process by the signal.  A result counts only on a normal exit with
++its recorded exit_code and no marker.
+ """
+ 
+ import argparse
+@@ -49,7 +54,7 @@
+ import time
+ from fractions import Fraction as Fr
+ 
+-VERSION = 'sun-coset7-stageA-independent-checker-v1'
++VERSION = 'sun-coset7-stageA-independent-checker-v2'
+ PRIMES = (2, 3, 5)
+ CAPS = (4, 2, 2)              # profile = (min(v2,4), min(v3,2), min(v5,2)), rules-k7-v1 s4
+ INF = 1 << 40                 # +infinity in valuation intervals
+@@ -1890,6 +1895,111 @@
+             'independence': 'stdlib only; written from frozen texts; no producer code imported, copied or executed'}
+ 
+ 
++# ----------------------------------------------------------------------------- v2 terminal handling
++
++CANCEL_SUFFIX = '.CANCELLED.json'
++PUBLICATION_CONTRACT = ('This result counts only if the process exited normally with status equal to '
++                        'exit_code and no file <result path>' + CANCEL_SUFFIX + ' exists; a process '
++                        'ended by a signal publishes no result.')
++
++
++def _sigterm_pending():
++    """SIGTERM pending for this single-threaded process while SIGTERM is blocked."""
++    return signal.SIGTERM in signal.sigpending()
++
++
++def _finish(args, res, outf, guard, code):
++    """Terminal decision, publication and exit status (the only part of v2 that differs from v1).
++
++    1. SIGTERM is blocked before the decision.  CPython's pthread_sigmask runs any Python handler
++       already tripped, so STOP records every earlier SIGTERM; a later one stays pending.
++    2. The terminal resource sample is taken before the decision.  A latched stop (SIGTERM, free-space
++       floor, RSS, self budget) or a pending SIGTERM makes the overall result UNKNOWN with exit 3.
++    3. The result is serialised, flushed, fsynced and closed and the summary printed with SIGTERM
++       still blocked; then resources are sampled once more.
++    4. SIGTERM is reset to SIG_DFL while still blocked and pending SIGTERM is read a last time.  A
++       SIGTERM pending then, a stop latched after the decision or a publication error creates the
++       exclusive external marker <out>.CANCELLED.json and forces exit 3 (5 for a publication error);
++       the serialised file must then not be used.
++    5. Only then is SIGTERM unblocked: a SIGTERM arriving after the last check terminates the process
++       by the default action, so a late delivery can never end in a normal exit.
++    """
++    signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGTERM})
++    term = {'sigterm_blocked_for_decision': True,
++            'overall_before_terminal_decision': res.get('overall'),
++            'exit_code_before_terminal_decision': code}
++    try:
++        guard.sample()
++    except Exception as e:
++        if not STOP['flag']:
++            STOP.update(flag=True, why='terminal resource sample failed: %s: %s' % (type(e).__name__, e))
++    pending = _sigterm_pending()
++    if pending:
++        signal.sigwait({signal.SIGTERM})
++        if not STOP['flag']:
++            STOP.update(flag=True, why='SIGTERM pending at terminal decision')
++    term['sigterm_pending_at_decision'] = pending
++    term['stop_latched_at_decision'] = STOP['flag']
++    term['stop_reason_at_decision'] = STOP['why']
++    if STOP['flag']:
++        res['overall'], code = 'UNKNOWN', 3
++    term['decided_overall'] = res['overall']
++    term['decided_exit_code'] = code
++    res['terminal'] = term
++    res['resources'] = guard.report()
++    res['finished_host_clock'] = time.strftime('%Y-%m-%dT%H:%M:%S%z')
++    res['exit_code'] = code
++    res['publication_contract'] = PUBLICATION_CONTRACT
++    stop_at_decision = STOP['flag']
++    problem, final = None, code
++    try:
++        json.dump(res, outf, indent=1, sort_keys=False, default=str)
++        outf.write('\n')
++        outf.flush()
++        os.fsync(outf.fileno())
++        outf.close()
++        summ = {'overall': res['overall'], 'exit_code': code}
++        for U, r in (res.get('universes') or {}).items():
++            summ[U] = r.get('status')
++        if 'controls' in res:
++            summ['controls'] = res['controls'].get('status')
++        print(json.dumps(summ), flush=True)
++    except Exception as e:
++        problem, final = 'publication error: %s: %s' % (type(e).__name__, e), 5
++    if problem is None:
++        try:
++            guard.sample()
++        except Exception as e:
++            problem, final = 'post-publication resource sample failed: %s: %s' % (type(e).__name__, e), 3
++    signal.signal(signal.SIGTERM, signal.SIG_DFL)
++    late = _sigterm_pending()
++    if late:
++        signal.sigwait({signal.SIGTERM})
++        if problem is None:
++            problem, final = 'SIGTERM received during or after serialisation', 3
++    if problem is None and STOP['flag'] and not stop_at_decision:
++        problem, final = 'stop latched after the decision: %s' % STOP['why'], 3
++    if problem is not None:
++        marker = {'cancelled': True, 'result_path': os.path.abspath(args.out), 'reason': problem,
++                  'sigterm_pending_after_serialisation': late, 'decided_overall': res['overall'],
++                  'decided_exit_code': code, 'process_exit_code': final, 'checker': VERSION,
++                  'pid': os.getpid(), 'host_clock': time.strftime('%Y-%m-%dT%H:%M:%S%z')}
++        try:
++            with open(args.out + CANCEL_SUFFIX, 'x') as mf:
++                json.dump(marker, mf, indent=1, default=str)
++                mf.write('\n')
++                mf.flush()
++                os.fsync(mf.fileno())
++        except Exception:
++            pass
++        try:
++            print(json.dumps({'cancelled': True, 'reason': problem, 'exit_code': final}), flush=True)
++        except Exception:
++            pass
++    signal.pthread_sigmask(signal.SIG_UNBLOCK, {signal.SIGTERM})
++    return final
++
++
+ def main():
+     ap = argparse.ArgumentParser()
+     sub = ap.add_subparsers(dest='cmd', required=True)
+@@ -1955,20 +2065,7 @@
+         res['internal_error'] = '%s: %s' % (type(e).__name__, e)
+         res['internal_traceback'] = traceback.format_exc()
+         code = 5
+-    guard.sample()
+-    res['resources'] = guard.report()
+-    res['finished_host_clock'] = time.strftime('%Y-%m-%dT%H:%M:%S%z')
+-    res['exit_code'] = code
+-    json.dump(res, outf, indent=1, sort_keys=False, default=str)
+-    outf.write('\n')
+-    outf.close()
+-    summ = {'overall': res['overall'], 'exit_code': code}
+-    for U, r in (res.get('universes') or {}).items():
+-        summ[U] = r.get('status')
+-    if 'controls' in res:
+-        summ['controls'] = res['controls'].get('status')
+-    print(json.dumps(summ))
+-    return code
++    return _finish(args, res, outf, guard, code)
+ 
+ 
+ if __name__ == '__main__':

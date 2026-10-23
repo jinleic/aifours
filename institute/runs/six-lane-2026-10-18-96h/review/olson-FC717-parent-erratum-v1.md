@@ -1,0 +1,7 @@
+# Olson FC717 — parent erratum v1 (citation/wording)
+
+Recorded 2026-10-20T19:48:24-0700 (`/bin/date`). Governs /Users/jinleic/repos/aifours/mathematics/evidence/six-lane-20261018-96h/olson/continuations/lowerhalf-fc-cell-7-17/proof-FC717-v1.md (e2c74806fc5f1986b298d490b121676eff7dce5f90f014311d3d8c099800b945); disposes Claude /Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/review/olson-FC717-claude-v2.prompt.note.md (d838b1d5a2a573bc8cebb5482b076eba935e0cb1780f706bc1d2bbea68bc54c6):0F/0M/2m. No mathematical statement or proof step changes.
+
+1. **m1 — premise citation.** proof LF13 and package LF9 read "UMR-F and UMR Lemmas 2, 3, 5, 7, 8, 10, 13"; the used UMR ranges additionally include LF64–68 (Lemma2 windows, giving ell_5=M_5=6 at (7,17)) and LF133 (the ell/M notation for Lemma7). Both lie inside the accepted UMR Lemmas0–13 and inside the frozen review manifest range.
+2. **m2 — empty-run attribution.** Replace proof LF54's sentence by: "The nonzero-even property of empty-run theta is the only special use of empty runs: evenness comes from L_e=∅ (UMR Lemma10 LF208–209), and NONZERO comes from the genuine empty-run rule." Nonzero is load-bearing in Lemmas1(c),1(d),2(c),3(a) and hence Lemma4; (A2) at LF41 already states it correctly.
+3. **Editorial.** In Lemmas1–4, k denotes the deficit q or q′, not the terminal k=18; B denotes the label sum while B_S is the bottom set; LF147 "these four letters" means "these at most a+k≤4 letters".

@@ -1,0 +1,123 @@
+{
+ "checkpoint": "parent-release-cp1-checkpoint-021-v1",
+ "at_from_bin_date": "2026-10-19T21:44:14-0700",
+ "author": "ParentCallerCP1",
+ "status": "PLAN_V3_DECISIONS_RECORDED_S4_AMENDED_PLAN_ONLY_NOEXEC",
+ "previous": {
+  "path": "RUN/review/parent-release-cp1-checkpoint-020-v1.json",
+  "sha256": "81f770781a8ac864e57efa5105c052b8d2d4d2f931566c6aede7c295f7709cff"
+ },
+ "plan": {
+  "path": "RUN/control/parent-release-cp1-v3-integration-plan-v3.md",
+  "sha256": "d0ab479886be77354381d2f3e98e3114503f27cb7a2ccf02b370d834d258559b",
+  "note": "immutable; this checkpoint amends section 7 S4 only"
+ },
+ "parent_decisions_recorded": {
+  "ended_strictness": {
+   "path": "RUN/control/parent-release-cp1-ended-exception-strictness-decision-v1.json",
+   "sha256": "5db1f4dbcba78cf60aacb0e72f42ed13bf5606b1e757a12ee7e8c7cd79de0bf7",
+   "rule": "Keep: CP1 rejects ENDED when CP2 retained any exception object during that evaluation (plan v3 U11 CP1-added check); availability-only."
+  },
+  "journal_rule": "Main IRC: bare-journal rule J1-J8 accepted as a CP1 plan rule.",
+  "pins": "PRT v6 and CP2 v6 both HOLD; plan pins come only from accepted successors."
+ },
+ "dependency_status": {
+  "prt_v6_part_a": {
+   "path": "RUN/review/parent-release-v6-codex-source-v1.prompt.stdout.txt",
+   "sha256": "a8277d709c946636ee2089c5b993b609817b593b8225b652a006e3bdea911271",
+   "verdict": "HOLD 0F/1M/0m",
+   "finding": "type(value).__name__ at v6:401 and v6:449 can run a foreign metaclass __getattribute__ outside origin handlers, so a re-raised already-retained object escapes through a propagation-only catch and the wrong object is selected; fix: protected _type_name helper",
+   "part_b": "pending"
+  },
+  "cp2_v6": {
+   "hold": {
+    "path": "RUN/review/parent-release-cp2-v6-three-part-parent-HOLD-v1.json",
+    "sha256": "e5f323de2de930b12694904f7c743f0632bc529eac75b7fe5c2195e6b3dc84d7"
+   },
+   "v7_scope": {
+    "path": "RUN/control/parent-release-cp2-v7-joined-repair-scope-v1.json",
+    "sha256": "c8bbb4770f8824248e326a3b18f0d2ed92252d937baaa62e208d32a43db2cab1"
+   },
+   "cp1_interface_impact": "None declared: the scope keeps bind/token/deadline/callable/D8 digest/cap32-stop30/emergency-nonpositive/H09. M2 adds an internal non-sealing poison recheck before ENDED; m5 changes union contents only. Plan v3 section 4 stands; pin values come from the accepted successor."
+  }
+ },
+ "plan_v3_S4_amendment": {
+  "reason": "Same defect class as PRT v6 Part A MAJOR and CP2 v7 M3: foreign metadata reached through attribute lookup or formatting outside an origin handler. Plan v3 section 7 S4 stated the rule generally; the replacement list must cover every site below.",
+  "rules": [
+   "One type-name helper: name = type.__dict__[\"__name__\"].__get__(type(x)); use it only if type(name) is str exactly, else the fixed marker \"<type-name unavailable>\". Never concatenate, format or compare a str subclass taken from foreign metadata.",
+   "Exception descriptions: str(exc) only inside a BaseException guard; a failure there is retained as an origin (S2); the text is used only if type(text) is str exactly, else \"<description unavailable>\".",
+   "Real-type classification only: issubclass(type(exc), Exception); never isinstance on a foreign exception (isinstance consults exc.__class__ when the real type does not match).",
+   "No getattr/setattr and no __context__ read or write on foreign exceptions; attachments via the base instance dict (dict.get / dict.__setitem__).",
+   "Calls into parent-supplied objects (reader attributes and report(), CP2 log methods, callbacks) run in origin handlers: a non-Exception BaseException is retained with origin=True.",
+   "Raw parent-supplied containers are checked with exact-str keys before any set or equality comparison."
+  ],
+  "cp1_v2_sites_9f3d158b": [
+   {
+    "site": "_why 154-159",
+    "issue": "type(exc).__name__ and str(exc); guard catches Exception only; the fallback repeats the unguarded type-name lookup"
+   },
+   {
+    "site": "_preflight 260",
+    "issue": "kind.__name__ on a foreign value's type"
+   },
+   {
+    "site": "_Call.observe 411",
+    "issue": "type(value).__name__ on a callback return (RETURNED event)"
+   },
+   {
+    "site": "_Call.read 418",
+    "issue": "type(data).__name__ on the reader return"
+   },
+   {
+    "site": "_invoke 1081",
+    "issue": "type(value).__name__ on the PRT return"
+   },
+   {
+    "site": "_union_version 715",
+    "issue": "type(value).__name__ on a detached JSON value (safe today; use the helper for uniformity)"
+   },
+   {
+    "site": "_Call.close 469",
+    "issue": "isinstance(exc, Exception)"
+   },
+   {
+    "site": "_Call.observe 403-404 and _Call.native 438-439",
+    "issue": "__context__ read/write on foreign exceptions (removed in v3; the prior tuple is the retention channel)"
+   },
+   {
+    "site": "_attached 1088",
+    "issue": "getattr(exc, 'parent_release_result')"
+   },
+   {
+    "site": "_raise_held 1241 and _account 1371",
+    "issue": "attribute assignment on foreign exceptions"
+   },
+   {
+    "site": "_check_reader 638-639",
+    "issue": "getattr on the parent reader outside an origin handler"
+   },
+   {
+    "site": "_Ledger.snapshot 528-529",
+    "issue": "reader.report() BaseException propagates unretained; _why on its Exception"
+   },
+   {
+    "site": "_check_callbacks 644-647",
+    "issue": "set(identity) == {...} on a raw parent dict without an exact-str-key check (foreign __eq__ on a hash collision)"
+   }
+  ],
+  "added_expectations": [
+   "S4-1: callback (reader/CP2/PRT) returns an object whose metaclass __getattribute__ raises an already-retained non-Exception object A when __name__ is read -> no lookup occurs, no escape; selection unchanged",
+   "S4-2: exception type whose __name__ is a str subclass with __radd__/__format__/__eq__ overrides -> marker text, no foreign method runs",
+   "S4-3: str(exc) returns a str subclass -> \"<description unavailable>\"",
+   "S4-4: non-Exception BaseException whose __class__ property raises -> classified by real type; no property call",
+   "S4-5: reader.report() raises KeyboardInterrupt during the S11/S15 join -> retained as an origin and propagated under S2 with a HELD outcome attached"
+  ]
+ },
+ "actual_result": "Verified the decision, review and scope hashes; read the PRT v6 Part A review, the CP2 v7 scope and the ENDED decision; audited CP1 v2 by grep for foreign-metadata sites. No caller source written; CP1 v2 unchanged; no subject import/compile/AST/exec/tests; no repin.",
+ "blockers": [
+  "PRT successor (v7 after Part B) frozen with a non-HOLD parent disposition, including the known-limit gate",
+  "CP2 v7 frozen with a non-HOLD parent disposition"
+ ],
+ "next_bounded_action": "Park. After both non-HOLD dispositions: verify the accepted sources against plan v3 sections 3-5, freeze the exact-once replacement list (covering every S4 site above), write v3 source + diff + notes + disposition, park.",
+ "authority_statement": "No runtime, release, scheduling or scientific authority. Not self-accepted. Global HOLD unchanged."
+}

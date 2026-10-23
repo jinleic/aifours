@@ -1,0 +1,9 @@
+# PA19 class/b63 — corrected acceptance confirmation v2
+
+Recorded 2026-10-21T09:54:20-0700 after `/bin/date`. **CORRECTNESS_ACCEPTED at the defined H1/H2 class-theorem scope; b63 accepted only as a necessary partial reduction.** Read the initial verdict through parent errata v1–v4 and [parent-record addendum v5](/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/report/recorded-deviations-addendum-v5-parent-records.md); the initial unread clock estimate is not authoritative creation evidence.
+
+The mathematical statement is exactly the original ms09 type-data/array definition with H1 e=7 and H2 a listed three-type whose complementary pair is unlisted. No earlier b65/e7 verdict is a premise. Both families and the parent checked the full implication; the final correction audit passed every mathematical repair, and its sole attribution MINOR is disposed by [erratum v4](/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/review/pa19-class-b63-parent-erratum-v4-attribution.md).
+
+Historical applicability covers only b65 among the 59 frozen-v10 rows, with no duplicate current credit; b59 is shared-provenance corroboration only. The reported metadata scope is all71 entry lengths and the59 quoted ranges, not71 checked ranges or complete V fields. b63's six-family reduction excludes none **by that reduction**; separate later F4/F5 proofs remain accepted, with families1/2/3/6 open. The original complete-nearest-case fallback remains UNFULFILLED and all three procedural/delivery MAJORs remain permanent. Current recorded total128=70+58; PA(19,8,6) undecided. No formal/human/novelty/runtime certificate.
+
+Full final audit bindings: [disposition](/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/review/pa19-class-b63-final-repairs-parent-disposition-v1.json).

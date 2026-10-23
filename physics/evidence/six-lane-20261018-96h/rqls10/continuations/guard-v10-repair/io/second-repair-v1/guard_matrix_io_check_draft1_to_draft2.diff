@@ -1,0 +1,276 @@
+--- draft1/guard_matrix_io_check_v1.py
++++ draft2/guard_matrix_io_check_v2_draft2.py
+@@ -89,6 +89,11 @@
+              "source_created_descriptor", "stimulus_number_reallocated", "fixture_closes_source_owned_fd", "fixture_source_fd_close_error")
+ # Source-owned process/descriptor blockers are established failures; every other unresolved kind is HOLD.
+ SOURCE_BLOCKERS = ("source_owned_process", "source_sink_thread", "source_fds", "fd_identity_changed")
++# Pre-spawn (pid-less) source ledger records: retained snapshot keys and fields that only a created process can set.
++SPAWN_RECORD_KEYS = {"pid", "role", "settled", "leader_reaped", "rc", "wait_lost", "term_attempted", "identity", "spawn_error",
++                     "stdout_fd", "stdin_fd", "stderr_fd", "parent_close_fds"}
++NO_SPAWN_NULL = ("identity", "identity_event_ref", "raw_identity_ref", "rc", "native_wait_result", "raw_wait_status", "mono_reaped",
++                 "epoch_reaped", "mono_pid_registered", "date", "signal", "proof", "spawn_error", "endpoint_errors")
+ START = time.monotonic()
+ DEADLINE = START + 60
+ FAILURES = []
+@@ -382,8 +387,8 @@
+         anchor = request["anchors"][key]
+         exact(set(anchor) == {"path", "inode"} and anchor["path"] == path and isinstance(anchor["inode"], list) and
+               len(anchor["inode"]) == 2 and all(integer(v) and v >= 0 for v in anchor["inode"]), "original anchor schema")
+-        if case in ("io_root_swap", "io_subtree_swap") and key in ("charge", "out", "tmp"):
+-            continue  # The case-specific native archived-original checks follow.
++        if case == "io_root_swap" and key in ("charge", "out", "tmp") or case == "io_subtree_swap" and key == "out":
++            continue  # Only replaced anchors: method_cases reopens their archived originals and current replacements.
+         fd = directory(path)
+         try:
+             exact(inode(fd) == anchor["inode"], "current unchanged anchor: " + key)
+@@ -457,6 +462,28 @@
+     exact(outcome.get("evidence_complete") is True and not (outcome.get("source_state") or {}).get("evidence_truncated"),
+           "incomplete/truncated/oversized source evidence is HOLD")
+     return run, request, cfg, go, capture, streams, outcome
++
++
++def no_spawn_cleanup(refusal, events, after_seq):
++    """A pre-spawn refusal created no process: validate its retained source record and native descriptor release."""
++    record, descriptors, role = refusal.get("record"), refusal.get("descriptors"), refusal.get("role")
++    exact(role in ("helper", "child") and isinstance(record, dict) and set(record) == SPAWN_RECORD_KEYS and
++          isinstance(descriptors, list) and all(isinstance(d, dict) and set(d) == {"fd", "released", "errno", "inode"} and integer(d["fd"]) for d in descriptors) and
++          isinstance(record["parent_close_fds"], list), "complete retained pre-spawn refusal evidence")
++    need(record["pid"] is None and record["role"] == role and record["settled"] is True and record["leader_reaped"] is False and
++         record["rc"] is None and record["wait_lost"] is False and record["term_attempted"] is False and
++         record["identity"] is None and record["spawn_error"] is None,
++         "pre-spawn source record keeps the no-process disposition: settled without PID, identity, reap or wait")
++    owned = [record[k] for k in ("stdout_fd", "stdin_fd", "stderr_fd") if record[k] is not None] + record["parent_close_fds"]
++    pipes = [fd for v in events if after_seq < v["seq"] < refusal["seq"] and v["operation"] == "native_pipe" and
++             v.get("spawn_role") == role for fd in v["fds"]]
++    exact(all(integer(fd) and fd >= 3 for fd in owned) and len(owned) == len(set(owned)) == (3 if role == "helper" else 6) and
++          len(pipes) == (2 if role == "helper" else 6) and set(pipes) <= set(owned) and
++          sorted(d["fd"] for d in descriptors) == sorted(owned),
++          "complete native allocation ledger of the refused attempt, every allocated descriptor observed after original cleanup")
++    for d in descriptors:
++        if not (d["released"] is True and type(d["errno"]) is int and d["errno"] == 9 and d["inode"] is None):
++            MISSING.append("PRE_SPAWN_DESCRIPTOR_RELEASE_NOT_ESTABLISHED:%s:%s" % (role, d["fd"]))
+ 
+ 
+ def common(run, request, cfg, capture, streams, outcome):
+@@ -557,13 +584,32 @@
+             exact(value["role"] == "child" and value["argv"] == cfg["argv"] and value["child_external_sha_overlay"] == capture["approval_sha256"], "fixed child-only external SHA overlay")
+         if value["native_pgid"] is not None:
+             exact(value["native_pgid"] == value["pid"], "actual fresh native process group")
+-    helper_pids = [v["pid"] for v in pick(events, "native_spawn_registered") if v["role"] == "helper"]
++    registered = [v["pid"] for v in pick(events, "native_spawn_registered") if v["role"] == "helper"]
++    refused = pick(events, "native_spawn_refused_before_pid")
+     state = outcome.get("source_state")
+-    exact(state is None and not pick(events, "native_spawn_registered") or
++    exact(state is None and not pick(events, "native_spawn_registered") and not refused or
+           isinstance(state, dict) and isinstance(state.get("reconciliation"), dict) and
+           isinstance(state["reconciliation"].get("helpers"), list) and
+-          [h.get("pid") if isinstance(h, dict) else None for h in state["reconciliation"]["helpers"]] == helper_pids,
+-          "every natively registered helper has exactly one retained source helper record, in spawn order")
++          all(isinstance(h, dict) and "pid" in h and (h["pid"] is None or integer(h["pid"]) and h["pid"] > 1) for h in state["reconciliation"]["helpers"]),
++          "complete typed retained helper ledger")
++    helpers = [] if state is None else state["reconciliation"]["helpers"]
++    exact([h["pid"] for h in helpers if h["pid"] is not None] == registered,
++          "every natively registered helper joins exactly one retained helper record by its actual positive PID, in spawn order")
++    attempts = [v["pid"] if v["operation"] == "native_spawn_registered" else None for v in events
++                if v["operation"] in ("native_spawn_registered", "native_spawn_refused_before_pid") and v.get("role") == "helper"]
++    unspawned = [h for h in helpers if h["pid"] is None]
++    exact(not unspawned or [h["pid"] for h in helpers] == attempts,
++          "retained pid-less helper records follow native pre-spawn refusals in attempt order; never joined to native registration")
++    for h in unspawned:
++        need(h.get("settled") is True and h.get("leader_reaped") is False and h.get("wait_lost") is False and
++             h.get("term_attempted") is False and all(h.get(k) is None for k in NO_SPAWN_NULL) and h.get("capture_hex") == "",
++             "retained pid-less helper record has the no-process disposition: no identity, wait, reap, date or capture")
++    boundary = 0
++    for row in events:
++        if row["operation"] == "native_spawn_refused_before_pid":
++            no_spawn_cleanup(row, events, boundary)
++        if row["operation"] in ("native_spawn_registered", "native_spawn_refused_before_pid"):
++            boundary = row["seq"]
+     expected_paths = set()
+     def inventory_paths(path, depth=0):
+         exact(depth <= 12 and len(expected_paths) < 1024, "actual artifact inventory bounds")
+@@ -956,15 +1002,34 @@
+     if case in ("io_root_swap", "io_subtree_swap"):
+         swap = only(events, "native_directory_replacement")
+         anchor = "charge" if case == "io_root_swap" else "out"
++        target = request["anchors"][anchor]["path"]
++        archive = request["anchors"]["scratch"]["path"] + ("/root.original" if case == "io_root_swap" else "/out.original")
++        exact(swap.get("target") == target and swap.get("archive") == archive and
++              isinstance(swap.get("original_marker"), dict) and isinstance(swap.get("replacement_marker"), dict),
++              "replacement evidence names the approved anchor and its fixed fresh archive")
+         need(swap["original_inode"] == request["anchors"][anchor]["inode"] and swap["replacement_inode"] != swap["original_inode"], "approved original native directory actually replaced")
+-        fd = directory(swap["archive"])
++        fd = directory(archive)
+         try:
+             need(inode(fd) == swap["original_inode"], "only own original archived, not deleted")
+         finally:
+             os.close(fd)
+-        original_marker = regular(swap["archive"] + "/fixture-marker.txt")[0]
+-        replacement_marker = regular(swap["target"] + "/fixture-marker.txt")[0]
+-        need(original_marker["sha256"] == replacement_marker["sha256"] and original_marker["inode"] != replacement_marker["inode"], "same-content fresh directory marker identities")
++        fd = directory(target)
++        try:
++            need(inode(fd) == swap["replacement_inode"] != request["anchors"][anchor]["inode"],
++                 "approved anchor path now holds the recorded fresh replacement inode")
++        finally:
++            os.close(fd)
++        for key in (("out", "tmp") if case == "io_root_swap" else ()):
++            fd = directory(archive + "/" + key)
++            try:
++                need(inode(fd) == request["anchors"][key]["inode"], "approved original " + key + " preserved inside archived root")
++            finally:
++                os.close(fd)
++        original_marker = regular(archive + "/fixture-marker.txt")[0]
++        replacement_marker = regular(target + "/fixture-marker.txt")[0]
++        need(original_marker["sha256"] == replacement_marker["sha256"] and original_marker["inode"] != replacement_marker["inode"] and
++             original_marker["inode"] == swap["original_marker"].get("inode") and replacement_marker["inode"] == swap["replacement_marker"].get("inode"),
++             "same-content fresh directory marker identities joined to the recorded markers")
+         need(message == ("LANE_ANCHOR_CHANGED" if case == "io_root_swap" else "CHARGED_ANCHOR_CHANGED " + cfg["output_roots"][0]), "exact original anchor guard exception")
+         return
+     if case in TYPE_GO + TYPE_PREP + NEGATIVE_KEYS:
+@@ -1455,32 +1520,88 @@
+ 
+ 
+ def prerequisites(case, request, cfg, go, events, outcome):
+-    """A producer flag is not status authority. Only a case-specific retained missed real-boundary event is NOT_EXERCISED.
+-    Required-proof gaps, unclassified prerequisites and fixture failures are HOLD; common integrity failures remain retained."""
++    """A producer flag is not status authority. NOT_EXERCISED needs exactly one retained missed real-boundary record bound to
++    the selected source invocation: its original deadline, descriptor/operation and native interval. Any missing or
++    mismatched join, and every unclassified prerequisite, is HOLD (MISSING); common integrity failures remain retained."""
+     values = outcome.get("missing_prerequisites")
+     exact(isinstance(values, list) and all(isinstance(v, str) and bool(v) for v in values), "complete typed prerequisite inventory")
+-    def missed_response(row):
+-        if not all(number(row.get(k)) for k in ("injection_start", "deadline_mono", "injection_end")):
++    def finite(row, keys):
++        return isinstance(row, dict) and all(number(row.get(k)) for k in keys)
++    def missed_window(row):
++        # The measured response-delay interval lies inside this invocation and does not contain its retained cutoff.
++        if not finite(row, ("injection_start", "deadline_mono", "injection_end")):
+             return False
+         start, cutoff, end = (row[k] for k in ("injection_start", "deadline_mono", "injection_end"))
+-        return outcome["owner"]["mono_begin"] <= start <= end <= row["mono"] and not start < cutoff < end and (
+-            "native_before" not in row or number(row.get("native_before")) and number(row.get("native_after")) and
+-            row["native_before"] <= row["native_after"] <= start)
+-    def missed_ack(row):
+-        if not all(number(row.get(k)) for k in ("start_epoch_raw", "expiry_epoch_raw", "end_epoch_raw", "max_delay_s")):
++        return outcome["owner"]["mono_begin"] <= start <= end <= row["mono"] and not start < cutoff < end
++    def bracket(row, call):
++        # The selected successful native call lies inside the retained native interval, which precedes the delay.
++        return (finite(row, ("native_before", "native_after")) and finite(call, ("mono_before", "mono_after")) and "error" not in call and
++                row["native_before"] <= call["mono_before"] <= call["mono_after"] <= row["native_after"] <= row["injection_start"])
++    def missed_publication(op, row):
++        armed = [v for v in pick(events, "late_boundary_armed") if v.get("operation_target") == op]
++        path = cfg["output_roots"][0] if op == "dirsync" else cfg["receipt"]
++        native = {"readback": "native_read", "dirsync": "native_fsync"}.get(op, "native_" + op)
++        if len(armed) != 1 or not missed_window(row) or not finite(armed[0], ("deadline_mono",)):
+             return False
+-        start, cutoff, end = (row[k] for k in ("start_epoch_raw", "expiry_epoch_raw", "end_epoch_raw"))
+-        return typed_equal(cutoff, go["not_after_epoch"]) and row["max_delay_s"] == request["parameters"]["max_flush_delay_s"] and start <= end <= row["epoch_raw"] and (
+-            cutoff <= start or cutoff > start + row["max_delay_s"] or end <= cutoff)
+-    def missed_extra(row, cutoff_name):
+-        begin = pick(events, "extra_line_write_begin")
+-        if len(begin) != 1 or not all(number(row.get(k)) for k in ("clock_begin_raw", "cutoff_value_raw", "clock_end_raw", "injection_start", "injection_end")):
++        calls = [v for v in events if armed[0]["seq"] < v["seq"] < row["seq"] and v["operation"] == native and v.get("path") == path]
++        return (armed[0].get("path") == path and armed[0]["deadline_mono"] == row["deadline_mono"] and bool(calls) and
++                bracket(row, calls[0]) and armed[0]["mono"] <= row["native_before"])
++    def missed_accounting(stage, row):
++        if not missed_window(row) or not finite(row, ("original_deadline_mono",)) or row["deadline_mono"] > row["original_deadline_mono"]:
+             return False
++        if stage == "post_end":
++            posts = pick(events, "post_end_accounting_state")
++            return (len(posts) == 1 and posts[0]["seq"] < row["seq"] and "native_before" not in row and
++                    finite(posts[0], ("census_mono_complete",)) and posts[0]["census_mono_complete"] <= posts[0]["mono"] <= row["injection_start"])
++        calls = [v for v in pick(events, "native_fstatvfs") if v.get("accounting_stage") == stage]
++        return (len(calls) == 1 and calls[0]["seq"] < row["seq"] and typed_equal(calls[0].get("raw"), row.get("raw_free")) and
++                calls[0].get("mono_before") == row.get("native_before") and calls[0].get("mono_after") == row.get("native_after") and
++                bracket(row, calls[0]))
++    begins = pick(events, "extra_line_write_begin")
++    begin = begins[0] if len(begins) == 1 and finite(begins[0], ("mono", "deadline_mono", "mono_spawn")) and integer(begins[0].get("fd")) else None
++    def missed_extra_response(row, operation, unclamped):
++        if begin is None or not missed_window(row) or not finite(row, ("original_deadline_mono",)):
++            return False
++        native = "native_write" if operation == "write" else "native_close"
++        calls = [v for v in events if begin["seq"] < v["seq"] < row["seq"] and v["operation"] == native and v.get("fd") == begin["fd"] and
++                 (operation == "close" or v.get("extra_line") is True)]
++        deadline = (row["deadline_mono"] == row["original_deadline_mono"] and row.get("deadline_clamped") is False if unclamped else
++                    row["deadline_mono"] <= row["original_deadline_mono"] and "deadline_clamped" not in row)
++        return (row.get("fd") == begin["fd"] and row["original_deadline_mono"] == begin["deadline_mono"] and deadline and bool(calls) and
++                bracket(row, calls[-1]) and begin["mono"] <= row["native_before"])
++    def missed_crossing(row, cutoff_name):
++        keys = ("clock_begin_raw", "cutoff_value_raw", "clock_end_raw", "injection_start", "injection_end", "original_go_deadline")
++        spawn = outcome["source_state"]["rec"].get("mono_spawn")
++        if begin is None or not finite(row, keys) or not number(spawn) or begin["mono_spawn"] != spawn:
++            return False
++        age = cutoff_name == "GO_AGE"
++        expected = spawn + min(60.0, cfg["max_wall_s"] / 2.0) if age else go["not_after_epoch"]
++        writes = [v for v in events if begin["seq"] < v["seq"] < row["seq"] and v["operation"] == "native_write" and
++                  v.get("fd") == begin["fd"] and v.get("extra_line") is True]
++        returns = [v for v in pick(events, "extra_line_write_return") if v["seq"] > row["seq"] and v.get("fd") == begin["fd"]]
+         start, cutoff, end = (row[k] for k in ("clock_begin_raw", "cutoff_value_raw", "clock_end_raw"))
+-        expected = outcome["source_state"]["rec"]["mono_spawn"] + min(60.0, cfg["max_wall_s"] / 2.0) if cutoff_name == "GO_AGE" else go["not_after_epoch"]
+-        return (row.get("fd") == begin[0]["fd"] and typed_equal(cutoff, expected) and start <= end and not start < cutoff < end and
+-                begin[0]["mono"] <= row["injection_start"] <= row["injection_end"] <= row["mono"] and
+-                end <= row["mono" if cutoff_name == "GO_AGE" else "epoch_raw"])
++        # Same clock-domain and invocation bounds as the exercised crossing; only the crossing itself is inverted.
++        domain = (begin["mono"] <= start <= row["injection_start"] and end <= row["injection_end"] if age else
++                  finite(begin, ("epoch_raw",)) and number(row.get("epoch_raw")) and begin["epoch_raw"] <= start and end <= row["epoch_raw"])
++        return (row.get("fd") == begin["fd"] and typed_equal(cutoff, expected) and row["original_go_deadline"] == begin["deadline_mono"] and
++                bool(writes) and all("error" not in v for v in writes) and finite(writes[-1], ("mono_after",)) and
++                writes[-1]["mono_after"] <= row["injection_start"] <= row["injection_end"] <= row["mono"] and len(returns) == 1 and
++                domain and start <= end and not start < cutoff < end)
++    def missed_ack(row):
++        keys = ("start_epoch_raw", "expiry_epoch_raw", "end_epoch_raw", "max_delay_s", "native_flush_before", "native_flush_after",
++                "injection_start", "injection_end")
++        writes = [v for v in pick(events, "source_stdout_write") if v.get("ack_started") is True]
++        if len(writes) != 1 or not finite(row, keys) or not finite(writes[0], ("mono_after", "epoch_raw")) or not number(row.get("epoch_raw")):
++            return False
++        ack = writes[0]
++        start, cutoff, end = (row[k] for k in ("start_epoch_raw", "expiry_epoch_raw", "end_epoch_raw"))
++        return (row.get("stream") == "stdout" and typed_equal(cutoff, go["not_after_epoch"]) and
++                row["max_delay_s"] == request["parameters"]["max_flush_delay_s"] and ack["seq"] < row["seq"] and
++                ack["mono_after"] <= row["native_flush_before"] <= row["native_flush_after"] <= row["injection_start"] <= row["injection_end"] <= row["mono"] and
++                ack["epoch_raw"] <= start <= end <= row["epoch_raw"] and (cutoff <= start or cutoff > start + row["max_delay_s"] or end <= cutoff))
++    def single(operation, key, wanted):
++        rows = [v for v in pick(events, operation) if v.get(key) == wanted]
++        return rows[0] if len(rows) == 1 and rows[0]["scope"] == "API_RESPONSE_INJECTION" else None
+     for value in values:
+         valid = False
+         if case in POST and value == "real approved GO expiry not crossed within max_flush_delay_s during ACK flush":
+@@ -1488,19 +1609,26 @@
+             valid = len(rows) == 1 and missed_ack(rows[0]) and not pick(events, "ack_flush_real_expiry_crossing")
+         elif case in PUB and case.endswith("_late"):
+             op = case[len("io_pub_"):-len("_late")]
+-            valid = value == "declared " + op + " crossing not observed" and not pick(events, "declared_response_delay") and any(
+-                v.get("operation_target") == op and v["scope"] == "API_RESPONSE_INJECTION" and missed_response(v) for v in pick(events, "response_delay_boundary_missed"))
+-        elif case in ACCOUNT + ("io_extra_write_late", "io_extra_close_late"):
+-            stage = case.removeprefix("io_account_") if case in ACCOUNT else "extra_write" if case == "io_extra_write_late" else "extra_close"
+-            valid = value == "declared real response crossing not exercised: " + stage and not pick(events, "accounting_late_response") and any(
+-                v.get("stage") == stage and v["scope"] == "API_RESPONSE_INJECTION" and missed_response(v) for v in pick(events, "accounting_late_boundary_missed"))
+-        elif case == "io_extra_deadline":
+-            valid = value == "original unchanged IO_S30 extra-write deadline crossing not exercised" and not pick(events, "accounting_late_response") and any(
+-                v.get("stage") == "extra_write" and v.get("deadline_clamped") is False and missed_response(v) for v in pick(events, "accounting_late_boundary_missed"))
++            row = single("response_delay_boundary_missed", "operation_target", op)
++            valid = value == "declared " + op + " crossing not observed" and not pick(events, "declared_response_delay") and \
++                row is not None and missed_publication(op, row)
++        elif case in ACCOUNT:
++            stage = case.removeprefix("io_account_")
++            row = single("accounting_late_boundary_missed", "stage", stage)
++            valid = value == "declared real response crossing not exercised: " + stage and not pick(events, "accounting_late_response") and \
++                row is not None and missed_accounting(stage, row)
++        elif case in ("io_extra_write_late", "io_extra_close_late", "io_extra_deadline"):
++            stage = "extra_close" if case == "io_extra_close_late" else "extra_write"
++            wanted = "original unchanged IO_S30 extra-write deadline crossing not exercised" if case == "io_extra_deadline" else \
++                "declared real response crossing not exercised: " + stage
++            row = single("accounting_late_boundary_missed", "stage", stage)
++            valid = value == wanted and not pick(events, "accounting_late_response") and row is not None and \
++                missed_extra_response(row, "close" if case == "io_extra_close_late" else "write", case == "io_extra_deadline")
+         elif case in ("io_extra_go_age", "io_extra_expiry"):
+             cutoff = "GO_AGE" if case == "io_extra_go_age" else "AUTHORIZATION_EXPIRY"
+-            valid = value == "extra-line real age/expiry crossing not exercised" and not pick(events, "extra_real_crossing") and any(
+-                v.get("cutoff") == cutoff and v["scope"] == "API_RESPONSE_INJECTION" and missed_extra(v, cutoff) for v in pick(events, "extra_real_crossing_missed"))
++            row = single("extra_real_crossing_missed", "cutoff", cutoff)
++            valid = value == "extra-line real age/expiry crossing not exercised" and not pick(events, "extra_real_crossing") and \
++                row is not None and missed_crossing(row, cutoff)
+         if valid:
+             BOUNDARY.append("DRIVER_RETAINED_VALIDATED_UNEXERCISED_BOUNDARY:" + value)
+         else:

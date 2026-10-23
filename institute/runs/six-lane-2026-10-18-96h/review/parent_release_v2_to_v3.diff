@@ -1,0 +1,693 @@
+--- control/parent_release_v2.py
++++ control/parent_release_v3.py
+@@ -1,14 +1,15 @@
+-"""SOURCE ONLY, UNTESTED. Independent parent five-part release transaction v2.
++"""SOURCE ONLY, UNTESTED. Independent parent five-part release transaction v3.
+ 
+-Base contract 4d122872; repair scope 2fdf13b4; design checkpoints001-003 govern.
++Base contract 4d122872; repair scopes 2fdf13b4 (v2) and 1f9befdb (v3); checkpoints001-005 govern.
+ Definitions only at import: no I/O, environment, clock, process or signal operations.
+ The parent supplies a qualified raw adapter, authentic authority/execution observations,
+ exclusive immutable publication freeze and COMPLETE historical identity-union binding.
+ No file/registry syntax alone is completed release authority: caller MUST observe return
+ state RELEASED after ACK and the final original deadline. CP1/CP2 are external prerequisites.
+ Caps bound bytes/memory, NOT synchronous syscall time. A detected original-deadline crossing
+-starts no further callback/I/O; only cleanup of already-owned descriptors remains permitted.
+-V1 stays immutable/self-HOLD. No v1 import, alias, baseline compatibility path or shim.
++starts no further callback/I/O; only cleanup of already-owned descriptors/iterators remains.
++Every native blocking operation is checked before the call and after success or Exception.
++V1/V2 stay immutable/HOLD. No v1/v2 import, alias, compatibility path or shim.
+ """
+ import copy
+ import datetime
+@@ -20,6 +21,7 @@
+ 
+ CONTRACT_SHA256 = '4d12287257f8bf74d9057a796a0c6f7a391387c411b95d5dcda1131aa4692d3e'
+ REPAIR_SCOPE_SHA256 = '2fdf13b45e946df4f07881b0e6e2b5bc5452ea33d1df022afe896dded698b407'
++V3_REPAIR_SCOPE_SHA256 = '1f9befdb4d012800a8e2160c0ce8e822d255e34c88496fd26cb8875aac894030'
+ AIFOURS_ROOT = '/Users/jinleic/repos/aifours'
+ RUN_ROOT = AIFOURS_ROOT + '/institute/runs/six-lane-2026-10-18-96h'
+ CAP = 16 << 20
+@@ -262,6 +264,10 @@
+ def _stat_key(info):
+     return (info.st_dev, info.st_ino, info.st_mode, info.st_nlink, info.st_size,
+             info.st_mtime_ns, info.st_ctime_ns, getattr(info, 'st_blocks', None))
++
++
++def _handle_key(handle):
++    return ('fd', handle) if type(handle) is int else ('iterator', id(handle))
+ 
+ 
+ class _Txn:
+@@ -276,6 +282,7 @@
+         self.callback_count, self.callback_log = 0, []
+         self.callback_digest = hashlib.sha256()
+         self.opened, self.closed, self.live, self.unresolved = 0, 0, {}, []
++        self.unresolved_total = 0
+         self.streamed_bytes, self.hashed_files = 0, 0
+ 
+     def fire(self, cause, detail):
+@@ -317,12 +324,13 @@
+             self.fire(cause, stage + ': ' + _why(exc))
+             return False
+         except BaseException as exc:
++            self.crossed = True  # original deadline unavailable: no further callback or new I/O
+             self.event('deadline_check', 'BASE_EXCEPTION', stage + ': ' + _why(exc))
+             raise
+         return True
+ 
+-    def must_tick(self, stage):
+-        if not self.tick(stage):
++    def must_tick(self, stage, after_ack=False):
++        if not self.tick(stage, after_ack):
+             raise _Crossed(stage)
+ 
+     def observe(self, name, *args, after_ack=False):
+@@ -350,7 +358,48 @@
+         self.event(name, 'RETURNED', type(value).__name__)
+         self.tick(name + ' successful completion', after_ack)
+         return value
++
++    def failed(self, stage, primary, after_ack=False):
++        """Original-deadline check after a primary native Exception; a secondary keeps its context."""
++        try:
++            self.tick(stage + ' Exception completion', after_ack)
++        except BaseException as secondary:
++            if secondary is not primary and secondary.__context__ is None:
++                secondary.__context__ = primary
++            raise
++
++    def native(self, stage, function, *args, retain=None, after_ack=False):
++        """One native blocking operation under the SAME original deadline.
++
++        Checked before the call (no new I/O after detection). Returned ownership/progress is
++        retained by the non-raising `retain` hook BEFORE the completion check. Success and
++        Exception completions are both checked; primary and secondary failures stay separate.
++        The primary Exception is re-raised; the crossed latch refuses every later operation.
++        """
++        self.must_tick('before ' + stage, after_ack)
++        try:
++            value = function(*args)
++        except Exception as primary:
++            self.event(stage, 'NATIVE_EXCEPTION', _why(primary))
++            self.failed(stage, primary, after_ack)
++            raise
++        except BaseException as primary:
++            self.event(stage, 'NATIVE_BASE_EXCEPTION', _why(primary))
++            raise
++        if retain is not None:
++            retain(value)
++        self.must_tick(stage + ' completion', after_ack)
++        return value
++
++    def stream(self, block):
++        self.streamed_bytes += len(block)  # native read progress retained before completion check
+ 
++    def own(self, handle, kind, path):
++        """Retain an acquired descriptor/iterator BEFORE any later check or operation."""
++        self.opened += 1
++        self.live[_handle_key(handle)] = {'kind': kind, 'handle': handle, 'path': path}
++        return handle
++
+     def read(self, path, cap):
+         data = self.observe('read_bytes', path, cap)
+         row = {'path': path, 'cap': cap, 'type': type(data).__name__, 'late': self.crossed}
+@@ -366,34 +415,62 @@
+         return data
+ 
+     def open(self, path, flags, mode=0o444, parent=None, display=None):
+-        self.must_tick('before descriptor acquisition')
++        name = display if display is not None else path
+         _require(self.opened < MAX_OPEN_CALLS, 'descriptor acquisition cap')
+-        fd = os.open(path, flags, mode) if parent is None else os.open(path, flags, mode, dir_fd=parent)
+-        self.opened += 1
+-        self.live[fd] = display if display is not None else path
++        acquired = []
++        if parent is None:
++            function = lambda: os.open(path, flags, mode)
++        else:
++            function = lambda: os.open(path, flags, mode, dir_fd=parent)
+         try:
+-            self.must_tick('descriptor acquisition completion')
++            return self.native('open ' + _short(name), function,
++                               retain=lambda fd: acquired.append(self.own(fd, 'fd', name)))
+         except BaseException:
+-            self.close(fd, 'P%d_INTERNAL_ERROR' % self.part)
++            self.release(acquired, 'P%d_INTERNAL_ERROR' % self.part)  # late completion: retained fd closed once
+             raise
+-        return fd
+ 
+-    def close(self, fd, cause):
+-        if fd not in self.live:
++    def close(self, handle, cause):
++        key = _handle_key(handle)
++        if key not in self.live:
+             return True
+-        path = self.live.pop(fd)
++        record = self.live.pop(key)  # one destructive close attempt; never blindly retried
+         try:
+-            os.close(fd)
++            if record['kind'] == 'fd':
++                os.close(handle)
++            else:
++                handle.close()
+         except BaseException as exc:
++            self.unresolved_total += 1
+             if len(self.unresolved) < 64:
+-                self.unresolved.append({'fd': fd, 'path': path, 'error': _why(exc)})
++                self.unresolved.append({'kind': record['kind'], 'fd': handle if record['kind'] == 'fd' else None,
++                                        'path': record['path'], 'error': _why(exc)})
+             if cause is not None:
+-                self.fire(cause, 'unresolved close ' + _short(path) + ': ' + _why(exc))
++                self.fire(cause, 'unresolved close ' + _short(record['path']) + ': ' + _why(exc))
+             if not isinstance(exc, Exception):
+                 raise
++            self.failed('close ' + _short(record['path']), exc)
+             return False
+         self.closed += 1
++        self.tick('close completion ' + _short(record['path']))  # cleanup always allowed; checked unless crossed
+         return True
++
++    def release(self, owned, cause):
++        """One close attempt for EVERY owned handle (reverse order), even after a BaseException.
++
++        Returns True only when each close completed cleanly. The first BaseException is
++        re-raised after all attempts; every failure stays in the unresolved ledger/event log.
++        """
++        clean, first = True, None
++        for handle in reversed(owned):
++            try:
++                clean = self.close(handle, cause) and clean
++            except BaseException as exc:
++                clean = False
++                if first is None:
++                    first = exc
++        if first is not None:
++            raise first
++        return clean
+ 
+     def directory(self, parts, cause):
+         fd = self.open('/', DIR_FLAGS, display='/')
+@@ -567,6 +644,14 @@
+     return dict(value)
+ 
+ 
++def _job_dir(source):
++    """Independent destination-exclusion input: a malformed artifact map cannot disable it."""
++    value = source.get('artifacts')
++    _require(type(value) is dict and 'job_dir' in value, 'artifact job_dir unavailable; exclusion unprovable')
++    _parts(value['job_dir'])
++    return value['job_dir']
++
++
+ def _shape_field(txn, ctx, source, key, target, cause, validator):
+     try:
+         _require(key in source, 'missing ' + key)
+@@ -636,9 +721,12 @@
+     _shape_captures(txn, ctx, oracle.get('captures'), 'oracle.captures', 'P3_ORACLE_CAPTURE_INVALID', 'P3_ORACLE_CAPTURE_INVALID')
+     if 'identities' in ctx.f:
+         ctx.driver = next(row for row in ctx.f['identities'] if row['role'] == 'driver')
+-    if ctx.commit_dir is not None and 'artifacts' in ctx.f and ctx.commit_dir == ctx.f['artifacts']['job_dir']:
+-        txn.fire('P5_COMMIT_DIR_INVALID', 'commit_dir cannot be exact artifact directory')
+-        ctx.commit_dir = None
++    if ctx.commit_dir is not None:
++        try:
++            _require(not _under(ctx.commit_dir, [_job_dir(source)]), 'commit_dir is artifact job_dir or below it')
++        except Exception as exc:
++            txn.fire('P5_COMMIT_DIR_INVALID', 'independent destination exclusion: ' + _why(exc))
++            ctx.commit_dir = None
+ 
+ 
+ def _load(txn, ref, cap=DOC_CAP):
+@@ -720,7 +808,7 @@
+ 
+ 
+ def _held_for(row, item, allocation_sha):
+-    return (row.get('format') == 'parent-release-registry-v2' and row.get('state') == 'HELD'
++    return (row.get('format') == 'parent-release-registry-v3' and row.get('state') == 'HELD'
+             and _exact(row.get('item'), item) and row.get('allocation_line_sha256') == allocation_sha)
+ 
+ 
+@@ -752,7 +840,7 @@
+             txn.fire('P1_ALLOCATION_BINDING', 'allocation item/reservation/GO/launch mismatch')
+     for later in rows[index + 1:]:
+         if _exact(later.get('item'), record['item']) and not _held_for(later, record['item'], ref['line_sha256']):
+-            txn.fire('P1_ALLOCATION_NOT_CURRENT', 'later non-v2-HELD/same-allocation entry for item')
++            txn.fire('P1_ALLOCATION_NOT_CURRENT', 'later non-v3-HELD/same-allocation entry for item')
+ 
+ 
+ def _part1(txn, ctx):
+@@ -818,16 +906,25 @@
+              'explicit exit_table missing/inconsistent expected_state')
+ 
+ 
+-def _names(txn, fd, path, cap):
+-    before, names = os.fstat(fd), []
+-    iterator = os.scandir(fd)
++def _lstat(txn, fd, name, stage, after_ack=False):
++    return txn.native(stage, lambda: os.stat(name, dir_fd=fd, follow_symlinks=False), after_ack=after_ack)
++
++
++def _names(txn, fd, path, cap, cause):
++    before, names, owned = txn.native('fstat ' + path, os.fstat, fd), [], []
+     try:
+-        for entry in iterator:
++        iterator = txn.native('scandir ' + path, os.scandir, fd,
++                              retain=lambda handle: owned.append(txn.own(handle, 'iterator', path)))
++        while True:
++            entry = txn.native('scandir next ' + path, next, iterator, None)
++            if entry is None:
++                break
+             names.append(entry.name)
+             _require(len(names) <= cap, 'directory entry cap: ' + path)
+     finally:
+-        iterator.close()
+-    _require(_stat_key(before) == _stat_key(os.fstat(fd)), 'directory changed during census: ' + path)
++        txn.release(owned, cause)  # one iterator close; unresolved history retained even on BaseException
++    _require(_stat_key(before) == _stat_key(txn.native('fstat ' + path, os.fstat, fd)),
++             'directory changed during census: ' + path)
+     return sorted(names)
+ 
+ 
+@@ -836,7 +933,7 @@
+     cause, fd = 'P2_ARTIFACT_IDENTITY', None
+     try:
+         fd = txn.directory(_parts(record['job_dir']), cause)
+-        names = _names(txn, fd, record['job_dir'], MAX_JOB_ENTRIES)
++        names = _names(txn, fd, record['job_dir'], MAX_JOB_ENTRIES, cause)
+         txn.must_tick('artifact directory census')
+         if names != sorted(record['declared']):
+             txn.fire('P2_ARTIFACT_SET_MISMATCH', 'actual directory names differ declared exact set')
+@@ -844,9 +941,11 @@
+             path = record['job_dir'] + '/' + name
+             before = None
+             try:
+-                before = os.stat(name, dir_fd=fd, follow_symlinks=False)
++                before = _lstat(txn, fd, name, 'artifact lstat ' + path)
+                 _require(stat.S_ISREG(before.st_mode) and before.st_nlink == 1 and before.st_ino > 0
+                          and before.st_size == declared['bytes'], 'artifact regular/link/inode/size')
++            except _Crossed:
++                raise
+             except Exception as exc:
+                 txn.fire(cause, name + ': ' + _why(exc))
+             try:
+@@ -861,8 +960,10 @@
+                     raise _Crossed('artifact callback primary retained; deadline also failed') from exc
+             if before is not None:
+                 try:
+-                    _require(_stat_key(before) == _stat_key(os.stat(name, dir_fd=fd, follow_symlinks=False)),
++                    _require(_stat_key(before) == _stat_key(_lstat(txn, fd, name, 'artifact lstat ' + path)),
+                              'artifact identity changed across read')
++                except _Crossed:
++                    raise
+                 except Exception as exc:
+                     txn.fire(cause, name + ': ' + _why(exc))
+     except _Crossed:
+@@ -1020,31 +1121,20 @@
+     _require(txn.streamed_bytes + selected['bytes'] <= MAX_LATE_HASH_BYTES, 'late aggregate hash cap128GiB')
+     fd = txn.open(name, os.O_RDONLY | FILE_FLAGS, parent=parent, display=path)
+     try:
+-        before = os.fstat(fd)
++        before = txn.native('fstat ' + path, os.fstat, fd)
+         actual = _metadata(before)
+         _require(actual['kind'] == 'file' and _exact(actual, selected), 'late file lstat/open inode or metadata mismatch')
+         txn.must_tick('late regular file initial identity')
+         digest, seen = hashlib.sha256(), 0
+         while True:
+-            txn.must_tick('before late regular file chunk')
+-            try:
+-                block = os.read(fd, min(CHUNK, selected['bytes'] + 1 - seen))
+-            except Exception as primary:
+-                txn.event('native late read', 'EXCEPTION', _why(primary))
+-                if not txn.tick('native late read Exception completion'):
+-                    raise _Crossed('native read primary retained; original deadline crossed') from primary
+-                raise
++            block = txn.native('read ' + path, os.read, fd, min(CHUNK, selected['bytes'] + 1 - seen),
++                               retain=txn.stream)
+             seen += len(block)
+-            txn.streamed_bytes += len(block)  # retain native progress before deadline or hash work
+-            timely = txn.tick('late regular file chunk completion')
+-            if block:
+-                digest.update(block)
+-            if not timely:
+-                raise _Crossed('late regular file chunk returned late')
++            digest.update(block)
+             _require(seen <= selected['bytes'], 'late file grew during read')
+             if not block:
+                 break
+-        after = os.fstat(fd)
++        after = txn.native('fstat ' + path, os.fstat, fd)
+         txn.must_tick('late regular file final identity')
+         _require(seen == selected['bytes'] and _stat_key(before) == _stat_key(after), 'late file identity/size/metadata changed')
+         result = dict(actual)
+@@ -1057,12 +1147,12 @@
+ 
+ def _scan(txn, fd, path, device, depth, entries):
+     _require(depth <= MAX_TREE_DEPTH, 'late tree depth cap')
+-    before = os.fstat(fd)
+-    names = _names(txn, fd, path, MAX_TREE_ENTRIES)
++    before = txn.native('fstat ' + path, os.fstat, fd)
++    names = _names(txn, fd, path, MAX_TREE_ENTRIES, 'P5_LATE_CENSUS_INCOMPLETE')
+     txn.must_tick('late directory name census')
+     for name in names:
+         full = path + '/' + name
+-        info = os.stat(name, dir_fd=fd, follow_symlinks=False)
++        info = _lstat(txn, fd, name, 'lstat ' + full)
+         row = _metadata(info)
+         txn.must_tick('late entry lstat completion')
+         if row['kind'] == 'file':
+@@ -1073,12 +1163,13 @@
+             _require(info.st_dev == device, 'cross-device directory makes late audit incomplete')
+             child = txn.open(name, DIR_FLAGS, parent=fd, display=full)
+             try:
+-                opened = os.fstat(child)
++                opened = txn.native('fstat ' + full, os.fstat, child)
+                 _require(_stat_key(opened) == _stat_key(info), 'directory replaced/changed before descent')
+                 _scan(txn, child, full, device, depth + 1, entries)
+             finally:
+                 txn.close(child, 'P5_LATE_CENSUS_INCOMPLETE')
+-    _require(_stat_key(before) == _stat_key(os.fstat(fd)), 'directory changed across late walk: ' + path)
++    _require(_stat_key(before) == _stat_key(txn.native('fstat ' + path, os.fstat, fd)),
++             'directory changed across late walk: ' + path)
+     txn.must_tick('late directory completion')
+ 
+ 
+@@ -1110,8 +1201,9 @@
+     for root in roots:
+         fd = txn.directory(_parts(root), 'P5_LATE_CENSUS_INCOMPLETE')
+         try:
+-            info = os.fstat(fd)
++            info = txn.native('fstat ' + root, os.fstat, fd)
+             entries[root] = _metadata(info)  # roots/directories are included in distinct-inode totals
++            _require(len(entries) <= MAX_TREE_ENTRIES, 'late tree entry cap (root insertion)')
+             _require(entries[root]['kind'] == 'dir', 'late root must be actual directory')
+             _scan(txn, fd, root, info.st_dev, 0, entries)
+         finally:
+@@ -1126,7 +1218,7 @@
+     for root in roots:
+         fd = txn.directory(_parts(root), 'P5_FREE_BYTES_LOW')
+         try:
+-            native = os.fstatvfs(fd)
++            native = txn.native('fstatvfs ' + root, os.fstatvfs, fd)
+             _require(type(native.f_bavail) is int and native.f_bavail >= 0
+                      and type(native.f_frsize) is int and native.f_frsize > 0, 'native free-byte fields unavailable')
+             result[root] = native.f_bavail * native.f_frsize
+@@ -1254,8 +1346,9 @@
+ def _record(txn, ctx, decision, reduced=False):
+     causes = [cause for cause in CAUSES if cause in txn.fired]
+     evidence = {cause: values[:1] if reduced else values for cause, values in txn.evidence.items()}
+-    return {'format': 'parent-release-disposition-v2', 'module': 'parent_release_v2.py',
+-            'scope_contract_sha256': CONTRACT_SHA256, 'repair_scope_sha256': REPAIR_SCOPE_SHA256,
++    return {'format': 'parent-release-disposition-v3', 'module': 'parent_release_v3.py',
++            'scope_contract_sha256': CONTRACT_SHA256,
++            'repair_scope_sha256s': [REPAIR_SCOPE_SHA256, V3_REPAIR_SCOPE_SHA256],
+             'item': ctx.f.get('item'), 'state': decision, 'causes': causes,
+             'evidence': evidence, 'suppressed_evidence_counts': txn.suppressed, 'parts': _statuses(txn),
+             'recorded_at': ctx.date_text, 'timestamp_source': 'owned bounded /bin/date only',
+@@ -1289,23 +1382,33 @@
+                    for c in text)[:64] or 'item'
+ 
+ 
+-def _write_all(fd, data, retained):
++def _write_all(txn, fd, data, retained, stage):
+     view, at, calls = memoryview(data), 0, 0
++    def progress(count):  # native write progress retained BEFORE the completion check
++        if type(count) is int and 0 < count <= len(view) - at:
++            retained['bytes_written'] = at + count
++            retained['line_complete'] = at + count == len(view)
+     while at < len(view):
+         calls += 1
+         _require(calls <= 65536, 'write call cap')
+-        count = os.write(fd, view[at:])
++        count = txn.native(stage, os.write, fd, view[at:], retain=progress)
+         _require(type(count) is int and 0 < count <= len(view) - at, 'zero/invalid write')
+         at += count
+         retained['bytes_written'] = at
+     retained['line_complete'] = True
+ 
+ 
+-def _pread_exact(fd, count, offset=0):
++def _mark(retained, key):
++    def retain(_value):
++        retained[key] = True  # native completion retained BEFORE its original-deadline check
++    return retain
++
++
++def _pread_exact(txn, fd, count, offset=0):
+     chunks, seen = [], 0
+     _require(0 <= count <= CAP, 'pread cap')
+     while seen < count:
+-        block = os.pread(fd, min(CHUNK, count - seen), offset + seen)
++        block = txn.native('pread', os.pread, fd, min(CHUNK, count - seen), offset + seen)
+         _require(block, 'short pread')
+         chunks.append(block)
+         seen += len(block)
+@@ -1313,26 +1416,27 @@
+ 
+ 
+ def _write_new(txn, dfd, name, data, retained):
++    retained['create_attempted'] = True  # an O_EXCL object may exist even if no descriptor is retained
+     fd = txn.open(name, os.O_RDWR | os.O_CREAT | os.O_EXCL | FILE_FLAGS,
+                   parent=dfd, display=retained['path'])
+     retained['created'] = True
+     closed = False
+     try:
+-        original = os.fstat(fd)
++        original = txn.native('fstat new disposition', os.fstat, fd)
+         retained['identity'] = {'dev': original.st_dev, 'ino': original.st_ino}
+         _require(stat.S_ISREG(original.st_mode) and original.st_nlink == 1 and original.st_ino > 0,
+                  'new disposition regular one-link inode')
+-        _write_all(fd, data, retained)
+-        os.fsync(fd)
++        _write_all(txn, fd, data, retained, 'disposition write')
++        txn.native('fsync new disposition', os.fsync, fd, retain=_mark(retained, 'file_fsync'))
+         retained['file_fsync'] = True
+-        _require(_pread_exact(fd, len(data)) == data, 'created inode readback mismatch')
+-        actual = os.fstat(fd)
++        _require(_pread_exact(txn, fd, len(data)) == data, 'created inode readback mismatch')
++        actual = txn.native('fstat new disposition', os.fstat, fd)
+         _require(actual.st_dev == original.st_dev and actual.st_ino == original.st_ino
+                  and actual.st_nlink == 1 and actual.st_size == len(data), 'created inode changed')
+     finally:
+         closed = txn.close(fd, 'P5_COMMIT_WRITE_FAILED')
+     _require(closed, 'new disposition close unresolved')
+-    os.fsync(dfd)
++    txn.native('fsync commit directory', os.fsync, dfd, retain=_mark(retained, 'directory_fsync'))
+     retained['directory_fsync'] = True
+ 
+ 
+@@ -1352,10 +1456,13 @@
+     try:
+         _require(type(back) is bytes and back == data
+                  and hashlib.sha256(back).hexdigest() == retained['sha256'], 'ACK bytes/hash mismatch')
+-        actual = os.stat(name, dir_fd=dfd, follow_symlinks=False)
++        actual = _lstat(txn, dfd, name, 'ACK original-inode lstat', after_ack=True)
+         identity = retained['identity']
+         _require(stat.S_ISREG(actual.st_mode) and actual.st_nlink == 1 and actual.st_size == len(data)
+                  and actual.st_dev == identity['dev'] and actual.st_ino == identity['ino'], 'ACK not original created inode')
++    except _Crossed:
++        result['ack'] = 'ACK_UNPROVED_DEADLINE'
++        return False
+     except Exception as exc:
+         txn.fire('P5_ACK_FAILED', _why(exc))
+         result['ack'] = 'ACK_FAILED'
+@@ -1373,10 +1480,10 @@
+         return False
+     _mutation_parts(ctx.commit_dir)
+     digest = hashlib.sha256(data).hexdigest()
+-    name = 'prt-v2-' + _slug(ctx.f.get('item')) + '-' + digest + '.json'
++    name = 'prt-v3-' + _slug(ctx.f.get('item')) + '-' + digest + '.json'
+     retained = {'path': ctx.commit_dir + '/' + name, 'sha256': digest, 'bytes': len(data),
+-                'created': False, 'bytes_written': 0, 'line_complete': False, 'identity': None,
+-                'file_fsync': False, 'directory_fsync': False}
++                'create_attempted': False, 'created': False, 'bytes_written': 0, 'line_complete': False,
++                'identity': None, 'file_fsync': False, 'directory_fsync': False}
+     result['disposition'] = retained
+     dfd = None
+     try:
+@@ -1387,10 +1494,14 @@
+             return False
+         return _ack(txn, dfd, name, data, retained, result)
+     except _Crossed:
++        if retained['create_attempted']:
++            result['uncertainty'] = 'deadline crossed in exclusive commit; unacknowledged object may exist; no ACK/registry'
+         return False
+     except Exception as exc:
+         txn.fire('P5_COMMIT_WRITE_FAILED', _why(exc))
+         result['ack'] = 'ACK_NOT_ATTEMPTED'
++        if retained['create_attempted']:
++            result['uncertainty'] = 'exclusive commit failed after O_EXCL attempt; partial object may exist; no ACK/registry'
+         return False
+     finally:
+         if dfd is not None:
+@@ -1399,12 +1510,12 @@
+ 
+ def _registry_tail(txn, ctx, fd):
+     observed, allocation = ctx.registry, ctx.f['allocation']
+-    info = os.fstat(fd)
++    info = txn.native('fstat registry', os.fstat, fd)
+     _require(stat.S_ISREG(info.st_mode) and info.st_nlink == 1 and info.st_ino > 0
+              and observed['bytes'] <= info.st_size <= CAP, 'registry identity/size/links')
+-    prefix = _pread_exact(fd, observed['bytes'])
++    prefix = _pread_exact(txn, fd, observed['bytes'])
+     _require(hashlib.sha256(prefix).hexdigest() == observed['sha256'], 'observed registry prefix changed')
+-    suffix = _pread_exact(fd, info.st_size - observed['bytes'], observed['bytes'])
++    suffix = _pread_exact(txn, fd, info.st_size - observed['bytes'], observed['bytes'])
+     _require(not suffix or suffix.endswith(b'\n'), 'new registry suffix torn')
+     for line in suffix[:-1].split(b'\n') if suffix else []:
+         row = _json(line)
+@@ -1419,10 +1530,10 @@
+     if txn.crossed or ctx.registry is None or not _need(txn, ctx, 'allocation', 'item'):
+         retained['detail'] = 'no safe original deadline/selected registry observation/allocation binding'
+         return
+-    allocation, fd, dfd = ctx.f['allocation'], None, None
++    allocation, owned = ctx.f['allocation'], []
+     _mutation_parts(allocation['registry_path'])
+     state = 'RELEASED' if releasable else 'HELD'
+-    row = {'format': 'parent-release-registry-v2', 'owner': 'parent_release_v2.py', 'item': ctx.f['item'],
++    row = {'format': 'parent-release-registry-v3', 'owner': 'parent_release_v3.py', 'item': ctx.f['item'],
+            'state': state, 'decision_in_disposition': result['decision'],
+            'disposition': result['disposition']['path'], 'disposition_sha256': result['disposition']['sha256'],
+            'allocation_line_sha256': allocation['line_sha256'], 'causes': [c for c in CAUSES if c in txn.fired],
+@@ -1431,40 +1542,39 @@
+            'release_effect': RELEASE_EFFECT}
+     line = (json.dumps(row, sort_keys=True, ensure_ascii=True, allow_nan=False) + '\n').encode('ascii')
+     retained.update({'state': state, 'line_sha256': hashlib.sha256(line[:-1]).hexdigest(), 'path': allocation['registry_path']})
+-    closed = True
+     try:
+         _require(len(line) <= 65536, 'registry line cap')
+         parts = _mutation_parts(allocation['registry_path'])
+-        dfd = txn.directory(parts[:-1], 'P5_REGISTRY_APPEND_FAILED')
+-        fd = txn.open(parts[-1], os.O_RDWR | os.O_APPEND | FILE_FLAGS, parent=dfd, display=allocation['registry_path'])
++        owned.append(txn.directory(parts[:-1], 'P5_REGISTRY_APPEND_FAILED'))
++        fd = txn.open(parts[-1], os.O_RDWR | os.O_APPEND | FILE_FLAGS, parent=owned[0], display=allocation['registry_path'])
++        owned.append(fd)
+         before = _registry_tail(txn, ctx, fd)
+         txn.must_tick('registry pre-append verification')
+-        _write_all(fd, line, retained)
+-        os.fsync(fd)
++        _write_all(txn, fd, line, retained, 'registry append write')
++        txn.native('fsync registry', os.fsync, fd, retain=_mark(retained, 'fsync'))
+         retained['fsync'] = True
+-        _require(os.fstat(fd).st_size == before + len(line), 'registry concurrent growth violates single-writer premise')
++        _require(txn.native('fstat registry', os.fstat, fd).st_size == before + len(line),
++                 'registry concurrent growth violates single-writer premise')
+         retained['status'] = 'APPENDED'
+     except _Crossed:
+-        retained['status'] = 'NOT_APPENDED_DEADLINE'
++        retained['status'] = 'DEADLINE_CROSSED'
+     except Exception as exc:
+         txn.fire('P5_REGISTRY_APPEND_FAILED', _why(exc))
+         retained['status'], retained['detail'] = 'FAILED', _why(exc)
+     finally:
+-        if fd is not None:
+-            closed = txn.close(fd, 'P5_REGISTRY_APPEND_FAILED') and closed
+-        if dfd is not None:
+-            closed = txn.close(dfd, 'P5_REGISTRY_APPEND_FAILED') and closed
+-        retained['closed'] = closed
++        retained['closed'] = False
++        retained['closed'] = txn.release(owned, 'P5_REGISTRY_APPEND_FAILED')  # every owned fd once, even on BaseException
+     if not txn.crossed:
+         txn.tick('registry append/fsync/close completion', after_ack=True)
+ 
+ 
+ def _new_result():
+-    return {'format': 'parent-release-result-v2', 'state': 'HELD', 'decision': 'HELD',
++    return {'format': 'parent-release-result-v3', 'state': 'HELD', 'decision': 'HELD',
+             'release_effective': False, 'ack': 'ACK_NOT_ATTEMPTED', 'disposition': None,
+             'registry': {'status': 'NOT_ATTEMPTED', 'bytes_written': 0, 'line_complete': False,
+                          'fsync': False, 'closed': False, 'state': None, 'line_sha256': None},
+             'uncertainty': None, 'runtime_authority': False, 'scientific_authority': False,
++            'final_deadline_check': 'NOT_PERFORMED',
+             'release_effect': RELEASE_EFFECT, 'identity_boundary': IDENTITY_NOTE}
+ 
+ 
+@@ -1492,14 +1602,15 @@
+     effective = (result['decision'] == 'RELEASED' and not txn.fired and not txn.crossed
+                  and result['ack'] == 'ACK_OK' and result['registry']['status'] == 'APPENDED'
+                  and result['registry']['state'] == 'RELEASED' and result['registry']['fsync'] is True
+-                 and result['registry']['closed'] is True)
++                 and result['registry']['closed'] is True and not txn.live and not txn.unresolved_total)
+     result.update({'state': 'RELEASED' if effective else 'HELD', 'release_effective': effective,
+                    'causes': [cause for cause in CAUSES if cause in txn.fired], 'evidence': txn.evidence,
+                    'suppressed_evidence_counts': txn.suppressed, 'parts': _statuses(txn),
+                    'original_deadline_crossed': txn.crossed,
+                    'callback_count': txn.callback_count, 'callback_events': txn.callback_log,
+                    'callback_event_sha256': txn.callback_digest.hexdigest(),
+-                   'fds': {'opened': txn.opened, 'closed': txn.closed, 'live': len(txn.live), 'unresolved': txn.unresolved}})
++                   'resources': {'acquired': txn.opened, 'closed': txn.closed, 'live': len(txn.live),
++                                 'unresolved_total': txn.unresolved_total, 'unresolved': txn.unresolved}})
+     if result['registry'].get('state') == 'RELEASED' and not effective:
+         result['uncertainty'] = ('RELEASED registry bytes may survive but caller did NOT observe completed '
+                                  'success; keep reservation HELD and preserve every partial object.')
+@@ -1537,11 +1648,14 @@
+ def decide_and_commit(spec, read_bytes, census, owned_date, commit_dir, deadline_check):
+     """Evaluate five independent parts, one new exclusive disposition/ACK, one append-only line.
+ 
+-    Only caller-observed returned state RELEASED is effective, conditional on the authentic
+-    parent authority/immutable freeze/full identity-union and caller-integration prerequisites.
+-    Any other outcome/exception holds the allocation. BaseException in evaluation attempts HELD
+-    only while the ORIGINAL deadline/reader/date remain safe; commit BaseException propagates.
+-    No new clock, process or signal. No v1 compatibility. Full schemas/controls in v2 design notes.
++    Only caller-observed returned state RELEASED with final_deadline_check PASSED is effective,
++    conditional on the authentic parent authority/immutable freeze/full identity-union and
++    caller-integration prerequisites. Any other outcome/exception holds the allocation.
++    BaseException in evaluation attempts HELD only while the ORIGINAL deadline/reader/date
++    remain safe; a commit BaseException propagates after one-close cleanup with a HELD report.
++    The COMPLETE assembled result receives a final ORIGINAL-deadline check before return.
++    No new clock, process or signal. No v1/v2 compatibility. Schemas/controls: v2 notes as
++    amended by v3 design notes.
+     """
+     txn, ctx, result, pending = _Txn(read_bytes, census, owned_date, deadline_check), _Ctx(), _new_result(), None
+     try:
+@@ -1566,10 +1680,24 @@
+     except Exception as exc:
+         txn.fire('P5_INTERNAL_ERROR', _why(exc))
+     except BaseException as exc:
+-        _chain(exc, pending)
++        txn.fire('P5_BASE_EXCEPTION', 'commit phase: ' + _why(exc))
++        if pending is not None and exc is not pending and exc.__context__ is None:
++            exc.__context__ = pending
++        _attach_and_raise(exc, _final(txn, ctx, result))  # in-memory HELD report only; no further I/O
+     result = _final(txn, ctx, result)
+     if pending is not None:
+         _attach_and_raise(pending, result)
++    already = txn.crossed
++    try:
++        timely = txn.tick('final assembled result completion')  # after COMPLETE assembly; no I/O follows
++    except BaseException as exc:
++        txn.fire('P5_BASE_EXCEPTION', 'final result check: ' + _why(exc))
++        result = _final(txn, ctx, result)
++        result['final_deadline_check'] = 'BASE_EXCEPTION'
++        _attach_and_raise(exc, result)
++    if not timely:
++        result = _final(txn, ctx, result)  # in-memory HELD only
++    result['final_deadline_check'] = 'PASSED' if timely else 'NOT_PERFORMED_ALREADY_CROSSED' if already else 'CROSSED'
+     return result
+ 
+ 
+@@ -1579,6 +1707,7 @@
+     Separately admit. Parent serializes/pins output before launch. Whole RUN root mandatory;
+     all applicable lane-root coverage remains parent-authenticated. No v1 schema accepted.
+     No partial baseline or unavailable accounting returns as success. No generated timestamp.
++    Every native operation is original-deadline checked; root insertion counts toward the cap.
+     """
+     selected = _roots(roots)
+     txn = _Txn(None, None, None, deadline_check)
+@@ -1586,11 +1715,13 @@
+     try:
+         txn.must_tick('baseline start')
+         snapshot = _walk(txn, selected)
+-        _require(not txn.fired and not txn.unresolved and not txn.live, 'incomplete baseline resources')
++        _require(not txn.fired and not txn.unresolved_total and not txn.live, 'incomplete baseline resources')
+         result = {'format': 'parent-release-late-baseline-v2', 'roots': selected,
+                   'entries': snapshot['entries'], 'accounting': snapshot['accounting']}
+         _require(len(_canonical(result)) <= CAP, 'baseline exceeds16MiB cap')
+         txn.must_tick('baseline-v2 assembly')
+         return result
+-    except _Crossed as exc:
+-        raise ReleaseRefusal('original deadline crossed; no baseline returned') from exc
++    except Exception as exc:
++        if txn.crossed:
++            raise ReleaseRefusal('original deadline crossed; no baseline returned') from exc
++        raise

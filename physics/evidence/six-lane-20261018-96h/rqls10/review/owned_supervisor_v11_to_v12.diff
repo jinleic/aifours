@@ -1,0 +1,469 @@
+--- code/owned_supervisor_v11.py
++++ code/owned_supervisor_v12.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""owned_supervisor_v11: owned bounded guard, stdlib + read-only macOS libproc.
++"""owned_supervisor_v12: minimal integrated successor of fixed-core v11; owned bounded guard.
+ 
+ BINDING correction: RUN/review/rqls10-supervisor-v10-scope-parent-correction-v1.json
+ fabe57ab4aeacc416f22bdf334c2cc3bbd5fda1d0e777d7279187ae0564155a2. V10's scope weakening is withdrawn,
+@@ -52,11 +52,20 @@
+ 
+ Exit:0 acknowledged SETTLED;10 acknowledged NOT_LAUNCHED;11 acknowledged UNSETTLED;12 publication refused/receipt
+ failed;13 settlement/sync/finalization failed;14 ACK refused/overran;2 unusable config/anchors. NOEXEC until separately
+-accepted source/package and an exact item GO. Usage: owned_supervisor_v11.py CONFIG.json
++accepted source/package and an exact item GO. Usage: owned_supervisor_v12.py CONFIG.json
++V12 preserves v11 helper/clearance/identity/root machinery and fabe57ab. Repairs all nine v11 review findings plus
++three package integration blockers: enforce main runtime before/after every reap (late observation cannot erase it),
++restore bounded spawn-to-GO age, fresh ACK census, actual conservative /bin/date stability age, authorization last
++after preparation I/O, post-write pending-cancel/expiry checks, aggregate OUTPUT including exact publication bytes,
++retained unproved/coverage/resource-observation history, original fsynced staged inode through link, proved injected
++overrun, nonempty fast-exit samples, complete retry extrema provenance, and no end-helper attempt without authority.
++History caps fail closed, never silently discard evidence. Every commit checks stability age against the configured
++maximum; a run outliving its frozen stability window may refuse ACK rather than weakening that policy.
+ """
+ import contextlib
+ import ctypes
+ import errno
++import datetime
+ import hashlib
+ import json
+ import math
+@@ -68,7 +77,7 @@
+ import threading
+ import time
+ 
+-VERSION = "owned_supervisor_v11"
++VERSION = "owned_supervisor_v12"
+ CANCEL_SIGNALS = {signal.SIGTERM, signal.SIGINT, signal.SIGHUP}
+ CANCEL = {"signal": None, "mono": None}
+ POLICY = {"disk": 10737418240, "free": 12000000000, "launch_free": 12200000000,
+@@ -94,7 +103,8 @@
+ HELPER = {"max_calls": int, "call_budget_s": float, "term_grace_s": float}
+ HELPER_FAULTS = {"date_helper_fails", "helper_observation_overrun", "helper_group_unproved", "helper_eof_unproved"}
+ ADMISSION = {"go_path": str, "stability_receipt_path": str, "reservation_bytes": int,
+-             "outstanding_reservations_bytes": int, "lane_outstanding_reservations_bytes": int}
++             "outstanding_reservations_bytes": int, "lane_outstanding_reservations_bytes": int,
++             "stability_max_age_s": float}
+ BOUND_KEYS = ("output_roots", "argv", "max_wall_s", "cpu_slots", "reservation_bytes",
+               "outstanding_reservations_bytes", "lane_outstanding_reservations_bytes")
+ MY_PID, MY_UID = os.getpid(), os.getuid()
+@@ -345,6 +355,15 @@
+ 
+ def parse_json(raw):
+     return json.loads(raw.decode(), object_pairs_hook=pairs, parse_float=json_float, parse_constant=json_constant)
++
++
++def parse_date_epoch(text):
++    if not isinstance(text, str):
++        raise GuardError("STABILITY_TIMESTAMP_MISSING")
++    parsed = datetime.datetime.strptime(text, "%Y-%m-%dT%H:%M:%S%z")
++    if parsed.strftime("%Y-%m-%dT%H:%M:%S%z") != text:
++        raise GuardError("STABILITY_TIMESTAMP_NONCANONICAL")
++    return parsed.timestamp()
+ 
+ 
+ def norm_abs(p):
+@@ -466,16 +485,16 @@
+     a, _ = read_file(name, len(data), dl, fd)
+     if a["sha256"] != hashlib.sha256(data).hexdigest() or tuple(a["inode"]) != ident:
+         raise GuardError("PUBLICATION_READBACK_MISMATCH")
+-    return a["sha256"]
++    return a["sha256"], ident
+ 
+ 
+ def linked_publication(fd, name, data, dl):
+-    h = publish(fd, name + ".staged", data, dl)
++    h, published_inode = publish(fd, name + ".staged", data, dl)
+     os.link(name + ".staged", name, src_dir_fd=fd, dst_dir_fd=fd)
+     dl.check("after settlement link")
+     a, _ = read_file(name, len(data), dl, fd)
+     s = os.stat(name + ".staged", dir_fd=fd, follow_symlinks=False)
+-    if a["sha256"] != h or a["inode"] != [s.st_dev, s.st_ino] or a["nlink"] != 2:
++    if a["sha256"] != h or tuple(a["inode"]) != published_inode or (s.st_dev, s.st_ino) != published_inode or a["nlink"] != 2:
+         raise GuardError("SETTLEMENT_LINK_MISMATCH")
+     dl.check("after settlement link readback")
+     return h
+@@ -507,6 +526,8 @@
+     hb = cfg["helper_budget"]
+     if not (1 <= hb["max_calls"] <= 32 and 0.001 <= hb["call_budget_s"] <= 10 and 0.01 <= hb["term_grace_s"] <= 10):
+         raise ValueError("helper budget policy")
++    if not 0.01 <= cfg["admission"]["stability_max_age_s"] <= 300:
++        raise ValueError("stability freshness policy")
+     limits = {"max_chunk_seconds": (1, POLICY["chunk"]), "max_wall_s": (0.01, cfg["max_chunk_seconds"]),
+               "settle_s": (0.01, 600), "sample_s": (0.2, 10), "lane_walk_s": (1, 600),
+               "owned_compute_settled_by_epoch": (1, 4e9), "rss_trip_bytes": (1, POLICY["rss"]),
+@@ -598,6 +619,8 @@
+             dl.check("before protected spawn")
+             if role == "helper" and (s.failures or s.in_helper is False):
+                 raise GuardError("HELPER_LAUNCH_REFUSED")
++            s.authorization_io(dl)  # LAST preparation I/O before the protected fresh-clock spawn commit.
++            dl.check("after protected spawn authorization")
+             record["launch_commit"] = s.time_commit("HELPER" if role == "helper" else "LAUNCH", required_s)
+             record["mono_spawn"], record["epoch_spawn"] = time.monotonic(), time.time()
+             if role != "helper":
+@@ -665,6 +688,9 @@
+         self.helper_calls = 0
+         self.phase = "ADMISSION"
+         self.in_helper = False
++        self.clock_observation = None
++        self.unproved_history, self.coverage_history, self.census_history = {}, [], []
++        self.runtime_observations = []
+ 
+     def deadline(self, seconds, phase=None):
+         cut = min([self.fit_mono] + [x[1] for x in self.cutoffs()])
+@@ -685,9 +711,22 @@
+             self.trips[key] = {"trip": key, "detail": detail, "mono": time.monotonic(), "epoch": time.time()}
+         self.request_stop(key)
+ 
++    def enforce_runtime(self, where):
++        if self.pid is None or self.mono_spawn is None:
++            return
++        now = time.monotonic()
++        cutoff = self.mono_spawn + self.cfg["max_wall_s"]
++        if now >= cutoff and "DEADLINE" not in self.trips:
++            self.runtime_observations.append({"where": where, "mono": now, "mono_deadline": cutoff})
++            late = now > cutoff + self.cfg["sample_s"] + 0.05
++            self.trip("DEADLINE")
++            if late:
++                self.fail("MAIN_DEADLINE_ENFORCEMENT_LATE", {"mono_observed": now, "mono_deadline": cutoff})
++
+     def reap(self):
+         if self.pid is None or self.rc is not None or self.lost_wait:
+             return
++        self.enforce_runtime("before_waitpid")
+         try:
+             p, st = os.waitpid(self.pid, os.WNOHANG)
+         except ChildProcessError:
+@@ -695,7 +734,9 @@
+             self.fail("WAIT_STATUS_LOST")
+             return
+         if p:
++            # Publish the reaped state BEFORE any stop path can consider signalling this PID.
+             self.rc, self.exit_mono, self.exit_epoch = os.waitstatus_to_exitcode(st), time.monotonic(), time.time()
++        self.enforce_runtime("after_waitpid_including_success")
+ 
+     def request_stop(self, reason):
+         if self.stop is not None:
+@@ -795,8 +836,28 @@
+                     missing.append([p["pid"], "parent_edge", repr(e)])
+         unproved = {p["uniqueid"] for p in procs.values()
+                     if self.baseline is not None and p["uniqueid"] not in self.baseline and p["uniqueid"] not in live_owned}
++        stamp = time.monotonic()
++        for p in procs.values():
++            if p["uniqueid"] in unproved:
++                entry = self.unproved_history.get(p["uniqueid"])
++                if entry is None:
++                    if len(self.unproved_history) >= 8192:
++                        self.fail("UNPROVED_HISTORY_CAP")
++                        raise GuardError("UNPROVED_HISTORY_CAP")
++                    self.unproved_history[p["uniqueid"]] = {"first_identity": dict(p), "last_identity": dict(p),
++                                                            "mono_first_seen": stamp, "mono_last_seen": stamp}
++                else:
++                    entry.update(last_identity=dict(p), mono_last_seen=stamp)
++        self.retain_coverage(missing, stamp)
+         dl.check("after identity/ownership scan")
+         return procs, missing, live_owned, unproved
++
++    def retain_coverage(self, missing, stamp):
++        if missing:
++            if len(self.coverage_history) + len(missing) > 16384:
++                self.fail("COVERAGE_HISTORY_CAP")
++                raise GuardError("COVERAGE_HISTORY_CAP")
++            self.coverage_history.extend({"mono": stamp, "observation": list(x)} for x in missing)
+ 
+     def establish_baseline(self):
+         dl = Deadline(20, self.fit_mono)
+@@ -813,6 +874,7 @@
+ 
+     def census(self, dl):
+         procs, missing, live_owned, unproved = self.scan_identities(dl)
++        identity_missing = len(missing)
+         lane, cpu = {}, {}
+         for pid, p in procs.items():
+             dl.check("census accounting")
+@@ -850,10 +912,11 @@
+                 lane[pid] = {"rss": rss, "busy": busy}
+             except OSError as e:
+                 missing.append([pid, "real_or_effective_uid_measurement", repr(e)])
++        self.retain_coverage(missing[identity_missing:], time.monotonic())
+         self.prev_cpu = cpu
+         dl.check("after census")
+         owned = [p for p in procs.values() if p["uniqueid"] in live_owned]
+-        return {"complete": not missing, "incomplete_n": len(missing), "incomplete": missing[:30], "pids": len(procs),
++        result = {"complete": not missing, "incomplete_n": len(missing), "incomplete": missing[:30], "pids": len(procs),
+                 "owned_live": [dict(p) for p in sorted(owned, key=lambda x: x["pid"])],
+                 "unproved_live": [dict(p) for p in sorted(procs.values(), key=lambda x: x["pid"]) if p["uniqueid"] in unproved],
+                 "group_live": sorted(p["pid"] for p in procs.values() if self.group is not None and p["pgid"] == self.group),
+@@ -861,6 +924,15 @@
+                 "lane_pids": sorted(lane), "lane_rss": sum(v["rss"] for v in lane.values()),
+                 "lane_busy_pids": sorted(pid for pid, v in lane.items() if v["busy"]),
+                 "lane_busy": sum(1 for v in lane.values() if v["busy"]), "mono_complete": time.monotonic()}
++        if len(self.census_history) >= 4096:
++            self.fail("CENSUS_HISTORY_CAP")
++            raise GuardError("CENSUS_HISTORY_CAP")
++        self.census_history.append({"phase": self.phase, "inside_helper": self.in_helper,
++                                    "mono_complete": result["mono_complete"], "complete": result["complete"],
++                                    "incomplete_n": result["incomplete_n"], "lane_rss": result["lane_rss"],
++                                    "lane_busy": result["lane_busy"], "lane_busy_pids": result["lane_busy_pids"],
++                                    "owned_live": result["owned_live"], "unproved_live": result["unproved_live"]})
++        return result
+ 
+     def full_census(self, dl):
+         c = None
+@@ -1006,6 +1078,9 @@
+             if self.failures or pending_cancel() or self.in_helper:
+                 entry["outcome"] = "REFUSED_FAILURE_CANCEL_OR_REENTRANCY"
+                 return None
++            if self.authorization is None:
++                entry["outcome"] = "REFUSED_NO_AUTHORIZATION"
++                return None
+             if self.helper_calls >= hb["max_calls"]:
+                 self.fail("HELPER_CALL_BUDGET")
+                 entry["outcome"] = "CALL_BUDGET_REFUSED"
+@@ -1034,7 +1109,11 @@
+                      mono_call_start=entry["mono_start"], mono_call_deadline=call.end, date=None)
+             entry["pid"] = h["pid"]
+             if self.cfg["fault_injection"].get("helper_observation_overrun"):
+-                time.sleep(min(0.05, hb["call_budget_s"] + 0.01))
++                h["mono_injection_start"] = time.monotonic()
++                time.sleep(max(0.0, call.end - time.monotonic()) + 0.01)
++                h["mono_injection_end"] = time.monotonic()
++                if h["mono_injection_end"] <= call.end:
++                    raise GuardError("OVERRUN_STIMULUS_NOT_ESTABLISHED")
+             if h["spawn_error"] is not None:
+                 raise GuardError(h["spawn_error"])
+             while True:
+@@ -1051,6 +1130,9 @@
+             if h["rc"] != 0 or not shape or not digits.isdigit() or text[13:14] != ":" or text[16:17] != ":":
+                 raise GuardError("HELPER_BAD_DATE_OUTPUT")
+             h["date"] = text
++            self.clock_observation = {"date": text, "mono_before_read": entry["mono_start"],
++                                      "mono_after_read": time.monotonic(),
++                                      "epoch_date_floor": parse_date_epoch(text)}
+             entry["outcome"] = "OK"
+             return text
+         except BaseException as e:
+@@ -1088,7 +1170,7 @@
+                 "initial_identity_valid", "stdout_closed", "eof_proved", "group_clear", "descendants_clear",
+                 "coverage_complete", "clock_failed", "date", "signal", "proof", "spawn_error", "launch_commit",
+                 "mono_call_start", "mono_call_deadline", "mono_cleanup_start", "mono_cleanup_deadline",
+-                "mono_proof_complete", "mono_reaped")
++                "mono_proof_complete", "mono_reaped", "mono_injection_start", "mono_injection_end")
+         return [{**{k: h.get(k) for k in keys}, "capture_hex": h.get("capture", b"").hex()}
+                 for h in self.helpers if h.get("pid") is not None]
+ 
+@@ -1216,15 +1298,31 @@
+             raise GuardError("GO_FRESHNESS_FIELDS_INVALID")
+         if go["stability_receipt_sha256"] != sa["sha256"] or not isinstance(sr, dict) or sr.get("verdict") != "PASS":
+             raise GuardError("STABILITY_DIGEST_OR_VERDICT_MISMATCH")
+-        out = {"go_sha256": ga["sha256"], "stability_receipt_sha256": sa["sha256"], "not_after_epoch": go["not_after_epoch"]}
++        stability_epoch = parse_date_epoch(sr.get("now_date"))
++        out = {"go_sha256": ga["sha256"], "stability_receipt_sha256": sa["sha256"],
++               "not_after_epoch": go["not_after_epoch"], "stability_epoch": stability_epoch,
++               "stability_date": sr["now_date"]}
+         if self.authorization is not None and self.authorization != out:
+             raise GuardError("AUTHORIZATION_CHANGED")
+         self.authorization = out
+         dl.check("after authorization I/O")
+         return out
+ 
++    def stability_age(self, mono):
++        if self.authorization is None or self.clock_observation is None:
++            raise GuardError("STABILITY_AGE_UNVERIFIABLE")
++        obs = self.clock_observation
++        # Include whole-second resolution and elapsed time from BEFORE the actual reading/cleanup.
++        base = obs["epoch_date_floor"] - self.authorization["stability_epoch"]
++        if base < 0:
++            raise GuardError("STABILITY_TIMESTAMP_IN_FUTURE")
++        upper = base + 1.0 + max(0.0, mono - obs["mono_before_read"])
++        if upper > self.cfg["admission"]["stability_max_age_s"]:
++            raise GuardError("STABILITY_STALE")
++        return upper
++
+     def time_commit(self, phase, required_s=0):
+-        """called with cancellation signals masked, AFTER all I/O. No timestamp formatting or helper."""
++        """Fresh raw clocks after LAST binding I/O, while cancellation is protected."""
+         epoch, mono = time.time(), time.monotonic()
+         if pending_cancel():
+             raise GuardError("CANCEL_AT_" + phase)
+@@ -1232,7 +1330,20 @@
+             raise GuardError("GO_EXPIRED_AT_" + phase)
+         if epoch + required_s > self.fit_epoch or mono + required_s > self.fit_mono:
+             raise GuardError("FIT_FAILED_AT_" + phase)
+-        return {"phase": phase, "mono": mono, "epoch": epoch, "required_s": required_s}
++        age = None if phase == "HELPER" and self.clock_observation is None else self.stability_age(mono)
++        return {"phase": phase, "mono": mono, "epoch": epoch, "required_s": required_s,
++                "stability_age_upper_s": age}
++
++    def completion_check(self, phase, dl):
++        dl.check("after " + phase + " completion")
++        if set(signal.sigpending()) & CANCEL_SIGNALS or (CANCEL["signal"] is not None and not self.cancel_handled):
++            raise GuardError("CANCEL_DURING_" + phase + "_COMPLETION")
++        epoch, mono = time.time(), time.monotonic()
++        if self.authorization is None or epoch > self.authorization["not_after_epoch"]:
++            raise GuardError("AUTHORIZATION_EXPIRED_DURING_" + phase)
++        if epoch > self.fit_epoch or mono > self.fit_mono:
++            raise GuardError("FIT_EXPIRED_DURING_" + phase)
++        self.stability_age(mono)
+ 
+     def sample(self, obj):
+         if self.samples_dead or self.samples_fd is None:
+@@ -1407,23 +1518,27 @@
+                   "authorization": s.authorization, "launch_commit": s.rec["launch_commit"],
+                   "cpu_slots": s.cfg["cpu_slots"], "reservation_bytes": s.cfg["admission"]["reservation_bytes"]}
+         fd, name = s.location(s.cfg["launch_record"])
+-        s.rec["launch_record_sha256"] = publish(fd, name, bytes_json(launch), s.deadline(IO_S))
+-        st = os.stat(name, dir_fd=fd, follow_symlinks=False)
+-        s.created[s.cfg["launch_record"]] = (st.st_dev, st.st_ino)
++        launch_sha, launch_inode = publish(fd, name, bytes_json(launch), s.deadline(IO_S))
++        s.rec["launch_record_sha256"] = launch_sha
++        s.created[s.cfg["launch_record"]] = launch_inode
+         gd = s.deadline(IO_S)
+         c = s.full_census(gd)
+         s.rec["pre_go_census"] = c
+         live = [p["uniqueid"] for p in c["owned_live"]]
+         if not c["complete"] or c["unproved_live"] or live != [s.ident["uniqueid"]] or not s.limits(c, True):
+             raise GuardError("GO_CENSUS_INCOMPLETE_OWNERSHIP_OR_LIMITS")
+-        s.authorization_io(gd)
+         a = s.accounting(gd)
+         if a["free"] < s.cfg["launch_free_min_bytes"] + s.cfg["admission"]["reservation_bytes"] or not s.reservation_fits(a):
+             raise GuardError("GO_RESOURCES_FAILED")
+         gd.check("after GO preparation")
+         with protected():
++            s.authorization_io(gd)  # Last I/O, after census/accounting, before commit clocks.
++            gd.check("after GO authorization read")
+             s.resource_age(c)
+             remaining = max(0, s.mono_spawn + s.cfg["max_wall_s"] - time.monotonic())
++            spawn_age = time.monotonic() - s.mono_spawn
++            if spawn_age > min(60.0, s.cfg["max_wall_s"] / 2.0):
++                raise GuardError("SPAWN_TO_GO_AGE_EXCEEDED")
+             if remaining <= 0 or s.stop is not None or s.failures:
+                 raise GuardError("GO_STOP_OR_DEADLINE")
+             s.rec["go_commit"] = s.time_commit("GO", remaining + s.cfg["settle_s"] + FINALIZE_S)
+@@ -1432,8 +1547,9 @@
+             s.rec["go_written_mono"] = time.monotonic()
+             os.close(child["stdin_fd"])
+             child["stdin_fd"] = None
+-            gd.check("after GO write/close")
+-            s.rec["go_delivered"] = True
++            s.rec["go_delivered"] = True  # Bytes were delivered; a later completion failure is not hidden.
++            s.completion_check("GO", gd)
++            s.resource_age(c)
+     except BaseException as e:
+         s.fail("POST_SPAWN_FAILURE", repr(e))
+     finally:
+@@ -1457,8 +1573,6 @@
+             if CANCEL["signal"] is not None:
+                 s.cancel_handled = True
+                 s.trip("SUPERVISOR_CANCEL", CANCEL["signal"])
+-            if s.clearance():
+-                return
+             for name, cut in s.cutoffs():
+                 if time.monotonic() > cut:
+                     s.fail(name)
+@@ -1479,8 +1593,11 @@
+                       "resources": a, "streams": {k: dict(v) for k, v in s.streams.items()},
+                       "stop": None if s.stop is None else s.stop["reason"], "failure_codes": sorted(s.failure_keys),
+                       "trips": list(s.trips)})
++            if s.clearance():
++                return
+         except BaseException as e:
+             s.fail("OBSERVATION_FAILED", repr(e))
++            s.enforce_runtime("observation_exception_after_native_return")
+         for name, cut in s.cutoffs():
+             if time.monotonic() > cut:
+                 s.fail(name)
+@@ -1597,10 +1714,14 @@
+     unresolved = any(not h["settled"] for h in s.helpers) or not c["complete"] or bool(c["owned_live"] or c["unproved_live"])
+     state = "UNSETTLED" if unresolved else "NOT_LAUNCHED" if s.pid is None else "UNSETTLED" if s.failures else "SETTLED"
+     code = {"SETTLED": 0, "NOT_LAUNCHED": 10, "UNSETTLED": 11}[state]
++    frozen_failure_codes, frozen_trip_codes = tuple(sorted(s.failure_keys)), tuple(s.trips)
+     s.rec.update(settlement=state, child_pid=s.pid, child_identity=s.ident, child_returncode=s.rc,
+                  child_exit_mono=s.exit_mono, child_exit_epoch=s.exit_epoch, wait_status_lost=s.lost_wait,
+                  failures=s.failures, trips=list(s.trips.values()), stop_request=s.stop, signal=s.signal,
+                  owned_identities=list(s.owned.values()), contract_violations=s.violations, clear=s.clear,
++                 unproved_history=list(s.unproved_history.values()), coverage_history=list(s.coverage_history),
++                 census_observations=list(s.census_history), runtime_observations=s.runtime_observations,
++                 clock_observation=s.clock_observation,
+                  helper_calls=s.helper_calls, helper_log=s.helper_log, helpers=s.helper_reports(),
+                  streams=s.streams, loop_status=s.loop_status, samples_written=s.sample_count,
+                  samples_bytes=s.sample_bytes, maxima=s.maxima, min_free=s.min_free, artifacts=arts,
+@@ -1617,14 +1738,15 @@
+     payload = len(rb) + len(sb)
+     b = s.accounting(Deadline(IO_S, phase.end))
+     adm = s.cfg["admission"]
+-    fits = payload <= PUBLICATION_CAP and s.reservation_fits(b, payload)
++    fits = payload <= PUBLICATION_CAP and s.reservation_fits(b, payload) and \
++        b["charged_bytes"] + payload <= s.cfg["output_trip_bytes"]
+     if not fits:
+         return unsuccessful(12, "PUBLICATION_REFUSED", {"config_sha256": s.config_sha, "payload_bytes": payload,
+                                                          "resources": b, "reservation_bytes": adm["reservation_bytes"]})
+     pub = Deadline(60, phase.end)
+     fd, name = s.location(s.cfg["receipt"])
+     try:
+-        got = publish(fd, name, rb, pub)
++        got, receipt_inode = publish(fd, name, rb, pub)
+         if got != rsha:
+             raise GuardError("RECEIPT_DIGEST_MISMATCH")
+     except OSError as e:
+@@ -1640,18 +1762,28 @@
+     post_publish = time.monotonic()
+     # I/O FIRST, fresh raw-clock/cancel checks LAST at the protected acknowledgment commit.
+     try:
+-        s.authorization_io(Deadline(IO_S, phase.end))
+         end = s.accounting(Deadline(IO_S, phase.end))
+-        if not s.reservation_fits(end):
+-            raise GuardError("ACK_RESOURCE_RECHECK_FAILED")
++        if not s.reservation_fits(end) or end["charged_bytes"] > s.cfg["output_trip_bytes"]:
++            raise GuardError("ACK_RESOURCE_OR_AGGREGATE_OUTPUT_FAILED")
++        ack_census = s.full_census(Deadline(CENSUS_S, phase.end))
++        final_ids = {p["uniqueid"] for p in c["owned_live"] + c["unproved_live"]}
++        ack_ids = {p["uniqueid"] for p in ack_census["owned_live"] + ack_census["unproved_live"]}
++        if not ack_census["complete"] or not ack_ids <= final_ids or (state != "UNSETTLED" and ack_ids):
++            raise GuardError("ACK_PROCESS_COVERAGE_CHANGED_OR_BLOCKING")
++        if tuple(sorted(s.failure_keys)) != frozen_failure_codes or tuple(s.trips) != frozen_trip_codes:
++            raise GuardError("ACK_OBSERVATION_CHANGED_FROZEN_OUTCOME")
+         phase.check("after acknowledgment preparation")
+         with protected():
++            s.authorization_io(phase)  # Last binding read after ALL preparation I/O.
++            s.resource_age(ack_census)
+             # A cancel already acted on as the cause of this result does not masquerade as an unobserved late cancel.
+             if s.cancel_handled and CANCEL["signal"] is not None and not (set(signal.sigpending()) & CANCEL_SIGNALS):
+                 epoch, mono = time.time(), time.monotonic()
+                 if epoch > s.authorization["not_after_epoch"] or epoch > s.fit_epoch or mono > s.fit_mono:
+                     raise GuardError("ACK_EXPIRY_OR_FIT")
+-                commit = {"phase": "ACK", "epoch": epoch, "mono": mono, "cancel_handled": True}
++                age = s.stability_age(mono)
++                commit = {"phase": "ACK", "epoch": epoch, "mono": mono, "cancel_handled": True,
++                          "stability_age_upper_s": age}
+             else:
+                 commit = s.time_commit("ACK")
+             phase.check("acknowledgment commit")
+@@ -1660,11 +1792,14 @@
+                    "receipt_bytes": len(rb), "settlement_bytes": len(sb), "post_publish_mono": post_publish,
+                    "ack_commit": commit, "publication_resources": b, "ack_resources": end,
+                    "child_returncode": s.rc, "failure_codes": sorted(s.failure_keys),
+-                   "owned_live": s.rec.get("final_census", {}).get("owned_live", []),
+-                   "contract_violations": s.violations}
++                   "owned_live": ack_census["owned_live"], "unproved_live": ack_census["unproved_live"],
++                   "ack_census": ack_census, "contract_violations": s.violations,
++                   "unproved_history": list(s.unproved_history.values()), "coverage_history": s.coverage_history,
++                   "census_observations": s.census_history}
+             sys.stdout.write(json.dumps(ack, sort_keys=True, allow_nan=False) + "\n")
+             sys.stdout.flush()
+-            phase.check("after acknowledgment write/flush")
++            s.completion_check("ACK", phase)
++            s.resource_age(ack_census)
+         return code
+     except BaseException as e:
+         # If stdout already committed a line, do not emit a contradictory second line: mismatch exit refuses release.
+@@ -1681,7 +1816,7 @@
+     signal.signal(signal.SIGCHLD, signal.SIG_DFL)
+     signal.pthread_sigmask(signal.SIG_UNBLOCK, CANCEL_SIGNALS)
+     if len(sys.argv) != 2:
+-        sys.stderr.write("usage: owned_supervisor_v11.py CONFIG.json\n")
++        sys.stderr.write("usage: owned_supervisor_v12.py CONFIG.json\n")
+         return 2
+     try:
+         path = os.path.abspath(sys.argv[1])

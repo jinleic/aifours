@@ -1,0 +1,437 @@
+Lane ContinueMOQLS8 (phys-1, 96-hour continuation) GA runner successor, recorded 2026-10-18T23:24:58-0700.
+replay_v5e.py sha256 a60a924b306d591631cb09da69ceb41f8d3da33edbe67ede06b00e41a2dfbcdb (read-only, old v5e desk)
+replay_v6b.py sha256 de93413c2f110472a3f12f877ab3f440e0dfecd423756d592a4221c5829d8df7
+Unreviewed never-run draft kept unchanged: code/replay_v6.py sha256 43751f4f78f184412f6062b739285c2008377f77e0785a54ab2a33994f20ad3f
+Top-level definitions whose AST differs from v5e: cmd_preexec, cmd_run, gate, lane_decision, load_strengthened, pipeline, post_gate_identity, validate_items; none added or removed.
+Every other function and class (transport, relay, writers, evaluator, helper supervision, lane scan, monitor parser,
+controls) is AST-identical to v5e. Exact unified diff follows.
+
+--- OLD_DESK/scripts/replay_v5e.py
++++ code/replay_v6b.py
+@@ -1,5 +1,38 @@
+ #!/usr/bin/env python3
+-"""Parent replay desk for the six MOQLS(8) P1 strengthened formulas (normal form r2, section 5) and the twelve direct
+-F_one leaves, v5e attempt namespace (unchanged v5d transport).
++"""MOQLS(8) n8 GA replay desk v6b: new-round (96-hour continuation, phys-1 lane) copy of the reviewed parent
++replay_v5e.py (a60a924b306d591631cb09da69ceb41f8d3da33edbe67ede06b00e41a2dfbcdb) for the two remaining strengthened GA
++formulas P1-B2.M2 and P1-B3.M2 only. (code/replay_v6.py is an unreviewed, never-run draft with stale docstring
++numbers, superseded by this file before any review; it is kept unchanged.)
++
++V6b = replay_v5e.py + code/DIFF-replay_v5e-to-v6b.txt (lane ContinueMOQLS8). Changes are confined to constants,
++paths, cutoff texts, admission scope, one gate-accounting constant and one added in-flight retained-output guard;
++native transport, relay, writers, evaluator, acceptance predicate, controls, helper supervision and the other guards
++are unchanged:
++ (1) outputs (PRE-EXEC, receipts, logs, FIFOs, TMPDIRs, run summaries) live in the new lane desk
++     physics/evidence/six-lane-20261018-96h/moqls8/evidence/ga-replay-v6; the old run, the old lane and the v5e desk
++     (OLD_DESK: BINDING.json, bind_v1.py, earlier scripts and diffs) are read-only inputs, all hash-pinned;
++ (2) new-round clock and chunk fit (control/launch-contract-tightening-v1.json 8ac55669...aa20): gate wait bounded
++     by 300 s (then DEFERRED, no native), driver wall backstop 10260 s from the native spawn, so driver start + 300 s
++     + 60 s gate slack + 10260 s + 120 s bounded SIGTERM reap + 60 s margin <= driver start + 10800 s (contract
++     max_chunk_seconds); no native spawn at or after 2026-10-22 19:01:33 PDT (spawn + 10260 s + 180 s <=
++     owned_compute_settled_by 21:56:33 with 60 s margin); in flight SIGTERM at 2026-10-22 21:50:00 PDT;
++ (3) native self-budgets cadical -t 6300 and drat-trim -t 10020 (drat-trim's limit is wall time from its own start,
++     drat-trim.c L904-905; it self-exits 240 s before the backstop);
++ (4) formula reservation max(1.5 x worker source-template peak, 9 GiB) (desk stop reservation + 0.5 GiB);
++ (5) gate accounting (NOT a path change): MINE = 3 counts this desk's driver/feeders/relay as one busy process
++     besides cadical and drat-trim; LANE_BUSY_CAP = 4 and the 11 GiB lane RSS limit come from the parent phys-1
++     pipeline resource amendment (control/moqls8-pipeline-resource-amendment-v1.json, re-hashed and field-checked);
++ (6) the long-job stability rule (unchanged numbers) reads the parent observer v3
++     (control/resource-observer-live-v3.jsonl, colon-form UTC offsets; addenda v1 rule and v2 path, hash-pinned);
++ (7) lane markers also cover the new lane path;
++ (8) admission accepts only formula:P1-B2.M2 and formula:P1-B3.M2 (plus the five selftests); every other formula and
++     every direct leaf is refused (all parent-qualified; never duplicate accepted computation);
++ (9) retained output: solver + checker log bytes > 64 MiB is an in-flight SIGTERM safety stop (drat-trim prints one
++     warning line per ignored unit deletion or duplicate literal, so its output is not provably bounded); launch and
++     stability floors reserve 80 MiB retained growth per run.
++The v5e/v5d history below remains historical text.
++
++Historical (v5e) head: Parent replay desk for the six MOQLS(8) P1 strengthened formulas (normal form r2, section 5)
++and the twelve direct F_one leaves, v5e attempt namespace (unchanged v5d transport).
+ 
+ PARENT v5e: name-only successor of frozen v5d ee52004ba7d12edd673a10bc4ed73005d6c56588697215c9b06cc1dbb846339e.
+@@ -54,7 +87,7 @@
+ leaf launches also need the parent disk-monitor stability rule (amended 07:32 PDT); controls keep the plain gate.
+ Usage (/usr/bin/python3 -I -B, environment TMPDIR=<desk>/tmp/):
+-  replay_v5e.py preexec OUT [--worker-prefix N SHA] ITEM...    ITEM = selftest:NAME | formula:ID | leaf:ID
+-  replay_v5e.py run PREEXEC
+-  replay_v5e.py assemble OUT PREEXEC...
++  replay_v6b.py preexec OUT [--worker-prefix N SHA] ITEM...    ITEM = selftest:NAME | formula:P1-B2.M2 | formula:P1-B3.M2
++  replay_v6b.py run PREEXEC
++  replay_v6b.py assemble OUT PREEXEC...
+ """
+ import ctypes
+@@ -77,11 +110,14 @@
+ 
+ ROOT = "/Users/jinleic/repos/aifours"
+-RUN = ROOT + "/institute/runs/six-lane-2026-10-16"
+-REVIEW = RUN + "/review"
+-LANE = ROOT + "/physics/evidence/six-lane-20261016/moqls8-problem16"
+-DESK = REVIEW + "/moqls8-strengthened-parent-replay-v1"
++RUN = ROOT + "/institute/runs/six-lane-2026-10-16"  # (v6) OLD run: read-only inputs only
++REVIEW = RUN + "/review"  # (v6) OLD review directory: read-only inputs only
++LANE = ROOT + "/physics/evidence/six-lane-20261016/moqls8-problem16"  # (v6) OLD lane: read-only inputs only
++OLD_DESK = REVIEW + "/moqls8-strengthened-parent-replay-v1"  # (v6) the v5e desk: read-only inputs only
++NEW_RUN = ROOT + "/institute/runs/six-lane-2026-10-18-96h"  # (v6) new-round run (parent-owned control files)
++NEW_LANE = ROOT + "/physics/evidence/six-lane-20261018-96h/moqls8"  # (v6) new-round phys-1 lane
++DESK = NEW_LANE + "/evidence/ga-replay-v6b"  # (v6) every output of this version
+ SCRIPT = os.path.realpath(__file__)
+-SCRIPT_REL = "scripts/replay_v5e.py"
+-LABEL_PREFIX = "v5e-"  # every v5d receipt/log/FIFO/TMPDIR name; older (v2-v5c, draft v5) names stay untouched
++SCRIPT_REL = "code/replay_v6b.py"  # (v6) relative to NEW_LANE
++LABEL_PREFIX = "v6b-"  # every v6b receipt/log/FIFO/TMPDIR name
+ TMP = DESK + "/tmp"
+ 
+@@ -119,29 +155,37 @@
+ V1_SCRIPT = REVIEW + "/moqls8-fone-parent-replay-v1/scripts/replay_v1.py"
+ V1_SCRIPT_SHA = "16cba374241636885d71f2e91dd3969d35779ccbe27eca4fc2bee3c8781f486d"
+-BINDING = DESK + "/BINDING.json"
++BINDING = OLD_DESK + "/BINDING.json"
+ BINDING_SHA = "5e1116e8311bfe4b2e06554edd0c77fc564574b06c1320334373648171f5f98c"
+-BIND_SCRIPT = DESK + "/scripts/bind_v1.py"
++BIND_SCRIPT = OLD_DESK + "/scripts/bind_v1.py"
+ BIND_SCRIPT_SHA = "b010baa4dd5c7620f7c6215beeb052af80846bfd6c3ee0a80e8d8a235144786c"
+-V2_SCRIPT = DESK + "/scripts/replay_v2.py"
++V2_SCRIPT = OLD_DESK + "/scripts/replay_v2.py"
+ V2_SCRIPT_SHA = "dcedbe45c6a354c03b400539eda588c2dca65a40d1f7009a3c42faceb97aac82"
+-DIFF_V1_V2 = DESK + "/DIFF-replay_v1-to-v2.txt"
++DIFF_V1_V2 = OLD_DESK + "/DIFF-replay_v1-to-v2.txt"
+ DIFF_V1_V2_SHA = "44b12b90c1ebcfb173cb502f7cff1e6f64f5217cdddad91e9cc59e48789de0ba"
+-V3_SCRIPT = DESK + "/scripts/replay_v3.py"
++V3_SCRIPT = OLD_DESK + "/scripts/replay_v3.py"
+ V3_SCRIPT_SHA = "baa4a675fc2634dc8dc96f53b9f6dd1b59af012b9fef23681af894904aa67565"
+-DIFF_V2_V3 = DESK + "/DIFF-replay_v2-to-v3.txt"
++DIFF_V2_V3 = OLD_DESK + "/DIFF-replay_v2-to-v3.txt"
+ DIFF_V2_V3_SHA = "dc2a67ecf0aa5a9e7f19de0a145f04a60c3fd70325cbb61f7703d2d596aba8c8"
+-V4_SCRIPT = DESK + "/scripts/replay_v4.py"
++V4_SCRIPT = OLD_DESK + "/scripts/replay_v4.py"
+ V4_SCRIPT_SHA = "44b4f293b4a0eeb86cafce1afa9314e7e54592d60d95791dee4d58539c9bdc9d"
+-DIFF_V3_V4 = DESK + "/DIFF-replay_v3-to-v4.txt"
++DIFF_V3_V4 = OLD_DESK + "/DIFF-replay_v3-to-v4.txt"
+ DIFF_V3_V4_SHA = "3e2625c591f17ec432512e4cb9f603901cf2ddea64399f7986348501f48acd53"
+-DIFF_V4_V5B = DESK + "/DIFF-replay_v4-to-v5b.txt"
++DIFF_V4_V5B = OLD_DESK + "/DIFF-replay_v4-to-v5b.txt"
+ DIFF_V4_V5B_SHA = "6d4ef029eb2d5f4eb36fccbb0bc9fcd6c02cb7dd7c1ccafc345923b50e77f296"
+-V5B_SCRIPT = DESK + "/scripts/replay_v5b.py"
++V5B_SCRIPT = OLD_DESK + "/scripts/replay_v5b.py"
+ V5B_SCRIPT_SHA = "5726273c6b584708334a8ce4f0d8c538245445b1e733b3cf607341d5a43aa32d"
+-V5C_SCRIPT = DESK + "/scripts/replay_v5c.py"
++V5C_SCRIPT = OLD_DESK + "/scripts/replay_v5c.py"
+ V5C_SCRIPT_SHA = "36f50cb6483fef91a3e93d78dcba46b1eb97bdfbdfaa247ee7bc99303466c1af"
+-DIFF_V5B_V5C = DESK + "/DIFF-replay_v5b-to-v5c.txt"
++DIFF_V5B_V5C = OLD_DESK + "/DIFF-replay_v5b-to-v5c.txt"
+ DIFF_V5B_V5C_SHA = "27de99fd484299a6be52f74beacc5ccfd7e4578a8a3fb9d35f96e76c1eed2ff4"
+-DIFF = DESK + "/DIFF-replay_v5d-to-v5e.txt"
++DIFF_V5C_V5D = OLD_DESK + "/DIFF-replay_v5c-to-v5d.txt"
++DIFF_V5C_V5D_SHA = "13cec4f99272e1c291318f5eee1b02cd6714024bbf54053a88102e1742308677"
++V5D_SCRIPT = OLD_DESK + "/scripts/replay_v5d.py"
++V5D_SCRIPT_SHA = "ee52004ba7d12edd673a10bc4ed73005d6c56588697215c9b06cc1dbb846339e"
++DIFF_V5D_V5E = OLD_DESK + "/DIFF-replay_v5d-to-v5e.txt"
++DIFF_V5D_V5E_SHA = "e2278f6e31ba127d55e4f7fa5df9593006c9593ab5ea82b1254b3bb3e7a4dfde"
++V5E_SCRIPT = OLD_DESK + "/scripts/replay_v5e.py"
++V5E_SCRIPT_SHA = "a60a924b306d591631cb09da69ceb41f8d3da33edbe67ede06b00e41a2dfbcdb"
++DIFF = NEW_LANE + "/code/DIFF-replay_v5e-to-v6b.txt"  # (v6) names this script's sha256
+ NF_R2 = LANE + "/review/P1_COLUMN0_BOOLEAN_NORMAL_FORM.r2.md"
+ NF_R2_SHA = "8ae0ac01de7ea5883111e8dcc4f84246813d8599b1e8af782e0498104a449e8f"
+@@ -175,17 +219,26 @@
+ LOW_MEMORY_IDS = ("P0-B4", "P0-B5")  # the v2 leaf projection rule: FLOOR_LOW for these two, FLOOR_HIGH for the others
+ PDT = datetime.timezone(datetime.timedelta(hours=-7))
+-NO_LAUNCH_AT = datetime.datetime(2026, 10, 18, 17, 29, 0, tzinfo=PDT).timestamp()    # 60 s before the 17:30 cutoff
+-NATIVE_STOP_AT = datetime.datetime(2026, 10, 18, 17, 57, 0, tzinfo=PDT).timestamp()  # in flight: SIGTERM at this
+-
+-SOLVER_SECONDS, CHECKER_SECONDS = 3600, 7200
+-BACKSTOP = SOLVER_SECONDS + CHECKER_SECONDS + 120
++# (v6) chunk fit (control/launch-contract-tightening-v1.json 8ac55669...aa20): a driver started at D spawns natives at
++# S <= D + WAIT_BUDGET + 60 s (one gate iteration incl. helper deadlines, identity re-hash); children end by
++# S + BACKSTOP; + 120 s bounded SIGTERM reap + 60 s margin <= D + 10800 (contract max_chunk_seconds).
++# No native spawn at/after NO_LAUNCH_AT = (owned_compute_settled_by 21:56:33 - 180 s) - BACKSTOP - 60 s margin.
++NO_LAUNCH_AT = datetime.datetime(2026, 10, 22, 19, 1, 33, tzinfo=PDT).timestamp()  # (v6) chunk-fit launch cutoff
++NATIVE_STOP_AT = datetime.datetime(2026, 10, 22, 21, 50, 0, tzinfo=PDT).timestamp()  # (v6) in flight: SIGTERM at this
++
++SOLVER_SECONDS, CHECKER_SECONDS = 6300, 10020  # (v6) cadical -t; drat-trim -t (wall from its own start, L904-905)
++CHUNK_CAP_SECONDS = 10800  # (v6) contract max_chunk_seconds
++BACKSTOP = 10260  # (v6) = 10800 - 120 reap - 60 margin - 300 WAIT_BUDGET - 60 gate slack
++LOG_CAP_BYTES = 64 << 20  # (v6) solver + checker log bytes; larger -> SIGTERM (retained-output enforcement)
++RETAINED_RESERVATION = 80 << 20  # (v6) per-run retained output reservation (logs <= 64 MiB + receipts/summaries)
+ GIB, MIB = 1 << 30, 1 << 20
+-LAUNCH_FLOOR = 12200000000 + 10 * MIB   # fresh check before each launch: 12.2e9 + projected retained growth
++LAUNCH_FLOOR = 12200000000 + 80 * MIB   # (v6) fresh check before each launch: 12.2e9 + retained reservation
+ FLOOR = 12000000000                     # in flight: free below this -> SIGTERM -> UNKNOWN
+-LANE_BUSY_CAP, MINE = 4, 2
+-# (F4) parent M8 lane escalation review/parent-decision-m8-lane-rss-escalation-v1.md (b9886e24...09ec): at most ONE
+-# parent GA pipeline (this desk) + ONE worker GB pipeline, lane aggregate RSS limit 11 GiB, <= 4 busy natives
+-LANE_DECISION = REVIEW + "/parent-decision-m8-lane-rss-escalation-v1.md"
+-LANE_DECISION_SHA = "b9886e242764750f55a2393323dfa7da7eb7696554d493bb107cd5f3815209ec"
++LANE_BUSY_CAP, MINE = 4, 3  # (v6) MINE: cadical + drat-trim + this driver (feeders/relay/scanner threads)
++# (v6) parent phys-1 pipeline resource amendment (new round): <= 4 busy processes in the lane INCLUDING driver, feeders,
++# helpers, solver and checker; one scientific pipeline at a time; lane RSS <= 11 GiB. The new-round contract is pinned.
++LANE_DECISION = NEW_RUN + "/control/moqls8-pipeline-resource-amendment-v1.json"
++LANE_DECISION_SHA = "dc1eaed016c03d1f65e8041d6c2e59cc410e008b2b37ce0df7d12dd50101b2a8"
++NEW_CONTRACT = NEW_RUN + "/contract-v1.json"
++NEW_CONTRACT_SHA = "55baff0cf1ac1a4b0ab38b0eb1b1fa5a35a47c890f352b79dae4dfea919ffcaa"
+ LANE_RSS_LIMIT = 11 * GIB               # 11,811,160,064 B
+ GATE_RSS = LANE_RSS_LIMIT               # launch: all other lane processes (GB included) + this desk's reservation
+@@ -193,6 +246,8 @@
+ DESK_MARGIN = GIB // 2                  # in flight: desk aggregate > projected + 0.5 GiB -> SIGTERM
+ FLOOR_LOW, FLOOR_HIGH = 13 * GIB // 10, 46 * GIB // 10
++FORMULA_FLOOR = 9 * GIB  # (v6) formula reservation floor for the extended self-budgets
++V6_FORMULAS = ("P1-B2.M2", "P1-B3.M2")  # (v6) the only science items this version admits
+ SELFTEST_PROJECTED = 512 * MIB
+-WAIT_POLL, WAIT_BUDGET, GATE_STREAK = 60, 6 * 3600, 2
++WAIT_POLL, WAIT_BUDGET, GATE_STREAK = 60, 300, 2  # (v6) gate wait bounded by 300 s (chunk fit); then DEFERRED
+ SAMPLE, LANE_SCAN_PERIOD, SIGTERM_GRACE = 0.25, 1.0, 120
+ HOT_CPU_FRACTION, HOT_WINDOW = 0.5, 2.0
+@@ -202,5 +257,5 @@
+ NATIVE = {"cadical", "kissat", "drat-trim", "lrat-check", "lrat-trim", "cake_lpr", "dpr-trim", "glucose",
+           "minisat", "lingeling", "plingeling", "treengeling", "cryptominisat5", "kissat_mab", "dpr2pr"}
+-LANE_MARKERS = ("/moqls8-problem16", "/review/moqls8-")
++LANE_MARKERS = ("/moqls8-problem16", "/review/moqls8-", "/six-lane-20261018-96h/moqls8")  # (v6) + new lane
+ INFO_KEYS = (b"finished parsing", b"clauses in core", b"lemmas in core", b"RAT lemmas", b"verification time",
+              b"ERROR", b"empty clause", b"conflict", b"TIMEOUT", b"timeout", b"FAIL", b"failed")
+@@ -232,16 +287,22 @@
+ # (message to N8ReplayV5: drop allowance max(300,000,000, (free_last - 13.5e9)/12); sample quality unchanged),
+ # read from the parent's 10 s monitor file; fail closed. Controls keep the plain fresh gate.
+-MONITOR = REVIEW + "/disk-monitor-v1-20261018T0722-to-1810.jsonl"
+-STABLE_FREE_MIN = 13500000000 + 10 * MIB  # last monitor free >= 13.5e9 + 10 MiB growth (stricter than the 13.5e9)
++MONITOR = NEW_RUN + "/control/resource-observer-live-v3.jsonl"  # (v6) parent observer v3, 10 s, colon offsets
++STABILITY_ADDENDA = {  # (v6) unchanged rule (v1) and the monitor path (v2), re-hashed at preexec and run
++    NEW_RUN + "/control/resource-stability-addendum-v1.json":
++        "9aff1085dfa6c99b6c7e610925a00181f7e79201b50e5b6163e0d84045ef1fff",
++    NEW_RUN + "/control/resource-stability-addendum-v2.json":
++        "6ddac862481b215921fa51c4dac515b73a4ac6d5f50b313e66f076b65a1f2687",
++}
++STABLE_FREE_MIN = 13500000000 + 80 * MIB  # (v6) last monitor free >= 13.5e9 + the 80 MiB retained reservation
+ STABLE_RUNWAY_BASE, STABLE_RUNWAY_DIV = 13500000000, 12  # drop allowance (free_last - 13.5e9) / 12: 1 h of runway
+ STABLE_WINDOW, STABLE_MIN_DROP_CAP = 300.0, 300000000    # window 300 s; the allowance is never below 300,000,000
+ STABLE_MAX_AGE, STABLE_MIN_SAMPLES, STABLE_MIN_SPAN = 30.0, 25, 290.0
+ 
+-SCOPE = ("Parent replay of exact formulas only: the six strengthened P1 formulas (source P1 leaf + 126-clause M_s "
+-         "tail) and the twelve direct F_one leaves (P0-B1..B6, P1-B4, P1-B6, P2-C1..C4; parent binding RESULT "
+-         "65311ab0...28b0, MANIFEST 355b3380...fc74); CaDiCaL 3.0.1 -> named FIFO -> parent hashing/counting relay "
+-         "-> parent drat-trim, measured parent feeds. Results are exact-formula facts; the transfer of the "
+-         "strengthened results to the four open P1 templates needs separate parent acceptance of the normal form r2. "
+-         "It establishes no n=8 or Problem-16 conclusion and makes no theorem claim.")
++SCOPE = ("New-round (v6) replay of exact formulas only: the two remaining strengthened P1 formulas P1-B2.M2 and "
++         "P1-B3.M2 (source P1 leaf + 126-clause M_s tail, bound in BINDING.json 5e1116e8...f98c); CaDiCaL 3.0.1 -> "
++         "named FIFO -> parent hashing/counting relay -> parent drat-trim, measured feeds. Results are exact-formula "
++         "facts; their use for templates P1-B2/P1-B3 rests on the accepted normal form r2 (NF verdict 4748f023..., "
++         "erratum-1 da050a74...) and needs parent audit and the final composition verdict. It establishes no n=8 or "
++         "Problem-16 conclusion and makes no theorem claim.")
+ ACCEPTANCE = ("PASS iff all of: solver rc 20; solver status lines (log with only '\\r' removed, lines starting "
+               "with 's') exactly ['s UNSATISFIABLE']; checker rc 0; checker log with only '\\r' removed has a line "
+@@ -270,16 +331,18 @@
+              "or argv lies in the lane or a review/moqls8-* desk, excluding this desk's driver and children; python "
+              "counts as busy if its CPU use over a 2 s libproc window is >= 50%; lane RSS conservatively includes "
+-             "every such python, busy or not) and a fresh statvfs: launch only if lane busy + 2 <= 4, lane RSS (all "
++             "every such python, busy or not) and a fresh statvfs: launch only if lane busy + 3 <= 4 (v6: this desk counts "
++             "cadical, drat-trim and its own driver), lane RSS (all "
+              "other lane processes, a worker GB pipeline included) + max(fresh measured desk RSS, projected; an "
+-             "unreadable desk RSS refuses) <= 11 GiB (parent M8 lane escalation "
+-             "b9886e24...09ec: one GA + one GB pipeline) and free >= 12,200,000,000 + 10 MiB. Stricter than the "
++             "unreadable desk RSS refuses) <= 11 GiB (v6: parent phys-1 pipeline resource amendment "
++             "dc1eaed0...b2a8: one scientific pipeline) and free >= 12,200,000,000 + 80 MiB. Stricter than the "
+              "brief: two consecutive "
+              "passing checks 60 s apart are required, so a launch never rides a transient gap of the priority "
+-             "worker pipeline. Otherwise sleep 60 s and re-check; total gate wait per run bounded by 6 h, then stop "
+-             "and report deferral. No launch at or after 2026-10-18 17:29:00 PDT (host clock; 60 s margin before "
+-             "the 17:30 cutoff). Formula and leaf launches additionally need the parent disk monitor "
+-             "(review/disk-monitor-v1-20261018T0722-to-1810.jsonl, 10 s cadence; rule amended by the parent at "
+-             "07:32 PDT) to show, from complete JSON lines with tz-aware strictly increasing timestamps: last sample "
+-             "0 <= age <= 30 s with free >= 13,500,000,000 + 10 MiB, >= 25 samples spanning >= 290 s within the last "
++             "worker pipeline. Otherwise sleep 60 s and re-check; total gate wait per run bounded by 300 s (v6), then stop "
++             "and report deferral. No launch at or after 2026-10-22 19:01:33 PDT (host clock; chunk fit: native end "
++             "+ 120 s reap + 60 s margin before owned_compute_settled_by - 180 s). Formula launches additionally need "
++             "the parent observer v3 "
++             "(control/resource-observer-live-v3.jsonl, 10 s cadence; rule: stability addendum v1 9aff1085..., path: "
++             "addendum v2 6ddac862...) to show, from complete JSON lines with tz-aware strictly increasing timestamps: last sample "
++             "0 <= age <= 30 s with free >= 13,500,000,000 + 80 MiB, >= 25 samples spanning >= 290 s within the last "
+              "300 s, and a max peak-to-later free drop over that window <= max(300,000,000, (free_last - "
+              "13,500,000,000) / 12); a malformed complete line, an absent, unreadable or stale monitor refuses the "
+@@ -287,6 +350,6 @@
+              "the plain fresh gate. Any recorded helper survivor refuses every launch. Projected peak = "
+              "formulas: max(1.5 x worker aggregate peak of the formula's source template leaf (the worker's 900 s "
+-             "attempt; no worker run of a strengthened formula exists), 4.6 GiB); leaves (the v2 rule): max(1.5 x "
+-             "worker aggregate peak of the leaf, 1.3 GiB for P0-B4 and P0-B5, else 4.6 GiB); self-tests 512 MiB.")
++             "attempt; no worker run of a strengthened formula exists), 9 GiB) (v6); leaves are refused by v6; "
++             "self-tests 512 MiB.")
+ STOPS = ("In flight, every 0.25 s: desk aggregate RSS (driver + live children, libproc; a live child unreadable twice "
+          "in a row is a guard failure) and free space; a scanner thread publishes lane scans every >= 1 s (helpers "
+@@ -294,11 +357,12 @@
+          "failure is latched or the reading is older than %.0f s, lane RSS (other lane processes, GB included, + "
+          "max(desk measured, desk reservation = projected)) > 11 GiB, desk aggregate > projected + 0.5 GiB, free < "
+-         "12,000,000,000, "
+-         "wall > %d + %d + 120 s, the host clock reaches 2026-10-18 17:57:00 PDT, the checker exits while the solver "
++         "12,000,000,000, solver + checker log bytes > 64 MiB (v6 retained-output cap), "
++         "wall > %d s from the native spawn (v6 chunk fit; cadical -t %d, drat-trim -t %d), the host clock "
++         "reaches 2026-10-22 21:50:00 PDT, the checker exits while the solver "
+          "still runs, a solver spawn error, a helper survivor, any exception after the first fd, or the driver "
+          "receives SIGTERM (also checked immediately before each spawn, before gate success and before the "
+          "completion break, where a latched SIGTERM or scanner failure becomes the stop reason); then wait at most "
+          "120 s, never escalate; result UNKNOWN and the desk launches nothing more." % (
+-             HELPER_DEADLINE, STALE_SECONDS, SOLVER_SECONDS, CHECKER_SECONDS))
++             HELPER_DEADLINE, STALE_SECONDS, BACKSTOP, SOLVER_SECONDS, CHECKER_SECONDS))
+ 
+ 
+@@ -742,5 +806,5 @@
+         if time.time() >= NO_LAUNCH_AT:
+             budget["used"] += waited
+-            res.update({"launch": False, "cutoff": True, "stopped": "launch cutoff 2026-10-18 17:29:00 PDT reached",
++            res.update({"launch": False, "cutoff": True, "stopped": "launch cutoff 2026-10-22 19:01:33 PDT reached",
+                         "stopped_at": now()})
+             return res
+@@ -967,5 +1031,7 @@
+                       (V3_SCRIPT, V3_SCRIPT_SHA), (DIFF_V2_V3, DIFF_V2_V3_SHA), (V4_SCRIPT, V4_SCRIPT_SHA),
+                       (DIFF_V3_V4, DIFF_V3_V4_SHA), (V5B_SCRIPT, V5B_SCRIPT_SHA), (DIFF_V4_V5B, DIFF_V4_V5B_SHA),
+-                      (V5C_SCRIPT, V5C_SCRIPT_SHA), (DIFF_V5B_V5C, DIFF_V5B_V5C_SHA)):
++                      (V5C_SCRIPT, V5C_SCRIPT_SHA), (DIFF_V5B_V5C, DIFF_V5B_V5C_SHA),
++                      (DIFF_V5C_V5D, DIFF_V5C_V5D_SHA), (V5D_SCRIPT, V5D_SCRIPT_SHA),
++                      (DIFF_V5D_V5E, DIFF_V5D_V5E_SHA), (V5E_SCRIPT, V5E_SCRIPT_SHA)):
+         raw[path] = read_bytes(path)
+         if sha_bytes(raw[path]) != exp:
+@@ -1051,14 +1117,25 @@
+ 
+ def lane_decision():
+-    """(F4) The parent M8 lane escalation implemented here, re-hashed -> record; a changed decision file refuses."""
+-    got = sha_file(LANE_DECISION)
++    """(v6) The new-round parent phys-1 pipeline resource amendment, the new-round contract and the stability addenda,
++    re-hashed (and the amendment's fields checked) -> record; any change refuses."""
++    raw = read_bytes(LANE_DECISION)
++    got = sha_bytes(raw)
+     if got != LANE_DECISION_SHA:
+-        die("parent M8 lane decision sha256 %s != %s" % (got, LANE_DECISION_SHA))
++        die("parent phys-1 resource amendment sha256 %s != %s" % (got, LANE_DECISION_SHA))
++    a = json.loads(raw)
++    if (a.get("lane") != "phys-1" or a.get("per_lane_busy_processes") != LANE_BUSY_CAP
++            or a.get("rss_bytes_max") != LANE_RSS_LIMIT or a.get("maximum_simultaneous_scientific_pipelines") != 1):
++        die("parent phys-1 resource amendment fields differ from LANE_BUSY_CAP / LANE_RSS_LIMIT / one pipeline")
++    if sha_file(NEW_CONTRACT) != NEW_CONTRACT_SHA:
++        die("new-round contract sha256 differs")
++    for path, exp in sorted(STABILITY_ADDENDA.items()):
++        if sha_file(path) != exp:
++            die("stability addendum sha256 differs: " + path)
+     return {"path": LANE_DECISION, "sha256": got, "lane_rss_limit_bytes": LANE_RSS_LIMIT,
+-            "lane_busy_cap": LANE_BUSY_CAP,
+-            "rule": "at most one parent GA pipeline (this desk) and one worker GB pipeline; admission: all other lane "
+-                    "processes (GB included) + max(fresh measured desk RSS, reservation) <= 11 GiB and busy + 2 <= 4; "
+-                    "in "
+-                    "flight: other lane + max(desk measured, reservation) > 11 GiB stops this desk's pipeline"}
++            "lane_busy_cap": LANE_BUSY_CAP, "mine": MINE, "contract": {"path": NEW_CONTRACT, "sha256": NEW_CONTRACT_SHA},
++            "stability_addenda": [{"path": p, "sha256": s} for p, s in sorted(STABILITY_ADDENDA.items())],
++            "rule": "one scientific pipeline at a time; admission: all other lane processes + max(fresh measured desk "
++                    "RSS, reservation) <= 11 GiB and other busy + 3 (cadical, drat-trim, driver) <= 4; in flight: "
++                    "other lane + max(desk measured, reservation) > 11 GiB stops this desk's pipeline"}
+ 
+ 
+@@ -1328,4 +1405,5 @@
+            "projected_peak_bytes": projected, "desk_stop_bytes": projected + DESK_MARGIN,
+            "lane_stop_bytes": STOP_LANE_RSS, "free_floor_bytes": FLOOR, "wall_backstop_seconds": BACKSTOP,
++           "log_cap_bytes": LOG_CAP_BYTES,
+            "stale_lane_reading_seconds": STALE_SECONDS, "stops": STOPS}
+     fds, procs, done, writers, events, rss_fail = Fds(), {}, {}, {}, [], {}
+@@ -1513,8 +1591,11 @@
+                     elif fb < FLOOR:
+                         reason = "free bytes %d < in-flight floor %d" % (fb, FLOOR)
++                    elif os.fstat(sl.fileno()).st_size + os.fstat(cl.fileno()).st_size > LOG_CAP_BYTES:  # (v6)
++                        reason = ("solver + checker log bytes %d > retained-output cap %d"
++                                  % (os.fstat(sl.fileno()).st_size + os.fstat(cl.fileno()).st_size, LOG_CAP_BYTES))
+                     elif tnow - t0 > BACKSTOP:
+-                        reason = "wall %.1f s > solver+checker+120 s (%d s)" % (tnow - t0, BACKSTOP)
++                        reason = "wall %.1f s > chunk-fit backstop (%d s)" % (tnow - t0, BACKSTOP)
+                     elif time.time() >= NATIVE_STOP_AT:
+-                        reason = "host clock reached the native-work deadline 2026-10-18 17:57:00 PDT"
++                        reason = "host clock reached the native-work deadline 2026-10-22 21:50:00 PDT"
+                     elif "checker" in done and "solver" in procs and "solver" not in done:
+                         reason = "checker exited (rc %s) while the solver was still running" % done["checker"]["rc"]
+@@ -1806,12 +1887,10 @@
+             if key not in FORMULAS:
+                 problems.append("formula %s is not one of the six strengthened formulas" % key)
++            elif key not in V6_FORMULAS:  # (v6) the other four are parent-qualified
++                problems.append("formula %s is not admitted by v6 (only %s)" % (key, ", ".join(V6_FORMULAS)))
+             elif it.get("bound_cnf_sha256") != FORMULAS[key][2]:
+                 problems.append("formula %s bound hash differs" % key)
+-        elif kind == "leaf":
+-            if key not in DIRECT_LEAVES:
+-                problems.append("leaf %s is not one of the twelve direct F_one leaves" % key)
+-            elif (it.get("parent_binding_result_sha256") != BIND_RESULT_SHA
+-                  or it.get("manifest_sha256") != PINS[MANIFEST_REL]):
+-                problems.append("leaf %s binding fields differ" % key)
++        elif kind == "leaf":  # (v6) all twelve direct leaves are parent-qualified
++            problems.append("leaf %s refused: v6 admits no direct leaf" % key)
+         else:
+             problems.append("unknown item kind %r" % (kind,))
+@@ -1871,5 +1950,5 @@
+     ctx = load_strengthened(load_inputs(print), print)
+     dtext = read_bytes(DIFF)
+-    if ("replay_v5e.py sha256 %s" % sha_file(SCRIPT)).encode() not in dtext:
++    if ("replay_v6b.py sha256 %s" % sha_file(SCRIPT)).encode() not in dtext:
+         die("the recorded diff does not name this script's sha256")
+     worker = worker_prefix(prefix_n, prefix_sha)
+@@ -1922,5 +2001,5 @@
+             w = worker["records"].get(f["template"])
+             peak = w.get("aggregate_peak_rss_bytes") if w else None
+-            projected = max(3 * peak // 2 if peak else 0, FLOOR_HIGH)
++            projected = max(3 * peak // 2 if peak else 0, FORMULA_FLOOR)  # (v6)
+             items.append({"item": spec, "kind": kind, "id": name, "source_template": f["template"],
+                           "monomial_square": f["square"],
+@@ -1933,5 +2012,5 @@
+                           "worker_source_template_record": w, "projected_peak_bytes": projected,
+                           "projected_rule": "max(1.5 x worker aggregate peak %s of source template %s, floor %d)"
+-                                            % (peak, f["template"], FLOOR_HIGH),
++                                            % (peak, f["template"], FORMULA_FLOOR),
+                           "acceptance": ACCEPTANCE})
+             continue
+@@ -1988,5 +2067,8 @@
+                       "flags": "-I -B"},
+            "binaries": binaries, "inputs": ctx["info"], "inputs_strengthened": ctx["strong_info"],
+-           "provenance": {"derived_from": V5C_SCRIPT, "derived_from_sha256": V5C_SCRIPT_SHA, "diff": rel(DIFF),
++           "provenance": {"derived_from": V5E_SCRIPT, "derived_from_sha256": V5E_SCRIPT_SHA, "diff": rel(DIFF),
++                          "v5d_script": V5D_SCRIPT, "v5d_script_sha256": V5D_SCRIPT_SHA,
++                          "v5d_to_v5e_diff": DIFF_V5D_V5E, "v5d_to_v5e_diff_sha256": DIFF_V5D_V5E_SHA,
++                          "v5c_to_v5d_diff": DIFF_V5C_V5D, "v5c_to_v5d_diff_sha256": DIFF_V5C_V5D_SHA,
+                           "diff_sha256": sha_bytes(dtext), "v5b_script": V5B_SCRIPT,
+                           "v5b_script_sha256": V5B_SCRIPT_SHA,
+@@ -2003,5 +2085,6 @@
+                           "binding": rel(BINDING), "binding_sha256": BINDING_SHA,
+                           "unfrozen_draft_left_untouched": "scripts/replay_v5.py c1521f95...cc4f",
+-                          "stability_rule": "parent amendment 07:32 PDT (message to N8ReplayV5)"},
++                          "stability_rule": "unchanged numbers (old parent amendment 07:32 PDT); new-round addenda "
++                                            "v1 rule 9aff1085... and v2 observer-v3 path 6ddac862..."},
+            "run_kind": {"selftest": "controls", "formula": "formulas", "leaf": "leaves"}[next(iter(kinds))],
+            "admission_controls": admission,
+@@ -2015,6 +2098,7 @@
+                       "wait_poll_seconds": WAIT_POLL, "wait_budget_seconds": WAIT_BUDGET,
+                       "gate_consecutive_passes": GATE_STREAK, "sigterm_grace_seconds": SIGTERM_GRACE,
+-                      "projected_retained_growth_bytes": 10 * MIB, "no_launch_at": "2026-10-18T17:29:00-07:00",
+-                      "native_stop_at": "2026-10-18T17:57:00-07:00", "monitor": rel(MONITOR),
++                      "projected_retained_growth_bytes": RETAINED_RESERVATION, "log_cap_bytes": LOG_CAP_BYTES,
++                      "chunk_cap_seconds": CHUNK_CAP_SECONDS, "no_launch_at": "2026-10-22T19:01:33-07:00",
++                      "native_stop_at": "2026-10-22T21:50:00-07:00", "monitor": MONITOR,
+                       "stable_free_min_bytes": STABLE_FREE_MIN, "stable_window_seconds": STABLE_WINDOW,
+                       "stable_drop_allowance": "max(%d, (free_last - %d) // %d)"
+@@ -2036,5 +2120,5 @@
+                          "verdict stops the run; after a SAT report, a floor/safety stop, a spawn error, an "
+                          "exception, a driver SIGTERM, a scanner failure, an unfinished thread, a live scanner, a "
+-                         "helper survivor or the 17:29 PDT launch cutoff nothing more is launched; any other UNKNOWN "
++                         "helper survivor or the 2026-10-22 19:01:33 PDT launch cutoff nothing more is launched; any other UNKNOWN "
+                          "continues with the next item",
+            "fresh_check": {"free_bytes": fb, "lane_other_busy": busy, "lane_other_rss_bytes": other,
+@@ -2052,5 +2136,5 @@
+     (realpath of sys.executable), cadical and drat-trim against the pins and the PRE-EXEC record; for formulas and
+     leaves re-run validate_controls() and compare the identities with the PRE-EXEC admission record. A latched
+-    SIGTERM, a helper survivor or the 17:29 cutoff found here also refuses. -> record (stored in the receipt as
++    SIGTERM, a helper survivor or the launch cutoff found here also refuses. -> record (stored in the receipt as
+     post_gate_identity); ok False refuses the launch and stops the desk."""
+     t0 = time.monotonic()
+@@ -2079,5 +2163,5 @@
+         problems.append("helper survivor(s) recorded")
+     if time.time() >= NO_LAUNCH_AT:
+-        problems.append("launch cutoff 2026-10-18 17:29:00 PDT reached after gate success")
++        problems.append("launch cutoff 2026-10-22 19:01:33 PDT reached after gate success")
+     out.update(ok=not problems, problems=problems, seconds=round(time.monotonic() - t0, 3))
+     return out
+@@ -2203,5 +2287,5 @@
+             summary["events"].append(ev)
+             entry.update({"status": "DEFERRED" if g.get("deferred") else "STOPPED", "gate": g})
+-            summary["stopped_reason"] = ("total gate wait budget of 6 h exhausted at %s" % label
++            summary["stopped_reason"] = ("total gate wait budget of 300 s (v6) exhausted at %s" % label
+                                          if g.get("deferred") else g.get("stopped"))
+             log("%s %s" % (entry["status"], label))

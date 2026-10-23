@@ -1,0 +1,126 @@
+--- gb_probe_r1.py
++++ gb_probe_r2.py
+@@ -1,4 +1,9 @@
+-"""GB timing probe r1 (WORKER probe; not parent-qualified evidence).
++"""GB timing probe r2 (WORKER probe; not parent-qualified evidence).
++
++r2 differs from r1 (b4c6ca46...b483) ONLY by: output dir gb_probe_v2, freeze GB_PROBE_FREEZE.r2,
++drat-trim stdout relayed through a filter thread (full raw stream sha256/bytes recorded; per-line
++"duplicate literal" normalisation warnings counted, not stored), and fatal-warning classification
++(any other WARNING, early EOF or "less than expected" fails).
+ 
+ Sequential items: tiny transport controls, then GB P1-B4, then GB P0-B3.
+ GB formula bytes are produced IN MEMORY by the frozen adapter gb_one_p4_r2.py
+@@ -42,7 +47,7 @@
+ DRAT = '/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-16/review/moqls7-parent-proofcheck-v1/drat-trim'
+ DRAT_SHA = 'a46c0c717f702206a7fe345de5bcdc0b10112bca6bdbf04dd42cd9848ff08e37'
+ BODY_SHA = 'f5da05206f44ff72e5aeade076820e2de52c9d2352f58b048ded1df76bdbf1b9'
+-OUTDIR = ROOT/'evidence/gb_probe_v1'
++OUTDIR = ROOT/'evidence/gb_probe_v2'
+ TZ = ZoneInfo('America/Los_Angeles')
+ DEADLINE = datetime.fromisoformat('2026-10-18T08:56:00-07:00').timestamp()
+ AGG_CAP = 7516192768          # 7.0 GiB: self + kissat + drat-trim resident
+@@ -151,6 +156,36 @@
+     res.update(proof_bytes_read=read, proof_bytes_relayed=wrote, proof_sha256=h.hexdigest(), error=err)
+ 
+ 
++def log_filter(rfd, path, res):
++    """Relay drat-trim stdout to a filtered log; hash/count the FULL raw stream."""
++    h, raw_bytes, dup, kept, buf = hashlib.sha256(), 0, 0, 0, b''
++    with open(path, 'xb') as out:
++        try:
++            while True:
++                b = os.read(rfd, 1 << 20)
++                if not b:
++                    break
++                h.update(b); raw_bytes += len(b); buf += b
++                lines = buf.split(b'\n'); buf = lines.pop()
++                for line in lines:
++                    if b'WARNING: detected and deleted duplicate literal' in line:
++                        dup += 1
++                    else:
++                        out.write(line + b'\n'); kept += 1
++            if buf:
++                if b'WARNING: detected and deleted duplicate literal' in buf:
++                    dup += 1
++                else:
++                    out.write(buf); kept += 1
++            res.update(ok=True, error=None)
++        except OSError as e:
++            res.update(ok=False, error=repr(e))
++        finally:
++            os.close(rfd)
++    res.update(raw_stdout_sha256=h.hexdigest(), raw_stdout_bytes=raw_bytes, duplicate_literal_warning_lines=dup,
++               kept_lines=kept)
++
++
+ def status_lines(path):
+     raw = Path(path).read_bytes().replace(b'\r', b'')
+     lines = raw.decode('utf-8', 'replace').split('\n')
+@@ -168,10 +203,12 @@
+     rec = {'label': label, 'started_at': now(), 'kissat_argv': [KISSAT, '--time=%d' % ksec, '/dev/fd/<cnf>', str(fifo)],
+            'drat_argv': [DRAT, '/dev/fd/<cnf>', '-i', '-t', str(dsec)], 'expected_feed_bytes': expected_bytes,
+            'expected_feed_sha256': expected_sha, 'events': []}
+-    sl, cl = open(slog, 'xb'), open(clog, 'xb')
++    sl = open(slog, 'xb'); lr, lw = os.pipe(); lres = {}
+     t0 = time.monotonic()
+-    dp = subprocess.Popen([DRAT, '/dev/fd/%d' % cr, '-i', '-t', str(dsec)], stdin=pr, stdout=cl,
++    dp = subprocess.Popen([DRAT, '/dev/fd/%d' % cr, '-i', '-t', str(dsec)], stdin=pr, stdout=lw,
+                           stderr=subprocess.STDOUT, pass_fds=(cr,), cwd=str(OUTDIR/'tmp'))
++    os.close(lw)
++    lt = threading.Thread(target=log_filter, args=(lr, clog, lres)); lt.start()
+     kp = subprocess.Popen([KISSAT, '--time=%d' % ksec, '/dev/fd/%d' % sr, str(fifo)], stdin=subprocess.DEVNULL,
+                           stdout=sl, stderr=subprocess.STDOUT, pass_fds=(sr,), cwd=str(OUTDIR/'tmp'))
+     for fd in (sr, cr, pr):
+@@ -244,12 +281,13 @@
+             time.sleep(0.5)
+     if keep_open:
+         os.close(keep); keep_open = False
+-    for t in ts:
++    for t in ts + [lt]:
+         t.join(timeout=180)
+-    sl.close(); cl.close()
++    sl.close()
+     os.unlink(fifo)
+     ss, _ = status_lines(slog); cs, clines = status_lines(clog)
+     warn = [l for l in clines if 'WARNING' in l or 'early EOF' in l or 'less than expected' in l]
++    rec['drat_stdout_filter'] = lres
+     rec.update(finished_at=now(), wall_s=round(time.monotonic() - t0, 3), kissat=done.get('kissat'), drat=done.get('drat'),
+                kissat_status_lines=ss, drat_status_lines=cs, drat_warnings=warn,
+                kissat_log={'path': str(slog.relative_to(ROOT)), 'sha256': sha_file(slog), 'bytes': slog.stat().st_size},
+@@ -260,7 +298,7 @@
+     proof_ok = rres.get('error') is None and rres.get('proof_bytes_read') == rres.get('proof_bytes_relayed')
+     rec['criteria'] = {'kissat_rc20': (done.get('kissat') or {}).get('rc') == 20, 'kissat_status_exact': ss == ['s UNSATISFIABLE'],
+                        'drat_rc0': (done.get('drat') or {}).get('rc') == 0, 'drat_status_exact': cs == ['s VERIFIED'],
+-                       'no_drat_warning': not warn, 'feeds_measured_complete': feeds_ok, 'proof_relay_complete': proof_ok,
++                       'no_fatal_drat_warning': not warn, 'drat_log_filter_ok': lres.get('ok') is True, 'feeds_measured_complete': feeds_ok, 'proof_relay_complete': proof_ok,
+                        'no_stop': stop_reason is None and not live}
+     rec['verdict'] = 'PASS' if all(rec['criteria'].values()) else ('STOPPED_UNKNOWN' if stop_reason else 'FAIL')
+     return rec
+@@ -274,7 +312,7 @@
+ 
+ def main():
+     t_start = time.monotonic(); script_sha = sha_file(__file__)
+-    freeze = json.loads((ROOT/'review/GB_PROBE_FREEZE.r1.json').read_bytes())
++    freeze = json.loads((ROOT/'review/GB_PROBE_FREEZE.r2.json').read_bytes())
+     if freeze['script_sha256'] != script_sha:
+         raise SystemExit('probe script not frozen')
+     pins = {'generator': (GEN, GEN_SHA), 'own_hashes': (OWN, OWN_SHA), 'WMAN': (WMAN, WMAN_SHA),
+@@ -286,7 +324,7 @@
+     signal.signal(signal.SIGTERM, lambda *a: stopflag.update(sigterm=True))
+     for d in ('fifo', 'logs', 'tmp', 'receipts'):
+         (OUTDIR/d).mkdir(exist_ok=True)
+-    summary = {'schema': 'gb-probe-r1-summary/1', 'started_at': now(), 'script_sha256': script_sha, 'pins': pin_res,
++    summary = {'schema': 'gb-probe-r2-summary/1', 'started_at': now(), 'script_sha256': script_sha, 'pins': pin_res,
+                'python': sys.version.split()[0], 'scope': 'WORKER timing probe; not parent-qualified; no CNF/proof on disk',
+                'items': [], 'gates': []}
+     own = json.loads(OWN.read_bytes()); expect = {x['id']: x for x in own['formulas']}
+@@ -384,7 +422,7 @@
+ def finish(summary, t_start):
+     summary['finished_at'] = now(); summary['seconds'] = round(time.monotonic() - t_start, 3)
+     summary['self_ru_maxrss_bytes'] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+-    sh = xjson(OUTDIR/'SUMMARY.r1.json', summary)
++    sh = xjson(OUTDIR/'SUMMARY.r2.json', summary)
+     print(json.dumps({'summary_sha256': sh, 'items': summary['items']}, default=str), flush=True)
+ 
+ 

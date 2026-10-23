@@ -1,0 +1,11 @@
+# MOQLS8 D-family extension candidate — parent erratum v1 (Codex REVISE 0F/1M/4m)
+
+Recorded 2026-10-19T17:17:52-0700 (`/bin/date`). Applies to `/Users/jinleic/repos/aifours/physics/evidence/six-lane-20261018-96h/moqls8/continuations/b3-d-general-extension/D-EXTENSION-CONCENTRATION-CANDIDATE-v1.md` SHA256 `18b5d33b10f53f43c51063fa34590563e1d385f2a83b3e20e84b18481a40acfe` without modifying it. Findings source: `/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/review/moqls8-B3-Dext-codex-v1.prompt.stdout.txt` SHA256 `b9d75f6026f6a2d8ec12ef69bbf1d9c7594407a7d897b2e07365798701405924`. No claim is accepted by this erratum.
+
+1. **MAJOR — LF180, withdrawn sentence.** The sentence "A written no-go would need to combine several lines, including the interior line frames (rows and columns i, j >= 1), whose vectors are unknown." is WITHDRAWN. It is an unsupported necessity claim. No feasibility proof is given for every other single row or column on D, and the row-1 construction settles only that particular direct restriction. The surrounding statements stay: the system (R),(C),(T) remains undecided, and the interior-frame analogues are not exploited.
+2. **MINOR — interior index domains, LF79–84, 99, 120, 144, 156.** The projection identities and sums of Lemma B(b),(c) are over interior indices only. J_i and K_i are defined with j ∈ {1,…,7}; I_c and K'_c with i ∈ {1,…,7}. (Index 0 would make several assertions false, e.g. P_B Q_1(2,0) = q_1^2.)
+3. **MINOR — LF95.** Read: "For d ∈ A, a basis vector e_d lies in P_i iff d ∉ supp q_1^i, which happens only for (i,d) = (6,1)."
+4. **MINOR — LF93.** In the column calculation, read "the row-0 term is |e_c><e_c|", not "column-0 term".
+5. **MINOR — LF169.** The final sentence of Corollary D1 is replaced by: "No additional restriction comes from orthogonality to the row-axis vector q_s^i, because π_s(i) ∉ {6,7} for i ∈ {2,3}." Row orthogonality still forbids repeated e_6-cells or repeated e_7-cells within a square.
+
+The reviewer passed Lemma M (both parts), Theorems K, K', KA, KA', Corollaries D1/D2 and the remaining system, with the interior index ranges made explicit. The candidate remains PARTIAL: no full D no-go and no witness.

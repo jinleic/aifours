@@ -1,0 +1,6 @@
+# Olson FC19 — parent erratum v1 (input wording)
+
+Recorded 2026-10-20T19:59:42-0700 (`/bin/date`). Governs /Users/jinleic/repos/aifours/mathematics/evidence/six-lane-20261018-96h/olson/continuations/lowerhalf-fc-p19-cells/proof-FC19-v1.md (10cc94b0210274167b1aa124e2a977b1b94c65275c153cd8a4492564e1bdb57b); disposes Claude /Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/review/olson-FC19-claude-v1.prompt.note.md (532ea86d7d47bc8a96a3ab439acc7ca2a72246eb6453d083994502d9c3cbed3d):0F/0M/1m. No mathematical statement or proof step changes.
+
+1. **MINOR-1.** Replace proof LF257–258's primitive-input list, and scope LF38's added "balfull", by: "Primitive inputs enter only through accepted UMR, namely exactly those listed at UMR parent verdict LF24 (NF; GRX if-direction; SC0 applied to Y′z; ZSTRUCT/FB at the exact (S′) parameters (p−1,kappa−1); the S1 definition; the stated LOWER conventions)." No FCW lemma or erratum and no balfull theorem is an accepted FC19 input.
+2. **Observations retained, no repair:** O1 the final Lemma4.6 branch is vacuous (q(J6(S′))≥n(J6(S′)) and Lemma4.1(e) force n≥4>o), but the stated bound remains valid; O2 F4 alone gives x6=8−k6 in Lemma4.1(f); O3 k/m are rebound at each use.

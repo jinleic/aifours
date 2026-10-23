@@ -1,0 +1,177 @@
+# Corollary INV*-FEW: INV*(p) for avoiders with few odd maximal constant reflection blocks (combination), v3
+
+Owner OlsonRotationRigidity.  Written after host clock 2026-10-18T06:59:38-07:00.  v3 written after host clock
+2026-10-18T08:28:19-07:00: ERRATA of v2 (sha256 e71ece9e559b29b8f9c60b40ec95d37f3e9af7d18459dc5caf05199e590dcd03) for the Claude few-odd chain
+review R/olson-fewodd-chain-claude-v1.note.md (v2 ACCEPT-WITH-FIXES): m2 (complete dependency list of (b)) and m5
+(c != 0 and the branch condition at the REFL instance on u°(h)) applied, fix map at the end; v3 itself unreviewed.
+v2 written after host clock 2026-10-18T07:47:30-07:00: CITATION ERRATUM of v1 (sha256
+026753c97419ff327e7431d47d16104d7b2a0c80e3ef8452c114fac5b1c16bc4) for Codex round C
+(R/olson-roundC-codex-v1.note.md, v1 ACCEPT-WITH-FIXES, 1 MINOR); v2 itself unreviewed.  Combination note; no new lemma.  It records how the rotation results meet the reflection slice's
+reflection/proof-REFL-fewodd-r2.md (OlsonReflectionRigidity, sha256 db16274fffccde41e65025a46c4992bb3c11c26bce9bcc97f5bc3efaae65c2c6,
+Codex ACCEPT in R/olson-refl-fewodd-r2-codex-v1.note.md and in round C; its inputs are parent-accepted: Theorem RED and the
+small-k verdict).  Interface confirmed with its
+author by IRC (06:59).  Not ordered Olson (length 4p-1); not INV*(p) for all avoiders.
+Notation: o_F(w) := number of maximal constant reflection blocks of odd length in the maximal cyclic decomposition of
+w (each maximal cyclic reflection run split into its maximal constant blocks).  This is the parameter o of ROT-o2,
+ROT-o3, ROT-o4 and of proof-ROT-few-E-v2.md, and the o_F of REFL-few-odd.  INV*(p) for w: rotations in one
+{rho_c, rho_-c}, c != 0, and every maximal cyclic reflection run constant.
+
+## Statement
+
+**Corollary INV*-FEW.**  Let p >= 5 be prime and w an avoider of length 4p-2 over D_(2p).
+ (a) If o_F(w) <= 3, or p >= 7 and o_F(w) = 4, then w satisfies INV*: conditional ONLY on Corollary REFL-few-odd.
+ (b) If 5 o_F(w) <= 2p + 4, then w satisfies INV*: conditional on Theorem SHgen (proof-SHgen-v2.md 8fde88c0...d239;
+     errata v3), Corollary REFL-few-odd, and the rotation results combined here: proof-ROT-few-E-v2.md (normal form
+     Sec. 0, Lemma SHgen-E Sec. 1, Theorem ROT-FEW-E Sec. 2; errata v3) and proof-ROT-few-v3.md (Lemma MULT and the
+     other sequence lemmas, Steps 1-5 of Theorem ROT-FEW; errata v4).
+
+## Proof
+
+(a) Rotations: ROT-o2 (accepted, lowodd verdict v2: "maximal cyclic constant reflection blocks include at most two
+odd-length blocks"; o_F = 0 impossible, o_F = 1 gives equal rotations), ROT-o3 (accepted for primes p >= 5) and ROT-o4
+(accepted for primes p >= 7) are stated for avoiders with exactly o odd maximal constant reflection blocks and assume
+nothing about run constancy; their proofs use GRX, PM*, DEL and Davenport-alpha on arbitrary cyclic constant-block
+representations (o3o4 verdict: "GRX, PM*, the pairs bound and Davenport-alpha do not use maximality, and o is read on
+the original maximal blocks").  So w's rotations lie in one {rho_c, rho_-c}, c != 0.  Reflections: o_F(w) <= 4 <= p,
+so REFL-few-odd applies to w and every maximal cyclic reflection run of w is constant.
+(b) Rotations: proof-ROT-few-E-v2.md (sha256
+cb4bca7be188a19fa46f31602c60beeb7c962c14598d0edaeb210a3ae20d917e) Theorem ROT-FEW-E, whose only use of REFL(p) is in Lemma SHgen-E on the expanded
+word u°(h) and in its final sentence on w.  (i) That use arises only when w^ has an empty run (ROT-few-E-v2 L35:
+otherwise Theorem SHgen applies directly).  u°(h) has length 4p-2 and rotations in {rho_c, rho_-c} with c != 0 (c is
+the value of the generator g of Step 4 of ROT-FEW, and no rotation is rho_0, ROT-few-E-v2 L50); its blocks are
+the k blocks of the normal form w^ (all odd and nonempty, every empty run between DIFFERENT values), so they are its
+maximal constant blocks and o_F(u°(h)) = k <= o_F(w) <= (2p+4)/5 <= p.  If u°(h) avoided, REFL-few-odd would make
+its maximal cyclic reflection runs constant, but the empty run between two different values lies inside one maximal
+run: so u°(h) does not avoid, which is exactly what Lemma SHgen-E needs.  (ii) Once the rotations of w lie in one
+{rho_c, rho_-c}, REFL-few-odd applies to w (o_F(w) <= p).  []
+
+## Scope
+
+* (a) depends only on accepted rotation results and REFL-few-odd r2 (Codex ACCEPT); (b) additionally on SHgen-v2
+  (Codex round-B and Claude engine ACCEPT; errata v3), on ROT-few-E-v2 Sec. 0-2 (Lemma SHgen-E awaits a check against
+  the SHgen proof text; errata v3) and on ROT-few-v3 (MULT, Steps 1-5; Codex and Claude ACCEPT; errata v4).
+* Range of (b): o_F <= 5 for p = 11; 6 for p = 13; 7 for p = 17; 8 for p = 19; 10 for p = 23; about 2p/5 in general.
+* Avoiders with o_F > (2p+4)/5 (and o_F > 4 when SHgen is not assumed) are not covered; p = 5 with o_F = 4 is not
+  covered by (a) (ROT-o4 is accepted only for p >= 7).
+* Observation [O] (not a premise): the listed normalised avoiders at p = 5, 7 have o_F up to p, so the uncovered range
+  contains avoiders.
+* No novelty claim; not ordered Olson.
+
+## Errata diff and fix map (v1 -> v2)
+
+Fix map: Codex round C MINOR (R/olson-roundC-codex-v1.note.md, SOURCE01:5-10,29: stale dependency versions) ->
+(1) REFL-few-odd r1 (6058831a...7dd7) replaced by r2 (db16274f...c2c6; same statement and proof, Codex ACCEPT) in the
+header; (2) ROT-FEW-E v1 (79f6e2f1...b897) replaced by v2 (cb4bca7b...917e; adds the even-block terminal case) in the
+notation line and in proof (b); (3) the status words of the two cited dependencies in the Scope bullet updated to their
+review dispositions (r2 Codex ACCEPT; SHgen-v2 Codex round-B ACCEPT); (4) title version and this provenance.  No
+hypothesis, range, proof step or conclusion changed.  Generated by unique string replacement from v1; body diff:
+
+```diff
+--- proof-INVstar-few-v1.md
++++ proof-INVstar-few-v2.md (body)
+@@ -1,13 +1,15 @@
+-# Corollary INV*-FEW: INV*(p) for avoiders with few odd maximal constant reflection blocks (combination), v1
++# Corollary INV*-FEW: INV*(p) for avoiders with few odd maximal constant reflection blocks (combination), v2
+ 
+-Owner OlsonRotationRigidity.  Written after host clock 2026-10-18T06:59:38-07:00.  Status [W], UNREVIEWED combination
+-note; no new lemma.  It records how the rotation results meet the reflection slice's
+-reflection/proof-REFL-fewodd-r1.md (OlsonReflectionRigidity, sha256 6058831acc970e86a33f007bf900de397eaba5ccac7318bd3ba93a0bd61d7dd7,
+-[W] unreviewed; its inputs are parent-accepted: Theorem RED and the small-k verdict).  Interface confirmed with its
++Owner OlsonRotationRigidity.  Written after host clock 2026-10-18T06:59:38-07:00.  v2 written after host clock 2026-10-18T07:47:30-07:00: CITATION ERRATUM of v1 (sha256
++026753c97419ff327e7431d47d16104d7b2a0c80e3ef8452c114fac5b1c16bc4) for Codex round C
++(R/olson-roundC-codex-v1.note.md, v1 ACCEPT-WITH-FIXES, 1 MINOR); v2 itself unreviewed.  Combination note; no new lemma.  It records how the rotation results meet the reflection slice's
++reflection/proof-REFL-fewodd-r2.md (OlsonReflectionRigidity, sha256 db16274fffccde41e65025a46c4992bb3c11c26bce9bcc97f5bc3efaae65c2c6,
++Codex ACCEPT in R/olson-refl-fewodd-r2-codex-v1.note.md and in round C; its inputs are parent-accepted: Theorem RED and the
++small-k verdict).  Interface confirmed with its
+ author by IRC (06:59).  Not ordered Olson (length 4p-1); not INV*(p) for all avoiders.
+ Notation: o_F(w) := number of maximal constant reflection blocks of odd length in the maximal cyclic decomposition of
+ w (each maximal cyclic reflection run split into its maximal constant blocks).  This is the parameter o of ROT-o2,
+-ROT-o3, ROT-o4 and of proof-ROT-few-E-v1.md, and the o_F of REFL-few-odd.  INV*(p) for w: rotations in one
++ROT-o3, ROT-o4 and of proof-ROT-few-E-v2.md, and the o_F of REFL-few-odd.  INV*(p) for w: rotations in one
+ {rho_c, rho_-c}, c != 0, and every maximal cyclic reflection run constant.
+ 
+ ## Statement
+@@ -26,7 +28,8 @@
+ representations (o3o4 verdict: "GRX, PM*, the pairs bound and Davenport-alpha do not use maximality, and o is read on
+ the original maximal blocks").  So w's rotations lie in one {rho_c, rho_-c}, c != 0.  Reflections: o_F(w) <= 4 <= p,
+ so REFL-few-odd applies to w and every maximal cyclic reflection run of w is constant.
+-(b) Rotations: proof-ROT-few-E-v1.md Theorem ROT-FEW-E, whose only use of REFL(p) is in Lemma SHgen-E on the expanded
++(b) Rotations: proof-ROT-few-E-v2.md (sha256
++cb4bca7be188a19fa46f31602c60beeb7c962c14598d0edaeb210a3ae20d917e) Theorem ROT-FEW-E, whose only use of REFL(p) is in Lemma SHgen-E on the expanded
+ word u°(h) and in its final sentence on w.  (i) u°(h) has length 4p-2 and rotations in {rho_c, rho_-c}; its blocks are
+ the k blocks of the normal form w^ (all odd and nonempty, every empty run between DIFFERENT values), so they are its
+ maximal constant blocks and o_F(u°(h)) = k <= o_F(w) <= (2p+4)/5 <= p.  If u°(h) avoided, REFL-few-odd would make
+@@ -36,7 +39,8 @@
+ 
+ ## Scope
+ 
+-* (a) depends only on accepted rotation results and the unreviewed REFL-few-odd; (b) additionally on SHgen-v2 [W].
++* (a) depends only on accepted rotation results and REFL-few-odd r2 (Codex ACCEPT); (b) additionally on SHgen-v2
++  (Codex round-B ACCEPT).
+ * Range of (b): o_F <= 5 for p = 11; 6 for p = 13; 7 for p = 17; 8 for p = 19; 10 for p = 23; about 2p/5 in general.
+ * Avoiders with o_F > (2p+4)/5 (and o_F > 4 when SHgen is not assumed) are not covered; p = 5 with o_F = 4 is not
+   covered by (a) (ROT-o4 is accepted only for p >= 7).
+```
+
+## Errata diff and fix map (proof-INVstar-few-v2.md -> proof-INVstar-few-v3.md)
+
+Fix map (Claude few-odd chain review R/olson-fewodd-chain-claude-v1.note.md):
+m2 (SOURCE01:19-20, 42-43: the dependency list of (b) omits ROT-FEW-E v2 Sec. 0-2 and ROT-few-v3 MULT/Steps 1-5) ->
+statement (b) and the first Scope bullet.
+m5 (SOURCE01:33-37: at the REFL instance on u°(h) state c != 0 and that the branch is entered only when w^ has an
+empty run) -> proof (b)(i).
+Header: version line and this provenance.  No statement content, hypothesis, range or proof step changed.
+The earlier errata sections above are carried over unchanged.  Generated by unique string replacement in the body
+of proof-INVstar-few-v2.md (sha256 e71ece9e559b29b8f9c60b40ec95d37f3e9af7d18459dc5caf05199e590dcd03); body diff:
+
+```diff
+--- proof-INVstar-few-v2.md (body before its errata sections)
++++ proof-INVstar-few-v3.md (body)
+@@ -1,6 +1,10 @@
+-# Corollary INV*-FEW: INV*(p) for avoiders with few odd maximal constant reflection blocks (combination), v2
++# Corollary INV*-FEW: INV*(p) for avoiders with few odd maximal constant reflection blocks (combination), v3
+ 
+-Owner OlsonRotationRigidity.  Written after host clock 2026-10-18T06:59:38-07:00.  v2 written after host clock 2026-10-18T07:47:30-07:00: CITATION ERRATUM of v1 (sha256
++Owner OlsonRotationRigidity.  Written after host clock 2026-10-18T06:59:38-07:00.  v3 written after host clock
++2026-10-18T08:28:19-07:00: ERRATA of v2 (sha256 e71ece9e559b29b8f9c60b40ec95d37f3e9af7d18459dc5caf05199e590dcd03) for the Claude few-odd chain
++review R/olson-fewodd-chain-claude-v1.note.md (v2 ACCEPT-WITH-FIXES): m2 (complete dependency list of (b)) and m5
++(c != 0 and the branch condition at the REFL instance on u°(h)) applied, fix map at the end; v3 itself unreviewed.
++v2 written after host clock 2026-10-18T07:47:30-07:00: CITATION ERRATUM of v1 (sha256
+ 026753c97419ff327e7431d47d16104d7b2a0c80e3ef8452c114fac5b1c16bc4) for Codex round C
+ (R/olson-roundC-codex-v1.note.md, v1 ACCEPT-WITH-FIXES, 1 MINOR); v2 itself unreviewed.  Combination note; no new lemma.  It records how the rotation results meet the reflection slice's
+ reflection/proof-REFL-fewodd-r2.md (OlsonReflectionRigidity, sha256 db16274fffccde41e65025a46c4992bb3c11c26bce9bcc97f5bc3efaae65c2c6,
+@@ -16,8 +20,10 @@
+ 
+ **Corollary INV*-FEW.**  Let p >= 5 be prime and w an avoider of length 4p-2 over D_(2p).
+  (a) If o_F(w) <= 3, or p >= 7 and o_F(w) = 4, then w satisfies INV*: conditional ONLY on Corollary REFL-few-odd.
+- (b) If 5 o_F(w) <= 2p + 4, then w satisfies INV*: conditional on Theorem SHgen (proof-SHgen-v2.md 8fde88c0...d239)
+-     and Corollary REFL-few-odd.
++ (b) If 5 o_F(w) <= 2p + 4, then w satisfies INV*: conditional on Theorem SHgen (proof-SHgen-v2.md 8fde88c0...d239;
++     errata v3), Corollary REFL-few-odd, and the rotation results combined here: proof-ROT-few-E-v2.md (normal form
++     Sec. 0, Lemma SHgen-E Sec. 1, Theorem ROT-FEW-E Sec. 2; errata v3) and proof-ROT-few-v3.md (Lemma MULT and the
++     other sequence lemmas, Steps 1-5 of Theorem ROT-FEW; errata v4).
+ 
+ ## Proof
+ 
+@@ -30,7 +36,9 @@
+ so REFL-few-odd applies to w and every maximal cyclic reflection run of w is constant.
+ (b) Rotations: proof-ROT-few-E-v2.md (sha256
+ cb4bca7be188a19fa46f31602c60beeb7c962c14598d0edaeb210a3ae20d917e) Theorem ROT-FEW-E, whose only use of REFL(p) is in Lemma SHgen-E on the expanded
+-word u°(h) and in its final sentence on w.  (i) u°(h) has length 4p-2 and rotations in {rho_c, rho_-c}; its blocks are
++word u°(h) and in its final sentence on w.  (i) That use arises only when w^ has an empty run (ROT-few-E-v2 L35:
++otherwise Theorem SHgen applies directly).  u°(h) has length 4p-2 and rotations in {rho_c, rho_-c} with c != 0 (c is
++the value of the generator g of Step 4 of ROT-FEW, and no rotation is rho_0, ROT-few-E-v2 L50); its blocks are
+ the k blocks of the normal form w^ (all odd and nonempty, every empty run between DIFFERENT values), so they are its
+ maximal constant blocks and o_F(u°(h)) = k <= o_F(w) <= (2p+4)/5 <= p.  If u°(h) avoided, REFL-few-odd would make
+ its maximal cyclic reflection runs constant, but the empty run between two different values lies inside one maximal
+@@ -40,7 +48,8 @@
+ ## Scope
+ 
+ * (a) depends only on accepted rotation results and REFL-few-odd r2 (Codex ACCEPT); (b) additionally on SHgen-v2
+-  (Codex round-B ACCEPT).
++  (Codex round-B and Claude engine ACCEPT; errata v3), on ROT-few-E-v2 Sec. 0-2 (Lemma SHgen-E awaits a check against
++  the SHgen proof text; errata v3) and on ROT-few-v3 (MULT, Steps 1-5; Codex and Claude ACCEPT; errata v4).
+ * Range of (b): o_F <= 5 for p = 11; 6 for p = 13; 7 for p = 17; 8 for p = 19; 10 for p = 23; about 2p/5 in general.
+ * Avoiders with o_F > (2p+4)/5 (and o_F > 4 when SHgen is not assumed) are not covered; p = 5 with o_F = 4 is not
+   covered by (a) (ROT-o4 is accepted only for p >= 7).
+```

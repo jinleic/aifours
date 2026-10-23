@@ -1,0 +1,155 @@
+--- /Users/jinleic/repos/aifours/information-science/evidence/six-lane-20261016/packing-array19/src/extend_ms09_growth_guarded.py	2026-10-18 01:14:45
++++ /Users/jinleic/repos/aifours/information-science/evidence/six-lane-20261016/packing-array19/src/extend_ms09_growth_guarded_v2.py	2026-10-18 01:21:24
+@@ -1,5 +1,6 @@
+ #!/usr/bin/env python3
+-"""NEW exclusive wrapper for the approved26 missing ms09 lists (parent growth-gate decision 2026-10-18 ~01:1x).
++"""[Version2 safety correction: owned-child elapsed/chunk/run-deadline and in-flight12e9 floor guard, creation-only receipts/output, no placement/proof-predicate change. Chunks<=10800s include90s shutdown reserve; helper1800s maximum. All trips UNKNOWN even rc0. Original run cutoff2026-10-18T18:31:43-07:00.]
++NEW exclusive wrapper for the approved26 missing ms09 lists (parent growth-gate decision 2026-10-18 ~01:1x).
+ It reuses stream_check15.run_helper unchanged (owned registered child, helper flock, sampled5GiB cap/quarantine).
+ After ALL token+bigmem locks are held, a local spawn hook (also inside run_helper's helper lock) computes current
+ conservative lane-new-data usage and all remaining frozen generator-output bounds; refuses if the whole plan
+@@ -12,6 +13,7 @@
+ """
+ import fcntl
+ import hashlib
++import datetime
+ import json
+ import os
+ import sys
+@@ -21,6 +23,7 @@
+ sys.path.insert(0, HERE)
+ import lane_new_data_accounting as A
+ import stream_check15 as S
++import enumeration_helper_guard as H
+ 
+ LANE = os.path.dirname(HERE)
+ C2 = os.path.join(LANE, 'cycle2')
+@@ -28,6 +31,10 @@
+ NORMAL_GATE = 12334217728
+ RECEIPT_MARGIN = 1048576
+ EXPECTED_INVENTORY_SHA = 'd45499bdcb4718a38fafa0f82f49c8d28d06ab680444b6e1ad2cad6c82ca414a'
++RUN_DEADLINE_WALL = datetime.datetime.fromisoformat('2026-10-18T18:31:43-07:00').timestamp()
++CHUNK_SECONDS = 10800.0
++SHUTDOWN_RESERVE = 90.0
++EXTEND_X_SHA = '9862d9eb3541cc6a50ee3959cf4e1b909e8afe2b6d448875ddc0f394b07a14fb'
+ 
+ 
+ def sha(path):
+@@ -40,6 +47,8 @@
+ 
+ 
+ def main():
++    chunk_guard_monotonic = time.monotonic() + CHUNK_SECONDS - SHUTDOWN_RESERVE
++    run_guard_wall = RUN_DEADLINE_WALL - SHUTDOWN_RESERVE
+     S.install_sigterm_handler()
+     S.set_stop_files([os.path.join(C2, 'STOP-extend')])
+     inventory_path = os.path.abspath(sys.argv[1])
+@@ -53,6 +62,7 @@
+         assert sha(os.path.join(HERE, name)) == expected, ('source changed', name)
+     skpath = os.path.join(C2, 'skel-b', 'skeletons-b-ms09.json')
+     assert sha(skpath) == inv['skeleton_file_sha256']
++    assert sha(os.path.join(HERE, 'extend_b_x.py')) == EXTEND_X_SHA
+     for record in inv['hard_lists_unchanged']:
+         assert sha(os.path.join(LANE, record['path'])) == record['sha256']
+     tmpdir = os.path.join(LANE, 'scratch', 'ms09-owned-tmp', '%d-%d' % (os.getpid(), time.time_ns()))
+@@ -68,7 +78,9 @@
+         os.pwrite(fd, ('%d %.3f ms09-growth-exclusive\n' % (os.getpid(), time.time())).encode(), 0)
+     original_spawn = S.spawn
+     state = {}
+-    summary = {'start': time.strftime('%Y-%m-%dT%H:%M:%S%z'), 'inventory_sha256': sha(inventory_path),
++    summary = {'chunk_seconds': CHUNK_SECONDS, 'shutdown_reserve_seconds': SHUTDOWN_RESERVE,
++               'chunk_guard_monotonic': chunk_guard_monotonic, 'run_guard_wall': run_guard_wall,
++               'start': time.strftime('%Y-%m-%dT%H:%M:%S%z'), 'inventory_sha256': sha(inventory_path),
+                'owned_tmpdir': os.path.relpath(tmpdir, LANE), 'requested': requested, 'results': []}
+ 
+     def guarded_spawn(cmd, stdin=False):
+@@ -93,12 +105,16 @@
+                          accounting['new_data_usage_upper_bytes'] + planned_bound <= A.ENFORCED_CAP_BYTES,
+                      'proof_retention_bytes': 0}
+         state['admission'] = admission
+-        S.write_json(os.path.join(state['dir'], 'growth-admission-%d.json' % time.time_ns()), admission)
++        H.write_json_x(os.path.join(state['dir'], 'growth-admission-%d.json' % time.time_ns()), admission)
+         if not admission['projected_plan_within_enforced_cap']:
+             raise S.AdmissionDenied('whole planned retained output exceeds known lane-new-data allowance')
+         if free_now < required:
+             raise S.AdmissionDenied('post-all-lock growth gate: free %d < %d' % (free_now, required))
+         # No lock wait or unrelated work between this fresh check and the registered Popen call.
++        if time.monotonic() >= chunk_guard_monotonic or time.time() >= run_guard_wall:
++            raise S.AdmissionDenied('chunk/run deadline immediately before helper spawn')
++        if sha(os.path.join(HERE, 'extend_b_x.py')) != EXTEND_X_SHA:
++            raise S.AdmissionDenied('creation-only enumerator changed before spawn')
+         immediately_before = S.disk_free_bytes()
+         state['immediate_free_bytes'] = immediately_before
+         state['spawn_clock'] = time.strftime('%Y-%m-%dT%H:%M:%S%z')
+@@ -111,7 +127,8 @@
+         for job in requested:
+             out = ext_path(job)
+             directory = os.path.dirname(out)
+-            os.makedirs(directory, exist_ok=True)
++            if not os.path.exists(directory):
++                os.makedirs(directory, exist_ok=False)
+             if os.path.exists(out):
+                 e = json.load(open(out))
+                 assert e['num_placements'] == len(e['placements'])
+@@ -124,20 +141,21 @@
+             state.update({'job': job, 'row': rows[job], 'dir': directory})
+             t0 = time.time()
+             try:
+-                rc, text = S.run_helper([sys.executable, os.path.join(HERE, 'extend_b.py'), skpath, str(bi), tmp])
++                rc, text, helper_info = H.run_helper(S, [sys.executable, os.path.join(HERE, 'extend_b_x.py'), skpath, str(bi), tmp],
++                                                      directory, chunk_guard_monotonic, run_guard_wall)
+             except S.AdmissionDenied as exc:
+                 deferred = {'job': job, 'status': 'UNKNOWN/deferred', 'reason': str(exc), 'state': state}
+-                S.write_json(os.path.join(directory, 'growth-deferred-%d.json' % time.time_ns()), deferred)
++                H.write_json_x(os.path.join(directory, 'growth-deferred-%d.json' % time.time_ns()), deferred)
+                 summary['results'].append({'job': job, 'status': 'UNKNOWN/deferred', 'reason': str(exc)})
+                 print(json.dumps(summary['results'][-1]), flush=True)
+                 break
+-            info = dict(S.LAST_HELPER, seconds=round(time.time() - t0, 2), job=job,
++            info = dict(helper_info, seconds=round(time.time() - t0, 2), job=job,
+                         immediate_free_bytes=state.get('immediate_free_bytes'), spawn_clock=state.get('spawn_clock'),
+                         admission=state.get('admission'), out_tail=text[-300:], tmp=os.path.relpath(tmp, LANE))
+-            if rc != 0 or info.get('cap_hit') or not os.path.exists(tmp):
++            if rc != 0 or info.get('guard_tripped') or not os.path.exists(tmp):
+                 info['status'] = 'UNKNOWN/helper failed'
+-                S.write_json(os.path.join(directory, 'growth-failed-%d.json' % time.time_ns()), info)
+-                summary['results'].append({'job': job, 'status': info['status'], 'rc': rc, 'cap_hit': info.get('cap_hit')})
++                H.write_json_x(os.path.join(directory, 'growth-failed-%d.json' % time.time_ns()), info)
++                summary['results'].append({'job': job, 'status': info['status'], 'rc': rc, 'guard_tripped': info.get('guard_tripped'), 'guard_reasons': info.get('guard_reasons')})
+                 print(json.dumps(summary['results'][-1]), flush=True)
+                 break
+             e = json.load(open(tmp))
+@@ -145,7 +163,7 @@
+                      and os.path.getsize(tmp) <= rows[job]['complete_output_upper_bytes'])
+             if not valid:
+                 info['status'] = 'UNKNOWN/output bound or completeness validation failed'
+-                S.write_json(os.path.join(directory, 'growth-failed-%d.json' % time.time_ns()), info)
++                H.write_json_x(os.path.join(directory, 'growth-failed-%d.json' % time.time_ns()), info)
+                 summary['results'].append({'job': job, 'status': info['status']})
+                 print(json.dumps(summary['results'][-1]), flush=True)
+                 break
+@@ -156,7 +174,7 @@
+                    'bytes': os.path.getsize(out), 'raw_class_assignments': e['raw_class_assignments'],
+                    'automorphisms': e['automorphisms'], 'num_placements': e['num_placements'],
+                    'inventory_sha256': summary['inventory_sha256'], 'helper': info}
+-            S.write_json(os.path.join(directory, 'complete-denominator-%d.json' % time.time_ns()), pin)
++            H.write_json_x(os.path.join(directory, 'complete-denominator-%d.json' % time.time_ns()), pin)
+             result = {k: pin[k] for k in ('job', 'sha256', 'bytes', 'raw_class_assignments', 'automorphisms', 'num_placements')}
+             result['seconds'], result['peak_rss_kb'] = info['seconds'], info.get('peak_rss_kb')
+             summary['results'].append(result)
+@@ -171,13 +189,13 @@
+         with S._alock:
+             live = [p for p in S.ACTIVE if p.poll() is None]
+         for child in live:
+-            S.quarantine(child, 'exclusive wrapper owned survivor before unlock', [])
++            H.wait_quarantined(S, child, 'exclusive wrapper owned survivor before unlock', C2, [])
+             S.unregister(child)
+         for fd in fds:
+             fcntl.flock(fd, fcntl.LOCK_UN)
+             os.close(fd)
+         summary['end'] = time.strftime('%Y-%m-%dT%H:%M:%S%z')
+-        S.write_json(os.path.join(C2, 'ms09-growth-chunk-%d.json' % time.time_ns()), summary)
++        H.write_json_x(os.path.join(C2, 'ms09-growth-chunk-%d.json' % time.time_ns()), summary)
+ 
+ 
+ if __name__ == '__main__':

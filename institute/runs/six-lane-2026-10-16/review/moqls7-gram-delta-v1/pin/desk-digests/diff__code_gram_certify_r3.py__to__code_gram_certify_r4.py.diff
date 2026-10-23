@@ -1,0 +1,60 @@
+--- code/gram_certify_r3.py
++++ code/gram_certify_r4.py
+@@ -6,7 +6,7 @@
+ logs are hashed. Proof bytes are streamed to the checker, not stored. Scratch
+ CNF is reused; evidence and used FIFOs are never overwritten or removed.
+ 
+-Usage: gram_certify_r3.py CLASSES OUTDIR INSTANCE... [--solver-seconds 1800]
++Usage: gram_certify_r4.py CLASSES OUTDIR INSTANCE... [--solver-seconds 1800]
+        [--checker-seconds 3600]
+ Instances: k2A:0, k2B:0, k3A, k3B. No implicit expansion or unbounded solve.
+ """
+@@ -103,20 +103,20 @@
+         return ["cadical", "-q", "-t", str(seconds), path]
+     args = ["--squares", "3", "--heavy", "--sym"]
+     if kind == "k2B":
+-        lpath = os.path.join(SCRATCH, "cert_r3_L.json")
++        lpath = os.path.join(SCRATCH, "cert_r4_L.json")
+         with open(lpath, "w") as f:
+             json.dump(L, f)
+         args = ["--squares", "2", "--net-L", lpath, "--heavy"]
+     subprocess.run(["/usr/bin/python3", "-B", os.path.join(HERE, "gram_encB.py")]
+                    + args + ["--out", path], check=True, capture_output=True)
+-    return ["kissat", "-q", "--time=%d" % seconds, path]
++    return ["kissat", "-q", "-f", "--time=%d" % seconds, path]
+ 
+ 
+ def certify(instance, rows, outdir, solver_seconds, checker_seconds, pins):
+     if os.statvfs(LANE).f_bavail * os.statvfs(LANE).f_frsize < 12000000000:
+         raise RuntimeError("Global free-space floor reached")
+     label = instance.replace(":", "_")
+-    cnf = os.path.join(SCRATCH, "cert_r3_current.cnf")
++    cnf = os.path.join(SCRATCH, "cert_r4_current.cnf")
+     receipt = os.path.join(outdir, label + ".json")
+     fifo = os.path.join(outdir, label + ".drat.fifo")
+     solver_log = os.path.join(outdir, label + ".solver.log")
+@@ -134,10 +134,13 @@
+     if not rss(os.getpid()):
+         raise RuntimeError("Native RSS sampler unavailable")
+     with open(solver_log, "x") as sl, open(checker_log, "x") as cl:
+-        check = subprocess.Popen([CHECKER, cnf, fifo, "-t", str(checker_seconds)],
+-                                 stdout=cl, stderr=subprocess.STDOUT)
+         solve = subprocess.Popen(solver + [fifo], stdout=sl,
+                                  stderr=subprocess.STDOUT)
++        # Named-proof auto-detection closes/reopens its input and consumes bytes
++        # on a FIFO. Stdin with explicit binary mode never probes or reopens.
++        with open(fifo, "rb") as proof:
++            check = subprocess.Popen([CHECKER, cnf, "-i", "-t", str(checker_seconds)],
++                                     stdin=proof, stdout=cl, stderr=subprocess.STDOUT)
+         peak_rss, stop_reason = monitor(solve, check, solver_seconds + checker_seconds + 120)
+     with open(checker_log) as f:
+         lines = [line.strip() for line in f.read().replace("\r", "\n").splitlines()]
+@@ -175,7 +178,7 @@
+     os.makedirs(SCRATCH, exist_ok=True)
+     os.makedirs(a.outdir, exist_ok=True)
+     pins = {name: sha(os.path.join(HERE, name)) for name in
+-            ("gram_enc.py", "gram_encB.py", "gram_certify_r3.py", "k2_classes.py")}
++            ("gram_enc.py", "gram_encB.py", "gram_certify_r4.py", "k2_classes.py")}
+     pins["classfile"] = sha(a.classes)
+     pins["drat-trim"] = sha(CHECKER)
+     pins["drat-trim.c"] = sha(CHECKER + ".c")

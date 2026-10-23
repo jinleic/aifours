@@ -1,0 +1,1602 @@
+--- code/pilot_stream_drat_ms09_v3.py
++++ code/pilot_file_drat_v31.py
+@@ -1,123 +1,26 @@
+ #!/usr/bin/env python3
+-"""PA19 96h P-STREAM runner v3, multiset ms09: code/pilot_stream_drat_ms09_v2.py (ae4636c3...) + focused fixes for the
+-parent-routed Codex follow-up review (RUN/review/pa19-PSTREAM-v2-source-codex-v1.prompt.stdout.txt 3da83be6..., HOLD,
+-N1-N12) under the parent runtime-guard HOLD (RUN/review/runtime-guard-admission-HOLD-v1.json 6c1d8440...) and the
+-parent's N3 instruction (single parent allocator, one-use admission, verified parent release; no second scheduler):
+-  N1  Stop = class Owned: ONE SIGTERM to the owned process GROUP (KILLPG), only after the retained, unreaped leader is
+-      re-verified against its start identity (libproc BSD info: pid, pgid == pid, ppid == runner, same start time;
+-      or exited-unreaped and still listed in its own group).  Unverifiable identity: no signal, latch, UNSETTLED.
+-  N2  /bin/date Helper under the same rules as a native child: admission (no latch, no cancel, every owned process
+-      settled, HELPER_ALLOW fits the frozen cutoffs), launch boundary, verified identity, supervised incremental
+-      capture bounded at HELPER_OUT_CAP, cancel/wall/descendant/RSS trips, verified stop, bounded reap then UNSETTLED
+-      quarantine, cleanup in a finally, explicit settlement predicate; closeout counts only SETTLED helpers.
+-  N3  Admission authority = the parent's allocation inside the pinned GO (schema ALLOCATION_SCHEMA): out_dir ==
+-      OUT_DIR (exclusive creation: one use), reservation_bytes >= this run's reservation, lane_ceiling_bytes and
+-      busy_slots == the contract values, and released_attempts listing EVERY existing pilot-v1 entry with the
+-      SHA-256 of its launch record and summary; each release is re-verified (regular bounded files, exact digests,
+-      known schema, every owned process settled, no quarantine receipt, no reuse of this GO).  A missing, stale,
+-      malformed or UNSETTLED summary releases nothing.  In-run ledger: pilot root entries unchanged (one busy
+-      holder) and lane usage + outstanding reservation <= ceiling.
+-  N4  Timing evidence: last-alive and exit observations bound every child's exit time; SETTLED requires settlement
+-      within the child deadline + SETTLE_TAIL; qualification requires the exit observed by the deadline
+-      (SOLVER_TIMING / X.TIMING); terminal gate and commit re-check the frozen cutoffs (a late commit latches and
+-      can only be UNKNOWN); a late closeout or a voided chunk claim latches (no exit 0).
+-  N5  Item commits are charged to the output guard before their anchored O_EXCL creation; prestart admits the full
+-      reservation against free space, the STOP registry and the stability rule before any retained write.
+-  N6  Proof RAM: a live collector stays charged and keeps its blocks (release is deferred, retried at closeout);
+-      buffers are owned by the caller's list from creation (run_kissat owner), so every path releases them.
+-  N7  Monotonic unblock/TERM/quarantine transitions; metadata reads (GO, pinned inputs, monitor, prior launch
+-      records/summaries, quarantine receipts, captures) are regular-file, no-follow, non-blocking and bounded.
+-      Quarantine stays an explicit UNSETTLED state (continuing owner: this runner; disposition: parent).
+-  N8  Run tree created exclusively and anchored to directory descriptors opened without following symlinks; every
+-      runner-side creation/read in it goes through those descriptors; confinement (ancestry + anchored identities)
+-      re-validated at every admission, settlement, terminal gate and closeout; census = os.fwalk on the anchored
+-      root with (dev, ino, size, mtime_ns, ctime_ns, mode, nlink); every runner-written file's digest is
+-      re-verified at closeout.
+-  N9  Closeout reads the cancel stamp AFTER its boundary.
+-  N10 C6 runs kissat --time=CONTROL_TIMER_S and requires monotonic runtime bounds [C6_MIN_RUN_S, C6_MAX_RUN_S]
+-      (cleanup excluded), rc 0 and exactly ['s UNKNOWN'].
+-  N12 proc_listpids results are validated (whole entries, positive pids); unreadable descendant RSS stays None.
+-Residual limits (disclosed): native children receive path strings (confinement is re-validated around them, not
+-enforced inside them); OS process creation is not atomic with signal delivery (V7 orders the logical boundary);
+-absolute filesystem-call latency is not bounded (overruns fail closed); a quarantined owner is waited for without
+-bound by design.
+-PA19 96h P-STREAM runner v2 notes follow.
+-PA19 96h P-STREAM runner v2, multiset ms09: code/pilot_stream_drat_ms09_v1.py (d3ccc3cf...) + focused fixes for the
+-parent-routed Codex source review (RUN/review/pa19-PSTREAM-source-codex-v1.prompt.stdout.txt af15a4e1..., HOLD, 13
+-findings) under the parent runtime-guard HOLD (RUN/review/runtime-guard-admission-HOLD-v1.json 6c1d8440...):
+-  V1 (Codex 1) No /bin/ps.  The start identity, the owned-process census (own process group + transitive PPID closure,
+-     zombies listed) and RSS (PROC_PIDTASKINFO) are read in-process through libproc (ctypes), fail-closed.  The
+-     user-required /bin/date host clock is KEPT as an owned, bounded metadata helper (class Helper): pinned binary,
+-     own session, pre-registered in HELPERS, admitted only while no native child or helper is unreaped and no cancel
+-     is stamped (V7 boundary), communicate() bounded by HELPER_WALL, then ONE SIGTERM and HELPER_TERM_WAIT; a
+-     survivor is latched and quarantined (waited for without bound, no further signal, UNSETTLED, parent
+-     disposition).  Helpers never overlap a native child (busy <= 2 processes, contract per_lane_busy_processes);
+-     HELPER_ALLOW per call is in the timing model.  A refused or failed read records null; no timestamp is invented.
+-     After an owner cancel no new process of any kind starts.
+-  V2 (Codex 2) Cumulative lane ceiling: lane usage (lstat walk of LANE, hard links once, traversal errors raise) +
+-     this run's outstanding reservation + every other admitted attempt (a pilot-v1 launch record without a summary,
+-     at its recorded reservation) <= LANE_CEILING (RUN/contract-v1.json per_lane_new_disk_bytes, pinned and
+-     re-read at prestart), checked at prestart, at every child admission and at every terminal gate.  Hard output
+-     guard: every retained write is charged against the run's reservation before it is made (capture files
+-     pre-charged at LOG_CAP each).
+-  V3 (Codex 3) Absolute (epoch) and elapsed (monotonic) cutoffs are enforced separately for the run and every child;
+-     helper allowances are in the arithmetic.  The chunk claim holds only if every owned process settles within
+-     its tail; a quarantined process voids it (recorded) and stays UNSETTLED under parent disposition.
+-  V4 (Codex 4) The output directory must be a new direct child of LANE/evidence/pilot-v1 whose ancestors are all
+-     real directories (lstat; a symlink refuses); its (dev, inode) is re-checked at closeout.  A complete,
+-     fail-closed run-tree census (every entry kind, lstat only, never opens FIFO/socket payloads, removals
+-     detected, traversal errors raise) brackets EVERY child.  The monitor must begin with the pinned observer_start
+-     provenance record.
+-  V5 (Codex 5) Proof RAM stays charged while ANY collector or feeder holds it (one frozen tuple counted once); every
+-     buffer is released in a finally on every control and item path; closeout reports per-buffer holders and
+-     latches if any proof RAM is still held.
+-  V6 (Codex 6) Ownership fields are set immediately after Popen; never-started transport endpoints are closed before
+-     reaping; every descriptor/cleanup step is independent and its outcome enters the settlement record before
+-     publication; a capture reader error trips supervision.  Single-SIGTERM behaviour unchanged.
+-  V7 (Codex 7) Launch/cancel boundary: launch_order = next(ORDER) is drawn, then latch/cancel/deadlines are checked,
+-     then Popen.  A cancel ordered before the boundary prevents the launch; a later one applies to the owned child.
+-  V8 (Codex 8, PS1-F1) After an over-long partial line is flushed, the rest of that physical line passes through
+-     unconditionally; duplicate matching resumes only at a genuine line start.  Duplicate warnings of BOTH phases
+-     are counted and disclosed per item, never required and never gated.
+-  V9 (Codex 9) Canonical parser records: exactly one stdin record, exactly one parse header equal to the CNF pin
+-     header, exactly one consumed record equal to the fed bytes, exactly one status line; the complete solver
+-     output must be exactly ['s UNSATISFIABLE'].
+-  V10 (Codex 10) Every defect carries a stable ID ('ID: text'); controls and tests compare complete ID sets.
+-  V11 (Codex 11) Each control evaluates a checker's intended predicate before the next child is launched; C2/C3/C4
+-     compare complete defect-ID sets; C6 is bound to kissat's measured timer expiry (rc 0, output exactly
+-     ['s UNKNOWN'], >= 1 s); C7 to kissat's missing-input diagnostic (rc 1, exactly "kissat: error: can not read
+-     '<path>'"); C7b to drat-trim's (rc 255, exactly 'c error opening "<path>".', drat-trim.c:1425-1427).
+-  V12 (Codex 12) Items are type/shape-checked at prestart and again before generation (ms09: exact non-bool ints,
+-     0 <= lo <= hi < denominator, canonical id; ms06: canonical id, no interval fields).
+-  V13 (Codex 13) Capture records distinguish non-dropped bytes from bytes physically written to the capped file.
+-Not changed: transport identity checks of v1 (C3 + offline tests establish only the transport-identity rejection
+-predicate; native checker behaviour on altered/truncated proofs is NOT claimed), CHECK_SECONDS 600, at most two
+-items per run, ITEMS = [] (controls-only qualification; production only by a later reviewed item-only delta bound
+-to the then-current frontier).
+-PA19 96h P-STREAM runner v1 notes follow.
+-PA19 96h P-STREAM runner v1, multiset ms09: pilot_file_drat_v27.py (d9a1d5b3...) + the P-STREAM transport
+-(parent request 2026-10-19 04:5x; design notes/p-stream-design-v1.md and review/p-stream-design-v1.json):
+-  S1 No proof byte is ever written to disk.  kissat writes its proof into an owned FIFO; the ProofBuffer collector
+-     thread retains it in RAM (immutable FEED_BLOCK blocks) under the HARD byte cap and measures bytes and SHA-256
+-     at the producer; after the reap the blocks are frozen (tuple) and re-hashed by an independent second pass.
+-  S2 Two pinned checkers consume the SAME frozen buffer through stdin, sequentially (one native child at a time):
+-     A = the lane copy LANE/code/vendor/drat-trim (111b0405...), B = the provenanced parent build
+-     moqls7-parent-proofcheck-v1/drat-trim (a46c0c71...; receipt parent-result.json 200d307d...; source
+-     d834b649...).  argv [DRAT_X, CNF, -i, -t CHECK_SECONDS]: no proof path, so drat-trim reads the proof from
+-     stdin and '-i' forces binary mode.  An owned Feeder thread writes the blocks into the checker's stdin pipe,
+-     hashing/counting exactly the bytes os.write() accepted; the runner's read end is closed right after Popen
+-     and the write end is closed exactly once.  Each checker binary is re-hashed when its child is prepared.
+-  S3 Checker stdout+stderr pass the capture filter: raw bytes and SHA-256 are measured in-stream; ONLY lines
+-     that fullmatch the drat-trim duplicate-literal line (drat-trim.c:1162) are dropped, counted by phase and
+-     bytes; every other byte is the retained (capped) log.
+-  S4 Per checker: feed mode plain, fed bytes/SHA-256 == the collector measurement, 'read N bytes' == fed bytes,
+-     the stdin line, the parse header, exactly ['s VERIFIED'] rc0, no forbidden pattern, filter accounting,
+-     settled; the buffer is re-hashed after the checks; then the unchanged terminal gate and commit boundary.
+-     A later checker is skipped once an earlier one has a defect (the item is UNKNOWN either way).
+-  S5 RSS: the retained buffer bytes are charged to the lane RSS trip: child RSS + max(runner RSS, retained).
+-  S6 Controls C1-C7 for both checkers plus C7b (missing CNF + held feed: EPIPE liveness) = 14 children;
+-     CHECK_SECONDS 600 per checker; ITEMS = [] (controls-only qualification); production items only by a
+-     later item-only delta with its own parent GO bound to the then-current frontier.
++"""PA19 96h D2 file-proof runner v31 = code/pilot_file_drat_v30.py (aea3a63e..., ms09 items b25 [100..373], b69
++[100..703], b59 [0..99]; never launched) + the guard and acceptance fixes of P-STREAM v3, REUSING the identical
++P-STREAM v3 code (code/pilot_stream_drat_ms09_v3.py) for: clock/Helper/Owned (one identity-verified group SIGTERM,
++bounded owned helper), libproc identity/census, file access (bounded, no-follow, non-blocking), anchored run tree,
++census, confinement, digest preservation, the parent allocation (N3: single parent allocator, one-use admission,
++verified parent release) and in-run ledger, output guard, stability provenance header, admission, cutoffs, terminal
++gate, commit boundary (charged, cutoff-checked), stable defect IDs, healthy() and the C6 timer predicate, item
++shapes (no second convention).  Parent decisions (IRC 2026-10-19 ~06:3x/06:4x/06:4x): guards V1-V7, V12, V13 plus
++acceptance V9/V10/V11, then the P-STREAM v2 Codex follow-up findings N1-N12 folded in.
++D2-specific (disclosed):
++  V5/N6 (RAM proof buffers) do not apply: proofs are owned HARD-capped files; instead every ProofSink pre-charges its
++     cap to the output guard (V2), and the written proof's digest is registered for closeout re-verification (N8).
++  V4/N8 census: the solver child's proof FIFO and its growing proof FILE are its expected changes.
++  V9/V10 file transport: exactly one parse header == the CNF pin, one consumed record == the proof file bytes, one
++     status line; complete solver output exactly ['s UNSATISFIABLE']; SOLVER_TIMING/A.TIMING (N4).
++  V11 controls (9 children): C1-C4 complete defect-ID sets; C6 N10 timer predicate (--time=CONTROL_TIMER_S); C7
++     exact kissat missing-input diagnostic; NEW C7b drat-trim missing CNF (rc 255, exactly 'c error opening
++     "<path>".', drat-trim.c:1425-1427).
++Unchanged: the three v30 items and their pins, SOLVER_SECONDS 300, CHECK_SECONDS 1200, PROOF_CAP 629,145,600, the
++file-proof transport (proof FIFO -> owned capped file -> drat-trim CNF PROOF -i -t), the commit-boundary semantics.
++NOT TO BE RUN without the item-specific parent GO (with the N3 parent allocation) whose JSON names this file's SHA-256.
++PA19 96h pilot runner v14 notes follow (inherited).
+ PA19 96h pilot runner v14 = v13 + fixes for Codex r6 (review/codex-pilot-v13-r6/result.json a79577ae...;
+ R5#2-#4 resolved there):
+   r6#1 the settle-all pass iterates OWNED by index entirely inside its retry guard (no unguarded snapshot
+@@ -172,13 +75,13 @@
+ 
+ NOT TO BE RUN without the item-specific parent GO whose JSON names this file's SHA-256.
+ 
+-Scope (frozen): controls only (ITEMS = []): C1-C7 and C7b through the P-STREAM transport for both pinned
+-checkers.  Production items of multiset ms09 are added only by a later item-only delta with its own parent GO:
+-  encode_skel_b.build_partbatch over a pinned placement-list interval.
+-Per item: CNF built in memory by the vendored unchanged encoder, frozen digest required, written by exclusive
+-creation and re-hashed (the only retained input); kissat -q -f --seed=1 --time=300 CNF PROOF_FIFO (owned RAM
+-collector, HARD cap, nothing on disk); then, only on a settled self-exit rc20 's UNSATISFIABLE' with a complete
+-buffer, checker A and then checker B with the frozen buffer on stdin; CNF and buffer re-hashed.
++Scope (frozen): controls C1-C7, then three exact independent-M2 (encode_skel_b.build_partbatch) items
++of multiset ms09, sequentially, one native child at a time:
++  b00025:00100-00373, b00069:00100-00703, b00059:00000-00099.
++Per item: CNF built in memory by the vendored unchanged encoder, frozen digest required, written by
++exclusive creation and re-hashed; kissat -q -f --seed=1 --time=600 CNF PROOF_FIFO (owned sink ->
++exclusive proof file, HARD cap); then, only on a settled self-exit rc20 's UNSATISFIABLE' with a
++complete sink, drat-trim CNF PROOF_FILE -i -t 1200 (lane copy of the pinned binary); both re-hashed.
+ No deletion/overwrite, no SIGKILL, no subprocess timeout, no ulimit; lane FIFOs are new and never
+ removed.  The only signal ever sent is ONE SIGTERM to an UNREAPED owned Popen child, then a bounded
+ 60 s wait; a survivor gets a quarantine receipt, no further signal, LATCH, and the runner keeps waiting.
+@@ -207,12 +110,6 @@
+ KISSAT = ("/opt/homebrew/Cellar/kissat/4.0.4/bin/kissat", "05d6f3e9c402a1fe8853b0746e384e1b3d1c4a550e255f11daa2461d279aa848")
+ DRAT_OLD = (OLD + "/tools/drat-trim/drat-trim", "111b0405566d55629f5d391b80b3220cc7a3ebc3cd406a35895ff65cc9acd5e4")
+ DRAT = LANE + "/code/vendor/drat-trim"
+-DRAT_PROV = ("/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-16/review/moqls7-parent-proofcheck-v1/drat-trim",
+-             "a46c0c717f702206a7fe345de5bcdc0b10112bca6bdbf04dd42cd9848ff08e37")
+-DRAT_PROV_RECEIPT = ("/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-16/review/moqls7-parent-proofcheck-v1/"
+-                     "parent-result.json", "200d307dd52ab4d6559ff89d5faa6c3859e256bbd20c6d1fb439d237b9af3bfe")
+-DRAT_SOURCE_SHA = "d834b649f437e091597f5347f259b9f681087f89ca0844d0cee250a1a1a0c2ee"
+-CHECKERS = (("A", DRAT, DRAT_OLD[1]), ("B", DRAT_PROV[0], DRAT_PROV[1]))  # S2: sequential, same frozen buffer
+ DATE = ("/bin/date", "931edbfcbd847f3c1ccb504325a502db313ce20db27634744a7416c3c4b812f0")   # V1: pinned helper
+ CONTRACT = (RUN + "/contract-v1.json", "55baff0cf1ac1a4b0ab38b0eb1b1fa5a35a47c890f352b79dae4dfea919ffcaa")
+ LANE_CEILING = 10_737_418_240         # V2: contract resources.per_lane_new_disk_bytes (re-read at prestart)
+@@ -246,28 +143,39 @@
+ }
+ FAMILY = "ms09"                       # V12: item shape family of this runner
+ P0 = [4, 3, 3, 3, 3, 3]
+-ITEMS = []  # P-STREAM v1: controls-only qualification; production items only by a later item-only delta
++ITEMS = [
++    {"id": "b00025:00100-00373", "b": 25, "lo": 100, "hi": 373,
++     "list": (OLD + "/cycle2/m2part_drat/ms09_b00025/ext.json", "6bc60ed4d2debd5f77aa366b9897811c7fecd8cb6df959015a3784f3ac83cecb"),
++     "denominator": 374, "cnf": ("4df1625d3239e127eeb6aa80f2a44ab1321d32f1e0bf5e4a99c09d0b7f285a88", 9568889, "p cnf 13744 443162")},
++    {"id": "b00069:00100-00703", "b": 69, "lo": 100, "hi": 703,
++     "list": (OLD + "/cycle2/m2part_drat/ms09_b00069/ext.json", "6132bce6a30b918f2525a8aba10d5018ea476ebc0204b4bc4718707f8dc87d7d"),
++     "denominator": 704, "cnf": ("f95fa8a9febeaff429a723edd8b772a24752f6244a7de2966872e9dbc11fb8ad", 9732846, "p cnf 14074 455370")},
++    {"id": "b00059:00000-00099", "b": 59, "lo": 0, "hi": 99,
++     "list": (OLD + "/cycle2/m2part_drat/ms09_b00059/ext.json", "3687eb4bf8f8125eb35aee750356fd53fc83529e14af7dd212aad529d3b8acd1"),
++     "denominator": 2421, "cnf": ("ae0ff19e7981d90e8d5fa7a849d4b1ee3b07b69fa929dd3dcffadd0a6ce89a48", 9482669, "p cnf 13570 436720")},
++]
+ SOLVER_SECONDS = 300
+-CHECK_SECONDS = 600                   # per checker, two per item (measured max 0.598 s per proof MB)
++CHECK_SECONDS = 1200
+ GRACE = 60
+ TERM_WAIT = 60
+ STREAM_JOIN = 60
+ SINK_UNBLOCK = 10
+ SETTLE_TAIL = TERM_WAIT + STREAM_JOIN + SINK_UNBLOCK + STREAM_JOIN + 30   # 220 s serial settlement bound
+-PROOF_CAP = 629_145_600              # HARD: the RAM buffer never retains more than this (never written to disk)
+-CONTROL_PROOF_CAP = 8 * 1024 * 1024  # HARD RAM cap for control proofs
++PROOF_CAP = 629_145_600              # HARD: the sink never writes more than this to an item proof file
++CONTROL_PROOF_CAP = 8 * 1024 * 1024  # HARD cap for control proofs
+ LOG_CAP = 16 * 1024 * 1024           # HARD per captured stdout+stderr stream
+ RECORD_MAX = 512 * 1024              # HARD per retained JSON record (bounded() + size check)
+ STR_MAX = 1000
+ LIST_MAX = 40
+-ITEM_RECORDS = 11                     # 3 children x (launch, settle, quarantine) + item record + spare
+-CONTROL_RECORDS = 14 * 3 + 2          # 14 children x (launch, settle, quarantine) + controls.json + spare
++ITEM_RECORDS = 8                      # 2 children x (launch, settle, quarantine) + item record + spare
++CONTROL_RECORDS = 9 * 3 + 2           # 9 children x (launch, settle, quarantine) + controls.json + spare
+ RUN_RECORDS = 3                       # launch-record, summary, spare
+-CNF_ITEM_MAX = max((it["cnf"][1] for it in ITEMS), default=0)
+-ITEM_RESERVE = CNF_ITEM_MAX + (1 + len(CHECKERS)) * LOG_CAP + ITEM_RECORDS * RECORD_MAX  # S1: no proof bytes on disk
+-CONTROL_CHILDREN = 14                 # C1 kissat+A+B, C2 A+B, C3 A+B, C4 A+B, C5 kissat, C6 kissat, C7 kissat, C7b A+B
++CNF_ITEM_MAX = max(it["cnf"][1] for it in ITEMS)
++ITEM_RESERVE = CNF_ITEM_MAX + PROOF_CAP + 2 * LOG_CAP + ITEM_RECORDS * RECORD_MAX
++CONTROL_CHILDREN = 9                  # C1 kissat+drat, C2-C4 drat, C5-C7 kissat, C7b drat (V11)
+ CONTROL_CNF_ALLOW = 1024 * 1024       # six PHP CNFs, each < 64 KiB
+-CONTROL_RESERVE = CONTROL_CHILDREN * LOG_CAP + CONTROL_CNF_ALLOW + CONTROL_RECORDS * RECORD_MAX  # S1: RAM proofs only
++CONTROL_RESERVE = (CONTROL_CHILDREN * LOG_CAP + 3 * CONTROL_PROOF_CAP + 1 + 4096 + CONTROL_CNF_ALLOW
++                   + CONTROL_RECORDS * RECORD_MAX)
+ RUN_RESERVE = RUN_RECORDS * RECORD_MAX
+ FREE_FLOOR = 12_000_000_000
+ FRESH_BASE = 12_200_000_000
+@@ -287,8 +195,8 @@
+ CONTROL_TIMER_S = 2                   # N10: kissat --time of C6
+ C6_MIN_RUN_S = 1.5                    # N10: required monotonic runtime lower bound of C6
+ C6_MAX_RUN_S = 5.0                    # N10: allowed monotonic runtime upper bound of C6
+-ITEM_WORST_SECONDS = (30 + (SOLVER_SECONDS + GRACE + SETTLE_TAIL) + 30
+-                      + len(CHECKERS) * (CHECK_SECONDS + GRACE + SETTLE_TAIL + 30) + HELPERS_PER_ITEM * HELPER_ALLOW)
++ITEM_WORST_SECONDS = (30 + (SOLVER_SECONDS + GRACE + SETTLE_TAIL) + 30 + (CHECK_SECONDS + GRACE + SETTLE_TAIL) + 30
++                      + HELPERS_PER_ITEM * HELPER_ALLOW)
+ RUN_HELPER_SECONDS = HELPERS_PER_RUN * HELPER_ALLOW
+ MAX_CHUNK = 10800
+ SETTLE = 120
+@@ -307,15 +215,6 @@
+ EXIT_CODES = (0, 10, 20, 30, 40, 50, 60, 70)
+ NONLATCHING_TRIPS = {"proof_cap", "owner_cancel_sigterm"}
+ RESOURCE_DIAG = re.compile(r"(?i)(memout|memory allocation error|out of memory|out-of-memory|failed to reallocate|reallocation failed)")
+-FEED_BLOCK = 1 << 20                  # S1: RAM block size and collector read size
+-WRITE_SLICE = 1 << 16                 # S2: feeder os.write slice
+-HOLD_SECONDS = 30                     # S6: a C7b held feed waits at most this long for the checker reap
+-SUFFIX = b"x"                         # S6: C3 trailing byte appended in transit
+-STDIN_LINE = "c reading proof from stdin"
+-DUP_LINE = re.compile(rb"\rc WARNING: detected and deleted duplicate literal (-?[1-9][0-9]*) at position ([1-9][0-9]*) "
+-                      rb"of proof line ([1-9][0-9]*)\n")
+-PARSE_LINE = re.compile(rb"\rc parsing input formula with ([0-9]+) variables and ([0-9]+) clauses\n")
+-PENDING_MAX = 1 << 16                 # S3: no duplicate-literal line is this long; longer pending bytes are kept
+ DATE_ARGV = [DATE[0], "+%Y-%m-%dT%H:%M:%S%z"]
+ DATE_RE = re.compile(rb"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[+-][0-9]{4}\n")
+ LIBPROC = ctypes.CDLL("/usr/lib/libproc.dylib", use_errno=True)   # V1: in-process process metadata (no /bin/ps)
+@@ -332,8 +231,6 @@
+ ORDER = itertools.count(1)
+ LATCH = []          # persistent safety/unsettled reasons; non-empty refuses every later child
+ OWNED = []          # every Child (pre-allocated before Popen), for the computed settlement summary
+-LIVE_BUFFERS = []   # S5: every ProofBuffer; the unreleased ones are charged to the lane RSS trip
+-LIVE_FEEDERS = []   # V5: every Feeder; a feeder still holding its tuple is charged too
+ HELPERS = []        # V1: every metadata Helper (pre-allocated before Popen)
+ HELPER_LOG = []     # V1: bounded helper records for the summary
+ TREE = {}           # N8: anchored directories: path -> (fd, dev, ino)
+@@ -371,6 +268,7 @@
+     except BaseException as exc:
+         latch("host clock helper failed %r" % (exc,))
+         return None
++
+ 
+ 
+ def bounded(x):
+@@ -442,6 +340,7 @@
+     h = hashlib.sha256(data).hexdigest()
+     register_written(path, h, len(data))
+     return h, len(data)
++
+ 
+ 
+ def open_regular(path, dir_fd=None):
+@@ -517,6 +416,7 @@
+     return raw
+ 
+ 
++
+ def free_bytes():
+     st = os.statvfs(LANE)
+     return st.f_bavail * st.f_frsize
+@@ -604,6 +504,7 @@
+                 found.add(c)
+                 todo.append(c)
+     return sorted(found)
++
+ 
+ 
+ def _entry_kind(m):
+@@ -909,6 +810,7 @@
+     if usage + outstanding > LANE_CEILING:
+         why.append("lane ledger %d + %d > ceiling %d" % (usage, outstanding, LANE_CEILING))
+     return why, led
++
+ 
+ 
+ def registry_refusals():
+@@ -1039,92 +941,62 @@
+     return why
+ 
+ 
+-def buffer_charge():
+-    """V5/N6: proof RAM still held by ANY collector or feeder.  A buffer counts its retained bytes while its
+-    collector thread is alive or until it is released; a feeder that has not dropped its blocks counts its tuple
+-    even after the buffer was released; one frozen tuple is counted once (keyed by identity)."""
+-    held = {}
+-    for b in list(LIVE_BUFFERS):
+-        if b.thread.is_alive() or not b.released:
+-            blocks = b.blocks
+-            key = ("tuple", id(blocks)) if isinstance(blocks, tuple) and blocks else ("collector", id(b))
+-            held[key] = max(held.get(key, 0), b.retained)
+-    for f in list(LIVE_FEEDERS):
+-        blocks = f.blocks
+-        if blocks:
+-            key = ("tuple", id(blocks))
+-            held[key] = max(held.get(key, 0), f.expected)
+-    return sum(held.values())
+-
+-
+-class ProofBuffer:
+-    """S1: owned FIFO reader retaining the proof in RAM only (immutable FEED_BLOCK blocks) with a HARD byte cap;
+-    bytes and SHA-256 are measured as they arrive from the producer; nothing is written to disk.  N8: the FIFO is
+-    created, opened and re-checked through its anchored directory descriptor; N7: monotonic unblock deadline;
+-    N6: charged while the collector thread lives or until released."""
+-
+-    def __init__(self, fifo_path, cap):
++
++class ProofSink:
++    """Owned FIFO reader writing the proof FILE with a HARD byte cap.  V2/D2: the cap is pre-charged to the output
++    guard; N8: FIFO and file are created, opened and re-checked through anchored directory descriptors (exclusive,
++    no-follow); N7: monotonic unblock deadline; V6: independent cleanup steps; the written proof's digest is
++    registered for closeout preservation."""
++
++    def __init__(self, fifo_path, file_path, cap):
++        charge_output(cap)                         # V2/D2: the HARD-capped proof file is pre-charged in full
+         self.dir_fd, self.fifo_name = tree_path(fifo_path)
+         os.mkfifo(self.fifo_name, 0o600, dir_fd=self.dir_fd)          # exclusive: FileExistsError if present
+         self.fifo_ino = os.stat(self.fifo_name, dir_fd=self.dir_fd, follow_symlinks=False).st_ino
+-        self.fifo_path, self.cap = fifo_path, cap
+-        self.blocks = []
++        self.fifo_path, self.file_path, self.cap = fifo_path, file_path, cap
++        self.file = os.fdopen(create_excl(file_path), "wb")
+         self.sha = hashlib.sha256()
+-        self.retained = self.received = self.discarded = 0
+-        self.over_cap = self.connected = self.eof = self.released = self.release_requested = False
+-        self.frozen_id = None                   # V5: identity of the frozen tuple shared with feeders
++        self.written = self.received = self.discarded = 0
++        self.over_cap = self.connected = self.eof = False
+         self.error = None
+         self.unblocked_by_runner = False
+         self.finished = None
+-        LIVE_BUFFERS.append(self)
+         self.thread = threading.Thread(target=self._run, daemon=True)
+         self.thread.start()
+ 
+     def _run(self):
+-        acc = bytearray()
+         try:
+             fd = os.open(self.fifo_name, os.O_RDONLY | os.O_CLOEXEC, dir_fd=self.dir_fd)  # blocks until a writer opens
+             self.connected = True
+             try:
+                 while True:
+-                    b = os.read(fd, FEED_BLOCK)
++                    b = os.read(fd, 1 << 20)
+                     if not b:
+                         self.eof = True
+                         break
+                     self.received += len(b)
+-                    if not self.over_cap and self.retained + len(b) <= self.cap:
+-                        acc += b
++                    if not self.over_cap and self.written + len(b) <= self.cap:
++                        self.file.write(b)
+                         self.sha.update(b)
+-                        self.retained += len(b)
+-                        while len(acc) >= FEED_BLOCK:       # exact FEED_BLOCK blocks; the tail stays in acc
+-                            self.blocks.append(bytes(acc[:FEED_BLOCK]))
+-                            del acc[:FEED_BLOCK]
++                        self.written += len(b)
+                     else:
+-                        self.over_cap = True       # never retain beyond the cap; drain so the producer can exit
++                        self.over_cap = True       # never write beyond the cap; drain so the producer can exit
+                         self.discarded += len(b)
+             finally:
+                 os.close(fd)
+         except Exception as exc:
+             self.error = repr(exc)
+         finally:
+-            try:
+-                if acc:
+-                    self.blocks.append(bytes(acc))
+-            except Exception as exc:
+-                self.error = (self.error or "") + " tail:" + repr(exc)
+-
+-    def digest(self):
+-        """Independent second pass over the retained RAM blocks."""
+-        h = hashlib.sha256()
+-        n = 0
+-        for b in self.blocks:
+-            h.update(b)
+-            n += len(b)
+-        return [h.hexdigest(), n]
++            for what, fn in (("flush", self.file.flush), ("fsync", lambda: os.fsync(self.file.fileno())),
++                             ("close", self.file.close)):
++                try:
++                    fn()                           # V6: every cleanup step independent
++                except Exception as exc:
++                    self.error = (self.error or "") + " %s:%r" % (what, exc)
+ 
+     def finish(self):
+         """After the producer is reaped: unblock a never-connected reader, bounded join; latches on an
+-        unsettled thread, collector I/O error, re-hash failure or a replaced FIFO; freezes the blocks."""
++        unsettled thread, sink I/O error, re-hash failure or a replaced FIFO."""
+         if self.finished is not None:
+             return self.finished
+         deadline = time.monotonic() + SINK_UNBLOCK            # N7: monotonic
+@@ -1141,10 +1013,10 @@
+                 time.sleep(0.05)
+         self.thread.join(STREAM_JOIN)
+         alive = self.thread.is_alive()
+-        rec = {"fifo": self.fifo_path, "storage": "RAM only", "cap": self.cap, "connected": self.connected,
+-               "eof": self.eof, "received": self.received, "retained": self.retained, "discarded": self.discarded,
++        rec = {"fifo": self.fifo_path, "file": self.file_path, "cap": self.cap, "connected": self.connected,
++               "eof": self.eof, "received": self.received, "written": self.written, "discarded": self.discarded,
+                "over_cap": self.over_cap, "error": self.error, "unblocked_by_runner": self.unblocked_by_runner,
+-               "thread_alive_after_join": alive, "sha256_of_retained": self.sha.hexdigest()}
++               "thread_alive_after_join": alive, "sha256_of_written": self.sha.hexdigest()}
+         try:
+             st = os.stat(self.fifo_name, dir_fd=self.dir_fd, follow_symlinks=False)
+             rec["fifo_same_inode_still_fifo"] = bool(stat.S_ISFIFO(st.st_mode) and st.st_ino == self.fifo_ino)
+@@ -1154,160 +1026,22 @@
+         if not rec["fifo_same_inode_still_fifo"]:
+             latch("proof FIFO replaced or missing: " + self.fifo_path)
+         if alive:
+-            latch("proof collector thread unsettled: " + self.fifo_path)
++            latch("proof sink thread unsettled: " + self.fifo_path)
+         else:
+             try:
+-                self.blocks = tuple(self.blocks)    # frozen: the feeders share it read-only
+-                self.frozen_id = id(self.blocks)
+-                rec["blocks"] = len(self.blocks)
+-                rec["buffer_rehash"] = self.digest()
++                rec["file_rehash"] = list(sha_tree(self.file_path, limit=self.cap))
++                if rec["file_rehash"] == [self.sha.hexdigest(), self.written]:
++                    register_written(self.file_path, self.sha.hexdigest(), self.written)   # N8: closeout re-check
+             except Exception as exc:
+-                rec["buffer_rehash_error"] = repr(exc)
+-                latch("proof buffer re-hash failed %r" % exc)
++                rec["file_rehash_error"] = repr(exc)
++                latch("proof file re-hash failed %r" % exc)
+         if self.error:
+-            latch("proof collector I/O error %s" % self.error)
+-        rec["sink_settled"] = (not alive and self.error is None and "buffer_rehash" in rec
++            latch("proof sink I/O error %s" % self.error)
++        rec["sink_settled"] = (not alive and self.error is None and "file_rehash" in rec
+                                and rec["fifo_same_inode_still_fifo"])
+         self.finished = rec
+         return rec
+ 
+-    def release(self):
+-        """N6: drop this buffer's reference to its RAM blocks, but only once its collector thread has ended: a live
+-        collector keeps its blocks (it may still append) and stays charged; release is retried by the owner's
+-        finally and at closeout.  The bytes stay charged while any feeder still holds the frozen tuple.  Returns
+-        True iff released."""
+-        self.release_requested = True
+-        if self.thread.is_alive():
+-            return False
+-        self.released = True
+-        self.blocks = ()
+-        return True
+-
+-    def holders(self):
+-        """V5: feeders that still hold this buffer's frozen tuple."""
+-        return [f.label for f in list(LIVE_FEEDERS) if f.blocks and self.frozen_id is not None
+-                and id(f.blocks) == self.frozen_id]
+-
+-    def accounting(self):
+-        return {"fifo": self.fifo_path, "retained": self.retained, "released": self.released,
+-                "release_requested": self.release_requested, "collector_alive": self.thread.is_alive(),
+-                "still_held_by_feeders": self.holders(), "frozen": self.frozen_id is not None}
+-
+-
+-
+-class Feeder:
+-    """S2: owned writer of a frozen RAM proof buffer into ONE checker's stdin pipe; hashes/counts exactly the
+-    bytes os.write() accepted.  Modes: plain; suffix (C3: SUFFIX after the proof); hold (C7b: the first write
+-    waits until the checker was reaped).  The runner's read end is closed right after Popen (close_read);
+-    the write end is closed exactly once: by the thread, or by abandon() when the thread never started."""
+-
+-    def __init__(self, blocks, mode="plain", label=""):
+-        if mode not in ("plain", "suffix", "hold"):
+-            raise RuntimeError("unknown feed mode %r" % (mode,))
+-        if not isinstance(blocks, tuple):
+-            raise RuntimeError("proof buffer not frozen")
+-        self.blocks, self.mode, self.label = blocks, mode, label
+-        self.expected = sum(len(b) for b in blocks)
+-        self.sha = hashlib.sha256()
+-        self.fed = self.proof_fed = 0
+-        self.delivery_error = self.exception = self.close_error = None
+-        self.hold = threading.Event()
+-        self.hold_released_by_event = None
+-        self.started = False
+-        self.finished = None
+-        self.thread = threading.Thread(target=self._run, daemon=True)
+-        self.rfd, self.wfd = os.pipe()             # non-inheritable: only the checker's dup2'd stdin holds rfd
+-        LIVE_FEEDERS.append(self)                  # V5: charged while it holds the tuple
+-
+-    def plan(self):
+-        return {"mode": self.mode, "buffer_bytes": self.expected, "blocks": len(self.blocks)}
+-
+-    def close_read(self):
+-        fd, self.rfd = self.rfd, None
+-        if fd is not None:
+-            os.close(fd)
+-
+-    def start(self):
+-        self.thread.start()
+-        self.started = True
+-
+-    def abandon(self):
+-        """Never-started feeder: close each still-open pipe end independently and drop the blocks.  V6: returns the
+-        close errors so that the caller incorporates them before any settlement is published."""
+-        errs = []
+-        for name in ("rfd", "wfd"):
+-            fd = getattr(self, name)
+-            setattr(self, name, None)
+-            if fd is not None:
+-                try:
+-                    os.close(fd)
+-                except OSError as exc:
+-                    errs.append("%s %r" % (name, exc))
+-        self.blocks = ()
+-        if errs:
+-            self.close_error = "; ".join(errs)
+-        return errs
+-
+-    def _deliver(self, data):
+-        mv, off = memoryview(data), 0
+-        while off < len(mv):
+-            try:
+-                n = os.write(self.wfd, mv[off:off + WRITE_SLICE])
+-            except OSError as exc:
+-                self.delivery_error = "%s after %d fed bytes" % (
+-                    "EPIPE" if isinstance(exc, BrokenPipeError) else repr(exc), self.fed)
+-                return off, False
+-            self.sha.update(mv[off:off + n])
+-            off += n
+-            self.fed += n
+-        return off, True
+-
+-    def _run(self):
+-        try:
+-            if self.mode == "hold":
+-                self.hold_released_by_event = self.hold.wait(HOLD_SECONDS)
+-            ok = True
+-            for b in self.blocks:
+-                k, ok = self._deliver(b)
+-                self.proof_fed += k
+-                if not ok:
+-                    break
+-            if ok and self.mode == "suffix":
+-                self._deliver(SUFFIX)
+-        except Exception as exc:
+-            self.exception = repr(exc)
+-        finally:
+-            fd, self.wfd = self.wfd, None
+-            if fd is not None:
+-                try:
+-                    os.close(fd)                   # EOF for the checker
+-                except OSError as exc:
+-                    self.close_error = repr(exc)
+-
+-    def finish(self, timeout):
+-        """After the checker is reaped: release a held feed, bounded join, record; drops the shared blocks."""
+-        if self.finished is not None:
+-            return self.finished
+-        if self.started:
+-            self.hold.set()
+-            self.thread.join(timeout)
+-        alive = self.started and self.thread.is_alive()
+-        self.finished = {"mode": self.mode, "started": self.started, "buffer_bytes": self.expected,
+-                         "fed_bytes": self.fed, "fed_sha256": self.sha.hexdigest(), "proof_bytes_fed": self.proof_fed,
+-                         "undelivered_proof_bytes": self.expected - self.proof_fed,
+-                         "delivery_error": self.delivery_error, "exception": self.exception,
+-                         "close_error": self.close_error, "hold_released_by_event": self.hold_released_by_event,
+-                         "thread_alive_after_join": alive}
+-        if not alive:
+-            self.blocks = ()
+-        return self.finished
+-
+-
+-def new_filter():
+-    """S3: per-checker capture-filter state; V8: 'cont' = pass through until the next newline after an over-long
+-    partial line was flushed."""
+-    return {"raw_sha": hashlib.sha256(), "raw_bytes": 0, "raw_eof": False, "pending": b"", "header_clauses": None,
+-            "dup_low": 0, "dup_high": 0, "dup_bytes": 0, "tail": 0, "cont": False, "flushes": 0}
+ 
+ 
+ class Owned:
+@@ -1631,20 +1365,23 @@
+         return bytes(self.out).decode("ascii").strip()
+ 
+ 
++
+ class Child(Owned):
+     """One owned native child: pre-allocated ownership, V7 launch/cancel boundary, own session, HARD capped capture
+     created through the anchored run tree (N8), V4/N8 complete run-tree census before admission and after
+     settlement, V6 independent descriptor cleanup, N1 identity-verified single group SIGTERM (Owned), N4 timing
+     evidence: settled only if the settlement completes within its frozen tail; qualifying only if the exit was
+-    observed by the child's deadline."""
++    observed by the child's deadline.  (= P-STREAM v3 Child without the stdin-feeder/filter branches: D2 children
++    read files and take no feed; the solver child's proof FIFO and proof FILE are its expected census changes.)"""
+ 
+     def __init__(self, argv, label, wall, reserve, inputs, sink, cwd, feeder=None):
+         self._owned_init()
+         STATE["seq"] += 1
+         self.seq = STATE["seq"]
+         self.argv, self.label, self.sink_obj, self.cwd = argv, label, sink, cwd
+-        self.feeder = feeder                       # S2: owned stdin feeder (checker children only)
+-        self.filt = None if feeder is None else new_filter()  # S3
++        if feeder is not None:
++            raise RuntimeError("D2 children take no stdin feeder")
++        self.feeder = None                         # kept so that supervise() reads the same attribute
+         base = os.path.join(STATE["out"], "children", "%02d-%s" % (self.seq, label))
+         self.out_path, self.launch_path, self.settle_path = base + ".out", base + ".launch.json", base + ".settle.json"
+         self.quarantine_path = base + ".QUARANTINE.json"
+@@ -1683,7 +1420,7 @@
+             return
+         self.popen_call_mono = time.monotonic()    # N4/N10: lower bound of the process start
+         try:
+-            self.proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL if feeder is None else feeder.rfd,
++            self.proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL,
+                                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                          start_new_session=True, close_fds=True, cwd=cwd, env=child_env)
+         except BaseException:
+@@ -1693,8 +1430,6 @@
+         try:
+             self.pid = self.pgid = self.proc.pid   # V6: ownership fields first, before any fallible step
+             self.started_mono, self.started_epoch = time.monotonic(), time.time()
+-            if feeder is not None:
+-                feeder.close_read()                # S2: from here only the checker holds the read end
+             self.identity_at_start = identity_checked(self.pid, os.getpid())   # N1: the stop needs it
+             write_x(self.launch_path, {"seq": self.seq, "label": label, "runner_pid": os.getpid(), "pid": self.pid,
+                                        "pgid": self.pgid, "identity": self.identity_at_start, "argv": argv,
+@@ -1706,18 +1441,13 @@
+                                        "retained_reservation_bytes": reserve, "lane_ledger": STATE["last_ledger"],
+                                        "inputs": inputs, "run_launch_record": STATE["run_record"],
+                                        "go": STATE["go"], "runner_sha256": STATE["runner_sha"],
+-                                       "binaries": {"kissat": KISSAT, "checkers": CHECKERS},
+-                                       "stdin_feed": None if feeder is None else feeder.plan()})
++                                       "binaries": {"kissat": KISSAT, "drat_trim": [DRAT, DRAT_OLD[1]]}})
+             print("CHILD_LAUNCH", self.launch_path, flush=True)
+             self.reader = threading.Thread(target=self._read, daemon=True)
+             self.reader.start()
+-            if feeder is not None:
+-                feeder.start()
+         except BaseException as exc:
+             if self.stop is None:
+                 self.stop = "registration_failure"   # r4#1: emergency stop state before fallible logging
+-            if feeder is not None and not feeder.started:
+-                self.fd_errors += feeder.abandon()   # V6: never-started endpoints closed BEFORE reaping (child sees EOF)
+             try:
+                 latch("post-Popen registration failure %r" % (exc,))
+             except BaseException:
+@@ -1743,51 +1473,13 @@
+             self.over_cap = True
+ 
+     def _read(self):
+-        """Capped capture.  S3: for a checker child the raw stream is hashed/counted in-stream and ONLY lines that
+-        fullmatch DUP_LINE at a genuine line start are dropped (counted by phase and bytes); V8: after an over-long
+-        partial line is flushed, the rest of that physical line is kept unconditionally."""
+-        f = self.filt
++        """Capped capture (V13: non-dropped vs physically written bytes); V6: every cleanup step independent."""
+         try:
+             while True:
+                 b = self.proc.stdout.read1(65536)
+                 if not b:
+-                    if f is not None:
+-                        f["raw_eof"] = True
+                     break
+-                if f is None:
+-                    self._keep(b)
+-                    continue
+-                f["raw_sha"].update(b)
+-                f["raw_bytes"] += len(b)
+-                parts = (f["pending"] + b).split(b"\n")
+-                f["pending"] = parts.pop()
+-                for ln in parts:
+-                    ln += b"\n"
+-                    if f["cont"]:                  # V8: tail of a flushed physical line, never a whole line
+-                        f["cont"] = False
+-                        self._keep(ln)
+-                        continue
+-                    m = DUP_LINE.fullmatch(ln)
+-                    if m is None:
+-                        hm = PARSE_LINE.fullmatch(ln)
+-                        if hm is not None and f["header_clauses"] is None:
+-                            f["header_clauses"] = int(hm.group(2))
+-                        self._keep(ln)
+-                        continue
+-                    f["dup_bytes"] += len(ln)
+-                    if f["header_clauses"] is not None and int(m.group(3)) <= f["header_clauses"]:
+-                        f["dup_low"] += 1
+-                    else:
+-                        f["dup_high"] += 1
+-                if len(f["pending"]) > PENDING_MAX:
+-                    self._keep(f["pending"])
+-                    f["pending"] = b""
+-                    f["cont"] = True
+-                    f["flushes"] += 1
+-            if f is not None and f["pending"]:
+-                f["tail"] = len(f["pending"])
+-                self._keep(f["pending"])
+-                f["pending"] = b""
++                self._keep(b)
+         except Exception as exc:
+             self.reader_error = repr(exc)
+         finally:
+@@ -1849,26 +1541,6 @@
+                     problems.append("%s %r" % (what, exc))
+         if self.reader_error is not None:
+             problems.append("capture reader error %s" % self.reader_error)
+-        feed_rec = filt_rec = None
+-        if self.feeder is not None:
+-            if not self.feeder.started:
+-                self.fd_errors += self.feeder.abandon()   # V6: before the record is published
+-            try:
+-                feed_rec = self.feeder.finish(STREAM_JOIN)
+-                if not feed_rec["started"] or feed_rec["thread_alive_after_join"]:
+-                    problems.append("stdin feeder not started or unsettled")
+-                if feed_rec["exception"] is not None or feed_rec["close_error"] is not None:
+-                    problems.append("stdin feeder exception/close error")
+-            except BaseException as exc:
+-                problems.append("feeder finish failed %r" % exc)
+-            if stream_alive is False:
+-                f = self.filt
+-                filt_rec = {"raw_bytes": f["raw_bytes"], "raw_sha256": f["raw_sha"].hexdigest(), "raw_eof": f["raw_eof"],
+-                            "header_clauses": f["header_clauses"], "dup_bytes_dropped": f["dup_bytes"],
+-                            "dup_lines_at_or_below_header_clauses": f["dup_low"],
+-                            "dup_lines_above_header_clauses": f["dup_high"], "nondropped_bytes": self.captured,
+-                            "capture_file_bytes": self.capture_written, "unterminated_tail_bytes": f["tail"],
+-                            "over_long_line_flushes": f["flushes"]}
+         if self.fd_errors:
+             problems.append("descriptor close errors %r" % self.fd_errors)
+         group_empty = None
+@@ -1901,9 +1573,10 @@
+         except BaseException as exc:
+             problems.append("cwd check failed %r" % exc)
+         try:
+-            expected = {self.out_path, self.launch_path, self.settle_path, self.quarantine_path}  # S1: no proof file
++            expected = {self.out_path, self.launch_path, self.settle_path, self.quarantine_path}
+             if self.sink_obj is not None:
+                 expected.add(self.sink_obj.fifo_path)     # N8: a written FIFO's times change
++                expected.add(self.sink_obj.file_path)     # D2: the owned proof file grows during the solver child
+             now = run_tree_census()
+             changed = sorted(p for p in set(now) | set(self.tree_before)
+                              if p not in expected and now.get(p) != self.tree_before.get(p))
+@@ -1945,7 +1618,7 @@
+                "capture_over_cap": self.over_cap, "reader_error": self.reader_error,
+                "stream_thread_alive_after_join": stream_alive, "group_empty_after_reap": group_empty,
+                "quarantined": self.quarantined, "problems": problems, "resource_diagnostics": diag,
+-               "proof_sink": sink_rec, "stdin_feed": feed_rec, "stdout_filter": filt_rec,
++               "proof_sink": sink_rec,
+                "launch_record": self.launch_path, "output_path": self.out_path,
+                "output_sha256": out_sha, "settled": False}
+         ok = (stream_alive is False and group_empty is True and not self.quarantined and not problems
+@@ -1961,10 +1634,12 @@
+         return rec
+ 
+ 
++
+ def segments(path):
+     """Capture lines (CR or LF separated), read through the anchored run tree (N8), bounded by LOG_CAP (N7)."""
+     txt = read_tree(path, LOG_CAP).decode("utf-8", "replace")
+     return [s for s in re.split(r"[\r\n]", txt) if s != ""]
++
+ 
+ 
+ def supervise(child, sink):
+@@ -1990,8 +1665,6 @@
+                 child.term("proof_cap")
+             elif sink is not None and sink.error:
+                 child.term("proof_sink_error")
+-            elif child.feeder is not None and child.feeder.exception is not None:
+-                child.term("feeder_exception")
+             elif child.reader_error is not None:
+                 child.term("capture_reader_error")
+             elif child.over_cap:
+@@ -2008,7 +1681,7 @@
+                 elif runner_rss is None or (rss is None and child.alive()):
+                     child.term("rss_unreadable")
+                 else:
+-                    total = (rss or 0) + max(runner_rss, buffer_charge())  # S5/V5/N6: proof RAM charged in full
++                    total = (rss or 0) + runner_rss       # D2: no RAM proof buffer (V5/N6 not applicable)
+                     peak = max(peak, total)
+                     if total > LANE_RSS_TRIP:
+                         child.term("lane_rss")
+@@ -2026,13 +1699,14 @@
+     return child.stop, peak
+ 
+ 
+-def run_child(argv, label, wall, reserve, inputs, sink=None, feeder=None):
++
++def run_child(argv, label, wall, reserve, inputs, sink=None):
+     """Prepared outputs -> admission -> spawn -> supervise -> settle.  Returns (rec|None, lines, refusal)."""
+     ch = None
+     try:
+         cwd = os.path.join(STATE["out"], "cwd", "%02d-%s" % (STATE["seq"] + 1, label))
+         mkdir_anchored(cwd)  # r4#4: inside the cleanup guard; N8: exclusive and anchored
+-        ch = Child(argv, label, wall, reserve, inputs, sink, cwd, feeder)
++        ch = Child(argv, label, wall, reserve, inputs, sink, cwd)
+         if ch.refused:
+             return None, [], ch.refused
+         peak = None
+@@ -2052,10 +1726,6 @@
+         settle_all()
+         if sink is not None and (ch is None or ch.proc is None):
+             sink.finish()  # never-spawned producer: unblock and join the reader
+-        if feeder is not None and not feeder.started:
+-            errs = feeder.abandon()  # never-spawned checker: both pipe ends closed; V6: errors latch
+-            if errs:
+-                latch("never-started feeder endpoint close errors %r" % (errs,))
+ 
+ 
+ 
+@@ -2089,43 +1759,26 @@
+             continue
+ 
+ 
+-def run_kissat(cnf_path, label, seconds, cap, reserve, inputs, owner):
+-    """kissat -q -f --seed=1 --time=S CNF [PROOF_FIFO]; with a cap the proof goes ONLY to a RAM ProofBuffer (S1).
+-    N6: a created ProofBuffer is appended to the caller's `owner` list at creation, so the caller's finally
+-    releases it on every path, including an exception before this function returns.
+-    Returns (rec|None, lines, refusal, buffer|None)."""
++def run_kissat(cnf_path, proof_file, label, seconds, cap, reserve, inputs):
+     argv = [KISSAT[0], "-q", "-f", "--seed=1", "--time=%d" % seconds, cnf_path]
+     sink = None
+-    if cap is not None:
+-        sink = ProofBuffer(os.path.join(STATE["out"], "fifo", label + ".proof.fifo"), cap)
+-        owner.append(sink)
++    if proof_file is not None:
++        sink = ProofSink(os.path.join(STATE["out"], "fifo", label + ".proof.fifo"), proof_file, cap)   # N8: anchored
+         argv.append(sink.fifo_path)
+-    rec, lines, refused = run_child(argv, label + ".kissat", seconds, reserve,
+-                                    dict(inputs, proof_storage=None if sink is None else "RAM only", proof_cap=cap),
+-                                    sink)
+-    return rec, lines, refused, sink
+-
+-
+-def run_check(cnf_path, buf, checker, label, seconds, reserve, inputs, mode="plain"):
+-    """S2: one pinned checker [DRAT_X, CNF, -i, -t S] with the frozen RAM buffer on stdin via an owned Feeder;
+-    the binary is re-hashed when its child is prepared."""
+-    name, path, pin = checker
+-    if sha_file(path)[0] != pin:
+-        latch("checker %s binary pin mismatch at spawn" % name)
+-        raise RuntimeError("checker %s binary pin mismatch" % name)
+-    if buf.released:
+-        raise RuntimeError("proof buffer already released")
+-    feeder = Feeder(buf.blocks, mode, label="%s.drat%s" % (label, name))
+-    return run_child([path, cnf_path, "-i", "-t", str(seconds)], "%s.drat%s" % (label, name), seconds, reserve,
+-                     dict(inputs, cnf=cnf_path, checker=[name, path, pin], proof_source="RAM buffer on stdin",
+-                          feed_mode=mode), feeder=feeder)
++    return run_child(argv, label + ".kissat", seconds, reserve, dict(inputs, proof_file=proof_file, proof_cap=cap), sink)
++
++
++
++def run_drat(cnf_path, proof_path, label, seconds, reserve, inputs):
++    return run_child([DRAT, cnf_path, proof_path, "-i", "-t", str(seconds)], label + ".drat", seconds, reserve,
++                     dict(inputs, cnf=cnf_path, proof=proof_path))
+ 
+ 
+ def sink_complete(sink_rec):
+     return (sink_rec is not None and sink_rec.get("sink_settled") and sink_rec["connected"] and sink_rec["eof"]
+             and not sink_rec["over_cap"] and sink_rec["error"] is None and not sink_rec["unblocked_by_runner"]
+-            and sink_rec["discarded"] == 0 and sink_rec["received"] == sink_rec["retained"]
+-            and sink_rec.get("buffer_rehash") == [sink_rec["sha256_of_retained"], sink_rec["retained"]])
++            and sink_rec["discarded"] == 0 and sink_rec["received"] == sink_rec["written"]
++            and sink_rec.get("file_rehash") == [sink_rec["sha256_of_written"], sink_rec["written"]])
+ 
+ 
+ def status_lines(lines):
+@@ -2149,13 +1802,12 @@
+     return sorted(d.split(": ", 1)[0] for d in defects)
+ 
+ 
+-def checker_defects(name, cnf_expect, buf_sha, buf_bytes, drat_rec, drat_lines):
+-    """S4/V9/V10: per-checker P-STREAM qualification with canonical (unique) parser records; every defect ID is
+-    prefixed with the checker name."""
++
++def file_checker_defects(name, cnf_expect, proof_bytes, drat_rec, drat_lines):
++    """V9/V10 (D2): checker A on the proof FILE: canonical (unique) parser records, exact status, forbidden
++    patterns, settlement; every defect ID is prefixed with the checker name."""
+     bad = []
+     X = name + "."
+-    feed = drat_rec.get("stdin_feed") or {}
+-    filt = drat_rec.get("stdout_filter") or {}
+     if drat_rec.get("returncode") != 0 or drat_rec.get("stop") != "self":
+         bad.append(defect(X + "EXIT", "checker not self-exit rc0"))
+     st = status_lines(drat_lines)
+@@ -2165,24 +1817,10 @@
+     hdr = [s[:200] for s in drat_lines if s.startswith("c parsing input formula")]
+     if hdr != ["c parsing input formula with %s variables and %s clauses" % (v, c)]:
+         bad.append(defect(X + "HEADER", "parser header records %r != the CNF pin header" % (hdr[:4],)))
+-    rd = [s[:200] for s in drat_lines if s.startswith("c reading proof")]
+-    if rd != [STDIN_LINE]:
+-        bad.append(defect(X + "STDIN", "stdin records %r != [%r]" % (rd[:4], STDIN_LINE)))
+-    if feed.get("mode") != "plain":
+-        bad.append(defect(X + "FEED_MODE", "feed mode %r is not plain" % (feed.get("mode"),)))
+-    if feed.get("fed_bytes") != buf_bytes or feed.get("fed_sha256") != buf_sha or feed.get("proof_bytes_fed") != buf_bytes:
+-        bad.append(defect(X + "FEED_DIGEST", "fed bytes/SHA-256 != collected proof buffer"))
+-    if feed.get("started") is not True or feed.get("delivery_error") is not None or feed.get("exception") is not None \
+-            or feed.get("close_error") is not None or feed.get("thread_alive_after_join") is not False:
+-        bad.append(defect(X + "FEED_STATE", "stdin feed incomplete, failed or unsettled"))
+-    fb = feed.get("fed_bytes")
+     fin = [s[:200] for s in drat_lines if s.startswith("c finished parsing")]
+-    if not isinstance(fb, int) or isinstance(fb, bool) or fin != ["c finished parsing, read %d bytes from proof file" % fb]:
+-        bad.append(defect(X + "CONSUMED", "consumed records %r != [read %r bytes]" % (fin[:4], fb)))
+-    nd = drat_rec.get("nondropped_bytes")
+-    if filt.get("raw_eof") is not True or not isinstance(filt.get("dup_bytes_dropped"), int) or not isinstance(nd, int) \
+-            or isinstance(nd, bool) or filt.get("raw_bytes") != nd + filt["dup_bytes_dropped"]:
+-        bad.append(defect(X + "FILTER", "checker output filter accounting mismatch"))
++    if not isinstance(proof_bytes, int) or isinstance(proof_bytes, bool) \
++            or fin != ["c finished parsing, read %d bytes from proof file" % proof_bytes]:
++        bad.append(defect(X + "CONSUMED", "consumed records %r != [read %r bytes]" % (fin[:4], proof_bytes)))
+     for pat, key in FORBIDDEN:
+         if any(pat in s for s in drat_lines):
+             bad.append(defect(X + "FORBIDDEN." + key, "checker output contains %r" % pat))
+@@ -2194,28 +1832,24 @@
+ 
+ 
+ 
+-def qualify_stream(cnf_expect, solver_rec, kissat_lines, proof_cap, checks, cnf_post, buf_post):
+-    """S4/V9/V10: item-level qualification over the solver leg (complete output exactly ['s UNSATISFIABLE']), the
+-    RAM buffer and every pinned checker in order; checks = [(name, drat_rec, drat_lines), ...].  UNSAT requires []."""
++def qualify_unsat(cnf_expect, solver_rec, kissat_lines, proof_sha, proof_bytes, proof_cap, drat_rec, drat_lines,
++                  cnf_post, proof_post):
++    """V9/V10 (D2): the complete solver output must be exactly ['s UNSATISFIABLE']; sink, size, checker A (canonical
++    records), CNF and proof-file post-hashes, settlement.  UNSAT requires []."""
+     bad = []
+     if solver_rec.get("returncode") != 20 or solver_rec.get("stop") != "self":
+         bad.append(defect("SOLVER_EXIT", "solver not self-exit rc20"))
+     if kissat_lines != ["s UNSATISFIABLE"]:
+         bad.append(defect("SOLVER_OUTPUT", "complete solver output %r != ['s UNSATISFIABLE']" % (kissat_lines[:4],)))
+-    buf = solver_rec.get("proof_sink") or {}
+     if not sink_complete(solver_rec.get("proof_sink")):
+-        bad.append(defect("BUFFER_INCOMPLETE", "proof buffer incomplete/over cap/error"))
+-    buf_sha, buf_bytes = buf.get("sha256_of_retained"), buf.get("retained")
+-    if not isinstance(buf_bytes, int) or isinstance(buf_bytes, bool) or buf_bytes <= 0 or buf_bytes > proof_cap:
+-        bad.append(defect("BUFFER_SIZE", "proof size outside (0, cap]"))
+-    if [c[0] for c in checks] != [c[0] for c in CHECKERS]:
+-        bad.append(defect("CHECKER_SET", "not every pinned checker ran, in order"))
+-    for name, rec, lines in checks:
+-        bad += checker_defects(name, cnf_expect, buf_sha, buf_bytes, rec, lines)
++        bad.append(defect("SINK_INCOMPLETE", "proof sink incomplete/over cap/error"))
++    if not isinstance(proof_bytes, int) or isinstance(proof_bytes, bool) or proof_bytes <= 0 or proof_bytes > proof_cap:
++        bad.append(defect("PROOF_SIZE", "proof size outside (0, cap]"))
++    bad += file_checker_defects("A", cnf_expect, proof_bytes, drat_rec, drat_lines)
+     if cnf_post != (cnf_expect[0], cnf_expect[1]):
+         bad.append(defect("CNF_POST", "CNF file digest/bytes != expected"))
+-    if buf_post != [buf_sha, buf_bytes]:
+-        bad.append(defect("BUFFER_POST", "proof buffer re-hash after the checks != collector measurement"))
++    if proof_post != (proof_sha, proof_bytes):
++        bad.append(defect("PROOF_POST", "proof file digest/bytes != sink measurement"))
+     if not solver_rec.get("settled") or solver_rec.get("capture_over_cap") is not False:
+         bad.append(defect("SOLVER_SETTLE", "settlement/capture defect seq %s" % solver_rec.get("seq")))
+     if solver_rec.get("exit_observed_by_deadline") is not True:
+@@ -2309,6 +1943,7 @@
+     return why
+ 
+ 
++
+ def completed_checker(rec, lines, expect):
+     """r3#8: a completed drat-trim outcome: exactly 's VERIFIED' rc0 or 's NOT VERIFIED' rc1, no
+     MEMOUT/TIMEOUT/ERROR text, healthy settlement."""
+@@ -2321,184 +1956,141 @@
+ 
+ 
+ def controls():
+-    """S6/V11: same-binary positive and intended-reason controls through the RAM/stdin transport for BOTH pinned
+-    checkers.  Each checker's intended predicate is evaluated before the next child is launched; C2/C3/C4 compare
+-    complete defect-ID sets; C6/C7/C7b are bound to the pinned binaries' measured or source-stated diagnostics.
+-    Stops at the first refused, unhealthy or not-as-intended control (later controls are not started).  V5/N6:
+-    every control buffer is owned by `bufs` from its creation (run_kissat) and released in the finally.  N10: C6
+-    is bound to monotonic execution evidence of the --time=CONTROL_TIMER_S expiry (c6_timer_refusals)."""
++    """Same-binary positive and intended-reason controls; stops at the first refused, unhealthy or not-as-intended
++    control (later controls are not started; with one checker each control is evaluated before the next child).
++    V11 (D2): C1/C2/C3/C4 compare complete defect-ID sets; C7 and C7b are bound to the pinned binaries' measured
++    (runs 008/010/012) or source-stated (drat-trim.c:1425-1427) diagnostics; N10: C6 is bound to monotonic
++    execution evidence of the --time=CONTROL_TIMER_S expiry (c6_timer_refusals); N8: anchored run-tree files."""
+     recs = {}
+-    bufs = []
+     d = os.path.join(STATE["out"], "controls")    # N8: created and anchored with the run tree
+-    per_child = LOG_CAP + 3 * RECORD_MAX
++    per_child = LOG_CAP + CONTROL_PROOF_CAP + 3 * RECORD_MAX
+ 
+     def fail(name, why):
+         recs[name] = dict(recs.get(name, {}), failed=why)
+         return False, recs
+ 
+-    def checked(tag, cnf_path, pins, buf, mode, predicate):
+-        out = []
+-        for chk in CHECKERS:
+-            dr, dl, rf = run_check(cnf_path, buf, chk, tag, CONTROL_CHILD_WALL, per_child, pins, mode)
+-            if dr is None:
+-                return out, "checker %s refused %r" % (chk[0], rf)
+-            out.append((chk[0], dr, dl))
+-            why = predicate(chk[0], dr, dl)
+-            if why:
+-                return out, "checker %s: %s" % (chk[0], why)   # V11: the next checker is never launched
+-        return out, None
+-
+-    def view(checks):
+-        return {n: {"drat": r, "checker_status_lines": status_lines(l)} for n, r, l in checks}
+-
+-    try:
+-        raw = php_cnf(6, 5)
+-        cnf = os.path.join(d, "php6x5.cnf")
+-        h, n = write_bytes_x(cnf, raw)
+-        exp = (h, n, raw.split(b"\n", 1)[0].decode())
+-        ks, kl, rf, b1 = run_kissat(cnf, "C1", CONTROL_CHILD_WALL, CONTROL_PROOF_CAP, per_child, {"cnf_pin": [h, n]},
+-                                    bufs)
+-        if ks is None:
+-            return fail("C1_positive_php6x5", "refused %r" % rf)
+-        recs["C1_positive_php6x5"] = {"kissat": ks, "kissat_lines": kl[:8]}
+-        if not (healthy(ks) and ks["returncode"] == 20 and kl == ["s UNSATISFIABLE"] and sink_complete(ks["proof_sink"])):
+-            return fail("C1_positive_php6x5", "solver leg not exactly rc20 ['s UNSATISFIABLE'], unhealthy or buffer incomplete")
+-        ph, pn = ks["proof_sink"]["sha256_of_retained"], ks["proof_sink"]["retained"]
+-        pins = {"cnf_pin": [h, n], "proof_pin": [ph, pn]}
+-
+-        def positive(name, r, l):
+-            ids = defect_ids(checker_defects(name, exp, ph, pn, r, l))
+-            return None if ids == [] and completed_checker(r, l, "VERIFIED") else "positive predicate failed %r" % ids
+-
+-        c1k, why = checked("C1", cnf, pins, b1, "plain", positive)
+-        recs["C1_positive_php6x5"]["checkers"] = view(c1k)
+-        if why:
+-            return fail("C1_positive_php6x5", why)
+-        c1 = qualify_stream(exp, ks, kl, CONTROL_PROOF_CAP, c1k, sha_tree(cnf), b1.digest())
+-        recs["C1_positive_php6x5"].update(intended="PASS: qualify_stream == [] through checker A then checker B", defects=c1)
+-        if c1 != []:
+-            return fail("C1_positive_php6x5", "positive control did not pass %r" % defect_ids(c1))
+-        # C2 (deterministic): same header and clause count, first clause missing one literal; the deterministic
+-        # PHP(6,5) proof stays VERIFIED (measured in every earlier run), so the ONLY item defect is CNF_POST.
+-        lines = raw.split(b"\n")
+-        first = lines[1].split()
+-        mutated = b"\n".join([lines[0], b" ".join(first[:-2] + first[-1:])] + lines[2:])
+-        cnf2 = os.path.join(d, "php6x5-one-literal-removed.cnf")
+-        h2, n2 = write_bytes_x(cnf2, mutated)
+-        c2k, why = checked("C2", cnf2, {"cnf_pin": [h2, n2], "proof_pin": [ph, pn]}, b1, "plain", positive)
+-        recs["C2_mutated_cnf_digest"] = {"intended": "each checker completed 's VERIFIED' with no checker defect; item "
+-                                                     "defect IDs exactly ['CNF_POST']", "checkers": view(c2k)}
+-        if why:
+-            return fail("C2_mutated_cnf_digest", why)
+-        c2 = qualify_stream(exp, ks, kl, CONTROL_PROOF_CAP, c2k, sha_tree(cnf2), b1.digest())
+-        recs["C2_mutated_cnf_digest"]["defects"] = c2
+-        if defect_ids(c2) != ["CNF_POST"]:
+-            return fail("C2_mutated_cnf_digest", "item defect IDs %r != ['CNF_POST']" % defect_ids(c2))
+-        # C3: the valid proof + one trailing byte appended IN TRANSIT.
+-        def suffix_reject(name, r, l):
+-            ids = defect_ids(checker_defects(name, exp, ph, pn, r, l))
+-            want = sorted(name + "." + k for k in ("FEED_MODE", "FEED_DIGEST", "CONSUMED", "FORBIDDEN.WRONG_PREFIX"))
+-            if ids != want or not completed_checker(r, l, "VERIFIED") \
+-                    or (r.get("stdin_feed") or {}).get("fed_bytes") != pn + len(SUFFIX):
+-                return "suffix predicate failed: IDs %r != %r or not completed/fed+1" % (ids, want)
+-            return None
+-
+-        c3k, why = checked("C3", cnf, pins, b1, "suffix", suffix_reject)
+-        recs["C3_trailing_proof_byte"] = {"intended": "per checker: completed 's VERIFIED', checker defect IDs exactly "
+-                                                      "{FEED_MODE, FEED_DIGEST, CONSUMED, FORBIDDEN.WRONG_PREFIX}, fed == "
+-                                                      "buffer + 1", "checkers": view(c3k)}
+-        if why:
+-            return fail("C3_trailing_proof_byte", why)
+-        # C4: satisfiable PHP(5,5) with the PHP(6,5) proof.
+-        raw4 = php_cnf(5, 5)
+-        cnf4 = os.path.join(d, "php5x5-sat.cnf")
+-        h4, n4 = write_bytes_x(cnf4, raw4)
+-        exp4 = (h4, n4, raw4.split(b"\n", 1)[0].decode())
+-
+-        def foreign_reject(name, r, l):
+-            ids = defect_ids(checker_defects(name, exp4, ph, pn, r, l))
+-            want = sorted(name + "." + k for k in ("EXIT", "STATUS", "FORBIDDEN.NOT_VERIFIED"))
+-            if ids != want or not completed_checker(r, l, "NOT VERIFIED"):
+-                return "foreign-proof predicate failed: IDs %r != %r or not completed 's NOT VERIFIED' rc1" % (ids, want)
+-            return None
+-
+-        c4k, why = checked("C4", cnf4, {"cnf_pin": [h4, n4], "proof_pin": [ph, pn]}, b1, "plain", foreign_reject)
+-        recs["C4_sat_formula_foreign_proof"] = {"intended": "per checker: completed exactly ['s NOT VERIFIED'] rc1, "
+-                                                            "checker defect IDs exactly {EXIT, STATUS, "
+-                                                            "FORBIDDEN.NOT_VERIFIED}", "checkers": view(c4k)}
+-        if why:
+-            return fail("C4_sat_formula_foreign_proof", why)
+-        # C5: HARD RAM proof cap 4096 B on PHP(11,10).
+-        raw5 = php_cnf(11, 10)
+-        cnf5 = os.path.join(d, "php11x10.cnf")
+-        h5, n5 = write_bytes_x(cnf5, raw5)
+-        ks5, kl5, rf, b5 = run_kissat(cnf5, "C5", CONTROL_CHILD_WALL, 4096, per_child, {"cnf_pin": [h5, n5]}, bufs)
+-        if ks5 is None:
+-            return fail("C5_proof_hard_cap", "refused %r" % rf)
+-        ps5 = ks5["proof_sink"] or {}
+-        recs["C5_proof_hard_cap"] = {"intended": "stop=proof_cap, retained<=4096 B, received == retained + discarded > "
+-                                                 "retained, settled, over_cap, collector joined", "kissat": ks5}
+-        if not (ks5["stop"] == "proof_cap" and ps5.get("retained", 4097) <= 4096 and ps5.get("over_cap")
+-                and ps5.get("discarded", 0) > 0 and ps5.get("received") == ps5.get("retained", 0) + ps5.get("discarded", 0)
+-                and ks5["settled"] and ps5.get("thread_alive_after_join") is False and not ks5["resource_diagnostics"]):
+-            return fail("C5_proof_hard_cap", "intended reason or settlement missing")
+-        # C6: kissat --time=CONTROL_TIMER_S, no proof, on PHP(13,12): N10 timer expiry bound to monotonic
+-        # execution evidence (runtime in [C6_MIN_RUN_S, C6_MAX_RUN_S]), rc 0 and exactly ['s UNKNOWN'].
+-        raw6 = php_cnf(13, 12)
+-        cnf6 = os.path.join(d, "php13x12.cnf")
+-        h6, n6 = write_bytes_x(cnf6, raw6)
+-        ks6, kl6, rf, _ = run_kissat(cnf6, "C6", CONTROL_TIMER_S, None, per_child, {"cnf_pin": [h6, n6]}, bufs)
+-        if ks6 is None:
+-            return fail("C6_native_time_limit", "refused %r" % rf)
+-        why6 = c6_timer_refusals(ks6, kl6)
+-        recs["C6_native_time_limit"] = {"intended": "healthy self-exit rc 0, complete output exactly ['s UNKNOWN'], "
+-                                                    "monotonic runtime lower bound >= %.1f s and upper bound <= %.1f "
+-                                                    "s for --time=%d (runs 008/010/012 at --time=1: rc 0, "
+-                                                    "'s UNKNOWN')" % (C6_MIN_RUN_S, C6_MAX_RUN_S, CONTROL_TIMER_S),
+-                                        "kissat": ks6, "kissat_lines": kl6[:8], "refusals": why6}
+-        if why6:
+-            return fail("C6_native_time_limit", "intended timer-expiry outcome missing %r" % (why6,))
+-        # C7: missing input with a RAM proof buffer: kissat's missing-input diagnostic, collector unblocked and joined.
+-        absent = os.path.join(d, "absent.cnf")
+-        ks7, kl7, rf, b7 = run_kissat(absent, "C7", 10, CONTROL_PROOF_CAP, per_child, {"cnf_pin": None}, bufs)
+-        if ks7 is None:
+-            return fail("C7_no_input_sink_liveness", "refused %r" % rf)
+-        ps7 = ks7["proof_sink"] or {}
+-        want7 = ["kissat: error: can not read '%s'" % absent]
+-        recs["C7_no_input_sink_liveness"] = {"intended": "healthy self-exit rc 1, complete output exactly %r (runs "
+-                                                         "008/010/012), collector unblocked by the runner, 0 bytes, "
+-                                                         "joined" % want7, "kissat": ks7, "kissat_lines": kl7[:8]}
+-        if not (healthy(ks7) and ks7["returncode"] == 1 and kl7 == want7 and ps7.get("unblocked_by_runner") is True
+-                and ps7.get("retained") == 0 and ps7.get("thread_alive_after_join") is False):
+-            return fail("C7_no_input_sink_liveness", "intended missing-input outcome or collector settlement missing")
+-        # C7b: missing CNF for each checker with a HELD feed: drat-trim.c:1425-1427 prints exactly
+-        # 'c error opening "<path>".' and returns ERROR (-1, exit status 255) before reading stdin; the feeder then
+-        # meets a closed read end (EPIPE, 0 bytes fed); every thread settles.
+-        absent2 = os.path.join(d, "absent-checker.cnf")
+-        want7b = ['c error opening "%s".' % absent2]
+-
+-        def missing_input(name, r, l):
+-            f7 = r.get("stdin_feed") or {}
+-            if not (healthy(r) and r["returncode"] == 255 and l == want7b and f7.get("fed_bytes") == 0
+-                    and str(f7.get("delivery_error")).startswith("EPIPE") and f7.get("hold_released_by_event") is True
+-                    and f7.get("thread_alive_after_join") is False):
+-                return "missing-input predicate failed (rc %r, lines %r, feed %r)" % (r.get("returncode"), l[:4],
+-                                                                                    {k: f7.get(k) for k in ("fed_bytes", "delivery_error")})
+-            return None
+-
+-        c7k, why = checked("C7b", absent2, {"cnf_pin": None, "proof_pin": [ph, pn]}, b1, "hold", missing_input)
+-        recs["C7b_checker_no_input_feed_liveness"] = {"intended": "per checker: healthy self-exit rc 255, complete output "
+-                                                                  "exactly %r, held feed EPIPE with 0 bytes fed, hold "
+-                                                                  "released by the reap, feeder joined" % want7b,
+-                                                      "checkers": view(c7k)}
+-        if why:
+-            return fail("C7b_checker_no_input_feed_liveness", why)
+-        return True, recs
+-    finally:
+-        for b in bufs:
+-            if b is not None:
+-                b.release()
+-        recs["buffer_accounting"] = [b.accounting() for b in bufs if b is not None]
++    raw = php_cnf(6, 5)
++    cnf = os.path.join(d, "php6x5.cnf")
++    h, n = write_bytes_x(cnf, raw)
++    exp = (h, n, raw.split(b"\n", 1)[0].decode())
++    proof = os.path.join(d, "php6x5.drat")
++    ks, kl, rf = run_kissat(cnf, proof, "C1", CONTROL_CHILD_WALL, CONTROL_PROOF_CAP, per_child, {"cnf_pin": [h, n]})
++    if ks is None:
++        return fail("C1_positive_php6x5", "refused %r" % rf)
++    recs["C1_positive_php6x5"] = {"kissat": ks, "kissat_lines": kl[:8]}
++    if not (healthy(ks) and ks["returncode"] == 20 and kl == ["s UNSATISFIABLE"] and sink_complete(ks["proof_sink"])):
++        return fail("C1_positive_php6x5", "solver leg not exactly rc20 ['s UNSATISFIABLE'], unhealthy or sink incomplete")
++    ph, pn = sha_tree(proof)
++    dr, dl, rf = run_drat(cnf, proof, "C1", CONTROL_CHILD_WALL, per_child, {"cnf_pin": [h, n], "proof_pin": [ph, pn]})
++    if dr is None:
++        return fail("C1_positive_php6x5", "checker refused %r" % rf)
++    c1 = qualify_unsat(exp, ks, kl, ph, pn, CONTROL_PROOF_CAP, dr, dl, sha_tree(cnf), sha_tree(proof))
++    recs["C1_positive_php6x5"].update(intended="PASS: qualify_unsat == [] and completed 's VERIFIED'", defects=c1,
++                                      drat=dr)
++    if c1 != [] or not completed_checker(dr, dl, "VERIFIED"):
++        return fail("C1_positive_php6x5", "positive control did not pass %r" % defect_ids(c1))
++    # C2 (deterministic): same header and clause count, first clause missing one literal; the deterministic seed-1
++    # PHP(6,5) proof stays VERIFIED (every earlier run), so the ONLY defect is CNF_POST.
++    lines = raw.split(b"\n")
++    first = lines[1].split()
++    mutated = b"\n".join([lines[0], b" ".join(first[:-2] + first[-1:])] + lines[2:])
++    cnf2 = os.path.join(d, "php6x5-one-literal-removed.cnf")
++    h2, n2 = write_bytes_x(cnf2, mutated)
++    dr2, dl2, rf = run_drat(cnf2, proof, "C2", CONTROL_CHILD_WALL, per_child, {"cnf_pin": [h2, n2], "proof_pin": [ph, pn]})
++    if dr2 is None:
++        return fail("C2_mutated_cnf_digest", "refused %r" % rf)
++    c2 = qualify_unsat(exp, ks, kl, ph, pn, CONTROL_PROOF_CAP, dr2, dl2, sha_tree(cnf2), (ph, pn))
++    recs["C2_mutated_cnf_digest"] = {"intended": "completed 's VERIFIED'; defect IDs exactly ['CNF_POST']",
++                                     "defects": c2, "drat": dr2, "checker_status_lines": status_lines(dl2)}
++    if not (completed_checker(dr2, dl2, "VERIFIED") and defect_ids(c2) == ["CNF_POST"]):
++        return fail("C2_mutated_cnf_digest", "defect IDs %r != ['CNF_POST'] or not completed" % defect_ids(c2))
++    # C3: valid proof + one trailing garbage byte: completed 's VERIFIED' yet rejected for consumed bytes.
++    pbytes = read_tree(proof, CONTROL_PROOF_CAP)
++    proof3 = os.path.join(d, "php6x5-trailing.drat")
++    p3h, p3n = write_bytes_x(proof3, pbytes + b"x")
++    dr3, dl3, rf = run_drat(cnf, proof3, "C3", CONTROL_CHILD_WALL, per_child, {"cnf_pin": [h, n], "proof_pin": [p3h, p3n]})
++    if dr3 is None:
++        return fail("C3_trailing_proof_byte", "refused %r" % rf)
++    c3 = qualify_unsat(exp, ks, kl, p3h, p3n, CONTROL_PROOF_CAP + 1, dr3, dl3, (h, n), (p3h, p3n))
++    want3 = ["A.CONSUMED", "A.FORBIDDEN.WRONG_PREFIX"]
++    recs["C3_trailing_proof_byte"] = {"intended": "completed 's VERIFIED'; defect IDs exactly %r" % want3,
++                                      "defects": c3, "drat": dr3, "checker_status_lines": status_lines(dl3)}
++    if not (completed_checker(dr3, dl3, "VERIFIED") and defect_ids(c3) == want3):
++        return fail("C3_trailing_proof_byte", "defect IDs %r != %r or not completed" % (defect_ids(c3), want3))
++    # C4: satisfiable PHP(5,5) with the PHP(6,5) proof: completed 's NOT VERIFIED' rc1.
++    raw4 = php_cnf(5, 5)
++    cnf4 = os.path.join(d, "php5x5-sat.cnf")
++    h4, n4 = write_bytes_x(cnf4, raw4)
++    exp4 = (h4, n4, raw4.split(b"\n", 1)[0].decode())
++    dr4, dl4, rf = run_drat(cnf4, proof, "C4", CONTROL_CHILD_WALL, per_child, {"cnf_pin": [h4, n4], "proof_pin": [ph, pn]})
++    if dr4 is None:
++        return fail("C4_sat_formula_foreign_proof", "refused %r" % rf)
++    c4 = file_checker_defects("A", exp4, pn, dr4, dl4)
++    want4 = ["A.EXIT", "A.FORBIDDEN.NOT_VERIFIED", "A.STATUS"]
++    recs["C4_sat_formula_foreign_proof"] = {"intended": "completed exactly ['s NOT VERIFIED'] rc1; checker defect IDs "
++                                                        "exactly %r" % want4, "defects": c4, "drat": dr4,
++                                            "checker_status_lines": status_lines(dl4)}
++    if not (completed_checker(dr4, dl4, "NOT VERIFIED") and defect_ids(c4) == want4):
++        return fail("C4_sat_formula_foreign_proof", "defect IDs %r != %r or not completed" % (defect_ids(c4), want4))
++    # C5: HARD proof cap 4096 B on PHP(11,10): sink never writes beyond 4096, trip proof_cap, settled.
++    raw5 = php_cnf(11, 10)
++    cnf5 = os.path.join(d, "php11x10.cnf")
++    h5, n5 = write_bytes_x(cnf5, raw5)
++    proof5 = os.path.join(d, "php11x10.drat")
++    ks5, kl5, rf = run_kissat(cnf5, proof5, "C5", CONTROL_CHILD_WALL, 4096, per_child, {"cnf_pin": [h5, n5]})
++    if ks5 is None:
++        return fail("C5_proof_hard_cap", "refused %r" % rf)
++    dfd5, name5 = tree_path(proof5)
++    size5 = os.stat(name5, dir_fd=dfd5, follow_symlinks=False).st_size
++    ps5 = ks5["proof_sink"] or {}
++    recs["C5_proof_hard_cap"] = {"intended": "stop=proof_cap, file<=4096 B, received == written + discarded > written, "
++                                             "settled, sink over_cap and joined", "kissat": ks5, "proof_file_bytes": size5}
++    if not (ks5["stop"] == "proof_cap" and size5 <= 4096 and ks5["settled"] and ps5.get("over_cap")
++            and ps5.get("discarded", 0) > 0 and ps5.get("received") == ps5.get("written", 0) + ps5.get("discarded", 0)
++            and ps5.get("thread_alive_after_join") is False and not ks5["resource_diagnostics"]):
++        return fail("C5_proof_hard_cap", "intended reason or settlement missing")
++    # C6: kissat --time=CONTROL_TIMER_S, no proof, on PHP(13,12): N10 timer expiry bound to monotonic execution
++    # evidence (runtime in [C6_MIN_RUN_S, C6_MAX_RUN_S]), rc 0 and exactly ['s UNKNOWN'].
++    raw6 = php_cnf(13, 12)
++    cnf6 = os.path.join(d, "php13x12.cnf")
++    h6, n6 = write_bytes_x(cnf6, raw6)
++    ks6, kl6, rf = run_kissat(cnf6, None, "C6", CONTROL_TIMER_S, None, per_child, {"cnf_pin": [h6, n6]})
++    if ks6 is None:
++        return fail("C6_native_time_limit", "refused %r" % rf)
++    why6 = c6_timer_refusals(ks6, kl6)
++    recs["C6_native_time_limit"] = {"intended": "healthy self-exit rc 0, complete output exactly ['s UNKNOWN'], "
++                                                "monotonic runtime lower bound >= %.1f s and upper bound <= %.1f s for "
++                                                "--time=%d (runs 008/010/012 at --time=1: rc 0, 's UNKNOWN')"
++                                                % (C6_MIN_RUN_S, C6_MAX_RUN_S, CONTROL_TIMER_S),
++                                    "kissat": ks6, "kissat_lines": kl6[:8], "refusals": why6}
++    if why6:
++        return fail("C6_native_time_limit", "intended timer-expiry outcome missing %r" % (why6,))
++    # C7: missing input with a proof sink: kissat's missing-input diagnostic; the sink is unblocked and joined.
++    absent = os.path.join(d, "absent.cnf")
++    ks7, kl7, rf = run_kissat(absent, os.path.join(d, "absent.drat"), "C7", 10, CONTROL_PROOF_CAP, per_child,
++                              {"cnf_pin": None})
++    if ks7 is None:
++        return fail("C7_no_input_sink_liveness", "refused %r" % rf)
++    ps7 = ks7["proof_sink"] or {}
++    want7 = ["kissat: error: can not read '%s'" % absent]
++    recs["C7_no_input_sink_liveness"] = {"intended": "healthy self-exit rc 1, complete output exactly %r (runs "
++                                                     "008/010/012), sink unblocked by the runner, 0 bytes, joined"
++                                                     % want7, "kissat": ks7, "kissat_lines": kl7[:8]}
++    if not (healthy(ks7) and ks7["returncode"] == 1 and kl7 == want7 and ps7.get("unblocked_by_runner") is True
++            and ps7.get("written") == 0 and ps7.get("thread_alive_after_join") is False):
++        return fail("C7_no_input_sink_liveness", "intended missing-input outcome or sink settlement missing")
++    # C7b: checker missing CNF (with the C1 proof file): drat-trim.c:1425-1427 prints exactly
++    # 'c error opening "<path>".' and returns ERROR (-1, exit status 255) before reading the proof.
++    absent2 = os.path.join(d, "absent-checker.cnf")
++    dr7, dl7, rf = run_drat(absent2, proof, "C7b", CONTROL_CHILD_WALL, per_child, {"cnf_pin": None, "proof_pin": [ph, pn]})
++    if dr7 is None:
++        return fail("C7b_checker_no_input", "refused %r" % rf)
++    want7b = ['c error opening "%s".' % absent2]
++    recs["C7b_checker_no_input"] = {"intended": "healthy self-exit rc 255, complete output exactly %r" % want7b,
++                                    "drat": dr7, "checker_lines": dl7[:8]}
++    if not (healthy(dr7) and dr7["returncode"] == 255 and dl7 == want7b):
++        return fail("C7b_checker_no_input", "intended missing-input outcome missing")
++    return True, recs
+ 
+ 
+ 
+@@ -2528,6 +2120,7 @@
+     for w in why:
+         latch("terminal gate: " + w)
+     return why
++
+ 
+ 
+ def commit_record(path, rec_unknown, rec_unsat):
+@@ -2553,6 +2146,7 @@
+     register_written(path, h, len(chosen))
+     return {"boundary": boundary, "cancel_order": STATE["cancel_order"], "committed_unsat": chosen is unsat_bytes,
+             "sha256": h}
++
+ 
+ 
+ HEX64 = re.compile(r"[0-9a-f]{64}")
+@@ -2592,11 +2186,12 @@
+     return why
+ 
+ 
++
+ def main():
+     signal.signal(signal.SIGTERM, on_term)
+     signal.signal(signal.SIGINT, on_term)
+     if len(sys.argv) != 4:
+-        print("usage: pilot_stream_drat_%s_v3.py GO.json GO_SHA256 OUT_DIR" % FAMILY, flush=True)
++        print("usage: pilot_file_drat_v31.py GO.json GO_SHA256 OUT_DIR", flush=True)
+         return EXIT_PRESTART_REFUSED
+     go_path, go_sha, out_dir = sys.argv[1], sys.argv[2], os.path.abspath(sys.argv[3])
+     why = out_dir_refusal(out_dir)                 # V4: direct child of a symlink-free pilot-v1, new
+@@ -2657,20 +2252,17 @@
+         print("REFUSED: run tree creation %r" % (exc,), flush=True)
+         return EXIT_PRESTART_REFUSED
+     STATE["out"] = out_dir
+-    summary = {"schema": "PA19-96H-PSTREAM-SUMMARY-v3", "items": {}, "controls_ok": None, "stopped": None,
++    summary = {"schema": "PA19-96H-PILOT-SUMMARY-v31", "items": {}, "controls_ok": None, "stopped": None,
+                "terminal_policy": "exit code reports runner execution only; per-item records carry the scientific "
+-                                  "status; an item counts only if qualify_stream (both pinned checkers on the same "
+-                                  "RAM buffer), the terminal gate and the commit boundary all pass; case closure is "
+-                                  "decided by the parent audit"}
++                                  "status; an item counts only if qualify_unsat, the terminal gate and the commit "
++                                  "boundary all pass; case closure is decided by the parent audit"}
+     outcome = {"sat": False, "controls_failed": False, "refused": False, "exception": False, "complete": False}
+     try:                                           # N4/N8: every post-tree failure still reaches closeout
+         launch = {
+-            "schema": "PA19-96H-PSTREAM-LAUNCH-v3", "host_clock": clock(), "owner": "ContinuePA19b",
++            "schema": "PA19-96H-PILOT-LAUNCH-v31", "host_clock": clock(), "owner": "ContinuePA19b",
+             "go": STATE["go"], "runner": {"path": os.path.abspath(__file__), "sha256": self_sha},
+             "pid": os.getpid(), "ppid": os.getppid(), "pgid": os.getpgid(0), "cwd": os.getcwd(), "argv": sys.argv,
+-            "python": sys.version, "binaries": {"kissat": KISSAT, "drat_trim_lane_copy": DRAT, "drat_trim_old": DRAT_OLD,
+-                                                "drat_trim_provenanced": DRAT_PROV, "provenance_receipt": DRAT_PROV_RECEIPT,
+-                                                "drat_trim_source_sha256": DRAT_SOURCE_SHA, "checkers_in_order": CHECKERS},
++            "python": sys.version, "binaries": {"kissat": KISSAT, "drat_trim_lane_copy": DRAT, "drat_trim_old": DRAT_OLD},
+             "inputs": {"encoder": ENC, "skeleton": SKEL, "items": ITEMS, "registry": REGISTRY,
+                        "launch_contract": LAUNCH_CONTRACT, "binary_imports": BINARY_IMPORTS,
+                        "kissat_source_evidence": KISSAT_SOURCE, "monitor": MONITOR, "observer_source": OBSERVER_SOURCE_SHA},
+@@ -2692,9 +2284,9 @@
+             "limits": {"solver_s": SOLVER_SECONDS, "check_s": CHECK_SECONDS, "grace_s": GRACE, "term_wait_s": TERM_WAIT,
+                        "stream_join_s": STREAM_JOIN, "settle_tail_s": SETTLE_TAIL, "proof_cap_hard": PROOF_CAP,
+                        "control_proof_cap_hard": CONTROL_PROOF_CAP, "log_cap_hard": LOG_CAP, "lane_rss_trip": LANE_RSS_TRIP,
+-                       "free_floor": FREE_FLOOR, "fresh_base": FRESH_BASE, "proof_storage": "RAM only; never written",
+-                       "feed_block": FEED_BLOCK, "write_slice": WRITE_SLICE, "hold_s": HOLD_SECONDS,
+-                       "rss_charge": "child RSS + max(runner RSS, retained proof buffer bytes)"},
++                       "free_floor": FREE_FLOOR, "fresh_base": FRESH_BASE,
++                       "proof_storage": "owned HARD-capped proof file, cap pre-charged to the output guard",
++                       "rss_charge": "child RSS + runner RSS"},
+             "exit_codes": {"0": "plan complete (each item terminal UNSAT/UNKNOWN); not a science verdict",
+                            "10": "SAT candidate", "20": "controls failed", "30": "admission refused",
+                            "40": "owner cancel", "50": "safety stop / latch / unsettled / memory diagnostic",
+@@ -2715,19 +2307,13 @@
+ 
+ 
+ def run_plan(summary, outcome):
+-    """The plan body; every early stop is a plain return with the outcome flags set.  V5: an item's proof buffer is
+-    released in a finally on every path (N6: owned by `item_bufs` from its creation); V12: item shape re-checked
++    """The plan body; every early stop is a plain return with the outcome flags set.  V12: item shape re-checked
+     immediately before generation; N8: run-tree files are hashed through the anchored tree."""
+     out_dir = STATE["out"]
+     if sha_file(DRAT_OLD[0])[0] != DRAT_OLD[1] or sha_file(KISSAT[0])[0] != KISSAT[1]:
+         raise RuntimeError("binary pin mismatch")
+     if sha_file(DRAT)[0] != DRAT_OLD[1] or os.lstat(DRAT).st_ino == os.lstat(DRAT_OLD[0]).st_ino:
+         raise RuntimeError("vendored drat-trim mismatch or shared inode")
+-    prov = json.loads(read_pinned(*DRAT_PROV_RECEIPT)).get("drat_trim") or {}
+-    if prov.get("binary_sha256") != DRAT_PROV[1] or prov.get("source_sha256") != DRAT_SOURCE_SHA \
+-            or sha_file(DRAT_PROV[0])[0] != DRAT_PROV[1] \
+-            or os.lstat(DRAT_PROV[0]).st_ino in (os.lstat(DRAT).st_ino, os.lstat(DRAT_OLD[0]).st_ino):
+-        raise RuntimeError("provenanced drat-trim pin/receipt mismatch or shared inode")
+     ok, recs = controls()
+     summary["controls_ok"] = ok
+     summary["controls_record_sha256"] = write_x(os.path.join(out_dir, "controls.json"), recs)
+@@ -2744,7 +2330,7 @@
+     D = json.loads(read_pinned(*SKEL))
+     special = [p for p in D["profiles"] if list(p) != P0]
+     for it in ITEMS:
+-        why = item_shape_refusals(it)
++        why = item_shape_refusals(it)              # V12: again, immediately before generation
+         if why:
+             raise RuntimeError("item shape %r" % (why,))
+         label = it["id"].replace(":", "_")
+@@ -2769,91 +2355,66 @@
+             raise RuntimeError("CNF file re-hash mismatch")
+         inputs = {"item": it["id"], "cnf_pin": [it["cnf"][0], it["cnf"][1]], "list_pin": it["list"][1],
+                   "skeleton_pin": SKEL[1], "encoder_pin": ENC[1]}
+-        buf = None
+-        item_bufs = []                             # N6: owns the item's buffer from its creation
+-        try:
+-            ks, kl, refused, buf = run_kissat(cnf_path, label, SOLVER_SECONDS, PROOF_CAP, LOG_CAP + 3 * RECORD_MAX,
+-                                              inputs, item_bufs)
+-            if ks is None:
+-                rec.update(reason="solver admission refused", refusal=refused, host_clock_end=clock())
++        proof_path = os.path.join(out_dir, label + ".drat")
++        ks, kl, refused = run_kissat(cnf_path, proof_path, label, SOLVER_SECONDS, PROOF_CAP,
++                                     PROOF_CAP + LOG_CAP + 3 * RECORD_MAX, inputs)
++        if ks is None:
++            rec.update(reason="solver admission refused", refusal=refused, host_clock_end=clock())
++            write_x(rec_path, rec)
++            summary["items"][it["id"]] = {"status": "UNKNOWN", "reason": "solver admission refused"}
++            summary["stopped"] = {"phase": "solver_admission", "item": it["id"], "why": refused}
++            outcome["refused"] = True
++            return
++        rec["solver"] = ks
++        rec["solver_status_lines"] = status_lines(kl)
++        if ks["returncode"] == 10 and rec["solver_status_lines"] == ["s SATISFIABLE"] and ks["stop"] == "self" \
++                and ks["settled"]:
++            rec["status"] = "SAT_CANDIDATE"
++            rec["sat"] = verify_sat(cnf_path, kl, label)
++            rec["host_clock_end"] = clock()
++            write_x(rec_path, rec)
++            summary["items"][it["id"]] = {"status": "SAT_CANDIDATE", "sat": rec["sat"]}
++            summary["stopped"] = {"phase": "sat_candidate", "item": it["id"]}
++            outcome["sat"] = True
++            return
++        sink_ok = sink_complete(ks["proof_sink"])
++        if sink_ok:
++            rec["proof"] = {"sha256": ks["proof_sink"]["sha256_of_written"], "bytes": ks["proof_sink"]["written"]}
++        if ks["returncode"] == 20 and ks["stop"] == "self" and ks["settled"] and sink_ok and not LATCH \
++                and not cancelled():
++            dr, dl, refused = run_drat(cnf_path, proof_path, label, CHECK_SECONDS, LOG_CAP + 3 * RECORD_MAX,
++                                       dict(inputs, proof_pin=[rec["proof"]["sha256"], rec["proof"]["bytes"]]))
++            if dr is None:
++                rec.update(reason="checker admission refused", refusal=refused, host_clock_end=clock())
+                 write_x(rec_path, rec)
+-                summary["items"][it["id"]] = {"status": "UNKNOWN", "reason": "solver admission refused"}
+-                summary["stopped"] = {"phase": "solver_admission", "item": it["id"], "why": refused}
++                summary["items"][it["id"]] = {"status": "UNKNOWN", "reason": "checker admission refused"}
++                summary["stopped"] = {"phase": "checker_admission", "item": it["id"], "why": refused}
+                 outcome["refused"] = True
+                 return
+-            rec["solver"] = ks
++            rec["checker"] = dr
++            rec["checker_status_lines"] = status_lines(dl)
++            rec["checker_parse_lines"] = [s[:200] for s in dl if s.startswith("c parsing")
++                                          or s.startswith("c finished parsing")][:4]
+             rec["solver_lines"] = kl[:8]
+-            rec["solver_status_lines"] = status_lines(kl)
+-            if ks["returncode"] == 10 and rec["solver_status_lines"] == ["s SATISFIABLE"] and ks["stop"] == "self" \
+-                    and ks["settled"]:
+-                rec["status"] = "SAT_CANDIDATE"
+-                rec["sat"] = verify_sat(cnf_path, kl, label)
+-                rec["host_clock_end"] = clock()
+-                write_x(rec_path, rec)
+-                summary["items"][it["id"]] = {"status": "SAT_CANDIDATE", "sat": rec["sat"]}
+-                summary["stopped"] = {"phase": "sat_candidate", "item": it["id"]}
+-                outcome["sat"] = True
+-                return
+-            sink_ok = sink_complete(ks["proof_sink"])
+-            if sink_ok:
+-                rec["proof"] = {"sha256": ks["proof_sink"]["sha256_of_retained"], "bytes": ks["proof_sink"]["retained"],
+-                                "storage": "RAM only (P-STREAM); never written to disk"}
+-            if ks["returncode"] == 20 and ks["stop"] == "self" and ks["settled"] and sink_ok and not LATCH \
+-                    and not cancelled():
+-                checks = []
+-                rec["checkers"] = {}
+-                for name, path, pin in CHECKERS:
+-                    dr, dl, refused = run_check(cnf_path, buf, (name, path, pin), label, CHECK_SECONDS,
+-                                                LOG_CAP + 3 * RECORD_MAX,
+-                                                dict(inputs, proof_pin=[rec["proof"]["sha256"], rec["proof"]["bytes"]]))
+-                    if dr is None:
+-                        rec.update(reason="checker %s admission refused" % name, refusal=refused,
+-                                   host_clock_end=clock())
+-                        write_x(rec_path, rec)
+-                        summary["items"][it["id"]] = {"status": "UNKNOWN",
+-                                                      "reason": "checker %s admission refused" % name}
+-                        summary["stopped"] = {"phase": "checker_admission", "item": it["id"], "checker": name,
+-                                              "why": refused}
+-                        outcome["refused"] = True
+-                        return
+-                    checks.append((name, dr, dl))
+-                    filt = dr.get("stdout_filter") or {}
+-                    rec["checkers"][name] = {
+-                        "record": dr, "status_lines": status_lines(dl),
+-                        "parse_lines": [s[:200] for s in dl if s.startswith("c parsing") or
+-                                        s.startswith("c finished parsing") or s.startswith("c reading proof")][:6],
+-                        "duplicate_literal_warnings": {   # V8/P3: both phases counted and disclosed, never gated
+-                            "formula_phase_proof_line_le_header_clauses": filt.get("dup_lines_at_or_below_header_clauses"),
+-                            "proof_phase_proof_line_gt_header_clauses": filt.get("dup_lines_above_header_clauses"),
+-                            "basis": "drat-trim.c:1133/1153/1229: exact phase partition for any log without early EOF"}}
+-                    if checker_defects(name, it["cnf"], rec["proof"]["sha256"], rec["proof"]["bytes"], dr, dl) \
+-                            or LATCH or cancelled():
+-                        break  # S4: a later checker cannot rescue the item
+-                post_cnf, post_buf = sha_tree(cnf_path), buf.digest()
+-                buf.release()
+-                rec["post_check_hashes"] = {"cnf": list(post_cnf), "proof_buffer": post_buf}
+-                rec["defects"] = qualify_stream(it["cnf"], ks, kl, PROOF_CAP, checks, post_cnf, post_buf)
+-                rec["defect_ids"] = defect_ids(rec["defects"])
+-                rec["host_clock_end"] = clock()
+-                rec["terminal_gate"] = terminal_gate()
+-                unsat = None
+-                if not rec["defects"] and not rec["terminal_gate"] and not LATCH:
+-                    unsat = dict(rec, status="UNSAT", count_for_scientific_coverage=True,
+-                                 commit="UNSAT chosen at an explicit commit boundary with no earlier cancel stamp or "
+-                                        "latch")
+-                commit = commit_record(rec_path, dict(rec, commit="UNKNOWN record"), unsat)
+-                rec["status"] = "UNSAT" if commit["committed_unsat"] else "UNKNOWN"
+-                summary.setdefault("commits", {})[it["id"]] = commit
+-            else:
+-                rec["reason"] = "no settled self-exit rc20 verdict with a complete proof buffer (or latch/cancel)"
+-                rec["host_clock_end"] = clock()
+-                write_x(rec_path, rec)
+-        finally:
+-            for b in item_bufs:
+-                b.release()                        # N6: a live collector stays charged; closeout retries
++            post_cnf, post_proof = sha_tree(cnf_path), sha_tree(proof_path, limit=PROOF_CAP)
++            rec["post_check_hashes"] = {"cnf": list(post_cnf), "proof": list(post_proof)}
++            rec["defects"] = qualify_unsat(it["cnf"], ks, kl, rec["proof"]["sha256"], rec["proof"]["bytes"],
++                                           PROOF_CAP, dr, dl, post_cnf, post_proof)
++            rec["defect_ids"] = defect_ids(rec["defects"])
++            rec["host_clock_end"] = clock()
++            rec["terminal_gate"] = terminal_gate()
++            unsat = None
++            if not rec["defects"] and not rec["terminal_gate"] and not LATCH:
++                unsat = dict(rec, status="UNSAT", count_for_scientific_coverage=True,
++                             commit="UNSAT chosen at an explicit commit boundary with no earlier cancel stamp or latch")
++            commit = commit_record(rec_path, dict(rec, commit="UNKNOWN record"), unsat)
++            rec["status"] = "UNSAT" if commit["committed_unsat"] else "UNKNOWN"
++            summary.setdefault("commits", {})[it["id"]] = commit
++        else:
++            rec["reason"] = "no settled self-exit rc20 verdict with a complete proof sink (or latch/cancel)"
++            rec["host_clock_end"] = clock()
++            write_x(rec_path, rec)
+         summary["items"][it["id"]] = {k: rec.get(k) for k in ("status", "defect_ids", "terminal_gate", "reason", "proof")}
+-        summary["items"][it["id"]]["duplicate_literal_warnings"] = {
+-            n: v.get("duplicate_literal_warnings") for n, v in (rec.get("checkers") or {}).items()}
+         STATE["remaining_reserve"] -= ITEM_RESERVE
+         if LATCH or cancelled():
+             summary["stopped"] = {"phase": "latch_or_cancel", "item": it["id"]}
+@@ -2864,11 +2425,11 @@
+ 
+ def final_code(summary, outcome):
+     """r3#9/N9: blocking closeout metadata first: host clock (owned helper), child and helper SETTLEMENT (N2: a
+-    helper counts only if its settlement predicate held, not merely its return code), proof RAM (N6: releases
+-    are retried, anything still held is a defect), N8 anchored confinement, run-tree bytes and digest
+-    preservation of every runner-written file, N4 closeout timing; then the explicit closeout boundary; the
+-    cancel stamp is read AFTER the boundary and compared with it (N9).  Any closeout defect latches (exit 50);
+-    exit 0 is impossible with a voided chunk claim."""
++    helper counts only if its settlement predicate held, not merely its return code), N8 anchored confinement,
++    run-tree bytes and digest preservation of every runner-written file (including the proof files), N4 closeout
++    timing; then the explicit closeout boundary; the cancel stamp is read AFTER the boundary and compared with it
++    (N9).  Any closeout defect latches (exit 50); exit 0 is impossible with a voided chunk claim.  (= P-STREAM v3
++    final_code without the RAM proof-buffer accounting: D2 proofs are files.)"""
+     out_dir = STATE["out"]
+     host_end = clock()                             # V1: owned helper; None after a cancel, a latch or a failure
+     children = [c.settled_rec if c.settled_rec is not None else {"seq": c.seq, "label": c.label, "pid": c.pid,
+@@ -2876,14 +2437,6 @@
+                 for c in OWNED if c.proc is not None]
+     all_settled = all(r.get("settled") for r in children)
+     helpers_settled = all(h.settled for h in HELPERS)
+-    for b in list(LIVE_BUFFERS):
+-        if b.release_requested and not b.released:
+-            b.release()                            # N6: retried now that collectors may have ended
+-    try:
+-        outstanding = buffer_charge()
+-        buffers = [b.accounting() for b in LIVE_BUFFERS][:LIST_MAX]
+-    except BaseException as exc:
+-        outstanding, buffers = None, ["accounting failed %r" % (exc,)]
+     confinement = confinement_refusals()
+     try:
+         tree = run_tree_census()
+@@ -2905,8 +2458,6 @@
+     closeout_defects = []
+     if not helpers_settled:
+         closeout_defects.append("metadata helper unsettled or quarantined")
+-    if outstanding != 0:
+-        closeout_defects.append("proof RAM still held at closeout: %r" % (outstanding,))
+     closeout_defects += confinement
+     closeout_defects += preservation
+     if tree_bytes is None or tree_bytes > STATE["output_limit"]:
+@@ -2945,8 +2496,8 @@
+                    children=[{k: r.get(k) for k in ("seq", "label", "pid", "returncode", "stop", "settled",
+                                                     "launch_order", "exit_observed_by_deadline")} for r in children],
+                    all_children_settled=all_settled, metadata_helpers=HELPER_LOG[:LIST_MAX],
+-                   all_helpers_settled=helpers_settled, proof_ram_outstanding_bytes=outstanding,
+-                   proof_buffers=buffers, quarantine_receipts=quarantine, run_tree_bytes=tree_bytes,
++                   all_helpers_settled=helpers_settled, proof_ram_outstanding_bytes=None,
++                   quarantine_receipts=quarantine, run_tree_bytes=tree_bytes,
+                    retained_bytes_charged=STATE["written"], output_limit_bytes=STATE["output_limit"],
+                    elapsed_mono_s=round(elapsed, 3), closeout_late=late, chunk_claim=chunk_claim,
+                    closeout_defects=closeout_defects, lane_ledger_last=STATE["last_ledger"])
+@@ -2959,5 +2510,6 @@
+     return code
+ 
+ 
++
+ if __name__ == "__main__":
+     sys.exit(main())

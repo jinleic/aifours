@@ -1,5 +1,7 @@
 # Large sets of Kirkman triple systems: orders 57 and 87
 
+> **Update 2026-10-16 PT.** Both finite targets have since been constructed: explicit LKTS(57) and LKTS(87) certificates passed three independently written verifiers ([six-lane package](../evidence/six-lane-20261016/kirkman57/README.md), [parent verdict](../../institute/runs/six-lane-2026-10-16/review/lkts-57-87-parent-verdict.md)). Both finite existence statements also have reviewed Lean 4.34.1 proofs with fresh replay by the same kernel implementation; this is not a universal LKTS theorem. The status text below is the dated 2026-10-14 record and is otherwise unchanged. The book's question for every admissible order remains open.
+
 ## Source
 
 - Book: *10000 Selected Problems in Sciences: Mathematics* (Science Press, 2009).

@@ -1,0 +1,50 @@
+{
+  "verdict": "accept-with-fixes",
+  "summary": "Previous issues 1–5 are fixed; issue 6 remains an independent-verification limitation. No invalidating mathematical error was found. Exact rational aggregation reproduces both reported intervals and their POS/NEG classifications, conditional on the supplied sector enclosures. Replay validation and comparison claims need correction.",
+  "issues": [
+    {
+      "severity": "minor",
+      "location": "replay.py:19-33,48-56",
+      "description": "Standalone replay does not perform combine-level validation: duplicate sectors silently overwrite earlier records, missing/extra sectors outside the requested sample are unchecked, and the default empty selection exits successfully without calling certify. Read-only structural tests reproduced these behaviors. A prior successful combine rejects the structural defects, so this does not defeat the supplied two-step workflow.",
+      "fix": "Require successful shared record validation before replay, reject empty selections, and provide an explicit full-coverage mode. Report sampled versus complete verification clearly."
+    },
+    {
+      "severity": "minor",
+      "location": "replay.py:1-4,15-16,32; PROOFS_v4.md:152-153",
+      "description": "The claim to compare every field bitwise is inaccurate. Replay compares 19 decoded fields using Python equality, which identifies values such as +0.0 and -0.0; secs is excluded. Excluding elapsed time is appropriate, but the description overstates the comparison.",
+      "fix": "Describe comparison as exact decoded-value equality for FIELDS, excluding elapsed time, or implement representation-level comparison if bitwise identity is intended."
+    },
+    {
+      "severity": "minor",
+      "location": "combine.py:55-75",
+      "description": "Named rejection handling is complete for the well-formed mutations requested here, but not for malformed record structures. For example, an empty ic_trunc raises IndexError, while a three-element ic_trunc is accepted. Negative eps_tail, altered effective D, and non-finite diagnostic pN also pass. These fields do not determine aggregation, and all supplied records passed the independent checks.",
+      "fix": "Validate interval shape and diagnostic domains, convert malformed records into named rejections, and distinguish checked D_param from effective D and the ignored diagnostic pN."
+    },
+    {
+      "severity": "note",
+      "location": "PROOFS_v4.md:151-153; p1_5_replay.log:1-2; p201_1000_replay.log:1-2",
+      "description": "Previous issue 6 remains unresolved by this review: python-flint is unavailable, so I did not execute Arb entropy certification or reproduce the M=2000 sector enclosures. The packet records four successful sector replays per run, rather than the complete replay or independent recomputation required by its stated acceptance protocol. External reproduction references were not read.",
+      "fix": "Complete packet-local, read-only replay of all 220 sectors for each witness using an existing python-flint installation, or supply an independently verified recomputation. Until then, retain the explicit conditional qualification."
+    }
+  ],
+  "checked": [
+    "A1 FIXED — PROOFS_v4.md:95-100 corrects the flush estimate and includes 16 phase parts. Exact arithmetic gives 1.1830521861667747e-257 before that factor and 1.8928834978668395e-256 afterward. Even applying 16 parts to the primitive-underflow budget leaves it far below ABS_ENTRY=1e-250.",
+    "A2 FIXED — PROOFS_v4.md:87-91 removes the false 1e-40 representation claim. cert.py:144-149 measures pi conversion error and cert.py:385 includes its maximum. Independently converting the exact N=1344, s=943 probability to nearest hi-plus-lo gives relative error 2.0653905641654582e-33.",
+    "A3 FIXED — cert.py is present and resolves combine.py:23-24 and replay.py:13. The separate mutation runner still hardcodes historical parent paths and writes outputs at test_combine_mutations.py:17-20,26-31,89; I inspected its results and used an in-memory harness instead of executing it.",
+    "A4 FIXED — cert.py:574-576 records ptail/pitail in sector records; both TOTAL files:9-10 record 1e-13 and 1e-40. PROVENANCE.json:20-27 supplies cutoffs and production invocations. All 440 records agree.",
+    "A5 FIXED — cert.py:38-39,574-576 records canonical witness and actual cert.py/dd.py hashes. combine.py:55-65 verifies them and parameters. All 44 SHA256SUMS.txt entries match, and every sector fingerprint matches the packet.",
+    "A6 NOT INDEPENDENTLY RESOLVED — the recorded replay and small-system logs show producer-side execution, but this reviewer could not execute the Arb path. See the verification limitation above.",
+    "B: Sector bridge — PROOFS_v4.md:21-45 correctly derives multiplicities, p_N, normalized pi_s, and cancellation of classical/multiplicity entropies. Exact integer arithmetic gives sum_N p_N=1 for both parameters. Independent direct-Pauli versus sector calculations at M=3,4 and both p values agreed within 9.72e-16.",
+    "B: Schwinger steps — PROOFS_v4.md:49-61 agrees with cert.py:165-207,255-275. Loss retains complete input support before output truncation; cloning cannot feed discarded higher indices back into the kept block. Across 53 small closed-form Kraus comparisons, the largest float discrepancy was 1.12e-16; kept-block truncation and sampled checkpoint replay were identical.",
+    "B: DD error model — PROOFS_v4.md:63-102 supplies relative and absolute budgets; cert.py:348-385 inflates entry radii and includes pi representation error. The witness's initial products avoid underflow and phase merging is disjoint. Exact-rational checks passed for sqrt_int through 2002, reciprocals through 2002, and 4000 cases each of add, mul, and TwoProd, including underflow cases. These finite checks supplement the argument, rather than proving the universal primitive bounds.",
+    "B: Normalization and truncation — PROOFS_v4.md:106-119,139-143,158-178 agrees with cert.py:390-485,502-514. Both witnesses have the same finite dyadic amplitudes, distinct residues 0/1 modulo 3, and differ only in p. Their squared norms are approximately 1.000000000000000324 and 0.999999999999999843; code divides them out. Disjoint supports give S(rho)=1 exactly. Kept RB coherences, diagonal reference flags, flag signs, pi-mass normalization, lower-tail almost-convexity, upper pinching/AFW, and unselected-sector bounds have the required directions.",
+    "B: Pi tails — exact rational checks verified all 440 smin thresholds, all recorded eps_tail upper bounds, and all nsteps/effective-D values. The omitted pi mass remains separate from the normalized truncation flag.",
+    "B: Entropy — PROOFS_v4.md:121-137 and cert.py:279-344 correctly use the Gram-defect bound, PSD Ostrowski scaling, enlarged Gershgorin component counts, entropy clipping/monotonicity, and lowest-cluster Ky Fan upper bound. The extra nonnegative mass allowance at cert.py:337 is conservative. This path was audited statically, not executed with Arb.",
+    "C: combine.py:55-78 correctly distinguishes no_provenance, witness_hash, cert_hash, dd_hash, param_mismatch, nonfinite, order, unexpected_sector, duplicate, and missing for well-formed records. Additional in-memory tests exercised altered M/p/D_param/ptail/pitail and both cutoffs supplied to combine. These tests executed the source function with exact-rational arithmetic adapters, not Arb.",
+    "C: combine.py:79-98 recomputes p_N, ignores recorded diagnostic pN, and bounds allowed missing sectors and unselected sectors by ±Srho_hi times their masses. Consistent finite, ordered numerical tampering can pass combine; recomputation is needed to detect it. Replay detects it only when the affected sector is selected. Combine also permits some inconsistent changes that preserve its limited sanity checks.",
+    "C: mutation_tests.json:1-119 contains 17/17 expected outcomes, including combine acceptance of the consistent contribution shift and replay mismatch specifically in lo, hi, and ic_trunc. The retained run1 report:89-104 correctly records its earlier failure: changing only lo caused order rejection. test_combine_mutations.py:73-87 fixes that discriminating control.",
+    "D: Exact rational recombination using binary64 endpoints as exact dyadics reproduces p1_5_TOTAL.json:11-22: [1.1373755593447965e-08, 1.1432769065159199e-08], POS. There are exactly 220 selected sectors, even N=1236 through 1674, with no missing/extra/duplicate sectors. Exact unselected mass is approximately 3.62306312242708103026561427865e-13; the reported mass is outward.",
+    "D: The same calculation reproduces p201_1000_TOTAL.json:11-22: [-7.708902769596439e-09, -7.649813449216395e-09], NEG. There are exactly 220 selected sectors, even N=1234 through 1672, with complete unique coverage. Exact unselected mass is approximately 4.13544278629112949116904756738e-13. All four reported endpoints exactly match independently rounded-outward rational totals. NEG concerns this state's coherent information, not an upper bound on channel capacity."
+  ],
+  "first_verification_step": "With an existing python-flint interpreter, validate packet-local records with combine, then call cert.certify for each witness with sectors_only=None, ptail=1e-13, pitail=1e-40, verbose=False, and an io.StringIO log. Compare every selected record using replay.FIELDS and explicitly require all 220 sectors per run. Keep all output in memory; no installation, external files, or writes are needed."
+}

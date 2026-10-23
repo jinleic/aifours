@@ -1,0 +1,8 @@
+# Report v12 — direct source-label precision erratum v2
+
+Recorded 2026-10-21T17:20:13-0700 after `/bin/date`. Read after reportv12erratum1; old sources remain unchanged. This corrects two parent source-attribution imprecisions before any renewed report-audit launch.
+
+1. In [v12erratum1](/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/review/sixlane-report-v12-erratum-v1.md) SHA256 `76fb453bcf6e95d92844522c37c700bcf289ca7f8f9275eb4ed21462af7391f4`, read **contractcutoffs LF98–101**, not the incorrectly written111–116. The field values are unchanged:2026-10-22 20:56:33native-launchstop,21:26:33sciencestop,21:56:33owned-settled,22:56:33reportduePT. Exact LF labels verified by the literal file search; no guessed line positions retained as operative.
+2. The DG-stmt/DG-arg naming distinction in reportLF50 and v12erratum1 is from **Sun ledger erratum15 item2**, not erratum16 itself: [sun7-LEDGER-parent-erratum-v15.md](/Users/jinleic/repos/aifours/institute/runs/six-lane-2026-10-18-96h/review/sun7-LEDGER-parent-erratum-v15.md) — SHA256 `237a941ef2fc50cde77db3cafc6df8d90b7ec5d1c5897394931aa65951f9d6dc`. Erratum16 refines item1's ROW-2/N14/PF1 and N41/N43 wording; it does not contain the DG naming text. Read15THEN16, so v15's superseded N41four-run/ROW-2 wording is NOT the current reading. Both complete bodies will be in the renewed report input. This supplies direct documentary attribution, not a new proof or backdated read.
+
+Reportv12 remains INTERIM and awaiting both complete-source renewed reviews. The first Codex0F/5M/1m findings and pending initial Claude review remain actual history. No scientific statement, authority count, source-pattern freeze, process classification or cutoff changes.
