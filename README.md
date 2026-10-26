@@ -5,7 +5,7 @@ Research dossiers on precisely stated problems from three volumes of 《10000个
 `/Users/jinleic/jinleic-workspace/ai4s` and moved here the same day
 ([relocation record](maintenance/relocation-2026-10-14/README.md)).
 
-## Current assessment — 2026-10-22
+## Current assessment — 2026-10-26
 
 The work contains complete finite constructions and scoped theorems with substantive verification.
 The strongest written continuation is **Sun's disjoint-coset conjecture at k = 7 for arbitrary groups**,
@@ -16,12 +16,23 @@ Concrete successes include **LKTS(57/87)**, the **six cyclic (v,5,1) difference-
 **four decided BTD instances**, and the sharp two-qutrit **15/16** theorem. The final physics verdict
 also accepts **M(7) = 2**, with the recorded computational-provenance limitations. Several finite
 constructions have recorded Lean kernel replays; those replays were not repeated for this publication.
-Fresh direct checks of the compact witnesses passed on 2026-10-22.
+Fresh direct checks passed again on 2026-10-26 for all six difference families, RDSQS(52),
+mcDSQS(38), BTD(14,28), both CFR(5,27) witnesses, and an exact two-qutrit attaining gate.
+Three deliberately corrupted witnesses were rejected. The mcDSQS(38) contribution is its
+certified optimal colourings; its underlying SQS was already public. See the
+[dated assessment, replay commands and limits](maintenance/publication-2026-10-26/README.md).
+
+The [October 23–27 eighteen-target round](institute/runs/three-area-2026-10-23-96h/README.md)
+contains further scoped written theorems and useful barriers, but declares none of its
+unrestricted book targets solved and remains active at its latest recorded checkpoint.
+Its ordinary written reviews are not Lean/kernel or human review. Mandatory verification
+overlays, priority corrections and withdrawals accompany the research, including the refuted
+semigroup CG/RU–LU claims. Publication does not promote these claims or close the round.
 
 **Full ordered Olson, MOQLS(8), maximal 1-RQLS(10), PA(19,8,6), CFR(6,21), and six MOLS(39)
 remain unresolved here.** Earlier CPCW and L(12,3) results are independent confirmations of prior
 public claims. The dated summaries below are historical; the
-[current assessment and publication limits](maintenance/publication-2026-10-22/README.md) and
+[October 22 assessment and publication limits](maintenance/publication-2026-10-22/README.md) and
 [96-hour closeout report v17](institute/runs/six-lane-2026-10-18-96h/report/continuation-report-2026-10-22-final-v17.md)
 give the later status. Public source/code availability does not establish scientific priority or expert acceptance.
 
@@ -230,3 +241,5 @@ native binaries, raw logs and bulky generated evidence. All newly excluded local
 Some computer-assisted proofs require regenerating or separately obtaining the omitted payloads;
 a clone is not a complete immediately replayable evidence bundle. See the
 [publication record](maintenance/publication-2026-10-22/README.md) for exact limits and exclusions.
+The [October 26 refresh](maintenance/publication-2026-10-26/README.md) records subsequent
+verification and the additional source-copy exclusions.

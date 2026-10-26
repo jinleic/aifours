@@ -1,0 +1,11 @@
+# Later PH exactness recurrence — fifth distinct owner finding
+
+Actual preceding `/bin/date`: **2026-10-25T17:01:57-0700 PDT**. Parent read the COMPLETE actual [owner addendum](../../../mathematics/evidence/three-area-20261023-96h/parallel-18/phase-type/primary-written-exactness-recurrence-addendum-v2.json) through its ending before this record; observed SHA256 `9d6023e333ae674f69726371f11d87d9c300ccb8ad94508b4356c8e717adf8c7`.
+
+The owner discloses another PRIVATE WRITTEN approximate gloss of an exact rational threshold, AFTER its actual v100-G return and separate PH resumption ACK16:53:09. The addendum's actual observation16:58:58 is subsequent to the private token, not an invented exact thought time. Its token is preserved in the owner record and receives ZERO proof, verification, witness or certificate credit.
+
+**Permanent FIFTH distinct PH OWNER PROCESS MAJOR**, specifically the SECOND private-written-exactness occurrence. It is not a renaming of the earlier four: two cadence failures, first written-exactness failure, and opaque pre-ACK conjectural reasoning. It recurred despite the prospective exact-writing promise; that promise must not be used as evidence of complete compliance. No interpreter/calculator/program/CAS/scientific execution is reported or inferred. The exact symbolic threshold derivation is separate and does not cure process or by itself accept a new primary theorem.
+
+[Earlier v2](later-owner-cadence-exactness-and-opaque-findings-v2.md) and [v3](later-owner-and-reviewer-exactness-findings-v3.md) remain immutable. The two distinct PH REVIEWER approximate-aside findings are not attributed to this author. The [whole reducible-SCC adoption](PH7-entire-reducible-SCC-parent-v1.md) and [qualified RQLS review adoption](rqls-free-master-and-fixed-boundary-parent-v1.md) precede this new disclosure; their earlier four-finding inventory is historical, not a current claim that only four exist. No frozen proof/ACK/review/scope is edited or backdated.
+
+All five findings accompany future PH assurance. Prospective exact WRITTEN work only under HOLD; no forbidden rerun, scientific GO, clean-thought/runtime census, stronger gate, deadline reset or round closeout. No mathematical falsity follows solely from this process failure.

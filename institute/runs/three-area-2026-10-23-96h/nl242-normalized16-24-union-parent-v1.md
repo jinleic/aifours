@@ -1,0 +1,30 @@
+# NL242 — complete normalized(16,24) union supported at the expanded input boundary
+
+Actual `/bin/date` observation before writing: **2026-10-25T12:03:17-0700 PDT**. Mandatory v9/v10/v11, the actual v79-B reviewer addendum and HOLD. No Walsh execution, finite enumeration or GO.
+
+## Complete frozen bookkeeping and actual audits before disposition
+
+Parent bookkeeping `nl242-normalized16-24-union-bookkeeping-v1.md`,33LF, SHA256 `06a9598cf8b2c4958b54ca31ccb5ac4e0fa3c27321e611695fd3c15bbb828b71`; full73LF author bridge SHA256 `ad7db8a929a28c5d2c87effa96d38046b7dfb79417ab1905974d2e6f45af182f`. Parent read the complete bridge and exact cited count/normalization/alphabet/Boolean ranges BEFORE the bookkeeping/freeze, not after dispatch.
+
+- Actual v79-B completeness/application audit `mathematics/evidence/three-area-20261023-96h/parallel-18/shor-completion/peer-review-nl242-normalized-union-completeness-v1.md`,335LF, SHA256 `9005848e059a9b8298c7055f21dcaf1767c38dfed0afe086571ac7064bb3aff4`, fully parent-read raw1–150/151–260/261–335. MANDATORY21LF `peer-review-nl242-normalized-union-completeness-addendum-1.md`, SHA256 `93c9dc7ec3d83d5238b39943ccc65f479d8379a7bcab0fb5d39eb3eb67d96d29`, also fully read. It WITHDRAWS a garbled false-start fragment at review142 and supplies the correct Hq=−2chi derivation; original review bytes/finding history retained.0F/0M/0m at the forward UNION scope, NOT a new blanket re-review of branch internals.
+- Actual v79-C full dependency/trust/application audit `physics/evidence/three-area-20261023-96h/parallel-18/rqls10/peer-review-nl242-normalized-union-trust-v1.md`,307LF, SHA256 `49b3b5c0f52655a70172037eb111f889276007572d58795c222509f0c508cd65`, fully parent-read raw1–160/161–307, ending included.0F/0M/0m at the complete expanded union; it freshly reconstructs the full even application and shared carry/row chain, not only its earlier odd proof.
+
+ALL of these reads completed BEFORE this write. Both audits read ALL1247 literalLF in BOTH parts, complete v4/v5/endings and the exact selected foundational ranges. Serial exposure is explicit; not blind/different-family/human evidence. The completeness review was on disk earlier but actually messaged to the parent at its honest11:49:05 return receipt; this parent decision is NOT backdated to its11:22 observation. Read chronology in older parent documents is not independently attested by either reviewer.
+
+## Exact decision and parent reconstruction
+
+**CONDITIONAL WRITTEN UNION SUPPORTED at expanded J_N:** NO genuine normalized canonical Boolean pair with cap28, quadratic rank2/weight192 residue, ACTUAL R-zero normalization and ORIGINAL counts(L,u)=(16,24) exists. The original balanced-nine-variable bridge retains all512 coefficients and BOTH Boolean inverse signs. This is the ENTIRE normalized stratum, not an odd-only/Gold/support-selected result.
+
+1. The SAME original pair gives energy and Gamma/occupancy identities WITH E retained first. GIVEN16,24 forces alpha1/nu0 and n118 directly; it does NOT need a global L floor, u24 frontier or a table-heading converse.
+2. The exact integer S lift then gives the COMPLETE h alphabet using TWO DIFFERENT inequalities in the correct order. Residue2 is excluded before the nonnegative F identity is applied. Precisely one actual U-site is active and it has exactly h(v)=4q(v) OR−8q(v). Sigma and forcing are bound to the SAME59-point V.
+3. Shared cubic/COMMON quadratic carry and true slice sums produce the complete four necessary rows across BOTH magnitudes. The even reduction consumes shared lemmas written in the odd file; that dependency is explicitly in J_N, not omitted because filenames differ.
+4. The supported odd theorem excludes both magnitude4 rows and the supported even theorem both magnitude8 rows, retaining every actual location, BOTH forcing signs, closure sign, half-band/polar case and same-channel norm/mixed moment. Local character normalization never independently re-signs a global stream.
+5. Full norm/XOR/all256 slabs/balance and both signs B+a,B−a reconstruct the SAME512-bit function. Original-to-canonical changes are common valid operations on both halves, not fixing a truth-table half or filling independent phases. The old even-parent final composition is NOT a premise; the DAG is acyclic.
+
+## Expanded import union and separate global frontier
+
+J_N retains the original canonical/nine-variable bridge and actual normalization, exact original count/Gamma/energy/ternary norm/Boolean lift, complete E-empty L16 S-alphabet and mandatory dual-inequality correction, actual common carry/zero-count/row derivations, ALL supported odd and even internal hypotheses/contradictions, cross-file shared row reduction, and their classical Walsh/face-degree/minimum-weight/quadratic-Gauss/self-orthogonality facts. Unsupplied whole transitive proofs and actual older review bodies remain NAMED IMPORTS, never complete read/re-certification from parent hashes. Each current audit's reconstructed-versus-imported ledger is preserved, including v79-B's spot-only branch re-derivations.
+
+The forward GIVEN16,24 implication does NOT require the global full-S floor L>=16, standalone whole-R u>=24 theorem, P2 lower bound or global three-case pruning. The converse from bare alpha1/E-empty WITHOUT L16 and the GLOBAL three-stratum restriction DO need their older floor/frontier imports. Those are not silently re-proved by this audit. The stronger audit's inherited structural ancestry remains named wherever actually used; no unapproved dependency minimization is adopted.
+
+The separate normalized(20,24) theorem has its own parent disposition `nl242-alpha0-u24-parent-v1.md`; it is NOT a premise here and the two new case dispositions do not automatically pass a combined-frontier audit. Entire(16,32), the rank-two type/U2, other types and unrestricted balanced NL242 remain open. No numerical nonlinearity change, Boolean witness, import-free whole target, formal/kernel/human/configured-family/executable/novelty acceptance or deadline reset. Original finding/source bytes remain immutable.

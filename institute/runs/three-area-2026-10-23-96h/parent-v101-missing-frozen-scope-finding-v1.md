@@ -1,0 +1,11 @@
+# Parent v101 missing frozen full-scope finding
+
+Actual preceding /bin/date: **2026-10-25T16:51:48-0700 PDT**. Permanent PARENT FREEZE/BINDING PROCESS MAJOR. The parent passed the intended entire mathematical scopes in the temporary `scope` field, but the opaque helper overwrote that field with stage1 instructions and expected `post_ack_entire_scope` to be supplied separately. ALL FOUR v101 entries therefore lacked their promised frozen mathematical fullscope. Complete literal source parts and their equality receipt existed; those are NOT a substitute for the missing frozen reviewer quantifiers.
+
+The first v101-A release attempt threw `Missing opaque fullscope` BEFORE any release-file creation/message; B was not attempted. At actual16:50:27 metadata observation ALL FOUR release files were absent. Parent inspected actual helper and frozen manifest, sent all four owners metadata-only HOLD, and retained actual old ACKs. Bounded owner disclosures report new bodies/scopes still unopened; file absence does not attest every internal thought/access.
+
+[Corrected v101b](peer-review-wave-eighteen-v101b.json) adds the intended entire scopes PROSPECTIVELY, with [unchanged literal-part receipt](peer-review-wave-eighteen-v101b-scope-correction-receipt-v1.json), SAME output roots/owners/sources/ranges. Original manifest/intakes/ACKs/parts are immutable. Fresh ID-only corrected opaque ACKs are required, then complete parent read and explicit release. Do NOT call this a scope frozen before the OLD ACKs, a silent repair, blind preregistration or clean process. The mathematical source bytes/claimed theorems were not changed or narrowed.
+
+The runtime helper now rejects missing/blank post_ack_entire_scope BEFORE ANY intake mutation. A metadata-only missing-field admission smoke returned the expected rejection before reaching any file operation; it is not a scientific calculation, model check or global correctness proof. All original owner-root checks remain. The active guard is a local orchestration control, not a saved code/build/test change. [Guard receipt](opaque-fullscope-admission-guard-v1.json).
+
+All earlier root/clock/freeze/process findings and HOLD remain. No scientific GO, added owner, proof acceptance, historical reread, deadline reset or round closeout.

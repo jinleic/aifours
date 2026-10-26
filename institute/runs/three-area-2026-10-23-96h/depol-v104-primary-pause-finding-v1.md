@@ -1,0 +1,11 @@
+# Depolarizing owner v104-A — primary-pause violation before opaque ACK
+
+Actual preceding `/bin/date`: **2026-10-25T18:07:03-0700 PDT**. Parent read COMPLETE [actual qualified v104-A ACK](../../../physics/evidence/three-area-20261023-96h/parallel-18/depolarizing-majorization4/peer-review-v104-A-opaque-ack-v1.json), reported SHA256 `b626c69a333d0dcd03c3d9ad81b2d793cbb9509b2faab79259cd2f394147f71d`, raw1–180 through ending BEFORE any body release.
+
+The owner explicitly reports refining/rechecking EXACT physics-primary SP-equality phase/endpoint details AFTER the review dispatch but BEFORE the opaque ACK, while preparing checkpoint044. That exceeds the permitted snapshot of already existing primary state and violates pause of ALL primary reasoning at review intake. **Permanent NEW OWNER PRIMARY-PAUSE PROCESS MAJOR.** It is not a parent permission error, not new v104 review mathematics/body exposure and not a scientific interpreter/calculator/program launch.
+
+Checkpoint044 separates pre-interruption core from later refinements; those later details have ZERO pre-pause/preregistration/independent-verification credit from this record. Exact first/last private thought instants/counts are not observed or fabricated. Correct later mathematics or the fresh ACK does not cure the failure. No old source, review or frozen mathematical quantifier is edited.
+
+Prior v103-C303LF review had actually returned before the new intake. The owner reports all NEW v104 manifest/scope/pins/receipt/FIVE parts/bodies remain unopened and no new review reasoning occurred. This bounded statement supports prospective access only after actual parent ACK reading and a SEPARATE explicit release; it is not a global cognition/file-access census or a release by file existence.
+
+The owner's earlier numbered-cadence and [historical written-approximation finding](later-Sun-Olson-Depol-findings-v7.md) remain DISTINCT, with ZERO approximate credit. All parent v101/root/freeze/clock, other owner/reviewer findings, N4 UNKNOWN/exit-unestablished and v9/v10/v11/HOLD remain. No mathematical falsity, numerical majorization/NL result, scientific GO, stronger family/human/formal/kernel/executable/novelty gate, new owner/deadline or96-hour closeout follows.

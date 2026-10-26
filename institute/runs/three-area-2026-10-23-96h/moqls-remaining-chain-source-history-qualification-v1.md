@@ -1,0 +1,15 @@
+# MOQLS remaining chain — owner-reported source MINOR-1 and pending complete authentication
+
+Actual `/bin/date` observation before this record: **2026-10-25T13:29:56-0700 PDT**. Mandatory source-history overlay for the new remaining-I3/I12 packet, alongside v9/v10/v11 and HOLD. No scientific execution or GO.
+
+Parent read ALL239LF `remaining-I3-I12-operative-reconstruction-v1.md` (SHA256 `cda255cdb05aaf0fec1b7e8dd4ad8ea86bb90b166f9bf2c3a1403c13dba9d8c3`) and its COMPLETE59LF addendum (SHA256 `5c171a73bd906335c446eb8f8899b4695229304d91d6942e4b50047a2026b60d`) before this record. These are SAME-OWNER reconstruction/coverage claims, NOT independent mathematical adoption.
+
+The owner reports **0F/0M/1MINOR against the OLD sources**: original minimal-six §5.1 and seven-space §§5–6 B-active lists skipped explicit exclusion of supports{b_i,c} and{b_i,c,z}. New §3.8 supplies the missing argument using the actual derived VxV off-diagonal kernel. This is additional supplied mathematical justification, not a typo or permission to erase the omission. The owner's severity and no-conclusion-change assessment remain AUTHOR-REPORTED until independent audits reconstruct both the argument and every actual application.
+
+Preserve all old author/review/parent bytes and historical no-defect returns. Those returns do NOT independently clear this newly identified omission; the current source must be consumed WITH the repair and this history. Prior seven-space read chronology remains qualified by v9 and is not backdated. The adopted core source proves its exact equality-case tools, NOT the new broader arbitrary-span/component/net/frontier claims by implication.
+
+The239LF body proposes complete operative M6/S7, CT, four-row frontier, q3 and q1/q2 proofs at the adopted core. The59LF addendum maps literal source ranges and names standard finite linear algebra/incidence facts. Fresh audits must read EVERY declared original-source range/ending, distinguish genuinely self-contained derivations from named core/classical inputs, and verify acyclicity, rank-one L/c1 and all64 full product bases. No reviewer/parent headline, old numerical eval, catalogue/K12/K3, GB/SAT/native or missing-five-classical theorem may replace a proof.
+
+The addendum's post-park python3-c command is reported as printing ONLY two binding TEXT fields, with no scientific arithmetic. This is a disclosed source-read/metadata operation, not new proof credit or a complete execution census; no scientific replay or blanket clean-history finding is inferred. The owner also disclosed a roughly36-minute checkpoint interval; preserve it without backdating.
+
+Until complete independent source/union audits and explicit parent disposition, the CURRENT five-family result stays CONDITIONAL at the original full J and the remaining chain is an AUTHOR-CANDIDATE. A10 stays15/18 with three UNKNOWNs; A11 and family/human/formal/kernel/executable/novelty gates remain unmet. q0/classical five-families remain ALLOWED. No numerical M(8), source-free/full-book theorem, stronger acceptance or deadline reset.

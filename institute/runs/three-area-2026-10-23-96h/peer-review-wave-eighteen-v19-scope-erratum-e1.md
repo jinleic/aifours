@@ -1,0 +1,8 @@
+# Wave v19 scope erratum e1 — even-count coordinates and corrected curvature
+
+Actual clock before this record: **2026-10-24T05:36:41-0700 PDT**. Additive and POST-review; the original v19 manifest remains unchanged.
+
+1. Olson assignment: replace the all-rotation-count "odd/nonzero/bounded actual coordinate" wording by the author's actual statement: EVERY packet product is nonidentity. For EVEN selected rotation count, the normalized integer L is odd with |L|<p and the rotation coordinate is vL!=0. ODD count gives a nonidentity reflection; its coordinate may be zero. The literal k=1 example in the actual reviewer return has product sigma0. The author's proof already handled these cases correctly. This is a parent-scope MINOR, not an author defect.
+2. RQLS assignment: the request to reconstruct a nonzero eH contribution is withdrawn. The actual review found the original coefficient claim FALSE (one MAJOR); every pair component vanishes uniformly. The corrected chain is original axis source plus BOTH tag/curvature errata plus v3 overlay. Its critical-negative vectors are r=r0e0, l=(r0/2)e0^T; K=U/V gives scalar +3/32, and K=J has r0=0 with the unchanged full-kernel reflection exclusion. This correction is not a waiver based only on the scalar staying nonzero.
+
+Both actual reviewer findings stay visible. The [RQLS binding receipt](peer-review-wave-eighteen-v19-rqls48-receipt-v1.json) preserves the immutable original review and the subsequently received repair qualification; the [Olson disposition](wave-v19-olson-park-parent-v1.md) records the corrected coordinate scope. No full-target resolution or scientific execution.

@@ -1,0 +1,20 @@
+# Addendum 002: mandatory verification/provenance overlay for the mathematics v2 deliverable
+
+Before-creation clock observed: **2026-10-23T13:39:43-07:00**. Read WITH immutable [manuscript-repeated-pole-PH-v2.md](manuscript-repeated-pole-PH-v2.md), SHA256 `b92639157d0e90530d1237d336f781c6707b01c2846801cfad8fcf5ef1f204f2`, its underlying v1 packets and addendum001. The mathematics proofs and their pins are not changed.
+
+The operative shared authority is [parent-verification-erratum-v1.md](../../../institute/runs/three-area-2026-10-23-96h/parent-verification-erratum-v1.md), SHA256 **`163e8fbea4328674c181aba6a6a13fa99d07e1562cd401e8fbbb3c782ecd1f27`**, read in full. The separately linked parent timestamp erratum remains operative too.
+
+## Required qualifications
+
+1. **No formal/kernel verification occurred.** Earlier parent chat used “kernel replay” or “exact replay” for ordinary Python Fraction calculations. These were not Lean, Comparator, a proof-assistant kernel or exhaustive parameter verification. This lane has made no formal/kernel claim and must not inherit one from that earlier wording.
+2. **Parent numerical spot checks are not polynomial-identity proofs.** The parent's finite rational point evaluations, including its PH coefficient checks, are corroborating smoke checks only. The universal PH identities here rest on the explicit written coefficient expansions, resolvent arguments and the independently reconstructed proofs, not on point sampling. The initial parent G7 checker bug was in the parent's auxiliary checker and is not a defect in the author polynomial; its correction does not transform the samples into an identity proof.
+3. **Round compute was broader than the named worker assay.** In addition to the single admitted worker physics assay, the parent executed scientific Fraction arithmetic cells without separate named scientific admission records. Do not describe the whole round as having only that assay or as cleanly satisfying the compute-admission gate. The mathematics lane itself executed source extraction, clock/hash metadata commands and written reasoning only, with no scientific program; this statement is lane-scoped, not a host/parent compliance attestation.
+4. **Parent readership chronology remains exact.** Some earlier promotions followed reading peer reconstructions and selected numerical anchors before a complete parent read of each author body. Later full parent reads do not retroactively create earlier full-body reconstructions. The v2's source/verdict links establish their stated written-review interfaces, not an invented earlier independent audit of every proof line.
+5. **Use named claims and dependencies, not headline counts.** V2's four named items A,B,E,O are a packaging of related results, not four independent discoveries, solved book questions or externally accepted theorems. E's positive side and O's finite-existence conclusion share the characterization import; A's general upper bound uses the companion theorem; B is a direct construction. All such ancestry remains explicit.
+6. **WRITTEN_CHECKED is in-harness review only.** Different task agents are not automatically different model vendors, blind reviewers or human experts. Shared instructions and supplied author proofs are common inputs. Correctness, source trust, formal coverage, novelty and scientific significance remain separate.
+
+## Current scientific boundary
+
+The parent has accepted the v2 consolidation as a faithful operative assembly of A/B/E/O at these written/import boundaries. Its accepted status is NOT kernel, novelty or full-book acceptance. G7 was separate at the v2 freeze; its later returned review and parent decision support an explicit upper bound7 on beta^2<=53/96 in its stated band, not an exact minimum7. That later decision does not change the v2's original at-freeze “candidate” chronology.
+
+The minimum remains6or7 in the newly covered G7 band above beta^2=1/2. The broader exact minimum on(1/sqrt2,beta_*) and the general minimal-PH book problem are unresolved. No new scientific execution or permission expansion follows from any erratum or review.

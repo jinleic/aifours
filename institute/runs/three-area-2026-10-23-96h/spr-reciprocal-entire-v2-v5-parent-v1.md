@@ -1,0 +1,55 @@
+# SPR7 — complete reciprocal v2–v5 cone, inverse and contact union
+
+Actual returned `/bin/date` before this write: **2026-10-26T04:07:18-0700 PDT**. Parent read complete153/175/188/341-line author bodies, complete271-line operative root transport and34-line qualification, and BOTH actual370/368-line reviews, including all endings, BEFORE disposition. This is ordinary written support, not executed arithmetic, a finite certificate or unrestricted SPR7 resolution.
+
+## Decision
+
+**WRITTEN_SUPPORTED with the additive M1 below**, for the ORIGINAL independent reciprocal-input monic septic class: constant coefficient1; paired coefficient intervals equal but their entries independently variable; three positive paired widths; every input Hurwitz. This is an INPUT restriction, not a theorem that every original box is reciprocal. The full union covers unrestricted-target averaging, the compact four-curve criterion, first failure with exactly four distinct orbits, BOTH rank-proved six-coordinate inverse charts, full unique four-finite annihilators, the THREE necessary cubic words, BOTH quadratic branches and whole-box reverse-positive-real admission.
+
+The two current full-scope mathematical reviews return respectively0F/0M/0newm and0F/0M/1new MINOR. They agree on all operative equations after distinguishing actual P-corner polynomials from real pairing forms. No missing NEW model-specific bridge was identified at the named classical interface. Old/unprovided theorem bodies retain their stated reconstruction boundaries; no hash/headline or v106 verdict substitutes for this current reconstruction.
+
+## Mandatory M1 — v5 LF255 has two different polynomial types
+
+Read “With two pals,their difference2J fixes all widths” ONLY after the proved center inverse has reconstructed the ACTUAL corner cubics:
+
+```text
+P_C3(z) - P_C1(z) = 2 J(z),
+Phi_C3(v) - Phi_C1(v) = 2 Z(v),
+Z(v) = Re[T(iu) conjugate(J(iu))].
+```
+
+The raw nonnegative real pairing forms do NOT differ by2J. Applying the inverse first supplies the correct actual-P difference; then w1 is its z^2 coefficient, w2 is its z coefficient plusw1, and w3 is minus its constant minusw1 minusw2. This non-load-bearing referent qualification changes no inverse, width, word or admission theorem. Preserve the reported MINOR and frozen LF255; no in-place repair or clean-zero-minor relabeling.
+
+## Parent hand reconstruction and boundaries
+
+1. Reversal preserves the actual coefficient box, and the exact reciprocal ratio identity makes both B and RB common whenever B is common. Positive leading AND constant coefficients prevent cancellation in their average. Thus existence of ANY unrestricted degree7 target is equivalent to palindromic existence in THIS input class. Writing B=(s+1)s^3 T(s+1/s) gives four target coordinates; tau3>0 is the degree7/endpoint condition. A quadratic T is only a weak degree6 target with simple zero0.
+2. The original coefficient pairs give THREE diamonds, not a free P/Q rectangle. Direct coefficient expansion supplies P and Q with all six antisymmetric coefficients. The four original corners are (Pmid-J,0),(Pmid,-J(-z)),(Pmid+J,0),(Pmid,+J(-z)). Their actual compact functionals are Fhat-Jhat,Fhat+Khat,Fhat+Jhat,Fhat-Khat. The exact factor64/(1+t)^7 retains zero/infinity; the common endpoint is64tau3. Compact closest-point separation gives the cone alternative. Projecting an arbitrary B to(B+RB)/2 lifts any reduced dual to positive actual a,t and Ra,1/t atoms and the endpoint32(B(0)+leading B), annihilating ALL EIGHT original coefficients. This is a template, not an instantiated certificate.
+3. Width contraction about the same center yields a first failing still-Hurwitz box. Unit separators have a nonzero limit; contact vectors lie in its three-dimensional perpendicular space, so at most4 suffice. Weak positive-real boundary angle/asymptotic arguments exclude relative degree>=2 and nonzero imaginary roots under BOTH varying parities, leaving strictly Hurwitz cubic or quadratic T. Grouped moment equations exclude1/2 or3 distinct frequency orbits, including endpoint cases; omega1 is excluded separately by its positive constant pairing. Hence exactly4 DISTINCT orbits: four finite, or three finite plus endpoint. Degree2 without selected endpoint is retained.
+4. In the cubic chart T=z^3+dz^2+ez+f, d,e,f>0,de>f, the center determinant is f(de-f), and width elimination has determinant(de-f)T(2). In the quadratic chart T=z^2+az+b, a,b>0, the determinants are ab and a(b+2a+4). The compact polynomial-to-input transforms are explicit affine bijections of ALL SIX REAL center/signed-width coordinates. They do not make widths positive or input boxes admissible automatically.
+5. For four distinct finite v_j, eta_j=1/product_(k!=j)(v_j-v_k). Every annihilator has weighted A and Bval in span(eta,eta*v). Contact makes a degree<=2 polynomial vanish at four nodes. Coefficient comparison gives the unique cubic direction(A,Bval)=kappa(v-e,f-dv), with denominator(v-e)^2+(f-dv)^2 strictly positive even at v=e/A=0. Actual nonzero D makes kappa nonzero. Thus rank is EXACTLY3 and full weights are alpha*eta/(delta^3*kappa). The quadratic argument similarly forces A nonzero and weights beta*eta/(delta^3*A). These claims are at actual strict-target/nonzero-contact hypotheses, not arbitrary selected nodes or a generic-minor shortcut.
+6. The cubic contact-phase identity fixes unwrapped orientation. Initial C4 can only lag and at most one is selected; each palindromic corner has at most one contact; nonpalindromic contacts total at most3. Three positive C2 compact roots would force Qprime(1)+Qprime(-1)>0, hence k2<0, contradicting original k2=(d+1)w1+w2>0. Actual denominator band order excludes the reverse C2 orientation. The exhaustive surviving words in increasing physical frequency are C4,C2,C2,C3; C1,C2,C2,C3; C4,C1,C2,C3, each with orientations(-,+,-,+). Necessary only; none is realized.
+7. Quadratic four-finite support has increasing-v word C3,C2,C2,C1. Selected endpoint instead gives oneC1 plus twoC2, with unweightedC3 still allowed. The two positive C2 roots force the exact quintic factor; positive widths and the selectedC1 square force B0/A0<ell/m<1, so both endpoint residual signs remain strict. Phase windows, squares/discriminants, input widths, all unweighted zeros and actual positive amplitudes remain mandatory. Lagrange identities cancel every target coordinate, including the endpoint term when present.
+8. Reverse-positive-real admission is for EVERY original input, not just selected contacts. Cubic a/B is analytic bounded on the closed right half-plane with positive infinity limit. Quadratic a/B-s-1/s removes its exact origin/infinity defects and has nonnegative boundary real part. The minimum principle excludes right-half-plane roots. Actual constant1 excludes0; positive parity variation/simple target-component roots force a UNIQUE minimizing actual corner at any imaginary zero. Nonvanishing must therefore be checked at ALL finite pairing zeros, including UNWEIGHTED contacts. Only after all these tests do the actual positive duals prove a negative original box. No such tuple is supplied.
+
+The complete root-transport ancestor separately supplies the actual attained band order and admissible-root scalar criterion G_E*G_O<1, with a finite endpoint-product sufficient class. Its rational-prescription and negative-leading odd-component MINORs remain mandatory; failure of a sufficient endpoint test is not a negative verdict. The actual derivative arguments concern fixed active corners/frequencies, not a nonsmooth global maximum.
+
+## Exact residual and assurance
+
+The remaining task is to realize or uniformly exclude the COMPLETE physical parameter systems: strict cubic in one of three words, or strict quadratic in either branch; positive original widths; all global inequalities/phase cells; all nonvanishing tests; and full positive actual amplitudes. No negative box, numerical instance, universal theorem, rational weight guarantee, all-seven-width example or general bad-infimum attainment is supplied. A hypothetical robust negative six-width base would extend to a small positive rational seventh width by openness/containment, but no base or epsilon has been exhibited. Later v6–v10/general-zone/small-r sources are NOT accepted here.
+
+Classical imports remain named ordinary Hermite–Biehler/Hurwitz/root-continuity, compact separation/Caratheodory, harmonic/strong minimum principles, elementary holomorphic boundary/asymptotic arguments and Lagrange/Vandermonde algebra. The old163-line reciprocal-v1, old profile/source libraries and earlier actual review bodies not supplied are NOT newly reconstructed as full artifacts; their operative current uses are rederived or context-only. No new source is silently accepted from a citation.
+
+All author three earlier exactness findings and later fourth SYMBOLIC-ONLY violation, reviewer/parent findings, and entire withdrawn scouts retain ZERO credit. Later exact mathematics does not cure them. Parent v17 delay/cadence and v18 process bindings remain. No scientific interpreter/calculator/program/CAS/enumeration/solver/replay/build/test/modelCLI/newGO or frozen edit occurred in this disposition. Same18/original October27 cutoff11:05:38/deadline12:35:38/HOLD remain; no stronger family/human/formal/kernel/executable/novelty/round-closeout claim.
+
+## Live binding after complete reading
+
+|Source|LF|SHA256|
+|---|---:|---|
+| `information-science/evidence/three-area-20261023-96h/parallel-18/robust-spr7/reciprocal-invariant-box-four-curve-duality-consolidated-v2.md` | 153 | `dea27a2e52c194ec77673e15a9fd45bd59b775bc8ae0bb343dd1c480b48c4165` |
+| `information-science/evidence/three-area-20261023-96h/parallel-18/robust-spr7/reciprocal-first-critical-four-orbits-and-endpoint-quintic-v3.md` | 175 | `38394a10dcbefbe5f2ad4a0382e71038930224e5993d30b209fbb199624bb2e4` |
+| `information-science/evidence/three-area-20261023-96h/parallel-18/robust-spr7/reciprocal-full-critical-inverse-consolidated-v4.md` | 188 | `b7661a433c40eb03acb83bf88674d0f5e8503b04e148a3f4144fe948dbb7d1f6` |
+| `information-science/evidence/three-area-20261023-96h/parallel-18/robust-spr7/reciprocal-critical-cone-entire-inverse-and-positive-kernel-v5.md` | 341 | `7a358b729dfff820eb18d8af9bd474e83592979f4a045ea212a09237bda7f70a` |
+| `information-science/evidence/three-area-20261023-96h/parallel-18/robust-spr7/general-seven-band-root-transport-certificate-v1.md` | 271 | `b064261dae70f2dc0dc53317a7d99d6e38fe5e5885f7f4db8cf16ac418eb3dfb` |
+| `information-science/evidence/three-area-20261023-96h/parallel-18/robust-spr7/root-transport-v56-rationality-and-leading-sign-addendum-v1.md` | 34 | `b1358582f7be557e1e912bd944692411a1b834f1063ba6401a04d7f9df881a50` |
+| `mathematics/evidence/three-area-20261023-96h/parallel-18/kac-moody/peer-review-v109-C-v1.md` | 370 | `cd9a2ae41d2e7c042aa55dbcca9eb4a250d48c858416286b768a5ce509cafa8b` |
+| `physics/evidence/three-area-20261023-96h/parallel-18/werner3-ququart/peer-review-v109-D-v1.md` | 368 | `bf2898e1e730d28b69835059fcf01e988b5d53006d69e85fc90365a7bb20b536` |

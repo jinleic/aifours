@@ -1,0 +1,354 @@
+# v87-A — actual written reconstruction of the WHOLE original r1 type10 map
+
+Reviewer InfoHinfPreview-2. Earlier actual `/bin/date` observation before this write: **Sun Oct 25 14:28:01 PDT 2026**; this is an observation bound, not an invented completion timestamp.
+
+## 1. Verdict, exposure, exact coverage and assurance
+
+**Scoped mathematical finding: 0 FATAL / 0 MAJOR / 0 MINOR in the stated whole-type10 theorem, at the classical imports named below.** I reconstruct the entire original map, all positive integer s, including the complete two-dimensional FREE critical multiplicity, not selected quotient columns. This is a SAME-HARNESS WRITTEN reconstruction, not formal/kernel, executable, human, configured-model-family or novelty acceptance.
+
+**Process is NOT a blanket PASS.** Preserve separately: (i) the owner's grade3 ACK-before-reasoning PROCESS MAJOR, with actual prior informal and post-binding/pre-ACK exposure; (ii) the owner's active12:32:49–13:10:49,38-minute checkpoint-cadence PROCESS MAJOR; (iii) the earlier PARENT r2 changed-family freeze-before-dispatch PROCESS MAJOR. The historical unadmitted arithmetic in v9 and earlier records retains ZERO verification credit. Correct mathematics does not erase any of these findings.
+
+My own `peer-review-kac-grade3-whole10-ack-v1.json` was written BEFORE opening the new proof/process/binding bodies. My primarycheckpoint14 preceded that ACK. I disclosed actual prior Kac detector/degree4/64-35/r3/G2 exposure, including the finite-G2 whole-kernel review. This is serial disclosed exposure, NOT blindness or inheritance of any old verdict. None of that earlier material proves this new grade3 creator calculation.
+
+Actual intake: complete v9 FIRST, v10 SECOND, v11 THIRD; then exact manifest v87-A/common contract, all own pins and the complete42LF receipt. All543LF of the SOLE literal part were then read RAW1–180,181–300,301–410,411–543, including every ending. This covers S1–S9:35+31+40+40+16+11+9+17+296 sourceLF. No omitted source was treated as read because of its hash. The unrelated assignments in the manifest are outside this review.
+
+Pins matched by metadata-only SHA256:
+
+- manifest `761e7866e8d11e5d5f343a01cd443c6a860ada32f68311e131729c03f585e297`;
+- receipt `7daf09cb575a18f6a9513e3dc066c1aa475c0345e1e957dbe7edd70fc9724fd0`;
+- literal part `f02b9ecf18467b88491427dc226d924c34df1a33173424d094d8341fe8d72f98`;
+- actual296LF theorem `c3d813ee16298812a4201608c7ad0d1572e3a0cf75eed91040dde891ada5e362`;
+- binding `cc5ee4a70bfd5fdbd111401138b42dfb3d63eff201df08f04e7e3308f95cd648`;
+- owner ACK `97fcf7b2831b1c23bc6ad3250766d38c24ec5872ffa0bd4c724c4a6a7f497eaa`;
+- owner exposure overlay `9aff73e4dff996dbce0100d7a729fda15a0d27119d1fb9e8a2dd90c972ef5f79`;
+- parent r2 overlay `a2ec32418ef47530c4b4181ad3b35457213c6f213d746d093f1afac585be31c2`;
+- matrix/cadence checkpoint `aae9aab94aabd19e224134b26077dfe2f9fc8766b8aad4bd21819e54c628735a`.
+
+The receipt reports literal roundtrip/persisted-byte equality before dispatch. I matched its pins; I do not invent an independently observed parent processing clock. My substantive review checkpoint at14:28:01 persists the actual all-row derivation before this full return.
+
+Classical NAMED IMPORTS, not fresh proofs of the entire classical literature: the original Serre-presented positive algebra and its Chevalley lowering actions; finite-Levi elimination for that presentation; finite-dimensional characteristic-zero Weyl-module integrability/complete reducibility and Weyl characters; ordinary free-Lie PBW embedding and degree3 Witt character; finite compact/Bargmann polynomial representations. I derive their NEW applications and coefficients here. In particular I do NOT identify a nonsymmetrizable maximal ideal with a Serre ideal by invoking an unproved global theorem.
+
+## 2. All six relations, ALL old ideals, and the SAME original kernel
+
+Keep the literal original matrix
+
+    A=[[2,-1,-1],[-1,2,-1],[-1,-s,2]],  s=1,2,... .
+
+For finite Levi nodes1/3, grade alpha2, the SIX positive relations are exactly
+
+    (ad e1)^2 e3=0, (ad e3)^2 e1=0;                finite A2
+    E1^2 eta=0, E3^(s+1) eta=0, eta=e2;          level1 Weyl
+    (ad eta)^2 e1=0, (ad eta)^2 e3=0.            level2 seeds
+
+The last two are, up to a harmless overall minus sign, eta wedge E1eta and eta wedge E3eta. Thus no third-level defining seed is missing. Eta has lowest labels(-1,-s), so the actual finite module is U=L(s,1), not a free nonintegrable polynomial module; its dual W=L(1,s) has highest generator f2. The seed weights are(0,-2s-1) and(-3,2-2s), giving R1=L(2s+1,0), R3=L(2s-2,3). They are lowest: applying the matching lowering to E_i eta gives a multiple of eta, killed in the wedge; the other lowering commutes. Their distinct highest types give a direct sum R in Lambda2U.
+
+Finite-Levi elimination therefore gives, in the SAME original algebra,
+
+    Q2=Lambda2U/R, F3=L3(U), I3=[U,R], Q3=F3/I3.
+
+The bracket span I3 is the entire homogeneous degree3 ideal generated by R. Intersections and mixed Jacobi descendants are retained, not declared zero or disjoint.
+
+For completeness the old Levi on nodes1/2 has V=adjoint and two defining positive-level modules: degree2 Q2plus, and degree(s+1) Q_(s+1)minus. If adV^j means the WHOLE iterated bracket span, degree counting gives ALL old boundaries:
+
+|s|T4|T5|
+|---|---|---|
+|1|adV^2(Q2plus+Q2minus)|adV^3(Q2plus+Q2minus)|
+|2|adV^2Q2plus+adV Q3minus|adV^3Q2plus+adV^2Q3minus|
+|3|adV^2Q2plus+Q4minus|adV^3Q2plus+adV Q4minus|
+|4|adV^2Q2plus|adV^3Q2plus+Q5minus|
+|>=5|adV^2Q2plus|adV^3Q2plus|
+
+Brackets with composite free words reduce by Jacobi to these iterated-V spans; e.g. [[V,V],R] lies in [V,[V,R]]. This also retains relation/relation and mixed spans wherever degrees permit. There is no direct-sum assertion in this table. Q2plus is the original r1 quadratic seed, not an r2 cubic substitute.
+
+At degree(4,3,5), original nodes1/2 give h1=8-3-5=0,h2=-4+6-5=-3. Hence the original joint-lowest type has highest(3,0), dimension10. New nodes1/3 give h1=0,h3=-4-3s+10=6-3s. For s>=2 their critical highest type is mu=(3s-6,0).
+
+Write F_i=[f_i,-] in the actual quotient. No commutativity or dimension argument is needed for
+
+    ker(F3 | kerF1 intersect kerF2)
+      =kerF1 intersect kerF2 intersect kerF3
+      =ker(F2 | kerF1 intersect kerF3).
+
+All three are subspaces of the SAME degree(4,3,5) quotient with the WHOLE ideals above. The new F2 target is ordinary actual Q2_(4,2,5), not an arbitrarily chosen lowest-space target. This proves the required original-kernel bridge without replacing the map.
+
+## 3. Low-s controls, including the actual scalar/Adams calculation
+
+For s1 a vector killed by F3 would have h3-weight3. In a finite integrable sl2 module a lowest vector has nonpositive weight, so the new joint-lowest K is zero. This proves the original kernel zero, NOT the original source zero.
+
+Here is a character derivation that also fixes all later wall conventions. Let x,y denote defects in the finite simple roots a1,a3, d=(1-x)(1-y)(1-xy). The SIX Weyl terms for L(s,1), normalized by its highest weight, are
+
+    N_s=1-x^(s+1)-y^2+x^(s+3)y^2
+                       +x^(s+1)y^(s+3)-x^(s+3)y^(s+3).
+    f_s=N_s/d;  f=(1-y^2)/d=(1+y)/((1-x)(1-xy)).
+
+At s2 the scalar tensor-cube multiplicity is mult_(1,2)(U tensor U). Its top defect from2(2,1) is2a1+a3. In this rectangle f_2=f, and
+
+    d f^2=(1+y-y^2-y^3)/((1-x)(1-xy)),
+    coeff_(x^2 y)=1+1=2.
+
+For the third-Adams scalar extraction the six arguments (rho-wrho)/3 and signs are
+
+|Weyl element|sign|Dynkin argument|contribution in U_2|
+|---|---|---|---|
+|identity|+|(0,0)|0, wrong root-lattice class|
+|s1|-|(2/3,-1/3)|nonintegral weight|
+|s3|-|(-1/3,2/3)|nonintegral weight|
+|s1s3|+|(1,0)|2|
+|s3s1|+|(0,1)|0, wrong root-lattice class|
+|longest|-|(2/3,2/3)|nonintegral weight|
+
+U_2 has class p+2q=1 modulo3. Its(1,0) weight has defect a1+a3 and multiplicity coeff_(xy)f=2. Thus the Adams contribution is2, and Witt gives scalar multiplicity(2-2)/3=0 in FREE L3(U_2). A finite semisimple quotient cannot create a missing scalar. K=0 also at s2. These are actual finite controls, with no H13 import or program.
+
+## 4. Harmonic projection and the exact Cartan normalization
+
+In bidegree(s,1), Delta=sum partial_xi partial_yi and r=x dot y. For g of x-degree s-1,y-degree0,
+
+    Delta(rg)=sum_i partial_xi(x_i g)=(3+s-1)g=(s+2)g.
+
+Consequently pi=I-r Delta/(s+2) is the projection onto U=kerDelta. In the Bargmann form multiplication by r is Delta's adjoint, so this is the actual orthogonal harmonic projection. The complementary trace module is r Sym^(s-1)E, not an unremoved relation.
+
+Let m:adjoint tensor Sym^(s-1)E -> U be multiplication followed by pi. The Cartan highest line maps x1*y3 tensor x1^(s-1) to x1^s*y3. The squared norms are(s-1)! and s!, respectively; uniqueness of that Cartan component and equivariance give
+
+    m m^*=s I_U, J=m^*/sqrt(s), J^*J=I_U.
+
+This is NOT m^*m=s on the whole reducible domain. For harmonic F,
+
+    m^*F=sum_ij(x_i y_j) tensor partial_xi partial_yj F.
+
+The first-factor trace vanishes because Delta F=0. For E_ab, acting on the first factor and multiplying gives
+
+    pi[sum_j x_a y_j partial_xb partial_yj F
+            -sum_i x_i y_b partial_xi partial_ya F]
+      =pi[rho_x(E_ab)+s rho_y(E_ab)]F.
+
+Here the two Euler degrees are1 and s, respectively. Thus, with t=s-1,
+
+    Q_ad=(1/s)rho+(t/s)Q_y, Q_y=pi rho_y pi.
+
+No claim that Q_y or Q_ad is itself a Lie representation is used. The finite total rho preserves harmonics; the Weyl relation E3^(s+1)eta=0 is already present in this actual U.
+
+## 5. Actual local bracket, all-W relation descent, and central3t
+
+Use the trace-form normalization giving finite roots squared length2 and linear-dual pairing f2(eta)=1. The element z2=h2+h1+h3 centralizes nodes1/3: its two Cartan columns sum to0. On eta it acts by2-1-s=-t. The partial adjoint lowest factor is x3*y1, with Cartan moment -(h1+h3). Therefore
+
+    B(w,u)=-sum_X w(Q_ad(X)u) X^dual-w(u)z2
+
+has B(f2,eta)=h1+h3-z2=-h2, the ORIGINAL local bracket with factor-1.
+
+Why this also fixes multiple adjoint channels: f2 is highest for the finite Levi, so equivariance recursively determines B(f2,E_i u)=[E_i,B(f2,u)] from the single pair(f2,eta). Raising words span U. Then equivariance under each finite lowering determines B(F_i w,u) from B(w,u) and B(w,F_i u); lowering words from f2 span W. Thus agreement holds for EVERY local pair, not merely one tested weight or a guessed invariant form. W is the natural dual, not identified with U for general s.
+
+For i=1,3, D2 eta=-h2 and D2(E_i eta)=-e_i, since row2 has a_2i=-1. Hence
+
+    D2[eta,E_i eta]=[-h2,E_i eta]+[eta,-e_i]
+                         =-E_i eta+E_i eta=0.
+
+Finite raising commutes with D2. It annihilates all R. Covariance and finite-lowering stability of R then show D_w R=0 for EVERY w in W. Jacobi now gives
+
+    D_w[u,r]=[B(w,u),r] in R, so D_w I3 subset R.
+
+The center also preserves R, acting by2(-t) at degree2. All actual mixed overlaps descend. It follows at once that the creator L3=sum_i[u_i,D_(w_i)-] preserves the WHOLE I3.
+
+For T=[u,[v,z]], expand D_w by Jacobi before summing. The finite terms are minus
+
+    F(Q,rho)T=sum_X([Qu,[rho v,z]]+[Qu,[v,rho z]]
+                          +[Qv,[u,rho z]]-[Qz,[u,rho v]]).
+
+The three central terms are2tT,t[v,[u,z]],-t[z,[u,v]]. Their sum is3tT, since [v,[u,z]]-[z,[u,v]]=T. Therefore
+
+    L3=3t I-F(Q_ad,rho).
+
+When Q=rho, Jacobi combines the last two terms into[u,[rho v,rho z]], giving all three pair contractions ONCE. Thus F(rho,rho)=(C_total-3c_U)/2, with no extra factor2. At mu,
+
+    c_U=(2/3)(s+2)^2, c_mu=6s^2-18s+12,
+    (c_mu-3c_U)/2=2s^2-13s+2.
+
+The exact whole creator reduces to
+
+    L3=(s+10-2/s)I-(t/s)F_y, F_y=F(Q_y,rho).
+
+This derivation uses only the finite trace-form dual basis. It asserts neither a nonsymmetrizable global invariant form nor Hermiticity of the creator.
+
+## 6. Complete FREE multiplicity TWO, including s3/4 walls
+
+For mu=(3s-6,0), 3lambda-mu=5a1+4a3. In the stable rectangle
+
+    d f^3=(1+2y-2y^3-y^4)/((1-x)^2(1-xy)^2).
+
+The coefficient of x5y4 is explicitly
+
+    (2*5)+2(3*4)-2(5*2)-(6*1)=10+24-20-6=8.
+
+For s3/4, the full Weyl numerator above gives f_s=f-x^(s+1)/d in this rectangle. In d f_s^3 only the additional -3x^(s+1)f^2 could contribute: the higher corrections start at x^(2s+2)>x5. At s3 its required x1 term in f^2 has y-degree at most3; at s4 its x0 term has y-degree at most2. Neither reaches y4. The tensor multiplicity remains8 at BOTH walls.
+
+For Adams3, d=1-x-y+x^2y+xy^2-x^2y^2. To leave a multiple-of3 residual from(5,4), exactly the +x^2y term works, leaving(3,3). It contributes coeff_(xy)f_s=2. All six d terms have thereby been checked, not selected by a numerical routine. Finite-character Adams corrections begin at x^(3(s+1))>x5. The FREE Lie multiplicity is therefore(8-2)/3=2 for EVERY s>=3, including the s3 q0 wall.
+
+## 7. Both graph vectors are independent modulo ALL traces
+
+Put m=s-3, Delta_X=det(X1,X2,X3), Aij=Yi dot Xj, zi=Xi,3 and Pi=pi1*pi2*pi3. The six H_ijk and two cycles are
+
+    H_ijk=Delta_X Aij Aji Aki zj zk^2 (z1z2z3)^m,
+    C+=Delta_X A12 A23 A31 z1z2z3 (z1z2z3)^m,
+    C-=Delta_X A13 A32 A21 z1z2z3 (z1z2z3)^m.
+
+Every slot has bidegree(s,1): its base x-degrees3,2,1 are completed by zj,zk^2 and the common m powers. Aij and Delta_X are SL3-invariants; the remaining z-degree is3s-6, giving actual lowest weight(0,6-3s). Pi is equivariant.
+
+The harmonic quotient is the ambient tensor polynomial space modulo A11,A22,A33 in the given multidegree. On Delta_X!=0, choose a generic nonzero third row z, complete it to an invertible X, choose all off-diagonal A freely with diagonal0, and set Y=A X^-1. This is a genuine open family, sufficient for polynomial independence; it need not allow the impossible all-zero third row. The eight graphs have distinct off-diagonal-A/z monomials. Canceling the common nonzero determinant/common z power on a dense open set proves their harmonic images independent. This works also at m0.
+
+Let P=H123 and b=I-P23-R+P13, where R(u,v,z)=(v,z,u), the faithful tensor expansion of[u,[v,z]]. Complete-copy permutations act on the determinant by their sign. Direct expansion gives
+
+    f1=b Pi P=Pi(H123+H132-H312-H321),
+    f2=b Pi P12 P=Pi(H132+H231-H213-H312).
+
+The H123 coefficient distinguishes f1, and the H213 coefficient distinguishes f2. Thus both are independent, and the previously proved FREE multiplicity TWO makes them the ENTIRE free critical lowest space.
+
+A transposition takes C+ to-C-, while a3-cycle fixes each cycle. In b the identity and R terms cancel, as do the two transpositions: bC+=bC-=0. Their complete-copy permutations remain in the same cycle span, so bP12 also kills them. This is an actual bracket calculation, not an assumed deletion of cycles.
+
+## 8. Projected pair operator: derivation before ALL six row calculations
+
+Let Kij=Q_y^(i) dot rho^(j), i!=j. The trace-form identity sum X_ab Xdual_cd=delta_ad delta_bc-delta_ab delta_cd/3 gives
+
+    Kij_raw=-Aij Delta_ji+Pij^Y+t/3,
+    Delta_ji=sum_a partial_Xj,a partial_Yi,a.
+
+The dual-standard contraction supplies+s/3; the dual-dual contraction supplies the Y-ONLY swap and-1/3. Pij^Y is NOT a complete-copy swap. Total rho on copy j commutes with pi_j; other projections can be moved to the output. Only input pi_i remains before final trace reduction.
+
+Write Eij=Xi dot partial_Xj and Fij=Yi dot partial_Yj. If g=Delta_ii P, it has Yi-degree0 and Yj-degree1. Modulo traces only AFTER differentiation,
+
+    Delta_ji(Aii g)=Eij g,
+    Pij^Y(Aii g)=Aji Fij g.
+
+It follows that the exact projected operator is
+
+    Khat_ij P=-Aij Delta_ji P+Pij^Y P+(t/3)P
+                         +(Aij Eij-Aji Fij)Delta_ii P/(s+2).
+
+In particular a trace in g cannot be discarded before Eij or Fij acts. I use this formula, not a raw pair operator on a falsely harmonic representative.
+
+## 9. All SIX ordered-pair rows independently expanded
+
+Set Z=z1^m z2^(m+1) z3^(m+2), P=Delta_X A12 A21 A31 Z, u=m+1=s-2,t=m+2=s-1,L=s+2. Differentiating the single Yi factor first and then its Xi gives
+
+    g1=Delta_11 P=Delta_X Z(A22 A31+A21 A32+m A21 A31 z2/z1),
+    g2=Delta_22 P=Delta_X Z(A11 A31+u A12 A31 z1/z2),
+    g3=Delta_33 P=t Delta_X Z A12 A21 z1/z3.
+
+Indeed Xi-to-other-column differentiation of the determinant vanishes, and the z-Euler exponents give m,u,t. These are polynomial identities: at m0 the apparent negative-power term has coefficient0. I retain A22 in g1 and A11 in g2 below.
+
+For RAW contractions12,21,31 the differentiated vector equals the same Xj whose divergence contributes3, the determinant contributes1, and the remaining factors contribute m+1. The total is m+5=L, giving-LP in all three cases. For13, E23 on Z contributes t z2/z3, giving-tH132. For23, E13 on Z gives t z1/z3, giving-tC+. For32, E12 hits A12 to A11 and Z to uZz1/z2; only after this differentiation the A11 term vanishes, leaving-uH213. Thus EVERY raw contraction has been derived.
+
+The Y-only swaps12/21 contain A11 A22, and13/31 contain A11, hence vanish after final trace reduction. The swaps23/32 simply interchange A21 and A31 and equal P, with NO determinant sign. These establish all six swap entries.
+
+For every projection correction, use Eij Aab=delta_bj Aai, Fij Aab=delta_aj Aib and Eij Delta_X=0 for i!=j. The SEPARATE two product-rule contributions, reduced only after acting, are:
+
+|ij|Aij Eij g_i|Aji Fij g_i|difference N_ij|
+|---|---|---|---|
+|12|(u^2+1)P+uH213|P|u^2P+uH213|
+|21|(u^2+1)P+uH213|P|u^2P+uH213|
+|13|mtH132+tC-|P|-P+mtH132+tC-|
+|31|tuP+tC+|tC-|tuP+tC+-tC-|
+|23|tuC+|uH213|tuC+-uH213|
+|32|tuH213+tC-|tC+|tuH213+tC--tC+|
+
+Here is the grouped derivation for EACH row, not just one worked zero:
+
+-12: from A22A31 in g1, E12 produces A21A31, hence P; from A21A32 it produces another P and, through Z, uH213; from mA21A31 Zz2/z1 it produces mtP. Thus2P+mtP=(u^2+1)P. F12 on A22 produces P, while its actions on A21 produce A11 terms that vanish only at the end.
+
+-21: E21 on the A11A31 term of g2 gives P, with the A11A32 remainder finally zero. On uA12A31 Zz1/z2 it gives uH213 from A31 and u^2P from the shifted Z. F21 on A11 gives P; on A12 it gives a final A22 term. This reproduces the whole second row independently.
+
+-13: in g1 the A22 term stays a trace after E13. The A21A32 term gives tC- from the Z derivative; the shifted-Z term gives mtH132. F13 on A32 gives P; its other terms carry A11. Hence the NONZERO -P correction survives.
+
+-31: g3 has shifted Z'=Zz1/z3 with all three exponents u. E31 on A21 gives tC+, and on Z' gives tuP. F31 on A12 gives tC-. This accounts for both cycle signs.
+
+-23: E23 acts on the shifted Z of g2 to give tuC+; its A11 part remains a trace. F23 on A31 in the second term gives uH213; the first retains A11. Both terms are therefore fixed without symmetry guessing.
+
+-32: E32 on A12 in g3 gives tC-, and on its shifted Z gives tuH213. F32 on A21 gives tC+. This yields the last row with its different cycle signs.
+
+Combining these independently derived pieces, EVERY row also has(t/3)P and N_ij/L:
+
+|ij|raw contraction|Y-only swap|N_ij|
+|---|---|---|---|
+|12|-LP|0|u^2P+uH213|
+|21|-LP|0|u^2P+uH213|
+|13|-tH132|0|-P+mtH132+tC-|
+|31|-LP|0|tuP+tC+-tC-|
+|23|-tC+|P|tuC+-uH213|
+|32|-uH213|P|tuH213+tC--tC+|
+
+These are handwritten identities with all18 grouped operator components exhibited, not code booleans or a copied matrix. Losing the retained trace terms in the first two rows would give the wrong P coefficients.
+
+## 10. Assemble BOTH columns of the ENTIRE nonsymmetric creator
+
+The four nested terms in F_y on bP are respectively bK12P,bK13P,bP12K23P,-bR^2K32P. Jacobi gives bR^2=bP12-b. Hence
+
+    F_y bP=b(K12+K13+K32)P+bP12(K23-K32)P.
+
+For transparency, the whole first pair of sums, before killing cycles, is
+
+    (K12+K13+K32)P
+       =[(s^2-6s-1)P-2uH213-5tH132+2tC--tC+]/L,
+    (K23-K32)P=[2uH213-3tC+-tC-]/L.
+
+Use bH213=-f2,bH132=f1,bP12H213=-f1 and the proved cycle vanishing. The first column is therefore
+
+    F_y f1=[(s^2-13s+8)f1+2(s-2)f2]/L.
+
+For the other input, complete-copy covariance, NOT a claimed Hermitian transpose, gives
+
+    F_y f2=bP12(K21+K23+K31)P+b(K13-K31)P.
+
+The full sums are
+
+    (K21+K23+K31)P=[(s^2-13s-2)P-3tC+-tC-]/L,
+    (K13-K31)P=[(7s+1)P-5tH132+2tC--tC+]/L.
+
+Thus the second contribution in the second line has coefficient7s+1-5t=2(s+3), and
+
+    F_y f2=[2(s+3)f1+(s^2-13s-2)f2]/L.
+
+The whole free multiplicity matrix, in this explicitly NON-orthonormal graph basis, is
+
+    F_y=(1/L)[[s^2-13s+8,2(s+3)],
+               [2(s-2),s^2-13s-2]].
+
+Substitution into L3=(s+10-2/s)I-(t/s)F_y gives
+
+    L3=(1/(sL))[[26s^2-3s+4,-2(s-1)(s+3)],
+                 [-2(s-1)(s-2),26s^2+7s-6]].
+
+For example the first numerator is(s^2+10s-2)L-t(s^2-13s+8)=26s^2-3s+4; the second changes8 to-2 and gives26s^2+7s-6. No source copy has been omitted.
+
+To factor it by hand, put a=s^2-13s+3 and
+
+    B=[[5,2(s+3)],[2(s-2),-5]],
+    B^2=[25+4(s+3)(s-2)]I=(2s+1)^2 I.
+
+The two F_y eigenfactors are(a+(2s+1))/L and(a-(2s+1))/L. Subtracting t/s times these from s+10-2/s gives EXACTLY
+
+    3(8s+1)/L, (7s+2)(4s-1)/(sL).
+
+For the first the numerator is3s(8s+1); for the second it is28s^2+s-2=(7s+2)(4s-1). Their product is
+
+    det L3=3(8s+1)(7s+2)(4s-1)/(s(s+2)^2),
+
+nonzero for EVERY integer s>=3. No Hermiticity, orthogonal eigenvectors or positivity/coercivity inference is required. As an actual wall control at s3 the numerator is[[229,-24],[-4,249]], denominator15; the factors are15 and253/15. This is consistent with, not a replacement for, the uniform proof.
+
+## 11. Descend through ALL overlapping relations; conclude original injectivity
+
+D_w I3 subsetR proved above implies L3 I3 subsetI3. Both are finite-Levi equivariant, so restrict to the WHOLE free mu-isotypic component. On its complete two-copy multiplicity the displayed L3 is invertible. Its restriction to I3 intersect that component is injective into the same finite-dimensional subspace, hence surjective there. Its inverse also preserves that subspace. Therefore the induced creator on the ACTUAL critical quotient is invertible, whether that quotient has0,1 or2 surviving copies.
+
+Now let actual x be F1/F3-lowest with D2x=0 IN Q2. Starting from w=f2, finite lowering and Jacobi give
+
+    D_[Fi,w]x=Fi(D_w x)-D_w(Fi x)=0 IN Q2,
+
+for i=1,3. These descendants span all W, so EVERY D_w x vanishes IN Q2. The induced creator kills x IN Q3. Its quotient invertibility forces x=0. A free representative need only have D_w in R; those derivatives need NOT vanish freely. Creation of such derivatives lies in I3, precisely the quotient implication used.
+
+Semisimplicity supplies free critical representatives for actual critical classes; it does not erase the ideal or assert an isotypic-free-lift is relation-free. This proves the complete actual new kernel zero for all s>=3. The same-quotient triple-kernel identity and the independent s1/s2 controls prove the ENTIRE original D3:P_(4,3,5)->S_(4,3,4) injective for EVERY positive s.
+
+## 12. Exact residual, excluded inputs and return boundary
+
+No NEW identity needed for this type10 proof remains NOT_RECONSTRUCTED at the explicitly named ordinary classical imports. In particular all SIX ordered-pair projection rows, both graph vectors, every wall used, both matrix columns, and the full ideal-safe descent were derived above.
+
+The broader296LF source-geometry packet and the checkpoint's proposed global J3 classification were NOT premises and are NOT certified here. Neither an old source-count import nor a sibling's new27 review was used. Their proof bodies were not supplied as correctness inputs to this type10 argument; a hash/headline is not their reconstruction.
+
+The original35star/27 maps at(2,3,5),(3,3,5) for s>=3 remain outside this verdict. The present two-copy FREE creator does NOT establish a numerical rank2 for the actual old source/map, source dimensions, target ranks, all-r2 closure, old19/H13/count recertification, B4/H223/F64/generalF5/B5/Serre/maximal-ideal equality, outside-band(4,4,6), or a full book solution.
+
+The mathematical verdict preserves all process findings in §1, all frozen source/ACK/checkpoint bytes, v9/v10/v11/HOLD, original cutoff/deadline, and exact original maps/ideals. No scientific interpreter, eval, CAS, enumeration, solver, replay, external CLI, nested agent, build, lint, tests or formatter was run. Metadata reads/hashes/clocks are not mathematical execution. This is the actual reviewer-owned detailed written return; parent acceptance and every stronger gate remain separate. My original preview primary resumes after the actual return, not from an inherited Kac verdict.

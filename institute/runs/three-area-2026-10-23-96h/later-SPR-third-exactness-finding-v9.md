@@ -1,0 +1,11 @@
+# Later SPR owner finding v9 — third private-written exactness recurrence
+
+Actual returned `/bin/date` observation BEFORE this write: **2026-10-25T18:42:38-0700 PDT**. Additive process record, not a frozen mathematics/source/ACK edit or scientific GO.
+
+The parent read the COMPLETE [owner exact-arithmetic erratum v3](../../../information-science/evidence/three-area-20261023-96h/parallel-18/robust-spr7/owner-written-exact-arithmetic-erratum-v3.json), including its ending, before this record. The owner reports an actual18:22:49 disclosure of a THIRD later private-written approximate annotation after the18:11:45 pin of its175LF reciprocal first-critical manuscript. The entire later numerical-parameter scout is UNADMITTED and receives ZERO proof, witness, box, sign or verification credit. It must not be replayed or back-converted into admissible evidence.
+
+This is a permanent OWNER WRITTEN-EXACTNESS PROCESS MAJOR, distinct from the two earlier exactness occurrences. The disclosure reports no calculator/interpreter/program/CAS/CLI execution; no such execution or mathematical falsity is inferred solely from the process finding. Its reported historical scope is bounded, not an exhaustive private-thought or runtime census.
+
+The frozen163LF double-endpoint v4 source and175LF reciprocal source retain their actual earlier pin/proof boundaries; the later annotation does not edit either or automatically certify either. Current v103 mathematics/dependency gates remain at their original full scopes. Any fresh reciprocal gate must include this additive assurance record while treating the later scout as ZERO-credit/non-premise.
+
+The owner has narrowed its prospective method to exact symbolic-variable work, no numeric-parameter trial scouts or incidental decimal probes. That promise is not evidence of future compliance. All earlier parent/owner/reviewer findings, [v9](parent-evidence-erratum-v9.md), [v10](parent-evidence-erratum-v10.md), [v11](parent-evidence-erratum-v11.md), N4 UNKNOWN/exit-unestablished, auxiliary STOP and [parent cadence068](checkpoints/068-resumed-integration-and-parent-cadence-finding-v1.json) remain. No source rewrite, clean-process assurance, new owner, stronger verification, publication, scientific admission or deadline reset follows.

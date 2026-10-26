@@ -1,0 +1,11 @@
+# Metadata and source-reading clarification for the quasigroup critical-law packet
+
+Actual clock observed before this record: `2026-10-24T06:04:46-0700`.
+
+This additive overlay binds `quasigroup-critical-law-obstruction-v1.md`, SHA256 `e36979ef85d24e7d71c0cd984400280e7c5a68105897033941652ae5da0b7744`,279 LF,24340 bytes. The original stays immutable. No mathematical premise, proof, conclusion or assurance gate is changed.
+
+1. Section7 item1's “full83LF” for the old C1 source is a line-count wording error. The complete displayed source has83 logical lines, **82 LF bytes and4441 total bytes** (the final logical line has no trailing LF), as freshly observed with `wc -l -c`. Its SHA256 remains `c31396a955d48e29a637c10ab09aab4cfe6293a0b60f748d18ba1b2ddd691560`; its complete body was read before the candidate freeze. No source mutation is indicated.
+2. The Matveev–Romashchenko v2 reading claim in Section7 item3 means the **relevant introductory definitions/statements in sections1.1–1.3, including the full displayed TheoremA statement**, not the whole paper or the proof of TheoremA. The actual v2 body coverage before freeze was reader lines1–207 (with normal reader context); v1's introductory body was also read. The packet does not import the spectral theorem into its proof or claim that its unspecified O-constant yields a numeric R-minus bound. Its common-information argument is fully derived within the packet.
+3. After the candidate freeze, the named Smith1990 publisher page was additionally reached through its actual deposited DOI and confirmed the exact title/abstract and an ordinary publisher PDF link. This is additional metadata access, **not a claim to have read that full text**, and does not remove the packet's UNCERTIFIED NOVELTY limitation. The Malcev/Mal'tsev alternative-spelling search was also refreshed in the local corpus and pinned public catalogue, with no matches; this remains only a bounded-term screen, not a proof of absence.
+
+The all-law and critical-law theorems remain unreviewed CANDIDATE statements on the pinned bytes. The ordinary-written I2 import, stronger finite-certificate execution gate UNMET, global scientific HOLD, original deadline and unchanged `20/3 <= gn <= 1847/276` all remain as stated in the original.

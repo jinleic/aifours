@@ -1,0 +1,31 @@
+# Later findings v11 — serial release, read order and two owner disclosures
+
+Actual returned `/bin/date` BEFORE this write: **2026-10-25T19:19:28-0700 PDT**. Additive documentary/process record only, not a mathematical correction or new scientific GO. All earlier parent v9/v10/v11 overlays and later findings, including parent cadence068, remain binding. Frozen source/review/ACK bytes are not edited.
+
+## 1. Tuscan owner: a NEW missed required checkpoint
+
+The complete actual `checkpoint-042-v1.json` reports the preceding required checkpoint041 at18:19:31 and the current observation19:04:31: **45:00**, exceeding the30:00 contract by15:00. This is a distinct permanent owner CADENCE PROCESS MAJOR, separate from older32:24 and59:57 misses. A parent18:47 observation and intervening scientific progress do not constitute the missing owner checkpoint or repair it. Exact unobserved file-creation instants are not invented. The new178LF v13 all-edge-simple one8/F3 proof is a separate, unreviewed mathematical candidate; no m8/full Tuscan result is accepted here.
+
+## 2. Preview owner: actual return did not precede a separate ACK before primary reasoning
+
+The complete later owner erratum reports that AFTER actual v100-K RETURN, the owner read the17LF own model-boundary note and resumed DC/FORCE primary reasoning BEFORE the required separate primary exposure ACK/addendum9. Checkpoint25 observes17:35:56; addendum9 observes17:41:16 and truthfully discloses already-developed reasoning. Retain a distinct permanent **OWNER PRIMARY-RESUMPTION ACK-ORDER PROCESS MAJOR**. This is NOT alleged primary/review interleaving while v100-K was live, not scientific interpreter execution, and not a mathematical falsity finding. The later19:11:28 disclosure is not backdated into v105. Current v105-C remains at its already explicitly released entire semigroup scope; primary stays paused until actual RETURN, then a separate prospective primary ACK before any further primary source/reasoning.
+
+## 3. Parent: omitted original v104-D body release
+
+PhysicsRQLS10-2 correctly reported that its original opaque ACK, observed18:10:31 and reported delivered18:11:34, had NOT received explicit v104-D body release when the new v106-F dispatch arrived. Parent confirmed no release file at actual19:14:42, then read the COMPLETE original ACK through its ending and persisted/delivered the release at **19:15:36**. The admission delay is a parent workflow failure, not reviewer noncompliance or evidence of earlier body reading/RETURN. Preserve the wait; never call it continuous scientific work. Original v104-D is not cancelled: it must finish and ACTUALLY RETURN before queued v106-F gets its OWN checkpoint/opaque ACK/parent actual read/explicit release. New dispatch, file existence and hash status cannot self-release either assignment.
+
+## 4. Semigroup reviewer: preserve original parallel read-order gap
+
+The complete original v106-E ACK explicitly reports v9/v10/v11/HOLD read in ONE parallel batch. That does not establish the mandatory v9 FIRST → result returned → v10 immediately SECOND → result returned → v11 THIRD order. Parent withheld body release and requested an additive serial reread. The complete correction records clock19:15:40 before v9, separate returned v9/v10/v11/HOLD calls, and19:16:01 after the last read; the original ACK/checkpoint and batch-history are unchanged. Parent read BOTH records, live-bound the correction SHA, and released at **19:18:21**. This is prospective body admission only: retain the original read-order process finding, no retroactive compliance, mathematical-gate restart, new target or verdict transfer. No mathematical proof falsity or scientific execution is inferred from the read-order gap.
+
+## 5. Immutable source bindings and assurance ceiling
+
+- `information-science/evidence/three-area-20261023-96h/parallel-18/tuscan2-11/checkpoint-042-v1.json` — SHA256 `2291b1fa76c3ec83890371999ad3a5dd4b984c265fd2c6bd72c8adee8cc46ee0`, 21LF/5013B. Complete actual owner45minute cadence disclosure; mathematicalnewlead checkpoint not adoption.
+- `information-science/evidence/three-area-20261023-96h/parallel-18/stochastic-hinf-preview/owner-primary-resumption-ack-order-erratum-v1.json` — SHA256 `6b0d31d258d4b076283b59a4f4efe472cb935ecad8e8ed53a0399e5591f8723a`, 11LF/2939B. Complete actual later own post-v100RETURN/pre-primaryACK disclosure.
+- `physics/evidence/three-area-20261023-96h/parallel-18/rqls10/peer-review-v104-D-opaque-ack-v1.json` — SHA256 `83bac62ccad3394f52df22c0e37f27ced6fba3bfc8dece7264ebf2dccb33dc90`, 27LF/6329B. Complete original18:10:31 opaqueACK.
+- `institute/runs/three-area-2026-10-23-96h/peer-review-v104-D-explicit-body-release-v1.json` — SHA256 `dd3c8e85753d6c2361fa3efcf29574d786cff4e61a612e09f86acf6f4b5cd4f8`, 30LF/4639B. Actual delayed parentrelease19:15:36; not earlierbodyaccess.
+- `mathematics/evidence/three-area-20261023-96h/parallel-18/semigroup-embedding/peer-review-v106-E-opaque-ack-v1.json` — SHA256 `834686c6044b13af87388e4665f9c48212869b46ece064beeba6ef8af139c2c2`, 27LF/4011B. Original mandatory-overlays parallelbatchread acknowledged.
+- `mathematics/evidence/three-area-20261023-96h/parallel-18/semigroup-embedding/peer-review-v106-E-opaque-ack-correction-1.json` — SHA256 `b17d956ed45b9a9538ec3187740e1377281ce7728a98922ef1c6a225cd0ae115`, 31LF/3757B. Complete additiveprospective serialreadcorrection, originalhistoryretained.
+- `institute/runs/three-area-2026-10-23-96h/peer-review-v106-E-explicit-body-release-v1.json` — SHA256 `283f91f01fbd74a46c176f15b746f621c04310cf0f20fd2e874592ace458dc20`, 35LF/4180B. ReleaseonlyafterparentreadBOTHACKrecords.
+
+These are bounded documentary/owner-reported observations, NOT a global thought/access/execution/runtime census. No independent-model-family, human, formal/kernel, executable/triple-finite, numerical, novelty or priority acceptance follows; no process history is cured by correct mathematics. Scientific HOLD, N4 UNKNOWN/incomplete/unestablished historical child exit, auxiliary214LF STOP/unadmitted status, zero-credit prior arithmetic and all other permanent findings remain. SAME eighteen original owners, exclusive roots, October27 science cutoff11:05:38 and deadline12:35:38; no unattended scheduler, new owner, deadline reset or96-hour closeout.

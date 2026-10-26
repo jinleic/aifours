@@ -1,0 +1,9 @@
+# Kac small-s continuation — parent freeze-order deviation
+
+Actual `/bin/date` before this record: **2026-10-25T10:49:27-0700 PDT**. Local mandatory overlay for the r2 small-s continuation, in addition to v9/v10/v11 and scientific HOLD.
+
+The parent sent an agent directive to continue from the389LF B2 s>=4 candidate into original r2,s=1,2,3 BEFORE writing a separate parent JSON binding for that changed parameter family. The prior102319 manifest explicitly bound s>=4 and left s<4 unhandled. The worker then wrote `r2-boundary-s123-intake-ack-v1.json` (own observed10:43:56) and `r2-boundary-s123-checkpoint-v1.json` (own observed10:45:10), deriving boundary source/target corrections before the later parent JSON. Both complete records were read by the parent before this erratum.
+
+This is a **parent freeze-before-dispatch PROCESS MAJOR**. The explicit instruction and worker intake establish what was attempted, but do NOT turn the later parent manifest into preregistration. Preserve the earlier actual instruction, ACK, checkpoint, informal reasoning and any already-derived body; no rewritten timestamp, erased finding or claim that all new reasoning followed the new parent JSON. The mathematical claims remain unreviewed until their own complete reconstruction. This deviation is not scientific interpreter execution, a new GO, a source-hash defect or evidence that the mathematical result is false.
+
+The accompanying successor parent manifest binds FUTURE continuation only, explicitly carrying this exposure. Its fresh ACK must record the actual extent of pre-manifest reasoning/body and any new artifact already written; no backdating. Original nonsymmetrizable matrix, WHOLE64/35 maps, exact s1/2/3 ideals, all integrability boundaries, stronger acceptance limits and original deadline remain. No old19 count, global Serre/B5/H13 closure or stronger review credit is conferred.
