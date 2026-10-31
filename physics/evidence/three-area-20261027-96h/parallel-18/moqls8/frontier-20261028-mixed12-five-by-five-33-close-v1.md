@@ -1,0 +1,9 @@
+# Closing the 5×5 (3,3,2,2,2)/(3,3,2,2,2) 12-cell profile
+
+**WRITTEN author candidate; disjoint review pending.** No order-8 QLS in this exact 12-cell mixed-degree profile has an orthogonal QLS mate. The named, review-pending reduction `frontier-20261028-mixed12-five-by-five-33-residual-v1.md`, SHA256 fb3a73009ecffade1494230a409f7165ce739626dc36e57568acfe44e6f6c34e, excludes all but a boundary with two 2-cell paths and one 4-cycle. In fact the following QLS-only argument excludes any one of those 2-cell paths, independent of the cycle support W and independent of a mate.
+
+The reduction's core is a complete 2×2 board of Q rays with full support on a common 3-coordinate set T. Suppose a 2-cell path consists of two Q rays u_1,u_2 in the same degree-2 column, with support U⊂T. They are orthogonal and form an ONB of span(U); their other incidences are the two high rows. Choose either high column of the core. Its two Q rays x_1,x_2 are orthogonal, each has full support T, and x_i⊥u_i because the two cells share high row i.
+
+Let z be the coordinate in T\U. Relative to the ONB u_1,u_2,e_z, orthogonality to u_i gives `x_1=αu_2+βe_z` and `x_2=γu_1+δe_z`. Both β and δ are nonzero because x_1,x_2 have full support T. Their inner product is the single nonzero product of these e_z coefficients, contradicting x_1⊥x_2. If the 2-cell path instead lies in a degree-2 row, exchange the roles of rows and columns in the same argument; the original coordinate basis stays fixed.
+
+Thus the residual is impossible, and the preceding WRITTEN reduction closes this entire degree profile for Q with one mate. The 4×4, 4×5 and other 5×5 12-cell profiles remain open, as do the global four-family, q2/q3/q4 and original A10/A11 gates. Review must reconstruct the named reduction and the full-support/same-2-support observation. This is not a parent, independent-family, human, formal, executable or novelty acceptance.

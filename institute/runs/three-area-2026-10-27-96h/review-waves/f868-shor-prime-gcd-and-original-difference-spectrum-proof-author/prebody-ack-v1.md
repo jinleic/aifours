@@ -1,0 +1,7 @@
+# F868 pre-body acknowledgement
+
+I am AuthorF868ShorPrime, acting as prospective GENERAL AUTHOR under the frozen F868 assignment. Before opening or reasoning from any mathematical source body, I read the complete manifest, freeze receipt, final pre-dispatch binding, parent live metadata supply, actual dispatch receipt, and all 22 manifest-listed status-only control files. The actual dispatch receipt names this agent and the frozen single-part packet.
+
+I have not opened the packet or any listed source body, performed mathematical reasoning on this assignment, consulted a peer or external source, or used any held episode or held consumer. The status controls are permissions and exclusions only, not mathematical inputs; their links are not permission to inspect held bodies or consumers. No claim is made about unobservable cognition or independent hash recomputation. The parent-provided metadata, not an independent worker hash, records the bindings.
+
+I will read the complete packet in serial raw windows of at most 20 LF and below 30000 bytes per display, recover any clipped portions before reasoning, and retain missing load-bearing bodies as named conditional imports. Only this wave directory is writable. No scientific execution, tests, network, external model, child subprocess, Git, deletion, editing frozen candidates, or unlisted source access is permitted. A direct acknowledgement to Main accompanies this file before packet access.

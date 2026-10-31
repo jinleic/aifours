@@ -1,0 +1,47 @@
+# Sun8 from at most two Sylow overgroups: the prime-43 threshold
+
+**Status: WRITTEN, UNREVIEWED.** Let G be finite with no proper subgroup of index below 8. If p>42 divides |G| and a Sylow p-subgroup has at most **two actual maximal proper overgroups**, then G satisfies Sun8. More generally, if p>7 and a Sylow p-subgroup has at most one maximal proper overgroup, Sun8 holds. For finite nonabelian simple G, the minimum-index condition is automatic since every proper coset action is faithful and its index is at least p.
+
+Equivalently, a hypothetical Sun8 counterconfiguration in a finite group with minimum proper index at least 8 forces every Sylow p-subgroup, for each prime p>42 dividing the group order, to lie in at least three distinct maximal proper subgroups. This is a source-free actual-subgroup statement, not merely a divisor relaxation. It uses no Sun7/R8 implication, Jones, CFSG or maximal-overgroup classification; finding concrete groups satisfying the overgroup hypothesis is a separate task. No all-group theorem, priority, infinitude, formal proof, independent review or adoption is claimed.
+
+This is a **stronger additive successor** to `frontier-20261028-common-sylow-triple-p7-sun8-v1.md` SHA `4ce24ffd341338433de4d7ae57a706893f50dfea5c9d13c1eb917a0d846dcf9d`: that frozen packet gave p>168 for unrestricted Sun8 and p>42 for direct P7. The argument below improves unrestricted Sun8 to p>42 without Sun7, by using five p-free vertices and prime-7 divisibility. The earlier one-overgroup case remains prior/nonblind, and no novelty is asserted.
+
+Read the complete pre-source overlays in order before earlier affected bodies: `frontier-20261028-alternating-pre-source-arithmetic-correction-v1.json` SHA `6c8f85cf6e22d12026398fe87895e62d773edee701e2f96e82c69ff8cb33d793`, `frontier-20261028-alternating-repeated-unit-fatal-pre-source-v1.json` SHA `bdd6149cf483173cc54a804a4fc468b87fc52087a0d4cff40fb323dcfa018d04`, and `frontier-20261028-alternating-p7-cardinality-addendum-v1.json` SHA `6a9572f4da51f18657bccc1747206648e2ec0d41da16fc7b96f8cf6445748218`. The false seven-index claim is not used. Prior STOP/ZERO and separately recorded incidental nonblind exposure remain unchanged.
+
+## 1. The intersection coefficient
+
+For pairwise disjoint left cosets g_iH_i in finite G write m_i=[G:H_i], d_ij=gcd(m_i,m_j), and I_J=[G:⋂_{i∈J}H_i]. Disjointness implies H_iH_j≠G. The product-set size formula gives I_ij<m_i m_j; since I_ij is a common multiple of m_i and m_j,
+
+\[I_{ij}=\operatorname{lcm}(m_i,m_j)c_{ij},\qquad1\le c_{ij}<d_{ij}.\tag{1}\]
+
+In particular no d_ij is 1. If d_ij≤7 and p>7 divides neither m_i nor m_j, then p∤I_ij and H_i∩H_j contains a Sylow p-subgroup of G.
+
+For three vertices put J=H_i∩H_j. Because JH_k⊆H_iH_k≠G,
+
+\[I_{ijk}=\operatorname{lcm}(I_{ij},m_k)c',\qquad1\le c'<\gcd(I_{ij},m_k).\tag{2}\]
+
+The elementary valuation identity gcd(lcm(m_i,m_j),m_k)=lcm(d_ik,d_jk) implies
+
+\[\gcd(I_{ij},m_k)\le(d_{ij}-1)\operatorname{lcm}(d_{ik},d_{jk})=:B_{ij\mid k}.\tag{3}\]
+
+If p>7 divides none of the three indices and p≥B_ij|k for some ordering, then (1) makes I_ij p-free and (2)–(3) make I_ijk p-free. Thus all three H vertices contain a **common full Sylow p-subgroup**. The chosen Sylow may depend on the triple; no eight-way common subgroup is claimed.
+
+## 2. Five indices always contain a triple with B≤42
+
+Suppose five subgroup indices have all pairwise gcds in {2,…,7}. Split their labels according to whether the index is divisible by 7. One side contains at least three labels. For three 7-divisible indices, all three pairwise gcds are 7 and B=(7−1)·7=42.
+
+For three indices not divisible by 7, their pairwise gcds a≤b≤c lie in {2,…,6}. We show some ordering has B≤40. If a=2, choosing that edge gives B=lcm(b,c)≤30. If a=3 and c≤5, choosing the 3-edge gives B≤2·lcm(4,5)=40. If a=3,c=6, the choices b=3,4,6 give B≤24 using the 3-edge, while b=5 gives B=4·lcm(3,6)=24 using the 5-edge.
+
+If a=4, direct cases give B≤20 except (4,5,6). That triple is impossible for actual gcds: the edges of gcd 4 and 6 share a vertex, so both other indices are even, and their mutual gcd cannot be 5. If a=5, the sorted triples (5,5,5),(5,5,6),(5,6,6) have choices of B equal to 20,25,24. If a=6 then B=30. Thus the non-7 triple has B≤40, and one of the five-index triples always has B≤42.
+
+## 3. The maximal-overgroup contradiction
+
+Assume eight disjoint cosets violate Sun8. Their indices have all pairwise gcd≤7. Because p>7, at most one index is divisible by p, so at least seven are p-free. For p>42 choose five p-free indices, apply §2 to select three with B≤42, and use §1 to find a common Sylow p-subgroup P in all three subgroup vertices.
+
+Any two vertices H_i,H_j generate G: their generated subgroup has index dividing d_ij≤7, and no proper subgroup has such an index. Choose maximal proper subgroups M_i containing each of the three H_i. They contain P and are pairwise distinct, since an equal M_i would contain the group generated by the corresponding pair. Thus P has at least three actual maximal proper overgroups, contradicting the stated bound of two. All Sylow p-subgroups are conjugate, so the count is independent of P. If a Sylow p-subgroup equals G, no proper p-free subgroup exists and the contradiction is immediate.
+
+For the one-overgroup claim with p>7, choose any two p-free indices among the seven. Equation (1) gives a common Sylow p-subgroup in their intersection; the same generation argument forces two distinct maximal overgroups, contradiction. Neither statement requires every p-free vertex to contain one fixed Sylow subgroup.
+
+## 4. Review and scope
+
+A disjoint reviewer should verify the strict product-set and index inequalities for three left cosets, the gcd valuation identity, the no-7 triple case split including the impossible (4,5,6) pattern, and the pigeonhole/actual-maximal-overgroup argument. This result does not classify groups with at most two overgroups or equate the count with a count of conjugacy classes. It is not a Sun8 proof for all groups, a source/priority clearance, a formal proof, or a rehabilitation of any historic hold.

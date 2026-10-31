@@ -1,0 +1,80 @@
+# F730 — V28 Boolean fixed-x and partial-Parseval documentary audit
+
+**Role and outcome.** DOCUMENTARY ONLY; literal comparison of the frozen V28 info-6 and process text with the assigned packet. **0 fatal / 0 major / 4 minor documentary clarifications** at this narrow comparison scope. These are proposed findings, not parent dispositions. **INCONCLUSIVE** on the mathematical correctness of the imported lemma, the separately undefined `H_local` condition, original-source identity, any unrestricted Boolean claim, and all stronger assurance. This is not a scientific reproof or a global, family, human, kernel, or novelty PASS. Parent independent full read and disposition are pending.
+
+Native clock observed before this return: **2026-10-30T17:11:05-0700 PDT**. The report and checkpoint clocks below are historical as-of observations, not claims about the present live queue.
+
+## Authority, reading order, and coverage
+
+I read the actual dispatch receipt, complete manifest, freeze receipt, final pre-dispatch binding, prepared live-metadata supply, and all **23** listed controls through their endings before directly delivering the PREBODY ACK to Main. Controls were for permissions/status only. The 23rd and 22nd controls are also S11 and S9 respectively: their bytes were necessarily visible in the mandated prebody control roles, and were later read again in packet order. This is not a claim of blindness or a certificate of private cognition. No comparison was made before the ordered packet readings were complete.
+
+After the direct ACK I read packet part 1 LF 1–249, then part 2 LF 1–434, serially, in raw windows of at most five LF through each ending, before documentary comparison. All twelve designated source bodies were represented completely. The raw-window read renderer omitted a trailing blank on five windows; restoring those empty trailing lines gives the original 99,192-byte/249-LF and 28,413-byte/434-LF packet hashes below. This is a read-coverage reconciliation, not an independent source-to-packet roundtrip.
+
+All genuinely held episodes and ALL their proof, method, selection, planning, verification, reporting, confidence and downstream consumers remain NONINPUT. No held payload/history/method, sibling proof, old code, or outgoing source link was followed. No new scientific instance, algebra, proof, diagnostic, program execution, compilation, test, solver, external-model CLI, Git, installation, deletion, heavy or paid action was performed. Input hashing and read-coverage bookkeeping were metadata operations only.
+
+I directly hashed these local frozen artifacts, in SHA-256:
+
+| Artifact | SHA-256 |
+|---|---|
+| `manifest-v1.json` | `0679c22368c391c2216c32fd3b866d7ca77271bbffd35c57e781a783016cb72c` |
+| `freeze-receipt-v1.json` | `5039bde081881ab594b7aa43e4bd3234580f4cb5944817e412f5bca8fcc81744` |
+| `final-pre-dispatch-binding-v1.json` | `2ea6557babf1577d28ee841a05321062f07120454d9c4d0d766d763990d20b6e` |
+| `parent-live-metadata-supply-v1.json` | `2dec664d4c532f88879801fbe5f443612d9d6a2607588185ca3e4c9496e8cf88` |
+| `dispatch-receipt-v1.json` | `8835a8f1c0e0bc1a58678f690f5f5005188ca17fffb9df98b24d97cbc06660f4` |
+| `literal-packet-part-01-v1.md` | `8fe076a16a676dda5728da1ebd269638791221bb7431ad15a25ee8eb7b271125` |
+| `literal-packet-part-02-v1.md` | `b73fd28caaa58d22373285ec7d67f71106692dce21ec238ea16373a648bd1485` |
+
+The manifest and parent binding pin the following complete original source bodies. `R` means `/Users/jinleic/repos/aifours/institute/runs/three-area-2026-10-27-96h/`; `S#:a–b` citations below denote original-source LF numbers as rendered in the frozen packets. These source hashes and parent roundtrip/match statements are **parent metadata**; I did not separately open/hash the original source files or follow their links.
+
+| ID | Original source below R | Complete LF | Pinned original SHA-256 |
+|---|---|---:|---|
+| S1 | `rolling-report-20261030-v27-erratum-2.md` | 1–10 | `f6b79a53f9f9c572edbae94d6f5f6646845ba5b3bdfed7bcbf9f865380d14a5e` |
+| S2 | `rolling-report-20261030-v27-erratum-3.md` | 1–9 | `676e4d3d65431fad0af4679b8533c3493fb87bab6ad32898eb09484892af0609` |
+| S3 | `rolling-report-20261030-v28.md` | 1–42 | `5ba8b3e453f11d2d7f77cfca9270ddc19220a7a2cdae4c7aad69b2047dacc402` |
+| S4 | `dispositions/info-6-actual-fixed-rank2-x-j1-u3-partial-parseval-exclusion-parent-v1.md` | 1–31 | `3e77eebe5c885ae8b53e04b76f3de46594c5cca2e5647086122bf408fa7052b4` |
+| S5 | `dispositions/info-6-actual-four-distinct-d0-z2-location-rigidity-parent-v1.md` | 1–30 | `fa3b4e334713a4981b267e12be567d2f328ca00203fb525a45100bd1deae2d4a` |
+| S6 | `review-waves/f710-boolean-explicit-u0-u3-sign-interface-finite-author/parent-independent-finite-run-v1-receipt.json` | 1–42 | `c863d8aed5ad610cc4854391f7efe5eb544fab36cd924e0a8a7ced43ff772e30` |
+| S7 | `review-waves/f710-boolean-explicit-u0-u3-sign-interface-finite-author/parent-independent-finite-run-v2-receipt.json` | 1–55 | `20b2bebb3cd3a0e93772a1160ff87a8b0dcfe3c658d575b7b366630f0a74cb0a` |
+| S8 | `review-waves/f719-boolean-u3-uniform-partial-parseval-independent-finite-author/parent-uniform-partial-spectrum-v2-run-v1-receipt.json` | 1–136 | `fc65fb62d28a6245c5d9fc7ed724495d7a625e345bf3732cf59f92df6d749cbf` |
+| S9 | `review-waves/f719-boolean-u3-uniform-partial-parseval-independent-finite-author/parent-research-task-even-kappa-domain-count-correction-v1.json` | 1–10 | `790f9ecf077d6b84e9428e977f667d161718b02563ab8bd717d97b36b25a78a6` |
+| S10 | `review-waves/f689-actual-rank2-location-and-same-object-completion-frontier-author/parent-explicit-u0-example-table-and-census-erratum-v1.md` | 1–17 | `ba7cc22c99c615a0674d04ea827d90527494cfb0956452d8ad9588a885fd71f0` |
+| S11 | `review-waves/f718-boolean-u3-partial-spectrum-global-consumer-independent-author/parent-nonaffine-anchor-affine-shear-math-major-erratum-v1.md` | 1–11 | `2253ac97d0b148dfc96406235658b5712c47c6014aecf65befe26e8f20d700ab` |
+| S12 | `checkpoints/136-conditional-minimum49-kac-grade3-septic-sdp-and-boolean-fixed-x-v1.json` | 1–238 | `44f588517d14f9a5758e34b2f40e9747443801de3a04d703ddf14d049f9eff93` |
+
+## Documentary comparison and import boundaries
+
+1. **Specific carried balance and one physical x.** S3:16 retains ALL 64 U0 caps at most 8 and `xhat(t)=0` at the **specific carried original-DC transport**, along with rank-two graph/phase, physical inverse, local-form, energy/divisibility and zero-flat imports. S1:5 and S4:3,13–19 make the same-x requirement explicit: the profiles, actual inverse and physical y are tied to one x. S4 applies its construction `x_t` for the given t, not a freely chosen zero or the separate illustration's `t=0`. The general same-x location disposition also retains these imports (S5:3,9,15). No all-x or all-D0 exclusion follows.
+
+2. **Uniform lemma versus the one physical application.** S4:7 states the larger-class lemma with its entire displayed structural interface: the specified graph/mate entries, four graph bits with odd sum, graph characters `κ_j` with every value of even multiplicity, four zero mates and twelve amplitude-two mates, one real y of total energy 128, and all 64 full Walsh coefficients in `4+8Z`; the claimed contradiction assumes ALL 64 magnitudes at most 12. The `ell=0` half is arbitrary subject to those global conditions. S4:9 is the recorded **written** general argument; S4:3,19 applies it to one actual x and a common physical y with J=1. Its all-choice claim concerns **all assignments of the 24 shared D3/Z2 signs**, all 18 Z4 sites, and both Z4 signs by that written argument, not by finite exhaustion. S3:16 names J1, ALL64 U3 caps, even κ, energy 128 and residue 4, and explicitly denies all-x/whole-branch coverage. This audit does not independently prove that argument or discharge the imports.
+
+3. **Location is necessary, not signed compatibility.** For four distinct D0 anchors, S5:3,9–20 records the same-x necessary location alternatives: 1+1+1 has an affine isomorphism with `A(a_d+a_d′)=d+d′`; 2+1 has the specified two-point image line and kernel `〈a+b〉`, with the stated singleton/opposing graph profiles. Actual sign products remain constraints. Neither the alternatives nor S3:16 supply their compatibility, an actual all-capped y, V, or the original caller. S1:7 says this explicitly.
+
+4. **f710: two actual runs, failure retained.** S6:2–8 reports the first v1 run as FAIL, exit 1. S10:3,13–17 attributes **193 failed checks** to three wrong explicit profile rows across 64 transports and one wrong graph census, while recording intermediate observations and the 1,800 deterministic samples without converting the failed run into a pass. S7:2–5,18–21,54 separately reports **one corrected v2 bounded PASS**, with 64 transports and 1,800 sign/site samples; it is not all `2^24` sign assignments, a capped U3 witness, V, `H_local` verification, or the original caller. S3:16,32 preserves FAIL then separate bounded PASS. No output or program was rerun here. S10:17 also says the all-cap conditional checks were NOTTESTED when none of the sampled choices met the cap; sampling is not an all-cap premise test.
+
+5. **f719: superseded unrun v1, then one corrected bounded run.** The parent task's 22 instead of 40 **ordered** even-multiplicity κ tuples is one parent finite-design MATH MAJOR, found before GO or execution; v1 was superseded and NEVER RUN (S9:4–9; S4:29). The separately admitted v2 has one actual recorded PASS at `PASS_PARTIAL_BOUNDARY_AND_ONE_FIXED_X_ONLY` (S8:14–18,30–54,135; S4:29): 40 ordered κ tuples, consisting of 4 all-same and 36 two-pair; **5,120 parity-consistent equality/boundary cases**, with four `|A1|=20` coefficients per case and 81,920 direct-versus-butterfly opposite-slice comparisons. Separately, for ONE fixed x, it examined all **4,096 d vectors**: 4,088 fail the partial cap and the remaining eight have `(E,O)=(12,8)`, with 131,072 direct-versus-butterfly comparisons (S8:56–87). This does not select A0, enumerate all `2^24` signs, check other x, V, the separate `H_local` definition, or the original caller (S8:106–110; S4:29; S12:126–127). The general lemma is the written claim, not a finite proof of arbitrary `ell=0` data.
+
+6. **Separate mathematical corrections and pending frontier.** S10:3,13–15 records one f689 explicit-example MATH MAJOR: three profile-row sign corrections and a corrected `(1,2,2,4)` graph census; it does not falsify the separate location theorem. S11:3–11 records a different f718 author MATH MAJOR: the particular nonaffine substitution is not globally affine, but the broader claim that no global affine alignment is possible was overbroad; the recorded h-to-b affine shear does not make even κ automatic or provide a U3 witness. Neither correction is a new process hold or an adoption of f718's stronger location/sign claim. S3:16,40 retains both corrections and the separate f719 count error.
+
+7. **No backdating f725–f727.** V28's own composition observation is 17:04:24 PDT and says these distinct-character tasks are prospective/unadopted (S3:3,16,32). S11:11 records f725's earlier report of the alignment qualification while its final return and f727 were then pending. The later checkpoint observation, 17:05:49 PDT, says f725 had returned a new written configuration but had not received parent full-read/adoption, f726 was observed running after 17:05, and f727 had returned a 625-LF source **UNRUN** awaiting parent full static read/GO (S12:4,219–223). These time-specific statements are not retroactive adoption or a statement of their current state.
+
+## Findings requiring parent disposition
+
+**m1 — All-sign written attribution could be clearer.** S3:16 says “for all24 shared signs” and distinguishes f719 from `2^24` enumeration, but does not expressly say in that row that the universal all-choice statement is from the written argument. S4:3,9,19,29 does. Recommend “for all assignments of the 24 shared signs, all 18 Z4 sites and both Z4 signs **by the written argument**, not finite sign exhaustion.” This is clarity/attribution, not a claim that V28 explicitly asserts exhaustive finite testing.
+
+**m2 — Necessary-only location qualification should be explicit in the row.** S3:16 lists the location alternatives while saying “retaining actual sign products”; it does not there explicitly say that compatibility or existence is unpaid. S1:7 and S5:3,19–20 do, and S3:3 incorporates the earlier erratum. Recommend state “necessary location alternatives only; actual sign products remain to be satisfied; no sign-compatibility or joint-caller claim.” The report does not explicitly assert a signed iff, so this is a clarification, not a finding of such a false assertion.
+
+**m3 — `H_local` availability and testing are different.** S3:16 says its exact separate definition was “NOTTESTED.” S4:19 additionally states that the definition of the named `H_local=0` import was **not present in the reviewed packet**, and does not identify the local counts with an unstated invariant; S12:82 also says not provided/NOTTESTED. Recommend expressly retain both facts. Whether the separate invariant holds or the disposition's import is discharged is **INCONCLUSIVE**, not a failure or pass established here.
+
+**m4 — Make the f719 version chronology and finite domain explicit.** S3:16,32 gives the 22→40 correction, corrected v2, 40 κ “shapes,” 5,120 equality cases and one-x 4,096 d vectors, but does not itself say that v1 was **never run** or that the boundary cases are parity-consistent. S9:4–8, S4:29 and S8:35–54,135 provide those qualifications. Recommend “v1 superseded before GO and never run; one v2 run examined 40 ordered κ tuples and 5,120 parity-consistent boundary cases, separately 4,096 d vectors for one x.” No v1 run is asserted by V28; the finding is completeness, not an invented false chronology.
+
+## Separate inherited process findings
+
+These are **not** the four new documentary minors above, and mathematical versus process findings are not merged:
+
+* S1:10, S2:9 and S3:32,40 retain one f711 and one f712 premature-comparison **PROCESS MAJOR** each; their original strict source-order gates were not compliant. The f712 endpoint-description MINOR is also recorded in S1:10/S2:9; it is not a new f730 event. S1:10/S2:7,9 and S3:32,40 separately retain the f724 **22-LF-window PROCESS MINOR** despite its reported all-endings-before-comparison, without retroactive strict-window compliance. S2:9 attributes a separate corrected, scoped documentary outcome to f713; none is a scientific reproof or cognition certificate.
+* S1:8 and S3:40 preserve the distinct f678 v1 FAIL after 64 physical cases/two controls/zero profiles, subsequent separately corrected v2 bounded PASS, and the separate successor-source-overwrite PROCESS MAJOR. This chronology is not f710's two runs and no old provenance fault is cleared by a later PASS.
+* The f689 example, f718 alignment, and f719 parent count findings above are three distinct **mathematical** majors as recorded, not the reviewer process faults just listed. No blanket mathematical falsity or new hold is inferred from any documentary sequencing issue.
+
+## Unpaid scope and assurance
+
+The assigned sources do not establish other physical x, D0 allocations, the full rank-two or NL242 branch, a jointly U3-capped y, the same 140-position V/all 256 odd caps, the original T/gauge/rank/atom caller, or a global result (S3:16; S4:3,19,29; S5:3,28–30). `H_local` was not supplied at the cited reviewed interface and not independently tested. The receipts and parent attestations were read as documentary records, not replayed; I did not read the executable source or output files, verify actual execution independently, inspect outgoing links, or identify the printed original problem. Same-harness authorship/parent review is not independent model-family, human, formal/kernel, worldwide-priority or novelty assurance. Findings and any correction remain for Main's independent complete reading and prospective disposition; no automatic parent adoption follows from this return.

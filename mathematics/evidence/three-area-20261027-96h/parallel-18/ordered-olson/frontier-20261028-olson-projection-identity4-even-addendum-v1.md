@@ -1,0 +1,11 @@
+# Additive even-projected-run checks for the identity-four selector
+
+Native `/bin/date` immediately before this write: **Wed Oct 28 20:26:35 PDT 2026**. This is additive to `frontier-20261028-olson-projection-identity4-selector-v1.md`, SHA256 `df1fd2eb6a259e938b6fba70e99cc282c5b8abf609acafc21487e5d796763897`. Its original statement that its first 250 fixtures had no even projected runs remains true and is not edited or backdated. The fatal source-correspondence record `frontier-20261028-olson-actual-block-fatal-correction-v1.json`, SHA256 `e11fd87345f8a54012f3a9245d87491c6ceb3a4a113558be07ca4ab62728f90e`, remains mandatory before any related review.
+
+`frontier-20261028-olson-projection-identity4-even-experiment.py`, SHA256 `800c45dd5ca59121578b9d02ec4e4ba5b819aac319108c317ad23970a280932f`, generated 180 new full actual words at p=3,5,7,11,13, deliberately including one or two **even reflection-only projected runs** while retaining p odd projected runs and the actual cyclic identity-four block in an odd projected run. Saved input `frontier-20261028-olson-projection-identity4-even-results.json` has SHA256 `804d6471ca6118f69ae9748a8ae9164d046bc3ee3b49200e79c1ecef793d528a`.
+
+Separately written `frontier-20261028-olson-projection-identity4-even-checker.py`, SHA256 `c80bd55e6b53f0096f7a24b58ef01e0f48fb0ed0a153de492652210017ff130d`, imported no producer code and returned `PASS_INDEPENDENT_PROJECTION_IDENTITY4_EVEN` in `frontier-20261028-olson-projection-identity4-even-check-results.json`, SHA256 `34281df7c89c52330b916824956614d4b0603e15ce0e5fa9bd226fb2268ce34e`. It independently reconstructed the cyclic projected runs, the actual four cyclic-adjacent identity-block positions, the remaining p−2 equal reflection pairs, and directly multiplied all 180 original-index selectors. One hundred fixtures had one even projected run and 80 had two. Duplicate-selected-index and altered-second-rotation controls failed for their intended reasons.
+
+This is bounded numerical coverage of the source's allowed even-PROJECTION-run scope, not an actual `o_F/e_F` block claim, a full L_RES result, a formal or external-family review, or rehabilitation of f111. The entire source remains pending a new disjoint mathematical review.
+
+**END — additive finite even-projection-run evidence.**

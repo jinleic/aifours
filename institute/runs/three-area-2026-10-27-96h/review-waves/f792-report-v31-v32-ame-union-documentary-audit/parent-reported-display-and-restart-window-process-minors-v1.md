@@ -1,0 +1,3 @@
+# F792 reported presentation/restart deviations — two PROCESS MINORs
+
+Recorded UTC 2026-10-31T01:29:10.993Z. Before any documentary comparison the reviewer reported (1) an eval-printed tool-response dictionary with a clipped duplicate metadata presentation on part 03 LF1–5, then a restart at directed RAW ≤2-LF windows; (2) during that restart, a part 02 LF147–149 request of 3 LF, exceeding the directed ≤2-LF recovery limit although within the original ≤5-LF and manifest ≤20-LF limits. It reported no comparison or derivation and a second full ordered restart. These are TWO separate reviewer PROCESS MINORs; no clean first-pass or completed final coverage is asserted until the return is inspected. No automatic documentary or mathematical verdict follows.

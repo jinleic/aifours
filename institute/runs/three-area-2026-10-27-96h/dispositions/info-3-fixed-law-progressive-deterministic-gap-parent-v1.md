@@ -1,0 +1,26 @@
+# Parent disposition — info-3-fixed-law-progressive-deterministic-gap-parent
+
+Observed clock before writing: **2026-10-27T15:22:10-0700 PDT**. Same-harness written disposition; not formal/kernel, human, configured-family, executable or novelty acceptance. Independent-model CLI review not performed.
+
+## Complete parent reads and process history
+
+- Author [physical gap](/Users/jinleic/repos/aifours/information-science/evidence/three-area-20261027-96h/parallel-18/stochastic-hinf-preview/linear-preview-class-derivation-v1.md), SHA256 `13ad2a5613c767a5bc68a018bdfb47858ba3bd7ff235229f8bace4490ede54a1`, 161 LF: raw windows 1–33, 34–66, 67–99, 100–132, 133–161, ending included.
+- Author [robustness addendum](/Users/jinleic/repos/aifours/information-science/evidence/three-area-20261027-96h/parallel-18/stochastic-hinf-preview/linear-preview-class-robustness-addendum-v1.md), SHA256 `575778fd8ce64721ebc4bbf653a88db1e4ba9e9b400469ed93709fc9d6ef63b0`, 119 LF: raw windows 1–30, 31–60, 61–90, 91–119, ending included.
+- Reviewer MathSun8-2 [w21 review](/Users/jinleic/repos/aifours/mathematics/evidence/three-area-20261027-96h/parallel-18/sun-coset8/review-w21-preview-adapted-physical-gap-v1.md), SHA256 `692d90b257fe2e7c881716e9e095131d3d27355941cde2c02428a059d5abbdd2`, 248 LF: raw windows 1–35, 36–70, 71–105, 106–140, 141–175, 176–210, 211–248, ending included. Verdict 0 FATAL / 0 MAJOR / 0 MINOR at exact mathematical scope. Review is same-harness cross-domain, nonblind, not independent-model or formal verification.
+- Required process qualification: the author began internal symbolic reasoning before writing the stipulated ACK, although after reading the admitted controls; the [actual timing finding](/Users/jinleic/repos/aifours/information-science/evidence/three-area-20261027-96h/parallel-18/stochastic-hinf-preview/linear-preview-class-prebody-ack-and-timing-finding-v1.json) is a retained process MINOR and the subsequent parent permission is prospective, not a clean restart. The reviewer’s separate [Sun post-v3 process disposition](/Users/jinleic/repos/aifours/institute/runs/three-area-2026-10-27-96h/sun-post-v3-selected-index-parent-disposition-v1.json) remains binding: its affected branch/consumers ZERO; the disjoint review does not clear or exploit that branch.
+
+## Parent written checks
+
+1. For first exit tau_a of Brownian motion from (−a,a), the stopped-indicator Itô isometry gives E(t∧tau_a)=E|W_(t∧tau_a)|²<=a². Monotone/bounded convergence and path continuity yield E tau_a=a². Nonconstant tau_a gives rho=E sqrt(tau_a)/a in (0,1), with no optional-stopping or numerical exit-time import.
+2. For the stated sufficiently large T, both subtractions in eta=1−rho−a²/(T−h)−rho a/sqrt(T) are strictly less than (1−rho)/2. Hence eta>0 and the nonzero c interval exists.
+3. The actual stopped progressive input w(t)=q·1_{t<T−h}·1_{t<tau_a} has positive expected pathwise L2 norm q E sqrt(tau_a∧(T−h)) and is progressive E2. The same physical equation gives the stopped Brownian martingale; on tau_a<=T−h its remaining path has magnitude a. The displayed Markov/lower-bound chain yields an actual ratio at least L.
+4. For EVERY deterministic input, Itô isometry plus Jensen gives the uniform bound U. With kappa=|d b ell|, L−U=kappa sqrt(T) eta/rho−2|dc|T>0 by the stated strict bound on |c|. The same actual controller law is used for all inputs; this is not a comparison of separately optimized plants or an RMS criterion.
+5. In the robustness addendum, the original closed-loop equation contains all P=A+BK, Q=A0+B0K, F=B R+C S_h, G=B0 R and output N=D0+D1K couplings. The E2 difference estimate applies to the SAME progressive input/Brownian path. The conversion to literal expectation uses the finite fixed-input factor R_*=||w_*||_{E2}/E||w_*||, not an unproved uniform L2/L1 equivalence. Thus epsilon_theta(1+R_*)<L−U preserves the strict gap in a nonempty open scalar-tuple neighborhood at fixed T,h.
+
+## Adopted at exact scope: WRITTEN_SUPPORTED
+
+At the explicitly bound zero-state/history finite-horizon interpretation of the printed expected-path-L2 criterion, for EVERY finite h>=0 there is a nonempty symbolic scalar family of physical plants and fixed deterministic stationary preview laws for which G_progressive>G_deterministic. For any threshold strictly between the displayed deterministic upper U and actual adapted lower L, deterministic-input testing accepts that SAME fixed law while an admissible progressive disturbance violates the literal criterion. The gap persists on the stated open full scalar-parameter/L2-kernel neighborhood at fixed T,h; the general-matrix E2 continuity estimate is separately supported at its named ordinary linear-SDE, Itô, Tonelli and finite-dimensional imports.
+
+## Not established
+
+No claim that another controller cannot meet the threshold, no solution of the existential general H-infinity synthesis problem, no exact values/attainment of either gain, no infinite-horizon or other filtration/controller-information convention. Original book-image equivalence has not been freshly authenticated. No formal/kernel, executable, human, configured-family, independent-model or novelty/priority acceptance. No prior STOP/HOLD/ZERO or process finding is erased.

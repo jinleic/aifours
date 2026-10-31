@@ -1,0 +1,65 @@
+# Sun8 — Sp4(4) exception, binary S6/Sp4(2) base and complete nonbinary symplectic composition
+
+Actual returned `/bin/date` before this disposition: **2026-10-26T05:05:32-0700 PDT**. Parent read BOTH complete NEW author bodies (binary123LF, Sp4(4)169LF), their43/66LF author packets, SUN4/Parker statement boundaries, ALL new Parker UI/crop/blank-clip metadata bodies and BOTH actual337/245LF v112-E/F reviews through every ending BEFORE this write. Parent ACTUALLY viewed every Parker article raster, WHOLE printed85–95 through theorem-proof ending/ref/addresses, recorded additively in [parent visual-read addendum](sun-Parker2002-parent-visual-read-addendum-1.json). McLaughlin's four rasters were parent-read at earlier v108, not freshly re-viewed now; both current reviewers freshly viewed all four. Old odd120/even131 source bodies were completely parent-read/reconstructed at the distinct v110 adoption.
+
+## Decisions
+
+**BINARY — WRITTEN_SUPPORTED at ONLY named classical SUN4:** original Sun8 for S6, Sp4(2), PSp4(2). Any EIGHT pairwise-disjoint nonempty LEFT cosets of ARBITRARY actual subgroups force some pair of FULL ORIGINAL indices with gcd>=8. Every new A6 simplicity/normal-core/index/common-action/bucket/actual matrix bridge is supplied and reconstructed; no NC6, McLaughlin/Parker, classification/table or old-family conclusion is a premise.
+
+**SP4-4 — WRITTEN_SUPPORTED at named McLaughlin1967 FULL-root classification and Parker–Rowley2002 Theorem1.1 at EXACT q=4,n=2:** the SAME original eight-source assertion for Sp4(4), PSp4(4). Every new SAME-D8 Q/R/common-stabilizer step, exterior-square automorphism/kernel/root images, actual16-order X, BOTH orthogonal order bounds, reducibility/index85 and full-preimage bridge is supplied and reconstructed. No SUN4, old-SL conclusion, atlas/minimal-index input or finite program is used.
+
+Both actual reviews give0F/0M for each theorem. Reviewer E adds ONE editorial MINOR: binary source LF11 says the matrix bridge is §9, but it is §8; read the cross-reference accordingly. Reviewer F's0NEWm does not erase it.
+
+**NONBINARY COMPOSITION — WRITTEN_SUPPORTED at the UNION of McLaughlin1967+Parker2002:** the v112 reviews correctly made this implication CONDITIONAL on a separate accepted full v110 odd/even gate. That specific condition is now discharged at ordinary written level by [the complete v110 parent disposition](sun-Sp-odd-even-entire-parent-v1.md), not by a raw positive return. Odd q/m>=2, even q>=4/m>=3, even q>=8/m2 and this exact q4/m2 exception exhaust q>2,m>=2. Hence original Sun8 holds at those named classical inputs for **ALL Sp_(2m)(q)/PSp_(2m)(q), EVERY m>=2 and EVERY finite q>2**. Adding the separate binary base gives m2 at q2 too; its import set additionally includes SUN4. **Binary q2 with m>=3 remains OPEN here.** Rank1 remains the distinct A1/SL2 adoption. No fresh claim that the v112 reviewers re-adjudicated every old odd/even proof or that historical pending labels were wrong.
+
+## Parent hand reconstruction — binary base
+
+A6's nonidentity even types3,2+2,5,3+3,4+2 exhaust the six-letter partitions; the supplied actual even commutators reduce every nontrivial normal subgroup to a3-cycle, and all3-cycles are A6-conjugate and generate A6. In S6 a normal subgroup intersects A6 in1 orA6; in the first case it centralizes every3-cycle and hence fixes every letter by support intersections. Thus the only normal kernels are1,A6,S6, excluding index3/4/5 and making EVERY actual index6 action faithful ONTO S6, including outer descriptions.
+
+An original index2 source would put the seven other whole cosets into one other fibre of its normal subgroup. One common translation gives relative indices I_j/2 with pair gcd<=3, contradicting exact SUN4 on any four. Index9/order80 fixes a point because its5-cycle orbit cannot have size6, contradicting80 dividing120; index18/order40 normalizes its unique C5 and cannot lie in its20-order normalizer.
+
+Choose the FIRST actual index6 action. Any other index6 subgroup transitive in that SAME action would have whole product G with the first subgroup, forcing coset intersection. A nontransitive order120 subgroup without a fixed point has orbit-stabilizer order at most48/36/8, impossible. Thus ALL actual index6 cosets are point constraints in ONE common S6 action. Their disjoint rook clique has one input or one output; five have ONE full index6 complement containing all three remaining original cosets, whose relative indices are pairwise coprime, impossible. Hence at most four index6 sources.
+
+All remaining full indices divide720 and partition into D(v2>=3, capacity1), A(I=6r,r divides30,pairwise coprime), B(10/20,capacity1), C(15/45,capacity1). Index18 forbids r3, so at most two nontrivial A cofactors. If any contains5, B/C are absent and total<=7. Otherwise at most one nontrivial A remains and eight requires four index6, one12/36, oneB, oneC, oneD. B forbids5 inD; A with v2(D)>=3 forbids3 inD. Thus D8/16 is coprime to C15/45, forcing actual intersection. This uses necessary divisor conditions, never claims every listed index is realized.
+
+On F2^4 the SIX minus quadratic forms Q_(a,b)=x dot y+a dot x+b dot y have a dot b=1, from sum(-1)^Q=4(-1)^(a dot b). Their four explicit pairwise differences are y2,y1,x2,x1, so fixing all six forms forces the identity linear map. The faithful Sp4(2)->S6 action has order15*8*3*2=720 and is onto. ONE isomorphism maps ALL original cosets/indices; FULL PSp preimages preserve them without a saturation assumption.
+
+## Parent hand reconstruction — Sp4(4)
+
+The actual Sylow U has four root parameters and order256; its derived central subgroup is FULL X(F4)L1(F4), from [A_s,L2_t]=X_(st)L1_(s^2 t) and two DISTINCT nonzero scalar isolation. Q=<A,X,L1> is the actual VECTOR-stabilizer O2, R=<L2,X,L1> the distinct plane radical, each order64. With original P=K cap U, index<=4, an abelian coset image puts FULL L1 into P. A nonabelian image is the SAME transitive D8, with theta(Q),theta(R) its two V4 groups and theta(P) a NONcentral reflection. Therefore at least one ACTUAL P-intersection has order32.
+
+The actual exterior-square action on W=ker(contraction), modulo canonical h=e1 wedge f1+e2 wedge f2, has symplectic basis(p,r,t,s). For alpha=Pp+Rr+Ss+Tt+a h the Pfaffian PT+RS+a^2 vanishes iff it is decomposable. Perfect-field square-root uniqueness makes projective quotient points correspond to actual Lagrangian planes; a kernel element fixes every such plane, then every line, so is scalar1. Equal symplectic orders give an onto automorphism. Direct root images A_s->L2'_(s^2), L2_t->A'_t, X_x->L1'_(x^2), L1_y->X'_y exchange Q/R with FULL parameters. Choose K or its actual image and recheck reducibility; no irreducibility-WLOG or independently transformed eight-family is assumed.
+
+A FULL-root irreducible subgroup satisfies exact McLaughlin hypotheses by O2 fixed-vector/normality and Cauchy. Original-B invariance DERIVES nondegenerate orthogonal active blocks; intrinsic transvection axes permute them. A proper4D option has two2D blocks with normalizer2-part32, smaller than actual Sylow>=64. Otherwise a large Q-intersection avoiding full L1 has F2-dimension>=5 and intersection with L1 at most1; a4D complement gives the required ACTUAL X of order16 with NO transvection in the SAME Q=O2(Stab(nonzeroVECTOR)). Parker1.1 applies at q4,n2, not its q=n=2 exception. Proper natural orthogonal alternatives have2-part32 by BOTH supplied quadratic-basis counts |O4+|=2q^2(q^2-1)^2, |O4-|=2q^2(q^4-1), again too small.
+
+Thus K or its unchanged-index image is reducible. A nondegenerate2-space stabilizer has2-part16, impossible; otherwise the invariant radical is isotropic1/2-dimensional. Both actual isotropic parabolic indices are85 at q4. Hence85 divides EVERY proper original index with v2<=2. Among eight original indices at most one is8-divisible, so at least seven are85-divisible, contradiction to pair gcd<=7. Full PSp preimages finish.
+
+## Source and assurance boundaries
+
+The original Parker theorem literally read across85/86 uses NONZERO VECTOR, FULL |X|=q^(2n-2), no transvections, and natural group conclusions; extra Alt6/GammaL2(4) occurs ONLY q=n=2. Parent read all article pages, not just the abstract, and saw Lemma1.2's explicit See[6]. Smith1982, McLaughlin1969 and Suzuki ancestry remain **NAMED/NOT_RECONSTRUCTED**, not newly proved by reading the Parker article. McLaughlin1969 remains CAPTCHA-blocked/unread, no bypass. McLaughlin1967 and SUN4 likewise remain named classical inputs, not independent kernel/formal/full-DAG reconstructions or authenticated publisher-original bytes. The binary statement uses Zhu Theorem1.1's DISJOINT cosets, not an unconditional reading of its shortened later heading. Parent's historical SUN4 then1–300 reading is not backdated to the owner's later complete521LF reading.
+
+Every new cell15–29 source UI/raster string, native saved-pixel crop receipt and blank-clip qualification was parent-read literally, not executed. Blank Chrome clips are NOT source coverage; readable87–94 and distinct WHOLE95 crops are the actual reads. A frozen record saying parent Parker read NONE is correct at its old creation time and is qualified ONLY by the later actual-read addendum, never edited. No global execution/cognition census is claimed.
+
+Inherited DIV30/general-Bertrand, M1 class-at-most-two/abelian alternative, OWN05733m10s/047, owner premature078 park, reviewer cadence/clock and all parent findings remain. Reviewer F has extensive serial Sun exposure; E has broad same-harness exposure. No blind/configured-family/cross-vendor/human/formal/kernel/executable/triple/novelty/SOTA/priority acceptance.
+
+**Original unrestricted Sun8 remains UNMET:** binary higher ranks, other Lie types, GL/PGL/semilinear/exotic-central/nonsimple/normal extensions, other alternating/symmetric degrees, infinite quotients and the actual mixed-alpha/private-source lift barrier remain. No arbitrary-group reduction, automatic normal/composition-factor closure, globalSun7/R8/tbound, eight-coset witness or independent-discovery count. Same original18/HOLD/cutoff October27 11:05:38/deadline12:35:38 PDT; no scientificexecution/newGO or round closeout.
+
+## Live binding
+
+|Source|LF|SHA256|
+|---|---:|---|
+| `mathematics/evidence/three-area-20261023-96h/parallel-18/sun-coset8/sun8-S6-Sp4-2-actual-common-action-buckets-v1.md` | 123 | `f54c3c94abb6f6062ce9b583db7c83bc032d4892cdbaded36f0567635748f281` |
+| `mathematics/evidence/three-area-20261023-96h/parallel-18/sun-coset8/sun8-binary-Sp4-S6-complete-packet-v8.json` | 43 | `d4f8c6408d8a4375b3a334c24ed362cbed3cabbace0ca81bcf1a096f3eeda347` |
+| `mathematics/evidence/three-area-20261023-96h/parallel-18/sun-coset8/sun4-binary-S6-source-boundary-v1.txt` | 9 | `e2ad321d294ecac1e59416bcb5813e195babe8580076339217c86982170e2d36` |
+| `mathematics/evidence/three-area-20261023-96h/parallel-18/sun-coset8/sun8-Sp4-4-actual-exterior-square-radical-lift-v1.md` | 169 | `b3501f1774b806e4f15e744ed37c57e49c3725049d8ab646e8758901535c6962` |
+| `mathematics/evidence/three-area-20261023-96h/parallel-18/sun-coset8/sun8-symplectic-all-q-gt2-complete-union-v7.json` | 66 | `98664f352d353b3455d3c58242271c3c70c2421de427d3ea6f86a78eaa5fcb67` |
+| `mathematics/evidence/three-area-20261023-96h/parallel-18/sun-coset8/sun8-Sp-PSp-all-odd-fields-actual-heisenberg-v1.md` | 120 | `0a71d24516c4ae6e504994f4f1c3645fc833159915634d41e1030999cec82acd` |
+| `mathematics/evidence/three-area-20261023-96h/parallel-18/sun-coset8/sun8-even-Sp-PSp-gamma3-D8-rank-v1.md` | 131 | `dae64b020be64f4623d635c51f5b36a11037a0a1e60cbead4a8461611ec754e9` |
+| `mathematics/evidence/three-area-20261023-96h/parallel-18/sun-coset8/mcl1967-full-root-classification-source-v1.txt` | 23 | `37c2c59fe554dd720f075307c7f5e23553dc99217f872884ff53aaef3af89a5e` |
+| `mathematics/evidence/three-area-20261023-96h/parallel-18/sun-coset8/parker-rowley2002-source-boundary-v1.txt` | 29 | `b36e71f65856278caae8598bdf17fa6f48f9c83601dacbc6b576586214e280b0` |
+| `mathematics/evidence/three-area-20261023-96h/parallel-18/sun-coset8/resume-checkpoint-057-v1.json` | 37 | `09e765d6abf26170425e18878175c10203683598df2c87f6ec9efbb27e1c7802` |
+| `mathematics/evidence/three-area-20261023-96h/parallel-18/kac-moody/peer-review-v112-E-v1.md` | 337 | `704e41eb9b092112b7941db74e89cbd031eb3b1473a1ff576d82b7cc19357672` |
+| `information-science/evidence/three-area-20261023-96h/parallel-18/guessing-rminus/peer-review-v112-F-v1.md` | 245 | `ffa14526c184e658f90a4fc32a585294362f621ab2b5841a2651ed3b420bcfb9` |
+| `institute/runs/three-area-2026-10-23-96h/sun-Sp-odd-even-entire-parent-v1.md` | 38 | `18397b842bf7e9856617522b5bbb5d8d3e36afbbf15193065d38711693a3c995` |
+| `institute/runs/three-area-2026-10-23-96h/sun-Parker2002-original-visual-inputs-v1.json` | 65 | `09ac6cd2d9906bb517da3cc8ceaf7b5384649e83e508ac4b235ed4f147190334` |
+| `institute/runs/three-area-2026-10-23-96h/sun-Parker2002-parent-visual-read-addendum-1.json` | 81 | `86b3f693f8511efb4ea7ab95fdb6fbfd2e51643a48e336174fa0a8e54bbfc70f` |

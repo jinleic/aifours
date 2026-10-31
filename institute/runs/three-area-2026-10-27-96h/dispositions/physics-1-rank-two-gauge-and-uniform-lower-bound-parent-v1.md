@@ -1,0 +1,31 @@
+# Parent disposition — physics-1-rank-two-gauge-and-uniform-lower-bound-parent
+
+Observed clock before writing: **2026-10-27T19:13:06-0700 PDT**. Same-harness written disposition; not formal/kernel, human, configured-family, executable or novelty acceptance. Independent-model CLI review not performed.
+
+## Source and review frontier
+
+- [Literal original rank-two packet](/Users/jinleic/repos/aifours/institute/runs/three-area-2026-10-27-96h/written-releases/physics-1-rank-two-packet-v1.md), SHA256 `2efbcc2843c806c42b27040dda9e78e35d06fd59113bfc07a6ddc2fa48d9dc86`, 39 LF; Main raw 1–39.
+- [v1 faithful-interface dependency](/Users/jinleic/repos/aifours/physics/evidence/three-area-20261027-96h/parallel-18/werner3-ququart/prerequisite-derivation-v1.md), SHA256 `09b902fa35d379b21c21c5bb83145e0ae336fec986a9ef12eb719f3408e3cbe6`, 219 LF; Main raw previous Main complete raw 1–44,45–88,89–132,133–176,177–219 (see prior disposition).
+- [Entire gauge-obstruction addendum](/Users/jinleic/repos/aifours/physics/evidence/three-area-20261027-96h/parallel-18/werner3-ququart/prerequisite-derivation-addendum-1-no-equal-diagonal-gauge-v1.md), SHA256 `5f711787a2e4a8b2a9aa08a68c5183f7aae26f55273409fe0e766bc0dc3fcf92`, 154 LF; Main raw 1–52,53–104,105–154.
+- [Entire mixed-coupling addendum](/Users/jinleic/repos/aifours/physics/evidence/three-area-20261027-96h/parallel-18/werner3-ququart/prerequisite-derivation-addendum-2-mixed-nonerasure-v1.md), SHA256 `b80db5d9bfb07433f6f59862d1841c2b78820fd4219e1c592f5352bf7150ee8a`, 80 LF; Main raw 1–80.
+- [Entire rank-two bound addendum](/Users/jinleic/repos/aifours/physics/evidence/three-area-20261027-96h/parallel-18/werner3-ququart/prerequisite-derivation-addendum-3-global-rank-two-lower-bound-v1.md), SHA256 `86b90668fc1fdd1319c14aed5b83e27082cf363e8137cbf6de4091b91ee71d53`, 173 LF; Main raw 1–58,59–116,117–173.
+- [Entire w12 review](/Users/jinleic/repos/aifours/information-science/evidence/three-area-20261027-96h/parallel-18/guessing-rminus/review-w12-physics-1-add123-v1.md), SHA256 `3a1a3152856878a881d724c331f0cd954fa80206f6d49c9ac20e32c2966dc77b`, 243 LF; Main raw 1–49,50–98,99–147,148–196,197–243.
+- [Frozen manifest scope correction](/Users/jinleic/repos/aifours/institute/runs/three-area-2026-10-27-96h/review-waves/w12-physics-1-add123/manifest-scope-clarification-addendum-1.md), SHA256 `6fb451eb37edcb1e416bf47947e70431da6c2add46afbe2678b6fc4ed81a7d24`, 11 LF; Main raw 1–end.
+
+The earlier [factor-SOS disposition](/Users/jinleic/repos/aifours/institute/runs/three-area-2026-10-27-96h/dispositions/physics-1-unrestricted-factor-polynomial-sos-obstruction-parent-v1.md) records Main's complete v1 dependency read; the present gate adopts the addenda, not all unrelated v1 claims. Reviewer InfoGuessingRminus-2 returned 0 author-mathematical F/M/m with one separate parent manifest-wording MINOR. The binding clarification says the strict claim is q3(C)>−(3/4)||C||² for nonzero legal C; the middle nuclear/HS comparison in the displayed weak chain can be equality. The source itself states the correct weak chain. The reviewer is nonblind and its older process/source findings persist. The present work did not read or authenticate the source underlying the separate full-target claim.
+
+## Written-supported partial results on every actual rank-at-most-two operator
+
+Let H=(C⁴)^⊗3, let q3 be the exact alternating sum of unnormalized partial-trace Hilbert–Schmidt squares in the literal packet, and let U:C²→H be any isometry. Write the original positive two-block compression X_U=[[D1,A],[A†,D2]], with the original quadratic-form block orientation K_U=[[D1,A†],[A,D2]].
+
+1. **Universal gauge obstruction.** With Λ=L⊗L⊗L and L(T)=Tr(T)I₄−T/2, the actual compression blocks are Λ applied to the matrix units of the range basis. Λ is injective, Tr D1=Tr D2 and D1≠D2; D1−D2 has both signs. Thus neither equality nor either Loewner ordering of the diagonal blocks is available in ANY orthonormal basis of ANY actual range plane. This does not make K_U indefinite.
+2. **Mixed coupling cannot be erased.** D1,D2,A,A† are complex-linearly independent for every U. No nonzero complex multiple of A is Hermitian, and q3 is not additive across the two orthogonal range columns for ALL co-range choices. These are obstructions to specified universal gauge/cancellation shortcuts, not evidence of a negative q3.
+3. **Exact original-plane interface.** With D_U=D1+D2 and the stated auxiliary unitary J, K_U=J†(I₂⊗D_U−X_U)J. Hence the original q3≥0 assertion on all actual rank-at-most-two operators is equivalent to X_U≤I₂⊗Tr_aux X_U for EVERY actual range plane; no inverse or degenerate-column exclusion is needed. Generic positivity alone yields only the weaker factor-two domination.
+4. **Universal bound and strict gap.** Every legal C satisfies q3(C)≥||C||²_HS−(7/8)||C||²_*≥−(3/4)||C||²_HS. The endpoint comparison for q3 is strict for every nonzero C. Compactness of the unit-HS rank-at-most-two set yields an unspecified ε>0 with q3(C)≥(−3/4+ε)||C||²_HS for all legal C. Neither ε nor a nonnegative endpoint is provided.
+
+## Parent checks and exact limits
+
+Main checked Λ's scalar/traceless action and injectivity, preservation of the four independent matrix units, the auxiliary block reduction, the SAME-C singular-value/triangle bound and the all-variable equality-case contradiction using the rank-one floor and mixed-correlation bound. All are universal written identities, not evaluated operators, range planes, matrices or numerical diagnostics.
+
+The original q3≥0/negative-operator alternative remains unresolved by these addenda: no factor-one domination, legal negative operator or all-method no-go follows. [The later blocked-line decision](/Users/jinleic/repos/aifours/institute/runs/three-area-2026-10-27-96h/physics-1-and-info-5-blocked-line-parent-decisions-v1.json) records a matched public full-target claim whose external finite certificate data were NOT admitted or replayed; this gate neither verifies nor refutes that claim. The old selected/protected source material, R-minus source episode, parent L1, Shor/w45 selected-check quarantines, global parent source-access pause, N4 UNKNOWN historical child exit unestablished and auxiliary214 STOP remain. Formal/kernel, executable, human, independent-model CLI, novelty and book-source verification were not performed.
+

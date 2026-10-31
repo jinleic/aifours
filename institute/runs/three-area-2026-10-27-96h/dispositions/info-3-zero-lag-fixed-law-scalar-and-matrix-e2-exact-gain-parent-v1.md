@@ -1,0 +1,26 @@
+# Zero-lag fixed-law expected path gain: scalar E1/E2 and matrix E2
+
+**Disposition: same-harness written support at the fixed-law scopes below.** Native clock before composition: 2026-10-30T03:47:17-0700 PDT. The f193 union review reports scalar **0F/0M/0m**, matrix-E2 **0F/0M/0m**, and one retained **MAJOR** in the separate frozen matrix-E1 truncation plus one dimension MINOR. The subsequent matrix-E1 correction is under f294 review; this disposition does not assume its outcome.
+
+Let g(y)=exp(y²/2)−y integral_0^y exp(s²/2)ds, and r its unique positive zero. Reviewer-owned exact rational controls report 1.30692<r<1.30693; parent did not rerun those controls. Standard stochastic-analysis imports are finite-dimensional Ito/localization and optional stopping, Brownian scaling, deterministic variation of constants, matched-first-derivative smoothing, Tonelli/Fatou/dominated convergence and finite-dimensional compactness.
+
+## Adopted at exact scope
+
+1. **Scalar E1 and E2:** for the actual fixed law dx=w dW, z=x, x0=0 over finite T>0 with progressive inputs and the literal ratio E||z||_L2/E||w||_L2, the gain is r sqrt(T) in both domains. Each nonzero E1 input obeys the strict bound E||z||<r sqrt(T) E||w||, so the supremum is not attained. Pointwise strict feasibility includes gamma=r sqrt(T); a uniform positive margin requires gamma>r sqrt(T). The same law's RMS gain is sqrt(T), a distinct criterion.
+2. **Matrix E2:** for arbitrary real finite P,B,C of positive dimensions, one scalar Brownian driver and the actual given law dx=Px dt+B w dW, z=Cx, x0=0, define G(u)=B^T integral_0^u e^(P^T t) C^T C e^(Pt)dt B and cT=sqrt(lambda_max G(T)). The E2 literal gain is r cT and the RMS gain is cT, for arbitrary ranks. For cT>0 every nonzero E2 input has strict ratio<r cT; for cT=0 the output and gain are zero, and with positive input dimension the strict pointwise criterion holds iff gamma>0. No controller is constructed.
+
+## Parent written reconstruction
+
+- g'(y)=−integral_0^y exp(s²/2)ds and g''=−exp(y²/2), so g''−y g'+g=0. g strictly decreases from1, g(1)>0 by strict endpoint comparison, and g(y)<=1−y²/2. Thus exactly one r>1 exists.
+- The inner radial profile f=−g/alpha and outer f=rho−r match in value and first derivative at r; its tangent gives f>=rho−r and 0<=f'<=1. For F(x,a)=sqrt(a)f(||x||/sqrt(a)), radial/tangential Hessian comparison gives 2F_a+lambda_max D²F<=0. Applying finite-dimensional Ito with localization to any progressive vector martingale integrand yields E||M||<=r E sqrt(clock). Smoothing or a valid generalized-Ito rule is a named analytic input, not a formal proof.
+- Finite output samples form a terminal vector martingale; their clocks converge by deterministic kernel boundedness and pathwise/expected domination. Riemann convergence and Fatou give the E2 weighted upper bound. For the scalar E1 domain, the pointwise progressive cutoff gives E||w−w_k||->0, and localized stochastic-integral continuity identifies the actual output; weighted and output limits pass. The matrix frozen full-path cutoff is NOT used.
+- For any 0<b<r, the boundary-stopped Brownian martingale U(x,t)=sqrt(t)g(x/sqrt(t)) yields E sqrt(1+tau_b)<infinity. Each burst input with bounded stopped clock is progressive E2. For the matrix law fix its duration limit at fixed finite clock cap N, then send N->infinity, then b->r; the deterministic kernel-continuity error tends to zero at the first step. This lower family establishes the supremum, not attainment.
+- Positive cT gives G(T−s)<cT²I in quadratic form for each s in (0,T): equality would force the analytic kernel C e^(Pt) B a to vanish on an interval and hence everywhere, contradicting top positive energy. Nonzero L2 paths have positive-time support, giving strictness. The cT=0 branch follows from vanishing continuous kernel; positive input dimension supplies a nonzero test input.
+
+## Exclusions and evidence
+
+The original matrix E1 step uses a nonprogressive full-path-norm indicator and remains a **MAJOR defect**; no matrix-E1 theorem or f294 repair is adopted here. The f193 reviewer supplied a progressive fix and the author later wrote a full additive correction, but neither is retroactively substituted. The reviewer dimension MINOR is resolved prospectively here by n,m,p>=1; zero rank is allowed, zero-dimensional input is not. The full matrix E1 extension and its strictness are pending independent integration.
+
+Parent displayed the complete165-LF scalar source,137-LF matrix source,154-LF review and126-LF later correction; all three frozen source/checker hashes/bytes/LF match the manifest. Parent did not read or execute the author checker, and did not rerun the reviewer controls. Review [f193](/Users/jinleic/repos/aifours/institute/runs/three-area-2026-10-27-96h/review-waves/f193-hinf-zero-lag-exact-scalar-and-matrix-gain/review-v1.md) includes separately receipted exact root/matrix controls and the disclosed source M1/m1. The parent did not use any selected finite configuration as proof.
+
+This is a fixed zero-lag law with one Brownian driver, not the original general controller synthesis, positive-lag formula, arbitrary noise/feedthrough class, book equivalence, novelty, human, independent-family or formal/kernel verification.

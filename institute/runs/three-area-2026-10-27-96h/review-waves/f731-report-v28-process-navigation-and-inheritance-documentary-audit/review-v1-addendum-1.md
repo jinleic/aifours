@@ -1,0 +1,5 @@
+# F731 review v1 — additive dispatch LF-count correction
+
+This addendum corrects only the dispatch-receipt line count in the control-pin table of review-v1.md, SHA256 048d36c50bccedb291a2909ba5b4c63162a28fb8768de495fd6062250b8304f7. The table states 31 LF; the complete dispatch-receipt-v1.json has **32 LF**, as observed by a local metadata-only wc -l call. Its SHA256 remains ac10e3029c9cfe062c4b584fc342e1b14565cce95c62d1fedfe79265035753ce. The original prebody RAW request for LF21–40 displayed the ending, including line 32; this is a written count correction, not newly completed input coverage or a retrospective claim.
+
+Main was notified immediately after the discrepancy was identified. No frozen file or earlier finding was edited. The documentary verdict remains INCONCLUSIVE; proposed report findings remain 0F/0M/1m, separate from Main's classification of one reviewer PROCESS MINOR for the part-02 24-LF access. All prior scientific and assurance limitations remain unchanged. Await the parent's independent complete read and disposition of the original return, this addendum, and the separate process disclosure.

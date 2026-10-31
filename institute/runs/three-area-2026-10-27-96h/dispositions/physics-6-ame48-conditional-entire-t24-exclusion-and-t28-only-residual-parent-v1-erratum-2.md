@@ -1,0 +1,3 @@
+# Erratum 2: parent process classification
+
+The chronology corrected in erratum 1 is recorded as **ONE parent PROCESS MAJOR**: the parent wrote a high-consequence composition disposition with an incorrect assertion that all eleven source dispositions had already been read. Three fresh reviewers had read all eleven before their verdicts, but their reads do not substitute for the parent read originally claimed. The later complete parent S11 read and erratum 1 restore the source-read boundary prospectively; they do not backdate the read or erase the process finding. On the disclosed facts this is not, by itself, a mathematical refutation or a held scientific episode. No original-source, novelty, independent-family, human or formal/kernel acceptance follows.

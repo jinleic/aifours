@@ -1,0 +1,21 @@
+# With three classical mates, an intrinsic C6 component has projector span at least thirteen
+
+**Disposition: same-harness written support at the frozen f218 scope, conditional on adopted GAP3.** In an ordinary four-MOQLS(8) containing three actual classical members, let `C` be an intrinsic irreducible component of the remaining member whose complex span `W` has dimension six. Then the real span of the rank-one projectors of the rays in `C` has dimension at least 13. All complex phases, individual classical output bases and all actual row, column and tensor-product ONBs remain in scope. The sole prior mathematical import used is the expressly adopted nonfixed-ray multiplicity bound GAP3, at its four-MOQLS(8) scope.
+
+## Written mechanism
+
+- Three classical mates give five genuine line classes: rows, columns and the three classical-symbol classes. Each line is an actual Q-ONB and meets `C` in a six-ONB; the five lines through one cell share no other cell.
+- Three disjoint mate-weighted resolutions, together with the actual row and column stars, give `A_u ≥ 5(P_W−P_u)`. For orthogonal actual rays `u,v`, subtracting the `u`-active contribution from STAR(v) gives a common-star projection sum at least `2I` on `W∩u⊥∩v⊥`.
+- Two-plane mass gives at most three distinct actual rays, with an orthopair and a multiplicity-one third when three occur. Three-plane mass first gives `10N≤72`; the seven-ray case is excluded by the degree/triangle count and the fact that two disjoint three-ONBs cannot have two zero transition entries, leaving `N≤6`.
+- Under `b≤12`, the rank-nullity bound on each ray's real cross image restricts star spans. The independently reconstructed sparse-unitary lemma rules out a connected five-block pivot; COMMON and multiplicity exclude a `4+1` pivot. A forced `3+1+1` pivot reduces the possible mixed rays to an independent two-plane pencil. At most two actual net lines through the pivot are pure-only and at most two further lines can be mixed, contradicting the five actual lines.
+
+This is **not** an unrestricted C6 span bound, a C6 nonexistence theorem, a full q1 exclusion, a four-family construction, an M(8)/maximum-three result or a novelty claim. The previously supported unrestricted LOCAL6≥12 remains unchanged; components with `b≥13` and the other q1 cases remain open.
+
+## Source, review and parent checks
+
+- Author source: `/Users/jinleic/repos/aifours/physics/evidence/three-area-20261027-96h/parallel-18/moqls8/frontier-20261029-q1-C6-span-thirteen-complete-v1.md`, SHA-256 `26efd7dbd91ec64bcf1ae6b0ec16e38bdd874639eb353ebbfb4f950330d1c468`, 170 LF. The parent displayed it completely in raw windows 1–15, 16–30, 31–45, 46–60, 61–75, 76–90, 91–105, 106–120, 121–135, 136–150, 151–165, 166–170.
+- Frozen manifest: `/Users/jinleic/repos/aifours/institute/runs/three-area-2026-10-27-96h/review-waves/f218-moqls-q1-C6-span-thirteen-three-classical-mates/manifest-v1.json`, SHA-256 `eec45e4034f4598b4306c74b9cacd26cd11bd66c78cd37507d65b0b4ff1f0a03`. Review: the adjacent `review-v1.md`, SHA-256 `93ec4e0cfc248148504f855433d2b54892b783a88615ea1b3ec8ffa5ffaebb2a`, 165 LF. Parent displayed the review completely in raw windows 1–15 through 151–165. The review reports scientific **0F/0M/0m** and reconstructs the five-net interface, STAR/COMMON, capacities, sparse-unitary lemma and every pivot case.
+- Parent hand-checks: total two-plane mass `8·2=16` bounds three disjoint five-unit target directions and a third-ray multiplicity by `15+m≤16`; total three-plane mass `8·3=24` gives `10N≤72`; `2+2<5` is the final net-line count. The bounded reviewer-owned exact control exited 0 and checked support-pattern and seven-vertex graph consequences with intended-reason negatives; those finite checks do not replace the written proof.
+- **Process finding:** the reviewer recorded one PROCESS MAJOR because its control script was written before a native pre-write clock was observed. The actual control run clocks, script hash and exit are recorded; no script creation time is asserted. This is retained separately from the scientific verdict.
+
+The parent observed `/bin/date` `2026-10-29T13:43:19-0700 PDT` before creating this disposition. Same-harness review and parent reading are not human review, independent-model-family review, formal/kernel verification or novelty clearance.

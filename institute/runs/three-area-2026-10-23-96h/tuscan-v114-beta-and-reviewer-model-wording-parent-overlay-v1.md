@@ -1,0 +1,11 @@
+# Tuscan v114 — additive beta accounting and reviewer terminology qualifications
+
+Parent observation before creation: **2026-10-26T08:15:55-0700 PDT**. MainACTUALLYreadALL1534LFnewv19–v49/fourerrata, both234/372LFreturns, whole126LFrainbow/100LFasymmetry/11LFliteralcontroland39LFkernel-admissioncorrection.
+
+**ONEauthorMINOR:** [v24LF109](../../../information-science/evidence/three-area-20261023-96h/parallel-18/tuscan2-11/actual-control-etzion-example2-m36-v24.md), SHAe1fa1bd4dc53a90559b7b40a41bfbcab35ad31f96057f7d0121fb15a37194422, writesgeneral`m=110−2N2`. CorrectALLoff-centre-neighbouraccountingis**`m+2N2+beta=110`**,hence`m=110−beta−2N2`,wherebetacountsfixedaddedboundaryturns. Bothreviewersidentifyit. Theliteralcontrolandnewone8/samecentreclosureshavebeta0, soactualm36/78distinctD2/21excessandalltheirproofsunchanged. DoNOTusethebeta0formulaonretaineddistinct3+5/beta2orhigherunrestrictedcases. ThisisnotanactualTuscan2witness/supportcap ornewfiniteexecution.
+
+**ReviewerAmodelwordingcorrection:** [A234LFreturn](../../../mathematics/evidence/three-area-20261023-96h/parallel-18/kac-moody/peer-review-v114-A-v1.md)§4callsK_xlocalinvolutionsandGFafixed-point-freeglobalinvolution. ThosecompressedwordsareFALSE: K_xareGENERALPERMUTATIONSfixingx,withlongcycles;GFispossiblyrepeated/diagonalboundary-TURNMATRIXfromactualf,p(notnecessarilybijections),NOTaperutation/involution/fixed-point-freeobject. MainadoptsACTUALbase/B§2model,NEVERthosewordingsaspremises. A§5's'sixactualbranchneighbours'isNOTfullone8F1: eightbranch+twoshort=TENdistinctv-neighbours; 2+c0+cLcountsaselectedsubset(up tosix),notglobaldegree6. TheseareREVIEWERscope/terminologyqualifications,nopatchtoauthor/oldtheorems. ParentnotifiedAforownadditiverecord; originalreviewhistorypreserved.
+
+**RetainedoldW1:** v17C0=BendmeansENDofB^-traversal/physicalB0,NOTphysicalB_b. **ExplicitN2notationcrosswalk:** v23K'meansEXCLUSIVE-windowsetandQmeansOVERLAP; later v31Q/K'areREVERSED. ItsCaseS/Tnamesarenotdefinedinv22; operateonactualsets/rowidentities,notunreadnamedlemma. Notanewmissingtheorem; bothreviews supplydirectbridge.
+
+FOURerrata v37E1/v38E1/v40E1/E2,cp046withdrawalofcp045FALSEequality,allhistoricalkernelZEROsandfindingsremain. Originalpinnedbytesunchanged; no strongerassurance/scientificGO/novelty/roundcloseout.

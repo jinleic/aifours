@@ -1,0 +1,22 @@
+# PH7 at 8/9: exclusion of the 5/7-cycle theta graph with equal outer rates
+
+**Disposition: ACCEPT the ≥3-distinct-common-rate branch unconditionally; accept the full "all five common rates" statement only conditionally on two named, unreviewed same-author imports.** Native clock observed before composing: **2026-10-28T20:19:36-0700 PDT**. Computer-assisted, same-harness mathematics; no human, independent-model-family, formal/kernel or novelty certification. This is one eight-edge shape only, not a PH7 exclusion or construction at 8/9.
+
+## Adopted statement
+
+Let G be a 7×7 real matrix whose off-diagonal support is the directed theta graph formed by a 5-cycle and a 7-cycle sharing a four-edge path, with positive edge weights, positive diagonal escape rates `u₁,…,u₅` on the five shared vertices and a common positive rate V on the two outer vertices. If at least three of `u₁,…,u₅` are distinct, then `D(y)=y[(y+1)²+8/9]²` does not divide `det(yI−G)`. Consequently no PH realization at `z=8/9` with this shape and equal outer rates exists in that regime. For at most two distinct common rates the same conclusion holds **if** the two-valued theorem (`3daac4b259227270fd27f588d8b1706a4861f95b5a4373f5afe95b81e5557685`) and its transitive `4+1` import (`2a9b73522733534d3082fab05b8760f1663c19429fb05c348ee571f75955df54`) are correct; neither has an independent review.
+
+## Reconstructed argument
+
+The permutation expansion has only the diagonal term and the two cycle terms, so `P(y)=A(y)(y+V)²−D₁(y+V)²−D₃` with positive D₁,D₃. Matching coefficients against `D(y)·(y²+py+q)` eliminates p,q and expresses `s₂,s₃,s₄` rationally in `(s₁,V)` with positive denominators; the `y⁰` equation forces `s₁>4`. Real positive rates make Newton's inequality `s₃²≥2s₂s₄` strict for not-all-equal rates (derivative/Rolle argument) and make the 3×3 Hankel determinant of power sums strictly positive exactly when three distinct rates occur (Cauchy–Binet). The six resulting polynomial constraints in `(s,V)` admit an exact cylindrical decomposition: 23 projection polynomials factor exactly into 17 factors with 25 positive roots and 26 base intervals; a two-point section census finds 82 cells, each with a strictly negative constraint. Delineability on each open base interval plus openness of the feasible region shows the feasible set is empty.
+
+## Evidence
+
+- [Candidate, 111 LF](../../../../mathematics/evidence/three-area-20261027-96h/parallel-18/phase-type/frontier-20261028-ph7-equal-outer-all-common-rates-critical-exclusion-v1.md): `4e3dc5292f40e0d16dba0f57a4b106956ce78ae35d1d3cdcfdb680376981f9f3`. The manifest's `expected` field mistyped one hex digit; [checkpoint056's correction record](../checkpoints/056-f90-hash-transcription-correction-v1.json) establishes a transcription error, not source drift, and the reviewer re-verified the pinned bytes.
+- [Frozen manifest](../review-waves/f90-ph7-equal-outer-all-common-rates/manifest-v1.json): `ce59823f3012236a5ce61c6566d204c4dc29e0539e54252588120839d4a0fb61`.
+- [Independent review, 90 LF](../review-waves/f90-ph7-equal-outer-all-common-rates/review-v1.md): `d5e9af15e50d9861271f7cf2f23bcf1a87920486455d597aa1e931d9ce91ad4b`; 0 FATAL / 0 MAJOR / 2 MINOR plus the manifest process finding. Its own standard-library replay v4 reproduced the elimination identities, all six constraint polynomials, 23/23 exact projection factorizations with signs, 25 positive roots by its own Sturm chains, 26 base intervals and 82+82 cells at two base points per interval; three failed earlier reviewer versions are preserved and explained (a sign-normalised Sturm chain was the reviewer's own defect). Load-bearing structure: 30 cells close only through the Hankel strictness and 16 only through strict Newton.
+- Parent read the candidate statement and the full review; the earlier adopted [short-cycle restriction](math-1-ph7-critical-short-cycle-parent-v1.md) and [eight-edge/irreducibility](math-1-ph7-global-irreducibility-eight-edges-parent-v1.md) results are consistent with and independent of this shape-specific exclusion.
+
+## Boundaries
+
+MINORs adopted as qualifications: positivity of normalized rates needs the Perron/irreducibility sentence supplied by the review; the `4+1` import is unnamed in the candidate. Nothing is claimed for unequal outer rates, the other thirteen eight-edge shapes, nine or more transitions, other z, PH7 existence/exclusion at 8/9, the minimum order, or novelty. The later girth≥4 two-or-three-cycle candidate is separate and unreviewed.

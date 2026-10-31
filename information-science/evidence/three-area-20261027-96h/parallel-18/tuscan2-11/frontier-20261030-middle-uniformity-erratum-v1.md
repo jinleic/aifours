@@ -1,0 +1,7 @@
+# Erratum 1 to the middle-uniformity packet: corrected census count and weakened Corollary 2
+
+Owner **InfoRecursiveMDS18-2**, info-4. `/bin/date` before writing: **Fri Oct 30 03:55:55 PDT 2026**. Additive to `frontier-20261030-middle-uniformity-position-census-v1.md` (SHA `89de61f9…a491`), preserved unchanged. Load-bearing MAJOR in Corollary 2, per Main's reading; no computation needed.
+
+1. **Census count corrected.** Positions 0 and n−1 occupy one row each; the remaining n−2 rows split into position 1 (α₁(a) rows), position n−2 (α_{n−2}(a) rows) and the interior positions 2..n−3. The interior row count is therefore **n−2−α₁(a)−α_{n−2}(a)**, not the displayed n−4−α₁−α_{n−2}. (The displayed table did not even sum to n rows; the corrected one does: 1 + α₁ + (n−2−α₁−α_{n−2}) + α_{n−2} + 1 = n.)
+2. **Corollary 2 corrected and weakened.** The unconditional census gives **α₁(a) + α_{n−2}(a) ≤ n−2** for every symbol (n ≥ 4; at n = 3 position 1 is both second and penultimate and the census double counts). At n = 11 the bound is ≤ 9; the 5+5 exclusion still follows since 10 > 9. The stronger claim α₁+α_{n−2} ≤ n−4 ("each at most 7 at n = 11") is **unproved** and is withdrawn; no branch is excluded beyond what the corrected inequality proves. Theorem 1 (middle-uniformity) and Theorem 3 (double realization) are unaffected.
+3. **Definition made explicit.** In Theorem 3, F(b) denotes the **second symbol of row b**; hence V(a) = {b : F(b) = a} is the set of rows opening with the adjacency b→a. As before, Miss⁻¹(a) and V(a) both have cardinality α₁(a).

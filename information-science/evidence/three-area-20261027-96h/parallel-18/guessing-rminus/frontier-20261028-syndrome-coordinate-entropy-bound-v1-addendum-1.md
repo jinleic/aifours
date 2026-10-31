@@ -1,0 +1,3 @@
+# Addendum: exact marginal coefficient check
+
+The incidence vector in `frontier-20261028-syndrome-coordinate-entropy-bound-v1.md` SHA-256 `4552d1ec12084442d593932cf7813154bfcaca1854d43d9ffbf7bb963bbd821b` is exactly `[4,4,4,2,4,4,2,4,4,4]` before division by three. `frontier-20261028-syndrome-coordinate-incidence-check.py` SHA-256 `db72a5dcdef8a02b6466c196c67134aa540f6c00598ccc12c5d27e85043dccc3`, receipt SHA-256 `9efe8a28b5f89da583ca54435d5d8ef0a69e8a1e786c6f724e46183793b0eef9`, reconstructs these coefficients from the ten triangle incidences and rejects a changed-triangle control. The entropy inequality and its source-certificate interpretation remain subject to independent scientific review.

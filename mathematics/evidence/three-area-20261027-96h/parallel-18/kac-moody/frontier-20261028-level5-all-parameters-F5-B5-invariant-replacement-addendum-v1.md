@@ -1,0 +1,16 @@
+# Additive replacement of invariant-map inputs in the complete F5 candidate
+
+**MathKacMoody-2 / math-3.** Native observation before this additive write: **Wed Oct 28 18:29:41 PDT 2026**. This is a second, NEW UNREVIEWED source route; it is not a revision of a frozen candidate, a formally verified proof, a parent decision, novelty or priority conclusion.
+
+The earlier all-parameter F5/B5 composition `frontier-20261028-level5-all-parameters-F5-B5-composition-candidate-v1.md`, SHA `a2eb1daf9ee689ed6f43c218d2e8f9486823a52cfa789f46cd0fff6f9f491bcc`, used the existing parent-supported row-one and min(r,s)>=2 invariant theorems as precisely named inputs. The first r1 replacement addendum, SHA `5e41be3d9a89f913722f61d60921189e6fdf57867fd21e1b926c3221a213a36f`, replaced only its seven NONTRIVIAL r1 map inputs. None of those original files is changed here.
+
+For a THIRD exact conditional route, retain that complete new r1 seven-map replacement and also replace BOTH prior parent invariant theorem imports by the following two complete NEW UNREVIEWED source/code candidates:
+
+1. `frontier-20261028-level5-r1-invariant-independent-candidate-v1.md`, 51LF SHA `d32ef42f0db688276c33de02b428db36039ebb5e3fd1284da810ef0a42c82e0a`: entire ACTUAL r1 invariant quotient for s>=2, full both-ideal fixed cases s2/s3 and a full one-signed quotient polynomial for s>=4; s1 is the named symmetrizable classical case. Exact whole node exchange covers the s1 axes.
+2. `frontier-20261028-level5-invariant-full-quotient-independent-v1.md`, 92LF SHA `a35eba3b7f99af7663a0fb14f6645240351fdefda59b9aee9c02b4f89fe37510`: ENTIRE actual invariant 6-source map for every r,s>=2, and hence the actual 3→5 quotient kernel zero, via its separate free-source determinant plus full ideal-type exclusion. Its 28 strictly positive shifted coefficients and complete independent same-owner reconstruction are pinned there.
+
+The two previously parent-supported invariant sources remain valid at their own named written/classical inputs and retain their actual prior priority. They are **not necessary premises of this new route**, and this replacement neither authenticates nor invalidates any old proof or process. The shared new full-Cartan/positive-presentation/PBW source candidates, all current exact programs and their reviews, the node-exchange partition, r2/r3/fixed/large-row new map candidates, and the named classical symmetrizable diagonal are still essential; none becomes accepted by this addendum.
+
+If all explicitly named new source/ideal/code/parameter-partition gates are reviewed and succeed, this THIRD route yields candidate F5 for the entire registered positive-integer A(r,s) family without relying on old r1 map or old invariant parent theorems as correctness premises. Conditional B5 still additionally requires B4 at its chosen exact inputs and the coordinate-zero/one boundary. It says nothing about arbitrary GCMs, level>5, all-level Serre, human/formal proof, novelty or priority. Historical H13 remains EXTRA for the OLD A(2,1)/(1,2) consequence and is not authenticated; no older ZERO/STOP/HOLD, chronology or process finding is erased.
+
+**END — additive all-new-map route, exact source/independent review still pending.**

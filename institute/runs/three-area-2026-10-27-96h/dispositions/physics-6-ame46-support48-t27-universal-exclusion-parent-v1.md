@@ -1,0 +1,31 @@
+# No AME(4,6) state has support48 with exactly27 maximal coefficients
+
+**Disposition: same-harness written support for the universal exact-t27 exclusion.** Native clock before composition: 2026-10-30T07:52:09-0700 PDT. f316 reports mathematical0F/0M/0m after a full independent written reconstruction. This particular proof uses complex unitarity and finite counting only; no-OLS(6) is NOT a mathematical prerequisite for the standalone exclusion. Previous combined records retain their original declared no-OLS provenance.
+
+## Theorem
+
+No normalized complex AME(4,6) state in ANY product basis has exactly48 nonzero coefficients, of which exactly27 have modulus1/6. All amplitudes, choices of product basis and all three paired flattenings refer to the SAME tensor. No reality, equal-residual-modulus or phase restriction is imposed.
+
+## Parent reconstruction
+
+LetP be the maximal entries andE the other support of the scaled tensor6psi. In every paired cut,6psi is unitary. Every unit-modulus entry exhausts its row and column, so P projects injectively onto all six pair systems and no P pair value is used byE. Deleting its27 singleton rows/columns leaves a9x9 unitary with21 nonzeros and minimum line degree2; its total row excess is3. Connected support components are square, have nonnegative excess, have no excess1, and an excess0 component is a full2x2 block.
+
+The elementary excess3 lemma is reconstructed independently of no-OLS: in any positive-excess component, degree2 row supports are disjoint column pairs, each has at least two higher-row neighbors, and the counts s<=b<=3 imply at most6 rows. Exhausting orders3–6 by parity of pair intersections and minimum column degree leaves only the full3x3 component. Thus EACH of the three cuts has one full3x3 core and three full2x2 blocks. In every pair system there are three residual pair values of multiplicity3 and six of multiplicity2.
+
+Write H_ij for the three high pair values in systemij. The full core in cutij|kl is the Cartesian set H_ij timesH_kl; for each residual word, its opposite pair projections are high together. For a symbol a at partyi, p_i(a)=number of P-words using it, d_i(a)=6−p_i(a), s_i(a)=number of E-words using it. The shared SAME-TENSOR high marginal h_i(a)=s_i(a)−2d_i(a) equals the number of high neighbors in H_ij, independently ofj; h_i>=0 and sum_a h_i(a)=3.
+
+A crossed Cartesian core contains exactly h_i(a)h_j(b) distinct E-words with the fixed coordinates a,b, while no residual pair has more than3 extensions. Hence h_i(a)h_j(b)<=3, so at most one party has a high marginal>=2. If such an exceptional symbol exists, choose an arbitrary high neighbor in another party; the other parties have unit positive high marginals. Combining the two opposite Cartesian cores forces one of their symbols to have at least two high neighbors, contradiction. This choice is universally quantified within the proof, not a selected diagnostic. Thus each party has exactly three high symbols and each H_ij is a perfect matching between the two high alphabets.
+
+Crossed full cores project onto the complete three-by-three product of each pair of high alphabets. There are already nine such pairs, exactly the nine residual pair values, so every residual pair projection equals that product. Therefore a maximal word can carry high symbols in at most one coordinate. But every one of the three high symbols in each of four parties has exactly three maximal-word occurrences, totaling36 high-coordinate incidences among only27 maximal words. The impossible inequality36<=27 completes the proof.
+
+## Prospective composition and open cases
+
+Combined prospectively with [the previously adopted support48 branch result](/Users/jinleic/repos/aifours/institute/runs/three-area-2026-10-27-96h/dispositions/physics-6-support48-maximal-count-24-27-28-and-distance-interface-parent-v1.md), support48 can have only t=24 or t=28 at that combined result's original no-OLS(6)/t<=28 provenance. The present t27 theorem itself does not need that import. Neither surviving branch is excluded or proved feasible; no support48 no-go, N>=49, exact minimum or witness follows. The separate t28 phase-interface result remains only necessary/conditional.
+
+## Evidence and process qualification
+
+Parent displayed the complete542 logical-line author candidate, all selected original f214 support-lemma ranges and named dispositions, and complete430 logical-line f316 return (429LF). All live input pins/bytes/LF match. Parent independently reconstructed singleton isolation, every excess3 structural case, the high-marginal/Cartesian-core argument and the incidence contradiction in all-variable writing; no scientific executable or selected tensor/support was used. Reviewer independently reconstructed F1–F7 and LemmaD from unitary hypotheses, without executing the earlier finite controls.
+
+The reviewer attempted a pre-body ACK file write which was refused; packet reading AND mathematical derivation occurred before the first successful direct IRC. This is an actual administrative source-order/delivery deviation, not a timely ACK. Under the owner-authority [reconciliation](/Users/jinleic/repos/aifours/institute/runs/three-area-2026-10-27-96h/parent-f315-f316-ack-transport-frontier-first-reconciliation-v1.json) and its [actual chronology addendum](/Users/jinleic/repos/aifours/institute/runs/three-area-2026-10-27-96h/parent-f315-f316-ack-transport-reconciliation-addendum-v1.json), this alone is not treated as mathematical contamination or a reason to discard the fully reconstructed proof. No excluded payload or selected diagnostic was reported. The review is not represented as passing its original delivery sequence or as a clean-cognition certificate.
+
+[Review](/Users/jinleic/repos/aifours/institute/runs/three-area-2026-10-27-96h/review-waves/f316-ame48-t27-universal-exclusion-review/review-v1.md) · [Manifest](/Users/jinleic/repos/aifours/institute/runs/three-area-2026-10-27-96h/review-waves/f316-ame48-t27-universal-exclusion-review/manifest-v1.json) · [Input provenance](/Users/jinleic/repos/aifours/institute/runs/three-area-2026-10-27-96h/review-waves/f311-ame48-surviving-maximal-patterns-prospective-development/review-v1.md). Same-harness only: no human, independent-family, formal/kernel, worldwide-status, priority or novelty verification.

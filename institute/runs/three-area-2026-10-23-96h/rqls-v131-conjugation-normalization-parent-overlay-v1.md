@@ -1,0 +1,9 @@
+# RQLS v131: additive conference-sign normalization qualifier
+
+Actual returned /bin/date before this write: **2026-10-26T10:16:07-0700 PDT**. Parent ACTUALLY read COMPLETE449LF v35-v38 sources and BOTH236LF/263LF v131 reviews through endings before this overlay. Whole-union disposition remains separate.
+
+Reviewer B identifies one precision MINOR in v37 section1: changing the first conference factor from I-iC to I+iC is not merely a common phase/permutation. Use **complex conjugation of the ENTIRE ray array**. It maps the pair (I+iD,I-iC) to (I+i(-D),I+iC), with D still an allowed signed conjugate. This preserves every norm, zero inner product, projective coincidence and full quantum-transversal resolution, since inner products are conjugated. Thus all sign choices are covered without assuming a particular resolution or covariance. Reviewer A independently supplies this same step in its section7, though it reports zero formal findings. Parent retains B's additive precision MINOR; no mathematical conclusion changes and no frozen source is edited.
+
+Source v37 SHA256 5e90e14a26d9051dc8e5c1847c381568ae64694d6a0197654d5763cd4eff963d; review A SHA256 43a3cbc571fd01969ae9aba13e8e62281e95d5458c8ec82e5ba762daf650b7a6; review B SHA256 6fb7a12ccb1e8756decaa96e63882fe946af20142de0142537fe40703e6e180c. The modern registered definition is at the exact parent source boundary; A directly re-read selected original definitions, B retained source authentication NAMED_NOT_RECONSTRUCTED. Neither is book/current-openness/novelty certification.
+
+All author/reviewer/parent findings, v59 false preceding-duty attribution, v60 Tuscan intake-pause and ZERO-credit histories remain. No full original RQLS witness/no-go, stronger finite-witness gate, scientificGO, new owner/deadline or round closeout follows.

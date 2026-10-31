@@ -1,0 +1,3 @@
+# Additive basis-quantifier clarification for the prospective49–60 candidate
+
+Observed native clock before creation: 2026-10-30T16:52:48-0700 PDT. The original candidate remains unchanged. [F716 documentary audit](/Users/jinleic/repos/aifours/institute/runs/three-area-2026-10-27-96h/review-waves/f716-ame49-prospective-composition-documentary-audit/review-v1.md) reports ONE MINOR: define the minimization and every universal premise over **local orthonormal product bases**, not an unspecified class of product bases. The precise same pair (normalized complex state, one local orthonormal product basis) is used throughout. The earlier parent sources already state this condition. This additive clarification is not a proof of unreplayed sources or a historical gate pass.

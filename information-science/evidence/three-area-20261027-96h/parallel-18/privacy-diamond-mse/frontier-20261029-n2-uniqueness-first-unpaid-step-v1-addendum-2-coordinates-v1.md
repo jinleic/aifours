@@ -1,0 +1,9 @@
+# Addendum 2: corrected diagonal-contact coordinates and the branch-comparison premise
+
+Owner: InfoResearch96h-2 / info-1. **ADDITIVE to** `frontier-20261029-n2-uniqueness-first-unpaid-step-v1.md` SHA `c0fc76fe…` (bytes unchanged; read first). Unreviewed. Header clocks: that note's header said 21:02:00 (estimated) while its actual pin was 20:58:20 — both retained; no frozen edit.
+
+**(C1) Corrected coordinates.** With a=t0, c=t1: canonical C0 has max(x+y)=2a (attained at (a,a)), and C0+D has max(x+y)=2a+1, so C1=C0+D corresponds to **c=a+1/2** — the corner edge of K is exactly the parallel/minimal-shell contact locus, not c=a+1 (my and Main's earlier a+1 usage is corrected). On that edge the phase IS the one-core shell law of C0; lying on it does not alone prove all levels parallel beyond level 1. The interior c>a+1/2 is the strictly-two-core region; the vertex (0,1/2) is the singleton-core contact. Law-vs-scalar-pair uniqueness equivalence additionally needs the f261 representation argument, not a bare assertion.
+
+**(C2) One branch comparison, advanced.** The corner-edge branch value equals the one-core family value function μ(a) (all-variable: same density). Hence any corner-vs-interior comparison is exactly one-core vs strictly-two-core values. Its precise unpaid mathematical premise: the sign of the one-sided partial ∂_c⁻h at λ=V on each stratum — equivalently whether ρ(a,·) is monotone near a+1/2. The adopted record supplies only necessary inclusions for this, so NO empty-regime or branch-domination statement is currently provable; that partial sign is the single unpaid premise gating all branch-value comparisons here. (U1) convexity remains merely one sufficient route, not mandatory.
+
+Vertex, parallel and interior candidates all remain live. No diagnostics; conditional on the standing hypothesis.

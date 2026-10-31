@@ -1,0 +1,9 @@
+# v23 additive erratum 2 — singular-weight object and quantifiers
+
+Observed native clock before creation: 2026-10-30T15:45:28-0700 PDT. Frozen v23 SHA256 4f57af6f20038982148d975298ba39596c9968ca129551e05505bf3d14c1c4e2.
+
+[Fresh original-input f669 documentary comparison](/Users/jinleic/repos/aifours/institute/runs/three-area-2026-10-27-96h/review-waves/f669-fresh-original-input-v23-werner-documentary-audit/review-v1.md) identifies ONE MINOR at v23 LF23: s1,s2 were not explicitly defined, and the separate weight-ratio condition could be confused with the preceding whole-span or subsequent physical-pair criterion. This is an ambiguity, not a mathematical refutation or hold.
+
+For a PARTICULAR actual rank-two operator R with ordered singular weights s1≥s2≥0 and s1>0, the separate condition s2/s1≤3−2sqrt(2) suffices for Q, including equality. The zero operator satisfies Q trivially. This does NOT by itself assert Q on the entire span of an arbitrary frame. The different physical-pair criterion uses the actual singular values of X=A⊗I+I⊗B for traceless complex4×4 A,B: sigma2(X)/sigma1(X)≤1/sqrt(3) suffices for T2 when sigma1>0, including equality; X=0 is trivial. The whole-frame-span condition q1+q2≤2 is a THIRD separately quantified sufficient region.
+
+This wording makes explicit the already adopted [source scope](/Users/jinleic/repos/aifours/institute/runs/three-area-2026-10-27-96h/dispositions/physics-1-actual-core-gram-counterexample-and-rank2-sufficient-regions-parent-v1.md), rather than proving a new theorem. Frozen report bytes remain unchanged. The distinct f661 status MINOR is corrected by [erratum1](/Users/jinleic/repos/aifours/institute/runs/three-area-2026-10-27-96h/rolling-report-20261030-v23-erratum-1.md); neither original finding is erased or multiplied by this correction.

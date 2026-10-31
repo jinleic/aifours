@@ -1,0 +1,39 @@
+# Actual cutoff-two privacy optimizers: entire core binds, with corrected endpoint penalty sign
+
+**Disposition: scoped same-harness written support AFTER an additive mathematical correction, with independent exact finite algebra/synthetic corroboration.** Native observation before composition: 2026-10-30T11:24:29-0700 PDT. f419 returned **0 FATAL / 1 MAJOR / 0 MINOR** against f400's unsigned penalty-difference assertion. That historical error and f418's repeated false sentence remain frozen. The [additive correction](/Users/jinleic/repos/aifours/institute/runs/three-area-2026-10-27-96h/dispositions/info-1-cutoff2-penalty-monotonicity-correction-author-v1.md) is supported by [f436](/Users/jinleic/repos/aifours/institute/runs/three-area-2026-10-27-96h/review-waves/f436-privacy-coupling-penalty-monotonicity-additive-correction-review/review-v1.md), **0 FATAL / 0 MAJOR / 0 MINOR on the correction only**. No clean original-review or retrospective correctness claim is made.
+
+## Actual-optimizer theorem and its explicit imports
+
+For every b∈(0,1) FOR WHICH the adopted actual-cutoff-two variational reduction and an attained actual optimizer with1/2<V<=2 apply, put m=b/(1−b)>0, v=m(1+m), T2=m+2m²,T3=m+6m²+6m³,T4=m+14m²+36m³+24m⁴, Q*=1+3m+2m². At the retained actual-optimizer positivity/pruning imports, every canonical actual optimizer has a>0, u=a+1/2<=c<a+1, and
+
+V<=min(2,T4/(3T2))<Q*, F1(y)=F0(y)+1 for EVERY0<=y<=a.
+
+Thus the ENTIRE shared-core-slack optimizer class is excluded, including lower/upper box faces and endpoint slack. With r(y)=max(0,sqrt(max(V−v−y²,0))−m)<1, the unique fixed-scalar core profile is F0(y)=clip(r(y),[a,2a−y]). Corner/far-tail profiles are the corrected canonical clips at their actual box/floor bounds. Fixed-scalar uniqueness is not scalar-pair uniqueness. No actual regime existence or parameter range is inferred from the theorem's conditional hypothesis.
+
+## Proof mechanism and strictness
+
+The admissible competitor C0={0}, C1=unit diamond has COMPLETE tail denominator Z=2T2 and numerator N=2T4/3; no extra1−b is multiplied into the geometric tail. The strict bound follows from two exact polynomial certificates covering all m>0, with split2/7 and positive remainders352/343 and1/49. The actual corridor c<a+1 follows from the named pruning implication, not by excluding a0 from the unrestricted feasible domain.
+
+Above tail height1, d1(z,y)=(z+m)²+v+y²−V is strictly positive, uniformly at leastδ+y² where δ=Q*−V>0. At every shared height the smallest feasible tail coordinate conditional on x is x+1. The pooled derivative is exactly d1(x,y), and its derivative2(x+m)>0 gives the clipped core formula. All pieces join continuously with slopes in[−1,0], so the comparison is globally canonical, not a forbidden isolated-height perturbation.
+
+Complete cubic calibration retains the core weight8, slack weight8b, corner8b, far-tail8b, every normal term and the SAME-scalar deterministic constant. It gives H_V−h(a,c;V)>=8bδ integral_0^a(F1−F0−1)dy. At an actual minimizing pair h=0 and Z>0. Continuity with a>0 turns positive slack at ANY shared height, including an endpoint, into a strictly positive cost, proving the exclusion without stationarity sufficiency.
+
+## Correct universal penalty statement and surviving endpoint identity
+
+For EVERY fixed admissible a>=0,b∈(0,1), finite real lambda and d>=u, the independent-box coupling penalty P(a,d;lambda)>=0 is NONINCREASING in d. Therefore P(a,c;lambda)−P(a,u;lambda)<=0 for c>=u. This corrects f400line498 and the repeated f418 proposition; it does NOT give the sign of the FULL endpoint difference.
+
+The proof uses q_d=clip(r(y),[d,2d−y]) and conditional excess E_d(t)=psi1(max(q_d,t),y)−psi1(q_d,y). The clip is nondecreasing, but its cost need not increase BELOW the root. If q_d<t<=2d−y, it cannot be an upper-face clip and lies at/above the root, making the excess nonincreasing; if q_d>=t the excess is0. Minimization over the UNCHANGED first-core box preserves this property; the corner threshold2u−y is fixed. Exact core/corner integration yields P with no additional far-tail coupling penalty. Zero/negative radicands, upper-face selections, a0 and collapsed/tied boxes are included.
+
+For an ACTUAL optimizing pair, both P(a,c;V) and P(a,u;V) are strictly positive, with lower bound8bam[a+1−max(d,r(0))]² at d=c,u. Both endpoints must therefore be retained in the independent-box Delta identity. Alternatively, the SAME coupled core cancels exactly, giving the adopted active-core comparison, not global edge dominance. The actual-edge right derivative is the full fixed-a expression
+
+(1/b)∂_c^+h(a,u;V)=16uT2+16mu²+(16/3)T3−8mV+16 integral_a^u min(0,(2u−y+m)²+v+y²−V)dy.
+
+The old all-upper-face derivative is a DIFFERENT stratum, impossible under a>0,V<Q*; it is not transplanted here. Negative right derivative excludes a local edge minimum; a nonnegative value is only necessary. Correct scalar normal cones and one-common-subgradient Clarke necessity retain their stated extension/relative-convention imports, with no exact interchange or sufficiency assumed.
+
+## Complete gate and execution evidence
+
+[Author](/Users/jinleic/repos/aifours/institute/runs/three-area-2026-10-27-96h/review-waves/f400-privacy-cutoff2-scalar-uniqueness-original-frontier/review-v1.md) · [Active-core review](/Users/jinleic/repos/aifours/institute/runs/three-area-2026-10-27-96h/review-waves/f418-privacy-cutoff2-uniform-active-core-proof-review/review-v1.md) · [Endpoint review with MAJOR](/Users/jinleic/repos/aifours/institute/runs/three-area-2026-10-27-96h/review-waves/f419-privacy-cutoff2-calibration-and-both-endpoint-proof-review/review-v1.md) · [Correction review](/Users/jinleic/repos/aifours/institute/runs/three-area-2026-10-27-96h/review-waves/f436-privacy-coupling-penalty-monotonicity-additive-correction-review/review-v1.md) · [Independent exact finite report](/Users/jinleic/repos/aifours/institute/runs/three-area-2026-10-27-96h/review-waves/f420-privacy-cutoff2-active-core-independent-exact-finite-check/review-v1.md) · [Exact verifier](/Users/jinleic/repos/aifours/institute/runs/three-area-2026-10-27-96h/review-waves/f420-privacy-cutoff2-active-core-independent-exact-finite-check/independent-cutoff2-exact-algebra-and-synthetic-controls-v1.py) · [Actual parent run](/Users/jinleic/repos/aifours/institute/runs/three-area-2026-10-27-96h/review-waves/f420-privacy-cutoff2-active-core-independent-exact-finite-check/parent-independent-finite-run-v1-receipt.json). Parent displayed all698author,537/454original-review,474correction-review and967finite-report/source logical lines, reconstructed every tail factor, universal gap certificate, global joins, strictness, all-variable penalty correction and moving-endpoint derivative, and checked frozen pins.
+
+The independently authored stdlib checker was parent-run once, exit0: symbolic moment/cubic/pooling/calibration identities; fixed-height convex supporting-gradient certificates covering lower/root/upper/ties/zero-root; a complete explicitly SYNTHETIC piecewise-affine endpoint family; both nonzero penalties; exact full-functional Delta110317/576000 and strict-slack cost19933/460800 above lower bound2/75;13 intended-invariant negative controls. Raw counter99 includes incidental/tautological preconditions and is NOT reported as99 independent scientific tests. Child execution was NOTRUN. Synthetic parameters are NOT actual optimal V or actual regime evidence, and finite algebra does not replace the continuum written proof.
+
+Scalar-pair/law uniqueness, full endpoint or edge-derivative sign, global scalar optimizer classification/value, actual-regime existence, original small-epsilon target, source/book equivalence and priority/novelty remain unpaid. Human/independent-family/formal-kernel assurance is absent. The held private auxiliary privacy episode and every consumer remain NONINPUT and are not rehabilitated.

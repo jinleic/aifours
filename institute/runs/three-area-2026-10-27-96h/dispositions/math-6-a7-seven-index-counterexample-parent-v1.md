@@ -1,0 +1,18 @@
+# Counterexample to the unqualified seven-index A_n assertion
+
+**Disposition: the frozen all-degree candidate's unqualified claim that no seven proper subgroup indices of `A_n` have pairwise gcd exactly 7 is false.** The counterexample is `A_7`. It uses seven distinct proper subgroups and even seven pairwise disjoint left cosets. It does **not** give eight disjoint cosets, disprove Sun8, or by itself settle a separately frozen source-specific P7 definition with additional conditions.
+
+Native clock observed before composing: **2026-10-28T20:41:44-0700 PDT**, not an asserted creation time.
+
+## Construction
+
+Let `G=A_7` act on `{0,…,6}` and `H_i={g∈G:g(i)=i}` for `i=0,…,6`. These point stabilizers are seven distinct proper subgroups, each of order `360` and index `7` in `|G|=2520`; all 21 pairwise index gcds are 7. For each `i`, choose `g_i∈G` with `g_i(i)=0`. Then `g_iH_i={g∈G:g(i)=0}`. As every permutation has exactly one preimage of 0, these seven left cosets are disjoint and partition `G`.
+
+## Evidence and scope correction
+
+- The frozen [candidate](../../../../mathematics/evidence/three-area-20261027-96h/parallel-18/sun-coset8/frontier-20261028-alternating-all-degrees-p7-v1.md) asserts the false all-`n≥5` seven-index exclusion in its opening and relies on the erroneous Section 6 inference that pairwise-coprime cofactors contain at most one 1. Parent read its 75 LF only after the required overlays below.
+- The author preserved the candidate bytes and issued the mandatory [fatal correction](../../../../mathematics/evidence/three-area-20261027-96h/parallel-18/sun-coset8/frontier-20261028-alternating-repeated-unit-fatal-pre-source-v1.json), SHA-256 `bdd6149cf483173cc54a804a4fc468b87fc52087a0d4cff40fb323dcfa018d04`, followed by the [cardinality clarification](../../../../mathematics/evidence/three-area-20261027-96h/parallel-18/sun-coset8/frontier-20261028-alternating-p7-cardinality-addendum-v1.json), `6a9572f4da51f18657bccc1747206648e2ec0d41da16fc7b96f8cf6445748218`. The preceding [arithmetic overlay](../../../../mathematics/evidence/three-area-20261027-96h/parallel-18/sun-coset8/frontier-20261028-alternating-pre-source-arithmetic-correction-v1.json) must be read first. They withdraw the small-degree table and its dependent conclusions; the `n≥14` argument is separate and remains under review.
+- Parent independently generated all even permutations of seven labels, all seven point stabilizers and their cosets without author code. [Checker](../review-waves/f134-alternating-all-degrees-p7/parent-a7-cosets-exact-v1.py) SHA-256 `0632e5a09ff9dc1b40d0591b1246800f890f6758132a9e2ee25465398acaebe1`; [actual-run receipt](../review-waves/f134-alternating-all-degrees-p7/parent-a7-cosets-exact-result-v1.json) `f76b3a00ee3e1a7b86692db8c0b700c17ad5de7ba9525672714a133b1be76339`. It reports 2,520 even permutations, seven distinct stabilizers of size 360, seven 360-element disjoint cosets, all 21 gcds equal 7, and rejection of a duplicated-coset control. Only the first stabilizer's closure was exhaustively checked; closure of the others follows directly from their point-stabilizer definitions.
+- The f134 reviewer had already opened the original candidate before the later corrections existed. That actual chronology must be disclosed; the new overlays do not become a retroactive pre-body read. Its independent review remains pending. An earlier message suggesting this example necessarily refuted every source-specific P7 notion was withdrawn in the cardinality clarification.
+
+This is a concrete refutation at the stated scope, not an all-degree replacement theorem, a source-priority finding, a formal-kernel proof, or a retroactive change to any prior result.

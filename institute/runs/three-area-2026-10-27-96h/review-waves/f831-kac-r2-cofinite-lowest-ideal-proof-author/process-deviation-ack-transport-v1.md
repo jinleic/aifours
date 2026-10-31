@@ -1,0 +1,7 @@
+# F831 acknowledgement transport deviation — additive process note
+
+The F831 manifest required a direct prebody acknowledgement in addition to the local exclusive acknowledgement file. I read all five administrative files and all 23 listed status/permission controls, then wrote `prebody-ack-v1.md` before opening either mathematical packet or reasoning. I did **not** separately deliver a direct acknowledgement to Main before opening the packet. I then read part 01 LF 1–766 and part 02 LF 1–320 completely in the required serial raw windows before mathematical reasoning and wrote `author-candidate-v1.md`.
+
+After packet access and after writing that candidate, Main clarified the separate direct-delivery requirement. I sent Main an expressly qualified direct ACK reporting the actual sequence immediately after receiving that clarification. It was **not** delivered prebody and is not backdated. The candidate's §7 describes the local acknowledgement and complete source-read ordering, but omits this direct-delivery failure; this additive note supplies the omission without changing the candidate or its mathematics.
+
+Main's clarification classifies these facts as an **ACK-transport PROCESS MINOR**, not an automatic source-order mathematical hold. This note does not itself confer mathematical acceptance, establish independent validation, or make a claim about unobservable cognition. There was no child scientific execution.

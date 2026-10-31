@@ -1,0 +1,25 @@
+# PROPOSED uniform even-E common-slice lemma and entire two-E obstruction — UNADOPTED
+
+Recorded UTC 2026-10-31T01:44:38.194Z. Fix ONE actual rank2 m116 physical f/R/a/general-g/u/x/y at the explicit local-H, count, phase/inverse, seven SAME-X profiles, allU0divisibility/caps and SPECIFIC carried t, J1/residue and all64commonU3caps. PutX=(−1)^tx,Y=(−1)^ty. Let k_i count graphmateD0inrowi, d=d_E; Σk_i=4−d and d is even at the separate actual-X theorem. On graph rowi write S_i(b)=X(1,F_i,i,b), and d_i(b)=Xmate/2 atD0sites,0else. RowzeroΣS_i+2Σd_i=0 and evengraphodd-support in EACHprofile imply ΣP_i=B_D, where P_i is XOR ofnegativeS b-values and B_D is XOR ofall graphD0 b-values. This implication doesnot depend on d=0 and uses nofalseoffset/Ninfererence.
+
+For even k_i,S_i is a signed affinecharacter ξ_i includingconstant, with P_i=Qξ_i. For oddk_i,S_i is signed(2indicator_γ_i−1), with P_i=γ_i. The actual phasecovectors λ_i haveΣλ_i=0; graphY has bentrow G_i=σ_i(−1)^{q+θ_i} for evenk_i, θ_i=λ_i+ξ_i, and affinerowG_i=σ_iχκ_i for oddk_i, κ_i=λ_i+(1,1)+Qγ_i. Since #oddrows is even, Σ_evenθ_i+Σ_oddκ_i=QB_D.
+
+Let A_ell(s,α,β) be the actual ellpartial ofY; there are12+d D3graphmates. Let m_α count oddrows withκ_i=α, n be negative-matesign parity, and N=(12+d)+#evenrows, an evennumber. Sign multiplication ofthe N actual magnitude2 terms (bentrowWalsh and D3mates), plus magnitude4affinerow contributions, gives
+
+    A1(s,α,β)/4 ≡ c+s+m_α+α(v) mod2,
+    v=B_D+QΣ_evenθ_i,    Σ_oddκ_i=Qv.
+
+The βfactor isΣ_even i+Σ_i(4−k_i)i=Σalli=0. The sfactor isΣ_evenF_i+Σ_i(4−k_i)(1+F_i)=ΣallF_i=1. Bentquadratic αterms cancelbecause#evenrows is even; the actual nonD0mate b-XOR equals B_D. The remaining c includesN/2,n, and bentrow sign/quadratic constants. Allthese are actualsame-object signs, not free Fouriercoefficients.
+
+The parityfunction f(α)=m_αmod2 onF2² has even support size0,2or4. Its supportXOR isΣ_oddκ_i=Qv. If supportempty/full,f is constantandv=0. If supporthas2pointswhoseXORisQv≠0,it is anaffineline with linear coefficientv. Thus f(α)+α(v) is CONSTANT for everyα, including0, evenwhen all4rows are odd. Consequently A1/4 has one ENTIREevensslice andoneENTIREoddslice, uniformly across all d=0,2,4 and every graphD0occupancy.
+
+For d=2 thegraphhalfenergy72 and totale128/residue/cap give exact8smallfullcoefficients. If n8 countsabsA1=8even and m4 countsabsA1=4odd, partialParsevalgivesn8=2m4. Countingpairsmallvaluesgives8=3m4+h+2z,0≤h≤m4,sooddA0hasatmost2nonzerovaluesofabs8. SAME16pointinversebounds everyopposite-h ell0Ypair by1; attheuniquephysicalZ4,b≠0,theactualmatehasabs≤2,sothatpairhasabs≥2. Contradiction. IF allsteps/importsarecorrect,this excludes ENTIREd_E2 without splitting graph2vs1+1orEallocations. This is a parentWRITTENcandidate, notadopted or a finitecheck result; allmathhere is handalgebra, no scientificexecution.
+
+For d=4 the sameeven/odd lemma combineswith its already adopted exactenergy80argument. For d=0 the paritylemma alone doesnotexcludethecase; its energy64andmatecorrelationforceE=O4 buttheolder all-graphobstruction remains a separateactualproof/import. The proposed fullnamedrank2union would additionally use even-E,d_E0 andd_E4exclusions; doNOTassert fullrank2, allfive-span,V/originalcaller/NL242withouta separately frozen completeuniongate. No privateheldepisode/consumer, oldsourceorunlistedresultisused; ALLgenuineheldepisodes/consumersNONINPUT.
+
+- Actual profiles/census {"path":"/Users/jinleic/repos/aifours/institute/runs/three-area-2026-10-27-96h/dispositions/info-6-E-row-D0-parity-correct-lambda-cases-and-common-U3-census-parent-v1.md","sha256":"f1dec4722410e8db8e55c4a66a4da1d3b23d542b49b672049ed6d80373bd26d2","bytes":9619,"LF":52}
+- Named actual general-g/local-H {"path":"/Users/jinleic/repos/aifours/institute/runs/three-area-2026-10-27-96h/parent-recovered-local-H-definition-and-general-g-foundation-v1.md","sha256":"a99db1148434016f1d995b83b758692d6ce94b6e27a87dbdde29e345923f88ef","bytes":3485,"LF":13}
+- d_E0 whole obstruction {"path":"/Users/jinleic/repos/aifours/institute/runs/three-area-2026-10-27-96h/dispositions/info-6-entire-all-graph-D0-obstruction-and-two-E-residual-parent-v1.md","sha256":"b8f74cc8316ce476cac0de23b82b626b99e1f526a54c1042cebbdd66c8a19c2e","bytes":8553,"LF":29}
+- d_E4 whole obstruction {"path":"/Users/jinleic/repos/aifours/institute/runs/three-area-2026-10-27-96h/dispositions/info-6-entire-four-E-row-d0-actual-common-y-obstruction-parent-v1.md","sha256":"4e3ef5738027dbb107d1f50d2d2b24c87afa0a54440a22a1fe3ebed0474707f5","bytes":8272,"LF":31}
+- d_E2 split already adopted {"path":"/Users/jinleic/repos/aifours/institute/runs/three-area-2026-10-27-96h/dispositions/info-6-two-E-split-graph-D0-entire-common-y-obstruction-parent-v1.md","sha256":"6d0e6e3bc961fed11d047928a0f32b10c8011debe5642fbe2a12971cfc22d062","bytes":5496,"LF":17}
+- Proposed double branch {"path":"/Users/jinleic/repos/aifours/institute/runs/three-area-2026-10-27-96h/review-waves/f789-boolean-two-E-one-double-graph-author/author-candidate-v1.md","sha256":"db6343f98e598ffbe8c480175bbef6d3aeaac4f1b69766c360e5841121679dd5","bytes":22462,"LF":200}

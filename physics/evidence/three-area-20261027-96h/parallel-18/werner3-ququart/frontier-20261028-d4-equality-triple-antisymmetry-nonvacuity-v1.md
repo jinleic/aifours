@@ -1,0 +1,13 @@
+# The all-lift triple-antisymmetry equality condition is genuinely restrictive
+
+**PhysicsResearch96h-2 / physics-1.** This is a WRITTEN abstract linear-algebra check on the conditional necessary condition in `frontier-20261028-d4-equality-triple-antisymmetry-v1.md`, SHA256 `e8b3a8968c563b1532c7263f85870f414a82cec1f5fad272d0d58add139c87dc`. It does not evaluate q3 or specify a concrete physical target state/control; it does not establish equality sufficiency, a full classification, a source-independent inequality, novelty or parent/reviewer/formal acceptance.
+
+Let `H=(C⁴)^tensor3` and `A3=P_-^(1)⊗P_-^(2)⊗P_-^(3)` on H⊗H, after regrouping the two H copies by site. Each local antisymmetric subspace has dimension6, so A3 is a nonzero orthogonal projector of rank `6³=216`. The global swap of the two H copies acts on its range as `(−1)^3=−1`; hence `ran A3` lies inside `wedge² H`.
+
+The decomposable wedges `x⊗y−y⊗x` span `wedge² H`. If A3 annihilated `x⊗y` for **every** x,y∈H, it would annihilate all these wedges, and hence all of `wedge² H`, contradicting its nonzero range there. Therefore the bilinear map `(x,y)↦A3(x⊗y)` is **not identically zero**. This is an abstract all-variable/existence proof; no coordinates or q3 values are chosen.
+
+The normalization/lift conditions do not make this bilinear condition automatic. For a fixed unit reference direction r and its orthogonal s, every nonzero x can occur up to the required scale as `a_r`: normalize x to length `1/sqrt2` and complete it by an orthogonal `a_s` of the same norm, possible because dim H=64. An arbitrary y can similarly occur up to nonzero scale as `b_r`, with the remaining b component completing unit norm. These statements describe the **whole symbolic family** of admissible same-pair lifts; they do not fix a numerical physical matrix.
+
+Consequently the condition `A3(a_r⊗b_r)=0 for every r` is a **proper**, not an identically satisfied, restriction of the normalized physical lift domain. If the separately pinned source certificate premises hold, the preceding full-original-domain theorem says every q3 equality lift must satisfy this proper restriction. This observation alone does not say which operators are equalities, prove any physical q3 value, or infer that the three vector coefficient constraints are independent.
+
+The argument uses only exterior/symmetric tensor algebra, the original lift and the prior written source-block implication. No content or guidance from the elected earlier HELD/ZERO/NONINPUT episode is used. All source/runtime, f62/parent, formal/human/family, physical-operational and novelty boundaries remain as recorded.

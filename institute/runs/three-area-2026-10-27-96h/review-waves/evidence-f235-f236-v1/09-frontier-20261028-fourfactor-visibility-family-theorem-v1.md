@@ -1,0 +1,20 @@
+# Two mixed-block visibility criteria resolve 13 hard syndrome planes
+
+**Status: WRITTEN with exact independently checked rational Shannon identities and orbit census; scientific review pending.** In the q=8 binary triangle-factor R-minus model, condition on all fixed-syndrome factor tuples and write `Y_v` for the selected four-factor vertex blocks and `S` for their **full** syndrome vector. Each of the following sufficient conditions gives `Delta(Y)<=0`:
+
+1. Varying factors are `{2,5,6,9}`, and `S` is a function of the two incident parity bits at **each** of vertices 5 and 9, namely `(S_2,S_9)` and `(S_6,S_9)`.
+2. Varying factors are `{3,4,7,10}`, and `S` is a function of the two parity bits `(S_3,S_{10})`, incident to both vertices 6 and 7.
+
+No restriction to two or three syndrome values is needed. The selected factors may have arbitrary binary syndrome support and arbitrary joint distributions; the criteria are functional visibility assumptions, not global claims for every law on the four-factor alphabet. Original graph FDs then imply `S` is determined by the respective original-neighbour tuples: reconstruct the central selected block, combine its incident triangle components with neighbour components, and evaluate the indicated parities. Full syndrome also determines every local triangle-component decoder. The fixed-syndrome factors outside the selected block tensorize, lifting the result to the original q=8 law.
+
+## Exact proof
+
+The two rational identities `frontier-20261028-fourfactor-visibility1-dual-v1.json` SHA-256 `8be1e8d23a9ce9ffd76b65093609b38f2d46b389adcb07bb48eec8e8fbaf1849` and `frontier-20261028-fourfactor-visibility2-dual-v1.json` SHA-256 `af124b1cb998b5e6d258c57c5ef637922afde600def267c597b3bbb5b436fcbb` express the mixed-block `Delta` as a negative weighted sum of respectively 330 and 150 elemental CMIs, plus original graph FD, full-syndrome-from-neighbour, full-syndrome-from-all, and local-component FD equalities. Each equality vanishes under the corresponding stated visibility hypotheses; no two-syndrome theorem, one-hot inequality, syndrome entropy cap or numerical LP optimum is used.
+
+The independent checker `frontier-20261028-fourfactor-visibility-dual-check.py` SHA-256 `201895cea5ad2f011107037103ee20f302337d915039227d06dcaa19d1dabadf`, receipt SHA-256 `b2cb45c7876f705401d1b595c46024b62c27e1976b7049e7f9c8cd59e185680e`, verifies all 2,047 entropy coefficients, rational signs, graph/factor automorphisms, local-component conditioning sets and negative controls. The first identity is averaged over a two-element factor-preserving group (visibility vertices 5 and 9); the second over four elements (visibility vertices 6 and 7). The full-syndrome visibility must hold at **all** vertices in each orbit, as stated.
+
+## Effect on the 41 hard plane directions
+
+For a binary two-dimensional syndrome direction plane, a parity projection identifies `S` on every affine translate if and only if no nonzero direction vector projects to zero. `frontier-20261028-fourfactor-visibility-orbit-check.py` SHA-256 `054a728db122436f076762120ba867d3c8973e471890b9c4c53e25611c6c9bb9`, receipt SHA-256 `77b4c2e7e33f8e63b660bd0cd7f8d0ec45c54cd55328a88fab15d1c05e2d9a3f`, checks the incidence projections and all graph/factor automorphism images. It identifies **13 distinct planes** among the 41 fractional-method residuals to which the two criteria apply, including the two previously covered by the paired-plane theorem. Thus, subject to scientific review, the combined 206-color plus visibility-family arguments establish no positive gap for `206+13=219` of the 247 four-varying-factor covering direction planes, even for laws supported on the full four-point syndrome plane. The remaining **28** are unresolved by these particular methods; they are not counterexamples or no-go results.
+
+Neither exact coefficient checking nor finite incidence replay is proof-assistant formalization, independent scientific adoption, or novelty clearance. The unrestricted guessing-number problem remains open.

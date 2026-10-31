@@ -1,0 +1,31 @@
+# The 12-cell 4×4 all-degree-3 profile is impossible in a four-family
+
+**WRITTEN author candidate; disjoint review pending.** In an ordinary complex four-MOQLS(8), no member Q has exactly 12 mixed cells on four rows/four columns when every mixed line has degree 3. This closes the C/C profile only; it is not a complete m12/global/A10/A11 theorem. The proof uses actual Q and mate rays, not a numerical pattern or catalogue.
+
+Choose any actual Q row as coordinate basis and independently standardize the other three members on the same board row. The mixed incidence graph has four row vertices, four column vertices, and all degrees 3, so it is K_(4,4) minus a perfect matching, the cube graph. Every degree-3 line has a 3-axis mixed subspace and at most one support-2 ray: two orthogonal support-2 rays on distinct 2-subsets of the 3-set would share one nonzero coordinate; if their supports agreed they would fill that plane and force the third ray to be a singleton. Thus each line has at least two full-support-3 rays.
+
+Retain the full-support-3 cells as edges of the cube. This graph has minimum degree two. If connected, their full supports identify one common 3-axis subspace T for every mixed line. If disconnected, every component needs at least two row and two column vertices, so there are exactly two components, each a K_(2,2). Each component has a common 3-axis subspace T_1 or T_2. If T_1=T_2, again all lines share T. Otherwise each of the four remaining mixed cells joins different components, has support 2, and is contained in T_1∩T_2. Thus `U=T_1∩T_2` has exactly two axes; the four connecting cells form a perfect matching, all on support U.
+
+## Two distinct component subspaces
+
+In either K_(2,2) core, a full-support-3 Q ray is perpendicular to its row's and column's matching rays on U. Its nonzero projection onto span(U) forces those two matching rays collinear. The core is complete, so all four matching Q rays are one ray p. The four Q rays of the first core lie in `T_1∩p^⊥`, a 2-space, and their row/column orthogonality makes opposite corners collinear. The same holds in the second core. Every core Q ray has a nonzero U-projection collinear with the ray p^⊥ within U. Since T_1∩T_2=U, every Q ray from one core has nonzero inner product with every Q ray from the other.
+
+For any mate R, the four R rays in each core are pairwise orthogonal: adjacent corners share a row/column and opposite Q corners are collinear. All cross-core R pairs are orthogonal by Q⊗R, so these eight R rays are an ONB of C^8. Choose a∈U. There are four Q rows with no mixed cells, including the standardized row; any one has a light Q=e_a cell. Its R ray is orthogonal to all eight core R rays because every core Q ray has nonzero a-coordinate, contradiction. Thus distinct component subspaces are impossible even with one mate.
+
+## Common subspace: cube-ray classification
+
+Now all twelve mixed Q rays lie in one 3-axis set T and every vertex's three incident rays form an ONB of span(T). We give the needed cube classification directly. On any 4-face, if two opposite rays are not collinear, their common orthogonal complement in the 3-space is one-dimensional, so the other two opposite rays are collinear. Hence choose a face with edge rays in cyclic order p,q,p,r, where p⊥q,r.
+
+If q and r are collinear, the four edges leaving this face have the same ray p_0, perpendicular to p and q. The opposite face's four rays alternate between an orthogonal pair in p_0^⊥. The four p_0 edges form a perfect matching; deleting them leaves two disjoint squares whose alternating rays are two ONBs of p_0^⊥.
+
+If q and r are not collinear, let q^⊥ and r^⊥ denote their complements in p^⊥. In cyclic vertex order the four edges leaving the face have rays r^⊥,q^⊥,q^⊥,r^⊥. On the opposite face, the first and third edges are forced to p, being perpendicular to the independent r^⊥,q^⊥; the other two are forced to q and r. The four p edges form a perfect matching. Deleting them leaves two vertex-disjoint squares with alternating ray pairs q,q^⊥ and r,r^⊥. Thus in either case there is a matching ray p occurring four times and, on the two remaining squares, two orthonormal bases q,q^⊥ and r,r^⊥ of p^⊥.
+
+There is some coordinate a∈T used by **all twelve** mixed Q rays. If p has support 2, then every other incident ray at each vertex has full support 3, since a degree-3 line has at most one support-2 ray; choose a in p's support. If p has full support 3, each of the two square bases contains at most one support-2 ray, so across the four square-ray classes at most two coordinates are omitted; one axis a of T is omitted by none.
+
+For any mate M, the four light Q=e_a cells in the four rows without mixed Q cells give four orthogonal M rays. Every mixed Q ray overlaps e_a, so all mixed M rays lie in their 4-dimensional orthogonal complement W_M. The four M rays on the p matching are an ONB of W_M. The four M rays of either square are also an ONB: adjacent cells share a row/column and opposite Q rays are collinear.
+
+If the two square Q bases of p^⊥ differ as ray sets, all four cross-basis Q overlaps are nonzero (two orthonormal bases of a complex 2-space have a zero overlap only when they coincide up to permutation). Q⊗M would make the two square M ONBs mutually orthogonal in W_M, impossible. Therefore any mate forces the two square bases to coincide. There are then three Q ray classes p,q,q^⊥, each appearing four times, and each class's four M rays form an ONB of W_M.
+
+For any mate M, take the transition matrix between the p and q M bases. At each end of a p-matching edge there is a distinct incident q edge, so each transition row has at least two zeros from actual shared row/column orthogonality, leaving at most two positions nonzero. For distinct mates M,N, product orthogonality M⊗N makes their transition supports disjoint. Since each unitary transition row must contain a nonzero entry, at most two mates exist. This contradicts the three actual mates of Q.
+
+The full-support graph alternative and actual cube edge/ray classification must be reviewed independently, along with both dimension arguments and the transition support bound. This packet makes no claim about the remaining `(4,3,3,2)/(4,3,3,2)` profile, M(8), the original A10/A11 exact-input gates, formal or human verification, parent adoption, or novelty.

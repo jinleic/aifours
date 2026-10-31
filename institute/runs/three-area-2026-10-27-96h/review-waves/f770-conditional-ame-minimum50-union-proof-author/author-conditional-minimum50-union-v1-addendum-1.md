@@ -1,0 +1,8 @@
+# Addendum 1: two wording corrections to the conditional union
+
+Native clock observed before creation: `2026-10-30T18:04:03-0700 PDT`. The unchanged original is `/Users/jinleic/repos/aifours/institute/runs/three-area-2026-10-27-96h/review-waves/f770-conditional-ame-minimum50-union-proof-author/author-conditional-minimum50-union-v1.md`, SHA-256 `a1629e9dd3d9b8311a1e4b797b2bdef4306c31e080b76f137ebe9bb80daeb7f8`, 23,722 bytes, 94 LF. These corrections were disclosed directly to Main before this addendum. They do not retroactively alter the original bytes or claim parent adoption.
+
+1. In the three-qubit Pauli argument, delete the original aside “whether their supports agree or omit different sites.” Every weight-three Pauli string on **three** qubits acts nontrivially on all three sites. Its product with another such string has weight three exactly when the local Pauli labels differ at all three sites. The strings then anticommute, so their two orders cancel in `M²`. Thus the weight-three projection of `M²` is zero, as used in the proof. No alternative support pattern is involved.
+2. In the NOT TESTED list, replace “the 60-entry table” by “the 36-cell table containing 60 distinct nonzero coefficients.” S8 reports a 36-cell table and 60 nonzero terms; this author did not read or run the table or checker.
+
+The stated imported hypotheses, same-pair dispatch, conclusions and all prior process/coverage limitations remain unchanged. This addendum is a wording correction, not an independent reread of the transitive proofs or a mathematical or parent-adoption verdict. No child scientific execution was performed.

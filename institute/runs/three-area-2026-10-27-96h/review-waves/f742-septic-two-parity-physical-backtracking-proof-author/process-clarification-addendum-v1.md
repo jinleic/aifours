@@ -1,0 +1,7 @@
+# F742 additive process clarification
+
+Native clock observed before composing: `2026-10-30T17:27:20-0700 PDT`. This addendum is not backdated and does not alter the original return `author-reconstruction-v1.md`, SHA-256 `9cb4340f358000e00cdbb0b83a287e171e140143de9ed7aacd78d1f5a34f3b87`.
+
+After the return was written, Main directly clarified that **no process finding is established** by the administrative `wc`/SHA/binding comparisons before the PREBODY ACK: those metadata checks were permitted and expected, not packet-body reading or scientific/source-content comparison. Accordingly, the original return's open question as to whether that metadata sequence implicated the pre-comparison rule is resolved by Main's actual clarification; it is not a finding.
+
+The original factual chronology remains unchanged: the actual dispatch, manifest, freeze receipt, final binding, prepared metadata, and 22 controls were read through endings before direct PREBODY ACK; the unopened packet digest was observed administratively before that ACK; then the complete single part was read serially in raw windows of at most 20 LF through LF484 before mathematical research. No private-cognition/native-history certification, old-gate clearing, scientific execution, family/human/kernel verification, or parent mathematical adoption is inferred. Parent mathematical full read and separate disposition remain outstanding.

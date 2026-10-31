@@ -1,0 +1,9 @@
+# V32 additive documentary correction: AME provenance and septic wording
+
+Recorded UTC 2026-10-31T01:32:32.603Z; original v32 remains immutable. F792 reports two AME provenance MINORs, each the same inherited issue as in v31: (1) the f127 separate historical manifest was **not located in the review directory**, not proven nonexistent or absent everywhere; (2) f182's separate implementation followed exposure to the author checker and is **not clean-room**. F793 reports one additional v32 report-description MINOR: the one f742 MATH MINOR concerns the overbroad sign claim at **all frequencies before/after a band**, not the local one-sided endpoint and immediately adjacent no-band statements, which remain valid at their stated scope. Raw v32 scope total so far is 0F/0M/3m before the outstanding f794 return. Do not double-count the two inherited AME wordings across v31 and v32.
+
+The v31 root-kernel overstatement is separately corrected in its own erratum, not backdated as a v32 finding. Reviewer process findings and all earlier histories remain separate. No global/root/novelty or mathematical certification is conferred.
+
+- V32 {"path":"/Users/jinleic/repos/aifours/institute/runs/three-area-2026-10-27-96h/rolling-report-20261030-v32.md","sha256":"be7fe1358c90a258dcca9569fabc1e401bc8cfda6485eb69d4f68322d0fa9a45","bytes":64054,"LF":42}
+- F792 {"path":"/Users/jinleic/repos/aifours/institute/runs/three-area-2026-10-27-96h/review-waves/f792-report-v31-v32-ame-union-documentary-audit/review-v1.md","sha256":"7933a1b137611e0c844e2a1811a8a5504c8a5858a691bce8c5a0bc028e11d15b","bytes":12599,"LF":57}
+- F793 {"path":"/Users/jinleic/repos/aifours/institute/runs/three-area-2026-10-27-96h/review-waves/f793-report-v31-v32-kac-septic-documentary-audit/review-v1.md","sha256":"4770f20a6185724bc46b63d3725e06721b4b3411334828362031751dc6a03080","bytes":13513,"LF":61}

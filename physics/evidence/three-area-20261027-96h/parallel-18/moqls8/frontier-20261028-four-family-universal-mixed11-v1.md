@@ -1,0 +1,69 @@
+# Ten mixed cells are impossible for a four-family member
+
+**WRITTEN author candidate, 2026-10-28 20:45 PDT.** In any actual ordinary four-MOQLS(8), choose any member Q and any actual Q row. If Q is nonclassical, then at least **eleven** Q cells are mixed relative to the basis of that row. All three other members R,S,T are arbitrary complex QLS; no classical mate, finite catalogue, equal-modulus or reality hypothesis is used. The named prior WRITTEN inputs are the arbitrary-member lower bound ≥10, `frontier-20261028-four-family-universal-mixed10-v1.md`, SHA256 eb1ec0ad36ab6c467c4b3931ca81bc9176decaf6a60a67f789bbca20b8a7b9e1, and the no-all-degree-2 mixed-incidence theorem for a four-family, `frontier-20261028-four-family-no-degree2-mixed-graph-v1.md`, SHA256 5c925ec7df05ef4ec2d533248733938aa2ffadc99a73cae8205bb6ac4b2bd0a8. Both and this new argument need disjoint full review. The conclusion is a necessary condition, not a four-family exclusion, M(8) bound, A10/A11 closure, formal verification, or priority claim.
+
+## Basic facts and an exclusive-rectangle obstruction
+
+Independently standardize the chosen actual row of Q,R,S,T to their respective coordinate bases with common column labels. A mixed Q cell is not one of the first-row coordinate rays; its *support* is its set of nonzero Q coordinates. In a line with k mixed Q cells, its light cells occupy 8−k distinct axes, so the k mixed rays form an ONB of the complementary k-axis subspace. Thus each mixed line has degree at least two; a degree-2 line has two Q rays on the same support-2 set; and a degree-3 line has at most one support-2 ray. Indeed two distinct 2-subsets of a 3-set meet once and cannot support orthogonal rays; two orthogonal rays on the same 2-set fill that plane and force the third ray to be a singleton.
+
+Two support-2 rays on one line have either the same support or disjoint supports, since a single nonzero shared coordinate cannot cancel. A line all of whose mixed rays have support 2 consequently has even mixed degree: each support plane is orthogonally filled by exactly two such rays. In a 4-mixed line with at least three support-2 rays, the fourth also has support 2 and the four supports are U,U,V,V for disjoint 2-sets U,V: two of the first three must share a 2-set, fill it, and the fourth lies in the orthogonal complement of the third ray within the remaining 2-set.
+
+**Exclusive-rectangle lemma.** Suppose four mixed Q cells form a 2×2 rectangle, all have the same support {a,b}, and no other mixed Q cell uses a. Then no orthogonal QLS mate R exists. The four R rays at the rectangle are pairwise orthogonal: two cells in a common row/column give orthogonal R rays; opposite corners have collinear Q rays because the 2×2 Q grid is made of two orthonormal bases of the same plane and the column constraints identify opposite rays, so product orthogonality gives orthogonal R rays there too. In each of the six rows outside the rectangle, Q=e_a occurs as a light ray: no mixed ray uses a, and the row is an ONB. The corresponding six R rays are pairwise orthogonal by Q⊗R orthogonality, and each is orthogonal to all four rectangle R rays because each rectangle Q ray overlaps e_a. This gives ten orthogonal nonzero rays in C^8, contradiction. The lemma requires no restriction on any light Q cells other than row completeness.
+
+## 1. Ten-cell incidence profiles
+
+Let r,c be the number of rows and columns containing mixed Q cells. Minimum degree two gives r,c≤5, and rc≥10. Up to exchanging the incidence roles of rows and columns, the only pairs are
+
+`(2,5), (3,4), (3,5), (4,4), (4,5), (5,5)`.
+
+When c=5 every mixed column has degree 2, so every mixed Q ray has support 2. The even-line fact excludes (2,5), because both mixed rows would have degree 5. It also leaves only row degree profiles `(4,4,2)` for (3,5), and `(4,2,2,2)` for (4,5). The (5,5) case has all mixed row and column degrees 2 and is excluded by the named no-degree-2 theorem.
+
+For (3,4), column degrees are `(3,3,2,2)` and row degrees are `(4,4,2)` or `(4,3,3)`. For (4,4), both degree profiles are either `(4,2,2,2)` or `(3,3,2,2)`; if the profiles differ, a degree-3 line meets at least two degree-2 lines and is impossible by the degree-3 fact. The remaining cases are treated without an incidence catalogue below.
+
+For an auxiliary finite check, an in-kernel enumeration of all 10-subsets of the labelled r×c incidence boards confirmed exactly these profiles before the support restrictions: 1, 54, 210, 2040, 2580 and 2040 labelled graphs respectively for the six displayed `(r,c)` pairs. This enumeration checked only incidence profiles, not amplitudes, existence or the mathematical conclusion. The arguments below are independent of it.
+
+## 2. Five incident columns: two disjoint support planes and a rectangle
+
+For (3,5), regard each degree-2 column as an edge joining its two mixed rows. The row degrees `(4,4,2)` force three edges between the two degree-4 rows and one from each of them to the degree-2 row. That degree-2 row has one support U on both its cells, which propagates through their columns. In a degree-4 row the four support-2 rays are U,U,V,V for a 2-set V disjoint from U. Thus exactly one of the three edges between the degree-4 rows has support U, and the other two have support V. Those two V columns form a 2×2 rectangle on the degree-4 rows, and all other mixed Q rays use U, disjoint from V. Apply the exclusive-rectangle lemma with either coordinate of V.
+
+For (4,5), the row multigraph has degrees `(4,2,2,2)` and five edges. Four meet the degree-4 row, leaving one edge between two of the three degree-2 rows. The remaining degree-2 row is joined to the degree-4 row by two columns. Its common support U occurs twice in the degree-4 row; the remaining two mixed rays there use a disjoint support V. The two degree-2 rows incident with the remaining edge consequently use V throughout. The two U columns form an exclusive 2×2 rectangle, so the lemma applies.
+
+## 3. The 3×4 profiles are impossible already for Q
+
+The two degree-3 columns meet all three mixed rows. Each degree-2 column meets the degree-4 row(s), and its two Q rays have the same support-2 set.
+
+*Profile `(4,4,2)`.* The degree-2 row meets both degree-3 columns. Its support-2 ray in each such column forces the other two rays there to have full support 3. In either degree-4 row, the two cells in the degree-2 columns have supports U,V of size 2. If U=V, these two rays fill that plane and the remaining two rays of the 4-mixed row lie in its complementary 2-space, contradicting their support 3. If U≠V, orthogonality makes U,V disjoint and their union is the entire 4-axis mixed subspace. Each support-3 ray meets one of U,V in exactly one coordinate, so it cannot be orthogonal to the corresponding support-2 ray. Contradiction.
+
+*Profile `(4,3,3)`.* Each degree-2 column meets the degree-4 row and one degree-3 row. The two latter incidences must be on different degree-3 rows, since each degree-3 row has at most one support-2 ray. Its other two rays, both in degree-3 columns, have full support 3. Because each degree-3 column contains both degree-3 rows, all four of these full supports coincide with a single 3-set W, and W contains the support-2 sets U,V of the two degree-2 columns.
+
+If U=V, the two support-U rays in the degree-4 row fill their plane. Its other two rays must then both use the complementary 2-set V' disjoint from U. Both lie in degree-3 columns whose mixed subspace is W, so W contains U∪V', impossible. If U≠V, they are disjoint. The degree-4 row's mixed subspace is U∪V. A ray there orthogonal to the two support-2 rays cannot meet either U or V in exactly one coordinate; in a degree-3 column its support has size at most 3, so it has support exactly U or V. Its two remaining rays must use U and V once each. Again W contains U∪V, impossible. No 3×4 profile exists.
+
+## 4. The `(4,2,2,2)`–`(4,2,2,2)` 4×4 profile
+
+The degree-4 row and degree-4 column meet every incident line; after removing them, the remaining degree-2 rows and columns are joined by a perfect matching. The degree-4 row has three support-2 rays on the degree-2 columns, so its central ray also has support 2, and its four rays use two disjoint supports U,U,V,V. Support equality propagates along each degree-2 column, its matched degree-2 row and that row's intersection with the degree-4 column. Choose U as the central support. Exactly one of the three matched branches has support U; together with the central cell it makes a 2×2 U rectangle. The other two branches use V, disjoint from U. Hence the rectangle is exclusive, contradicting the lemma.
+
+## 5. The `(3,3,2,2)`–`(3,3,2,2)` 4×4 profile
+
+Call the degree-3 rows and columns *high*. A high row has at most one cell in a degree-2 column, so it meets both high columns and exactly one low column; similarly every high column meets both high rows and one low row. The high/high core is therefore a 2×2 board. Its four Q rays have full support 3; their shared row and column subspaces identify a common 3-set W.
+
+The six other mixed cells all have support 2. Form a graph whose vertices are these six cells, joining two when they share a degree-2 row or column. It has four degree-1 vertices (the high/low and low/high cells), two degree-2 vertices (the low/low cells), and four edges. It consists either of two 3-vertex paths or of a 2-vertex and a 4-vertex path. Along either path all Q supports agree, and every path has an endpoint on a high line; its support is therefore a 2-subset of W. Let the two path supports be U,V. As an independent finite incidence check, with fixed high rows/columns and the necessary at-most-one-low-neighbor restriction, all 16 labelled graphs have the asserted core and boundary graph: eight have component sizes (2,4), eight (3,3). This check does not establish any vector identities.
+
+### 5a. Distinct path supports
+
+If U≠V, they share exactly one axis a in W. Q rays from different paths have nonzero inner product, because their only shared nonzero coordinate is a. For each path, select R rays as follows: on a 3-path select all three; on a 2-path select both; on a 4-path select three consecutive vertices. Within any such selection the R rays are pairwise orthogonal: adjacent cells share a row or column, while two vertices two steps apart have collinear Q rays in the common support plane and are orthogonal in Q⊗R. Cross-path selections are mutually orthogonal in R because their Q rays overlap. Thus there are at least five pairwise-orthogonal selected R rays, all at Q rays overlapping e_a.
+
+Only four Q rows contain mixed cells, so the other four rows each contain a light Q=e_a cell. Their four R rays are pairwise orthogonal and orthogonal to every selected R ray by Q⊗R. This gives at least nine orthogonal R rays in C^8, a contradiction. This case already needs only one mate.
+
+### 5b. The same path support
+
+Suppose U=V. Denote the four boundary endpoints on high lines by p_i (one for each high row) and q_j (one for each high column). Each high/high Q ray has full support W and is orthogonal to p_i and q_j. Its nonzero projection on U is perpendicular to both; in the 2-plane U this forces p_i and q_j collinear. All four high/high incidences exist, so all four endpoints are the same ray p. A 2-vertex boundary path would have orthogonal endpoints, contradiction. Thus there are two 3-paths, and each middle Q ray is the common ray v in U perpendicular to p.
+
+Let z be the third coordinate of W. The four core Q rays lie in the 2-space span{v,e_z}; their 2×2 row/column orthogonality forces opposite corners collinear, with the two diagonal ray classes mutually orthogonal. Every core ray has nonzero overlap with v because it has full support W. The four core R rays are pairwise orthogonal: shared-row/column pairs are orthogonal in R, and opposite pairs have collinear Q rays. The two middle R rays are orthogonal because their Q rays coincide at v. Every core R ray is orthogonal to each middle R ray because the corresponding Q rays overlap. These six R rays are therefore an ONB of the six-dimensional complement of the two axes in U: comparing their Q⊗R products with the two first-row products puts each R ray in that complement. The same statement holds for S.
+
+Choose an axis a∈U and an off-first-row cell y with Q_y=e_a in any row containing no mixed cells; such rows exist because exactly four rows are mixed and the chosen first row is unmixed. Q_y overlaps all four core and both middle Q rays, so Q⊗R and Q⊗S orthogonality force R_y,S_y into span(U). Comparison with the first-row products at a makes both perpendicular to e_a, hence both are collinear with the other coordinate ray e_b. Their R⊗S product at y then has nonzero inner product with the first-row R⊗S product at b, contradiction. This step uses actual products of two distinct mates; it does not assert a three-family or QLS-only obstruction for all of case 5.
+
+## 6. Scope and exact residual
+
+All ten-cell incidence profiles are excluded, so the named ≥10 input yields **≥11 mixed cells per nonclassical member**. Consequently the per-member lower sum is at least 22 for q2, 33 for q3, and 44 for q4, relative to a fixed selected board row; mixed-cell incidences may overlap between members. No comparison with an unrestricted global upper budget has been established, and no q2/q3/q4 exclusion follows from this bound alone. The three named old A10 exact inputs, GB15/18 and remaining UNKNOWNs are unchanged; A10/A11 remain OPEN.
+
+A full review should reconstruct both named inputs; the exclusive rectangle and all incidence cases; the 3×4 same-versus-distinct plane alternatives; both 4×4 boundary path types; exact dimension and product arguments; and scope. No parent, independent-family, executable-proof, formal, human, or novelty gate is claimed here.

@@ -1,0 +1,3 @@
+**Additive metadata receipt:** the parent supplied an actual `/bin/date` observation of **2026-10-30T10:09:28-0700 PDT**. This is parent-only metadata, not a child-native start, derivation, execution, or completion timestamp.
+
+The complete standalone source and report returned above remain **NOTRUN and unchanged**. No finite ranks, runtime measurements, mutation outcomes, or scientific acceptance are asserted by this addendum.

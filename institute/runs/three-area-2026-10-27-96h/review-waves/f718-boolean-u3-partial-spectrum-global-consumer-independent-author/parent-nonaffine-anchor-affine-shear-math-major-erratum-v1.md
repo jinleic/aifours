@@ -1,0 +1,11 @@
+# Parent correction: nonaffine anchor alignment can be affine in the full space
+
+Native observation before creation: 2026-10-30T17:00:25-0700 PDT. The unadopted [f718 candidate](/Users/jinleic/repos/aifours/institute/runs/three-area-2026-10-27-96h/review-waves/f718-boolean-u3-partial-spectrum-global-consumer-independent-author/author-candidate-v1.md) correctly observes that the SPECIFIC coordinate substitution b′=b+b_i, with i the two-bit quotient index and nonaffine anchor array b_i, is not a global affine map. Its broader final wording that nonaffine anchors are cases “where alignment itself is not affine” is **false** if ambient affine transformations may mix the physical h′ coordinate into b. This is ONE author MATH MAJOR for an overbroad structural/method claim, not a second held episode, a falsification of the even-κ lemma or a U3 witness. The original is unchanged and unadopted.
+
+For any nondegenerate binary quadratic F on the four i values, {1,i0,i1,F(i)} is a basis for all binary functions of i. Each actual two-bit anchor function has the UNIQUE form b_i=B i+c+v F(i), with a 2×2 binary matrix B and c,v in F₂². The invertible GLOBAL AFFINE shear
+
+b′ = b + B i + c + v(h′+1),    h′,i unchanged,
+
+maps every D0 anchor (h′=F(i)+1,b=b_i) to b′=0. On a graph row h′=F(i), it translates b by b_i+v. Being an invertible affine change on the actual full six-bit coordinates, it permutes Walsh frequencies and changes at most signs, preserving Walsh magnitudes and residue4 mod8. A nonaffine anchor array has v≠0; the separate character-XOR formula gives Σ_i κ_i=Jv≠0 (J swaps coordinates), hence its four characters cannot all have even multiplicities. This repairs the overstatement without assuming the rank2-anchor/even-κ condition holds or choosing an original transport t freely. It does NOT supply any all-U3-capped physical y or solve the general Boolean target.
+
+This correction was first reported by prospective general author f725 after its complete literal-packet read; parent independently checked the algebra above. Its final written return and separate finite f727 remain pending. Prior f689 example MATH MAJOR and f710v1 FAIL/v2 bounded PASS remain separate; all held episodes AND ALL consumers remain NONINPUT. No parent adopts f718's stronger location/sign or other generalizations here.

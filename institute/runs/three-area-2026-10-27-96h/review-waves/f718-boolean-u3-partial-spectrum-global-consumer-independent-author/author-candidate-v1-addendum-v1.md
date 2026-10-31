@@ -1,0 +1,3 @@
+# F718 additive correction: prebody control-file count
+
+The manifest contains **23 distinct controls**, not 24. I read all 23 through their endings before the direct PREBODY ACK. The oversized-packet control was read in two separate windows but was mistakenly counted as two files. My original direct ACK and Section 7 of `author-candidate-v1.md` both incorrectly report 24; this addendum corrects that reported count without replacing or backdating either record. The candidate's packet-coverage and mathematical claims are unchanged. This reported chronology is not a native-history or private-cognition certificate. No child scientific execution was run.

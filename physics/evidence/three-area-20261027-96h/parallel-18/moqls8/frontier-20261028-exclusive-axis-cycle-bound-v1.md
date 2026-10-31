@@ -1,0 +1,22 @@
+# Exclusive-coordinate support cycles inside arbitrary QLS families
+
+**WRITTEN author candidate; disjoint review pending.** Let a family contain t≥2 pairwise-orthogonal ordinary complex QLS of order n, and standardize an actual row of one member Q to its coordinate basis. Suppose Q has 2k mixed cells on a simple row/column incidence cycle, k≥2, every one with the same 2-axis support U={a,b}, and **no other mixed Q cell uses axis a**. Other mixed Q cells and other incidence components are otherwise arbitrary. Then
+
+`t ≤ k−1`.
+
+In particular an exclusive-axis support-2 C4 rules out any orthogonal mate, C6 rules out three or more family members, and C8 rules out four or more. This extends the owner candidate `frontier-20261028-mixed-cycle-two-sided-bound-v1.md`, SHA256 eaa19f2d481574471b80ca6ccd8aa83978751121cc718cf812b9e2157c21f5ed, which treated a single entire mixed cycle; no claim about that packet's second bound is imported here.
+
+At each incident cycle row and column its two Q rays have the same support U and are orthogonal. Going around the cycle alternates the same two orthogonal rays p,p^⊥, each appearing k times. The selected standardizing row contains no mixed cells and hence is outside the k cycle rows. For every cycle-exterior row, no mixed Q ray uses a; row completeness therefore supplies a light Q=e_a cell. There are n−k such cells, including one in the standardizing row.
+
+Fix any mate M. Its rays at the n−k light e_a cells are pairwise orthogonal, and each is orthogonal to every M ray in the cycle, by Q⊗M orthogonality because all cycle Q rays use a. Thus the cycle M rays span dimension at most k. The k M rays over p are pairwise orthogonal by Q⊗M, and the same is true of the k rays over p^⊥. They are therefore two orthonormal bases of one k-dimensional space. Their k×k transition matrix is unitary. In each transition row the two entries for the opposite-class cells sharing its actual QLS row and column are zero, so at most k−2 positions can be nonzero.
+
+For two distinct mates M,N, M⊗N orthogonality at any cycle pair from opposite Q classes makes the product of their corresponding transition entries zero. Their transition supports are therefore disjoint. Each unitary transition matrix has at least one nonzero entry in each row, so at most k−2 mates are possible: t−1≤k−2. No row/column outside the cycle is assumed classical, and no transition matrix is assumed monomial or real.
+
+## A concrete 12-cell stratum
+
+For Q of order 8 with exactly 12 mixed cells on 3 mixed rows and 6 mixed columns, all six columns have degree 2. Every mixed ray has support 2; a row's support-2 rays use disjoint support planes, each repeated exactly twice, so each mixed row has even degree. The row profiles are `(6,4,2)` or `(4,4,4)`. Regard each column as an edge joining its two mixed rows, allowing parallel edges.
+
+* For `(6,4,2)`, four column edges join the degree-6 and degree-4 rows and two join the degree-6 and degree-2 rows. The two latter columns form a 2×2 rectangle on one support U. In the degree-6 row, the remaining four rays use two support pairs disjoint from U; propagation along degree-2 columns shows no other mixed ray uses an axis of U. The exclusive C4 case excludes even one mate.
+* For `(4,4,4)`, there are exactly two column edges between every pair of rows. Fix one row; its four rays use disjoint supports U,U,V,V. If both edges to a second row use U, the two edges to the third use V. The second row's two other rays use a support W disjoint from U, and the third row forces W disjoint from V as well. The three pairwise-disjoint supports each form an exclusive C4. If instead each of the two edges to the second row uses one of U,V, the two edges to the third do the same, and row completeness forces the remaining pair of edges to split U,V as well. All mixed rays use the two disjoint supports, each on a C6, so an exclusive C6 excludes a three-member family.
+
+Thus a Q member in any three- or four-MOQLS(8) cannot have the (3 mixed rows, 6 mixed columns, 12 cells) stratum, nor its incidence transpose. This is one new residual exclusion, not a proof that every 12-cell stratum is impossible or a global four-family result. Full arbitrary-complex review of the cycle-axis hypothesis, actual row/column adjacency, light-cell dimension and transition-support argument is required; no parent, formal, human, executable or novelty acceptance is inferred.

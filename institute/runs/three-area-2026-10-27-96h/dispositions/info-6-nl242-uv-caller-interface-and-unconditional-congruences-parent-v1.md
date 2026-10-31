@@ -1,0 +1,19 @@
+# NL242 corrected uv-caller composite: interface adopted with the dependency ledger corrected, converse repaired, plateaued-XOR question closed
+
+**Disposition: same-harness PARTIAL ADOPTION at the frozen f272 scope** of the corrected composite `successor-20261029-info6-uv-caller-coupling-necessary-v1.md` (a1b7036f...156a, 135 LF) with mandatory erratum `...erratum-v1.md` (a3826398...1ac9c, 60 LF) read before the base body. The review (0F/1M/3m) is a complete independent reconstruction; its repository write was refused, so the review was returned in-channel and materialized verbatim by the parent (review-v1.md e81df7b0...44db, 209 LF; materialization receipt 39807b3d...0818; the single literal Unicode ellipsis at LF 199 is genuine content).
+
+**ADOPTED (reviewer-supported or reviewer-owned reconstructions):**
+
+1. The two-half Fourier interface (Theorem 1, Corollary 1, Lemma 1, Parseval split): for a complementary caller pair the two caps are exactly the full Walsh cap, both half-transforms are even, and Sigma_K U_hat*V_hat=0.
+2. The corrected count q=p+58 with p ODD in {63,65,67,69,71,73,75,77} and k(a0) in {+-1,+-3,+-5,+-7}; Sigma_v=2p-140 = 2 mod 4; W_f(a0)=4(p-70); E2's even-n_- XOR formula at the complementary scope (automatic at m=116).
+3. **M1 reviewer identity (unconditional):** V_hat(lambda) = Sigma_v - 2(lambda.x X_Omega) mod 4 for every one of the 256 characters; hence Sigma_v=2 mod 4 plus X_Omega=0 forces V_hat = 2 mod 4 globally. The three mixed congruences, never-zero property, cap value set {+-2,+-6,+-10,+-14} and odd-|k| ledgers follow WITHOUT the named unread odd-half import. The E6 dependency-ledger sentence assigning these to the import is REFUTED; the named caller disposition stays ADOPTED-UNVERIFIED as a source.
+4. **(N1),(N2) are redundant:** they already follow from the frozen even-half equations (U_hat=2k in 4Z forces X_u=0, hence X_Omega=0, hence both N-conditions). The E3 "not implied" claim is REFUTED.
+5. **The plateaued-16 nonzero-XOR open item is closed NEGATIVELY:** every plateaued 16-support (Walsh values 0,+-16) has XOR of its support equal to zero, by the dual characterization half-sum argument. This universal negative is adopted as a reviewer-owned written theorem at that scope.
+6. Block taxonomy and ledgers (64 blocks, 116 u-points, 140 v-points; class counts; energy identities; off-K ledger n_3+3n_5+6n_7=1088) with the D1 same-pair criterion CORRECTED to eta3*eta4=eta1*eta2 (the composite's prose rule fails exactly on D1, where the pair is complementary).
+7. The corrected conditional Theorem 6 as an equivalence relative to the FULL pointwise frozen system (U),(V); the unconditional variant's dropped-congruence necessity with M1's dependency repair; S4 section 8 confirmed a non-realization (U2(0)=168/16 non-integer demands); the exact remaining residual (U)/(V) as stated.
+
+**REFUTED as written (repairs owed before any reuse):** the standalone E2 converse without pointwise complementarity u^2+v^2=1 (synthetic counterexample u=0, v=1_0 passes all listed hypotheses but yields f=1/2); the D1 pair-sign prose; E6's import-exclusive dependency; E3's non-implication and open plateaued item.
+
+**Still open:** actual realizability of (U); the capped sign problem (V); no witness, no residual exclusion, no exclusion of (0,4,8), rank two, or the global balanced NL242 target; m=114 and the other six f244 class-count pairs undecided here.
+
+Parent read the complete review (raw 1-50, 51-110, 111-209) and ran exact arithmetic controls on the block/energy/parity identities (receipt `parent-exact-control-receipt-v1.json`, b38e7878...e721). The reviewer's pre-manifest governance-read deviation is recorded in section 1 of the review; no mathematical exposure. Same-harness only: not human, independent-family, formal/kernel or novelty acceptance.

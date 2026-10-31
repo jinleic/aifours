@@ -1,0 +1,9 @@
+# f346 substantive author checkpoint (UNREVIEWED)
+
+Native clock actually executed immediately before this record: 2026-10-30T08:59:27-0700 PDT. First own native start observation was 2026-10-30T08:39:44-0700 PDT, after initial document reads; it is not a timestamp for those earlier reads.
+
+1. Written necessary condition: a rank-5 orthogonal sector is impossible whenever the resolution Latin square has a balanced Z2 quotient. For order 10, equivalently its 30x100 context-incidence matrix has F2 rank 27, rather than 28. This excludes the complete 5+5 branch for cyclic, dihedral and all isotopic index-two-quotient resolutions, not the full branch for other Latin squares.
+2. Written physical obstruction: two ONBs of C4 sharing one ray cannot have two additional cross-orthogonalities without a repeated ray. For the cyclic resolution and a rank-4 support c-r in S, this excludes any balanced 4-set S containing a nondegenerate 3-term arithmetic progression.
+3. A second explicit plane-propagation argument excludes S={0,1,3,8} and every affine image. Together these exclude 80 of the 100 incidence-balanced circulant rank-4 supports. The remaining 20 supports are not constructions.
+4. Four fresh exact standard-library calculations ran to completion in about 0.061, 0.024, 0.180, 0.199 seconds respectively; no approximate phase optimization, solver, package installation or heavy/remote work. Their code remains in local://f346-sector-obstructions.py, local://f346-intersecting-bases.py, local://f346-four-sector-closure.py and local://f346-closure-proof-log.py. The two main exclusions have written proofs not dependent on these timings or a numerical non-result.
+5. No 100-ray witness, full branch no-go, novelty clearance, disjoint check, human/formal or independent-family acceptance is claimed. Source snapshots and all excluded payloads remain untouched. Full candidate is being materialized as a separate author artifact.

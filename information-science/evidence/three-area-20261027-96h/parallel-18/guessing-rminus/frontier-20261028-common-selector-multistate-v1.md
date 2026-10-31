@@ -1,0 +1,17 @@
+# Common-factor selector theorem for arbitrary finite state sets
+
+**Status: WRITTEN, exact Shannon identity checked, scientific review pending.** Let the ten ordered triangle factors take values in arbitrary finite groups, and let `X_v` be the three factor components at each vertex of R-minus. Let `S` be the full vector of their ten factor syndromes. Suppose **each one** of the ten individual factor syndromes determines the whole vector `S` on its support. For any joint distribution satisfying the original-neighbour FDs,
+
+\[
+H(X_V)\le\frac23\sum_vH(X_v).\tag{46}
+\]
+
+The support of `S` may contain any finite number of values; its probabilities, factor correlations, group orders and commutativity are unrestricted. Consequently the uniform FD support size is at most `product_t |G_t|^2`. The assumption that every factor individually determines `S` is stronger than the five-factor criterion `frontier-20261028-five-factor-syndrome-criterion-v1.md` SHA-256 `ee2694c7c02b2d2bab934723d86d13fda7ede452d59ebf71a81faaa4368e1e49`; this note isolates the reusable **common-selector** lemma and its lift.
+
+Indeed the 60-CMI exact certificate in `frontier-20261028-common-syndrome-compact-certificate-v1.md` SHA-256 `285721c3e5c52b6038741f830485447a8211de955c2685d9233aa074968c5105` requires only original graph FDs, determination of `S` by each triangle and neighbourhood, and the local factor FDs conditional on `S`. The hypotheses imply the triangle and neighbourhood determinations exactly as in the repaired proof; any group-product factor is locally recoverable from the other two components and its product. No entropy-cardinality or binary assumption occurs in the 60-CMI identity.
+
+## Multistate lift, with its actual obstruction stated
+
+Suppose only a covering subset `J` of factors individually determines the full syndrome vector `S`. Condition on all other factor tuples. The selected vertex blocks retain the graph FDs and, since `J` covers all vertices, every original neighbour tuple determines `S`. If **each omitted factor group `G_r` has at least `|supp(S)|` elements**, choose an injective map `h_r:supp(S)->G_r` and append independent uniform `A,B in G_r`, `C=B^(-1)A^(-1)h_r(S)`. Every new factor product determines `S`, every new component is recovered from the other two plus `S`, and the original FDs hold. Because each appended factor adds `2log|G_r|` jointly and `3log|G_r|` to singleton entropy sum, `Delta` is unchanged; apply the common-factor lemma fiberwise and tensorize the original fixed-syndrome factors.
+
+The last sentence requires that the omitted factors be **fixed-syndrome** before conditioning/tensorization. If their original syndromes vary with `S`, conditioning on their tuples can change the selector distribution but does not make those factors fixed-syndrome in the original unconditioned law, so the zero-gap tensorization step is not justified. Thus the lift establishes (46) when `J` is the set of all varying factors, every one of those factor syndromes individually determines `S`, `J` covers all vertices, all omitted syndromes are constant, and the omitted group sizes are large enough. If `J` does not cover, the proper-subgraph branch applies under the same fixed-omitted-syndrome premise. One- and two-state cases satisfy the injective-map size condition whenever omitted groups are nontrivial. The written lift requires scientific review; no unconditional arbitrary-spectrum theorem, numerical unrestricted bound, formal proof or novelty claim is made.

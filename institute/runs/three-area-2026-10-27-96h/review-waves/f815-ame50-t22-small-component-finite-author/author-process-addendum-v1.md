@@ -1,0 +1,3 @@
+# Additive process disclosure: source creation mode
+
+The specialized write tool reported `Made executable via chmod +x` when it created the new shebang-bearing `finite-small-component-v1.py`. This was an automatic creation-tool mode change, not a separate chmod command or a source-byte edit. The tool report is disclosed because the assignment says not to modify a file after creation; whether that prohibition encompasses the tool's creation-time mode adjustment is a process-boundary decision. This note does not change the candidate or source, and does not assert a process disposition. The source remains UNRUN. Main was notified directly before this additive record.

@@ -1,0 +1,52 @@
+# f26 — R-minus published-certificate independent reconstruction
+
+Reviewer **InfoSPR7-2**, author **InfoGuessingRminus-2**. Actual `/bin/date` observation immediately before this write: **Wed Oct 28 17:31:38 PDT 2026**. The reviewed candidate is `frontier-20261028-gurpinar-certificate-audit-v1.md`, complete 81 LF, SHA-256 `d0b494122660394b46d8ce647ed17e2f890c1f3ccf393cd4e44ccc48e87dcaf6`. Frozen assignment SHA-256 `ab09a4e95ac80309fecf5bbc6a70a29add905ff503ace169a4c1d067d81a6863`.
+
+## Verdict and finding
+
+**FATAL 0 / MAJOR 0 / MINOR 1.** Subject to the explicitly retained PDF-extraction and figure/source boundaries below, the row identity, five-copy semantics, symmetry construction, and their caller for **every alphabet size q >= 2 and every deterministic full-neighbour strategy** are reconstructed. This supplies an independent same-harness exact replay of the *published* 1847/276 upper-bound certificate, not a new bound or an LP-optimality proof.
+
+**MINOR M1 — q=1 at candidate lines 60, 64, 67 and 70.** Line 60 says any finite alphabet; lines 64–67 divide by `8 ln(q)` and `ln(q)`. At `q=1` these expressions are undefined (`0/0` when W is nonempty), so the unqualified “all-q” claim in line 70 is not literally proved. Repair by saying **q >= 2** wherever a logarithmic guessing number or ratio is used. If the singleton alphabet is discussed separately, `|W| <= 1` is immediate; a base-one logarithmic guessing number is not defined by that formula. This does not alter the q>=2 bound or the asymptotic conclusion.
+
+## Inputs, independent checks and their exact limits
+
+- Article: `institute/runs/three-area-2026-10-27-96h/public-sources/gurpinar-kybernetika60-2024-553-575.pdf`, SHA `373e8a2567fc7de9d40d0e5fabca9655cbb7b689a162005262b4f4d432bb46d8`. I read Lemma 2.10, Theorem 5.2, the graph section and Appendix B–C, and rendered the article's PDF page 18/printed page 570 for the figure. The article itself already states the result and has priority.
+- Annex PDF, TXT and ZIP respectively SHA `8befddb0faba71dbae9221956939d883946649e07a261c036ff7514dfea9ec6b`, `b0bd3f614397ed11edd475efdc4acb6e8f326c6722ede71d5a08760d84578b22`, and `09b3bcbd76be65257adba4a69ea5d26cc2cb686e2fdac7b5bb1963ef2a4e6fd0`. The pinned ZIP contains exactly `AnnexC.pdf` and `Rminus1847over276certificate.txt`; in the Python kernel I compared their full uncompressed bytes to the separately pinned copies, with result **True**.
+- Independently ran the non-scientific text extraction pipeline `pdftotext -layout <annex.pdf> - | shasum -a 256`; observed stdout SHA `6ff906bb54ddf33e46d5bfcddf50ffa0680c0315e118d6530e6f13f36adc2ca5`, identical to the candidate's stored layout. Rendered the first and last annex pages and visually compared representative first/last expressions, directions, and cap coefficients. This is not a glyph-by-glyph inspection of all 60 pages and **same-tool re-extraction does not independently establish complete PDF text fidelity**.
+- Registered original definitions `info-5-rminus-definitions-v1.md`, SHA `711ad49d2775284e06ed5074e7f2c9fdb7e9a3215ee9f5e372d817226265b1bb`; retained Baber et al. source `bcdrv-1410.8349v2.html`, SHA `3a270e579f080067717d90e25b6e59d29615a543ff30b1abfb9b5e2fae31337d`. Its original graph is R with edge 9–10 removed; its displayed ten R-minus cliques imply **25** of the 26 encoded edges. The extra encoded edge is 3–4, visible on the article figure. The figure comparison supports the specified graph transcription; interpretation of the figure and original PDF image fidelity remain documentary boundaries, not consequences of the arithmetic replay.
+- Author implementations and receipts were read and pinned, not run or used as an independent checker: first source SHA `2a13ac7bf692b835b6f6bb3509a98f0654ab917cae6807ae730ca8afea76f595`, receipt `09804654739b7b6494f8d791b714d642dd47f5607cafa8213d5bde8f86b42024`; second source `a15a4c8d637044d751f49927349c9efa9f963601f60eefabb261b75ad32eb4ed`, receipt `b5c33e3f97f405eed9d6518cd714a25b6b9cae914cdd799089256339752b102b`. The second source and receipt describe the six claimed controls; I did not independently re-execute those author controls. The candidate already discloses the common `pdftotext` and common graph/copy inputs. Neither author checker is cross-model independent of the other.
+
+## Independent exact row replay
+
+The reviewer wrote `frontier-review-f26-exact-kernel-v1.py`, SHA `b6bd12e460b8cdc142208e11d7fb188126bf280d109e7689a2c0e49f5dfa8f5d`, without importing either author checker. It was loaded with `%load` into the Python **Eval kernel** and ran finite `fractions.Fraction` and integer-bitmask arithmetic there; no external scientific program was launched. The source pins the layout and TXT and rejects unknown labels, malformed signed terms, unexpected headers or page folios, unpaired expression/coefficient rows, duplicate TXT names, coefficient mismatches, malformed row classes, signs or totals. It consumes 1920 expressions and 1920 TXT rows, matching their coefficients in order; TXT names are *not* independently decoded as expressions. Folios 2–60 each occurred in order. The author-derived layout and all 1920 parsed expressions remain conditional on extraction fidelity.
+
+The independent replay observed the following exact class counts and weighted sum:
+
+| Type | Rows | Required sign |
+|---|---:|---|
+| Conditional mutual information | 958 | coefficient negative |
+| Conditional entropy | 22 | coefficient negative |
+| Original graph functional-dependence row | 3 | coefficient negative; reverse entropy difference is zero |
+| Original-set graph symmetry equality | 456 | either sign |
+| Conditional-copy marginal equality | 473 | either sign |
+| Conditional-copy independence equality | 5 | either sign |
+| Original singleton cap | 3 | coefficient positive |
+| **Total** | **1920** | **0 unknown rows** |
+
+The three exact FD rows are for vertices `a,b,f`, with neighbour sets `bcdefg`, `acgij`, `aeghi`. The caps are `H(a), H(b), H(f) <= 1` and have weights `191/138`, `743/276`, `361/138`; their sum is `1847/276`. After sparse exact accumulation **every entropy coordinate cancels except H(a,b,c,d,e,f,g,h,i,j) with coefficient +1**, and the weighted right side is **1847/276**. The independent counts agree with the author's claimed 478 copy equalities as 473 marginal plus 5 independence rows.
+
+In-memory targeted mutations yielded the requested reasons: remove one row → `ROW_COUNT`; reverse the sign of a CMI multiplier → `GE_SIGN`; change a CMI multiplier while preserving its sign → `WEIGHTED_IDENTITY`; delete edge 1–2 from the encoded neighbourhood used by the first FD row → `ROW`; add an unrelated auxiliary variable to a checked copy marginal → `ROW`. These are only five targeted controls, not a proof that the parser rejects every possible error.
+
+Replay receipt `frontier-review-f26-exact-replay-v1.json`, SHA `818cd023748daa363315cd4c8d1e78cde144632bb354b45712105bbc04df81f6`, records the inputs, outputs and controls. Graph page rendering: `frontier-review-f26-published-graph-page-v1.png`, SHA `59595d9626759ea42ed533734cc3d1f14ed5eb6566d7cfbc4cc50ff86677e3df`. Annex endpoint page renderings: `frontier-review-f26-certificate-page01-v1.png`, SHA `5dfaabbc8c5160ac3f57ce7b45d92fc073e853312be9e616271255174dfa90e9`; `frontier-review-f26-certificate-page60-v1.png`, SHA `1b9995fda05202fb1179fa39dc37faeedb47b9f26e0068f6cea665f0003b98fc`.
+
+## Reconstructed semantic and caller interfaces
+
+The 17-variable labels are the original ten `a,...,j` and `b'0,d'1,e'1,g'2,f'3,g'3,h'4`. The candidate's table agrees with the source's copy lemma and Theorem 5.2 after translating the article's primes: step 0 copies `b` conditional on `adefghij`; steps 1–2 first copy `(d,e)` given `abcfghi`, then `g` given `abcd e'1 fhi`; steps 3–4 first copy `(f,g)` given `abcdehij`, then `h` given `abcdef f'3 ij`. In each case the new variable/tuple is drawn from the old conditional kernel given the displayed base, independently of the previously existing complement. On conditioning events of probability zero the kernel can be chosen arbitrarily. The marginal equality and the conditional-independence equality are therefore valid; generating the three branches successively preserves the original and previously generated marginals. These are finite-joint-law facts, not an appeal to the LP solver.
+
+The article's Appendix B generators `(1 8)(2 10 5 9)(3 7 4 6)` and `(2 5)(3 6)(4 7)` were separately encoded; the exact checker verifies that each preserves the transcribed 26-edge graph and that the generated subgroup has order 8. Given any finite nonempty winning set W of a deterministic full-neighbour strategy with q>=2, sample X uniformly from W. Each original vertex is a function of its neighbourhood. Take independent whole-law copies indexed by the eight group elements and put `Y_v=(X^(g)_{g(v)})_g`. Coordinatewise decoders preserve the same graph FDs. For every S, `H(Y_S)=sum_g H(X_{g(S)})`, so the entropy vector is group-invariant by permutation of the group index; `H(Y_V)=8 ln|W|`, and `H(Y_v)<=8 ln(q)`. The copy construction extends this finite law. Divide all entropies by the positive number `8 ln(q)`. Every nonnegative inequality times its negative multiplier is at most zero, each cap times its positive multiplier is at most its multiplier, and equality multipliers have unrestricted signs. The exact identity gives `ln|W|/ln(q) <= 1847/276`. An empty winning set is trivially bounded. Thus the proof applies to each strategy for each q>=2; maximizing over strategies and taking the source's asymptotic limit preserves the upper bound.
+
+## Assurance and exclusions
+
+This review independently reconstructs row semantics and the caller **relative to the pinned extracted text and visually interpreted graph**, but not every PDF glyph, external provenance of the archive response, or LP optimality. The graph/copy construction is a mathematical written reconstruction plus finite exact checks, not Lean/formal-kernel verification or independent human/configured-family/model review. The article's bound is published; no novelty, tighter bound, current-SOTA completeness, original guessing-number equality, or acceptance by Main is claimed. Author and reviewer share the same tool environment and raw textual/graph sources. No external model, paid service, network publication, nested agent or scientific native program was used.
+
+**END OF REVIEW.**

@@ -5,7 +5,17 @@ Research dossiers on precisely stated problems from three volumes of 《10000个
 `/Users/jinleic/jinleic-workspace/ai4s` and moved here the same day
 ([relocation record](maintenance/relocation-2026-10-14/README.md)).
 
-## Current assessment — 2026-10-26
+## Current assessment — 2026-10-31
+
+**Yes: several precisely stated difficult targets have complete constructions or reviewed
+proofs, and the repository contains meaningful specialist contributions.** The strongest
+freshly replayed examples are LKTS(57/87), all six cyclic difference-family exceptions,
+RDSQS(52), the optimal mcDSQS(38) colourings, BTD(14,28), and CFR(5,27).
+The new nonclassical MOQLS(8) triple also passed exact checking and seven corruption
+controls. The new R-minus bound `gn(R−) <= 716/107` passed its rational certificate
+checker, conditional on the named DFZ inequality. These scoped results leave the general
+book problems, worldwide priority and human peer acceptance unresolved. See the
+[October 31 assessment, fresh receipts and publication limits](maintenance/publication-2026-10-31/README.md).
 
 The work contains complete finite constructions and scoped theorems with substantive verification.
 The strongest written continuation is **Sun's disjoint-coset conjecture at k = 7 for arbitrary groups**,
@@ -22,12 +32,17 @@ Three deliberately corrupted witnesses were rejected. The mcDSQS(38) contributio
 certified optimal colourings; its underlying SQS was already public. See the
 [dated assessment, replay commands and limits](maintenance/publication-2026-10-26/README.md).
 
+A new [96-hour three-track continuation](institute/runs/three-area-2026-10-27-96h/README.md)
+is authorized through **October 31, 14:23:27 PDT**, retaining six problem slots per track.
+All eighteen existing owners were revived for safe intake; startup is not scientific progress,
+old STOP/HOLD/ZERO boundaries persist, and actual service gaps and parent/owner quarantines are recorded in the [current round](institute/runs/three-area-2026-10-27-96h/README.md). Scoped written support is not original-target closure, novelty, or evidence of uninterrupted eighteen-owner research.
+
 The [October 23–27 eighteen-target round](institute/runs/three-area-2026-10-23-96h/README.md)
-contains further scoped written theorems and useful barriers, but declares none of its
-unrestricted book targets solved and remains active at its latest recorded checkpoint.
+closed with its [final report](institute/runs/three-area-2026-10-23-96h/final-report-v2.md). It contains further
+scoped written theorems and useful barriers, but declares none of its unrestricted book targets solved.
 Its ordinary written reviews are not Lean/kernel or human review. Mandatory verification
 overlays, priority corrections and withdrawals accompany the research, including the refuted
-semigroup CG/RU–LU claims. Publication does not promote these claims or close the round.
+semigroup CG/RU–LU claims. Publication itself adds no scientific acceptance.
 
 **Full ordered Olson, MOQLS(8), maximal 1-RQLS(10), PA(19,8,6), CFR(6,21), and six MOLS(39)
 remain unresolved here.** Earlier CPCW and L(12,3) results are independent confirmations of prior

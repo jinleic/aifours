@@ -1,0 +1,3 @@
+# Additive notation clarification for author-candidate-v1
+
+In §3, use `b_i` throughout for the degree-two symbol at party i distinct from `w*_i`. Reserve `v_i` exclusively for the triple-word count defined in §2. Thus the sentence immediately after identifying `w*` should read: “Let `b_i` be the other degree-two symbol at i.” The next sentence then reads: “Let h be the inside party of the unique singleton. By (4), `v_h=0` and `v_j=1` for `j≠h`.” The remainder of §3 already uses `b_j` for the symbol. This removes a notation collision only; it changes no equations, quantifiers, deductions, or result limits. The original candidate remains unchanged. This is not a review or acceptance.

@@ -1,0 +1,12 @@
+# Root-alphabet Fourier-product frontier: only multiples of six remain
+
+**COMPOSITE AUTHOR CANDIDATE, UNREVIEWED.** Native `/bin/date` at last constituent pin: **Wed Oct 28 20:52:24 PDT 2026**. Supersedes the conservative alphabet conclusions of `frontier-20261028-fourier-product-root-frontier-v2.md` SHA **59771270a53f6bf1e3155f09a1a5e9e96059341ceccb643f93956356d8b68b7a**, preserving its bytes.
+
+For the actual Fourier-product family `psi_(r,c)(t)=zeta10^(r t)K_(t,c)/sqrt(10)`, with a q-root Butson K, **the only root orders not yet excluded are multiples of 6**. This concerns the existence of even ONE orthogonal transversal, including repeated-ray cases. It is NOT an unrestricted 1-RQLS10 result.
+
+- **All odd q:** written matching/quotient/tight-frame reduction to the independently replayed universal BH10,5 base, `frontier-20261028-all-odd-fourier-product-no-transversal-v1.md` SHA **d9422ffac608ddd9b128e979dc105b20c6ca94ad06f4a63af4e086a42e6e9490**. Imports Lam–Leung low-weight root sums; no matrix catalog.
+- **All q with 3∤q:** written matching/quotient/Diţă specialization to BH10,10, `frontier-20261028-all-no3-fourier-product-no-transversal-v1.md` SHA **b2984d60e1e5d094f82e3b91726cf85328bb816c3fbe6407c9dc68c0224ab099**. Imports Lam–Leung Cor.3.4, Thms.4.8 and6.5, the root field fact, and q10 certificate SHA **a2814fa152a3e0c2e41993a172a1f4320378667be08a202b0dd8a39ed5dd721f**, which imports the published 51-class classification.
+- **q=6 and12:** catalog-conditional universal no-T certificates SHA **ae707c663690643c541edea9c54927672d48b9d561b4477a484e2d8bbb85b3de** and **c227f7146ab82709cf860bc9327f9163c6c1e6071e7a111f76556e5035b04ccd**. All q<=17 are thus either no Hadamard or no T. q18 is the smallest root order still open in the FULL Fourier-product family.
+- **q=18 partial:** all stated BH6 multi-rectangle families at 18th roots, including24 explicit nonbinary-gauge cases, have no T by SHA **46c91c89a696daea81f2a7274a440156058bed64951cc2f6c4dbc26971e71d60**. This does NOT classify all BH10,18.
+
+The Lam–Leung source is [On vanishing sums of roots of unity](https://arxiv.org/pdf/math/9511209v1); the catalog import is [Lampio–Östergård–Szöllősi](https://arxiv.org/html/1707.02287v1). All constituent math, finite replays, source conclusions, gauge/symmetry callers and classification completeness require independent review before adoption. Even q divisible6, irrational phases, non-Fourier products and arbitrary 1-RQLS10 remain open here. No novelty claim is made.

@@ -1,0 +1,3 @@
+# F793 reported packet-window and display deviations — two PROCESS MINORs
+
+Recorded UTC 2026-10-31T01:29:10.994Z. Before any comparison the reviewer reported (1) a 7-LF part 01 LF56–62 request, exceeding the assigned ≤5-LF limit but not the manifest ≤20-LF maximum; it restarted; (2) a clipped eval-object presentation while displaying part 03 LF6–50 in sequential 5-LF reads, and a further complete restart using narrower raw text-only windows. These are TWO distinct reviewer PROCESS MINORs; the final complete pass and return remain prospective. No backdated clean first pass or mathematical defect is asserted.

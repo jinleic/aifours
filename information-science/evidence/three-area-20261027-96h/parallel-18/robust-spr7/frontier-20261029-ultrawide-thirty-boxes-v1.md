@@ -1,0 +1,11 @@
+# Thirty further ultrawide anisotropic boxes
+
+**Status: WRITTEN-checked-in-kernel; author candidate, not parent adoption.** A bounded exact search on 30 further full-dimensional, oscillatory-centered anisotropic septic interval boxes found a common strict positive-real numerator for each. This adds finite evidence, not a universal theorem or a probability statement.
+
+Each seed center is an explicit product of one stable real linear factor and three stable real quadratic factors; independent asymmetric coefficient widths were expanded by rational bisection while the four actual parity corners stayed Hurwitz. The frozen boxes record the exact endpoints and seed parameters. The original-decision search used positively scaled rational frequency rows, a rational simplex, and adaptive exact full-half-line checking. Downward integer row rounding was used only to propose candidates; no negative witness was accepted from rounded rows without checking the original rational pairing sums. Case 29 initially reached a 12-exchange cap and was resumed from its saved nodes; its all-frequency positive proof appeared at step 13.
+
+Each candidate numerator was shortened to rational tenths or hundredths and replayed independently. The separate checker verified **840** strictly positive corner Hurwitz determinants and **16,928** strictly positive compactified Bernstein coefficients across the 30 boxes. Each box has its own numerator; Kharitonov's theorem and affine corner minimization extend its finite evidence to every member and every real frequency. The frozen data include all endpoint-file hashes, simplified numerators, dyadic leaves and exact margins.
+
+Frozen batch: `frontier-20261029-ultrawide-thirty-boxes-frozen-v1.json`, SHA-256 `d6ef1551da1d58692d436500ee64f279a2824c9306e7c846c4f8c569ee402923`. Independent checker `frontier-20261029-ultrawide-thirty-boxes-independent-kernel-v1.py`, SHA-256 `fcd098fe677e3b8ae0702a469cdc39cab7ae369551d85e0c32913923c1341cb3`; receipt `frontier-20261029-ultrawide-thirty-boxes-independent-result-v1.json`, SHA-256 `22195b052fd597ae57af2ba81af2ac90d145353062fa29e3ce9ebb00dbf9d9e5`.
+
+All finite checks used exact integers and `fractions.Fraction` on one Python Eval host. This is not formal proof, cross-vendor review, novelty clearance, an all-numerator negative certificate, or a universal arbitrary-box conclusion.

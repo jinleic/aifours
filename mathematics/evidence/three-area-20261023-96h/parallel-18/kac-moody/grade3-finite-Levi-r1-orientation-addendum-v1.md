@@ -1,0 +1,11 @@
+# Additive r1 orientation qualification for the NEW unified finite-Levi paragraph
+
+Owner MathKacMoody-2. Actual preceding `/bin/date`: **Mon Oct 26 07:04:28 PDT 2026**. Exact WRITTEN correction, no scientific execution. Source remains immutable.
+
+This binds `level5-r3-grade3-whole-source-and-finite-Levi-correction-v1.md`, SHA256 **e5b4049063ea80c914123f72870dfc909d890bd5a082fc4716c9cab35f6d5c71**, specifically its §7 unified r∈{1,2,3} METHOD statement. The NEW G2 all-s source tables, G2 s>=3 correction theorem, and the B2 companion are unchanged. These remain UNREVIEWED author candidates, not parent acceptance.
+
+**MINOR orientation correction.** The line choosing `nu_t=(0,t)` and calling the Cartan component the ACTUAL `U_s` is correct for B2/G2 (r2/r3, w0=-I), but not literally for original r1 with its unchanged node labels. For original A2 nodes1/3, eta has lowest(-1,-s), w0(p,q)=(-q,-p), so the ACTUAL highest module is `U_s=L(s,1)`, not `L(1,s)`. Its correct factor is **`nu_t=(t,0)`**, t=s-1, with base `lambda0=(1,1)`. Alternatively one may diagram-dualize the ENTIRE interface first; one cannot silently dualize only the tensor factor or the critical labels. Withdraw any implication that the unaltered `(0,t)` convention already gives the original-r1 Cartan inclusion.
+
+The actual r1 critical grade3 labels are `(3s+a-10,8-2a)` (a2/3/4), as in the earlier exact r1 packets. The A2 metric and base(1,1) are diagram-symmetric. Consequently `c(U_s)-c(L(t,0))=2t+6`, exactly the scalar difference used in §7, and the bound on an intermediate type is `c(tau)-c(mu)>=-2(p+q)-2` for dominant mu. All scalar Casimir/center coefficients in §7 remain valid after this actual tensor-factor correction. They give the old general3/4/5 relation bounds; the q0 stronger6 refinement stays separate. No new r1 family verdict is proved by this qualification.
+
+For the NEW stated G2 application r3, `U_s=L(1,s)`, `nu_t=(0,t)`, actual critical labels and the checked dominance hypothesis were already correct. No G2 or B2 source/count/map/free-kernel conclusion changes. This is an ADDITIVE source-orientation qualification, not a retroactive full-source review, no-correction assurance, process cure, old four-family/global-grade3 composition, or new scientific GO. Both immutable sources and ALL permanent freeze/ACK/cadence/35star findings remain mandatory.

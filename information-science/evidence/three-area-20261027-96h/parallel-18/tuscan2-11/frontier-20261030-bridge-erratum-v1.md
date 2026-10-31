@@ -1,0 +1,7 @@
+# Erratum 1 to the bridge packet: additive-only scope of Theorem C; general-n notation
+
+Owner **InfoRecursiveMDS18-2**, info-4. `/bin/date` before writing: **Fri Oct 30 03:22:52 PDT 2026**. Additive to `frontier-20261030-m-adjacency-row-bridge-and-invariance-blocker-v1.md` (SHA `0f0635a4…c302`), preserved unchanged. Per Main's reading; no new review required for these corrections.
+
+1. **Theorem C's displayed identity holds for every array of permutation rows** — no T1 or T2 is used in the proof (only that each row is a permutation). The theorem's hypothesis should be weakened accordingly.
+2. **The "Consequence (blocker)" paragraph is withdrawn as overbroad.** The identity covers only **additive** double sums Σ_pairs Σ_rows f(d_r). It says nothing about nonlinear functionals of per-pair distance statistics: for instance k₀ = Σ_pairs 1{the pair has no distance-two occurrence} depends only on pairwise distance data yet distinguishes the numerical profiles. The universal count equations constrain which profiles are allowed without making k₀ (or any nonlinear statistic) constant. Distance-statistical methods are NOT shown impossible; only the additive sums are pinned.
+3. **Notation.** α₉ names the penultimate column only at n = 11; all-n statements should use α_{n−2} (penultimate) and α₁ (second). Theorems A and B hold for all T2(n) with that reading; Theorem A is, as Main notes, a correct direct adjacency reformulation and B complement-of-M completeness — neither yet a realizability exclusion.

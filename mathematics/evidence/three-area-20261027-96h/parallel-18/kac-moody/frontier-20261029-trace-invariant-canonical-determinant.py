@@ -1,0 +1,122 @@
+#!/usr/bin/env python3
+"""Entire trace/Dynkin invariant canonical determinant, with exact interpolation.
+
+Uses owner-local FLINT fmpz_mat.det for every triangular-grid determinant. Source
+rows and the exact two-variable Newton/Stirling conversion are unchanged in
+meaning; the older Python-Bareiss producer and every earlier output stay frozen.
+"""
+import argparse
+import hashlib
+import importlib.util
+import json
+import math
+import sys
+from fractions import Fraction as Q
+from multiprocessing import Pool
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent
+sys.path.insert(0, str(ROOT / 'frontier-20261028-fastalgebra'))
+import flint
+
+
+def load(name, file):
+    spec = importlib.util.spec_from_file_location(name, ROOT / file)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+prior = load('prior_interpolation', 'frontier-20261028-level6-minor-polynomial.py')
+DATA = None
+
+
+def init(data):
+    global DATA
+    DATA = data
+
+
+def determinant(point):
+    i, j = point
+    matrix = [[a + i * b + j * c for a, b, c in row] for row in DATA]
+    return i, j, int(flint.fmpz_mat(matrix).det())
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--grade',type=int,choices=[5,7],required=True)
+    ap.add_argument('--workers', type=int, default=4)
+    args = ap.parse_args()
+    assert flint.__version__ == '0.9.0'
+    name = f'frontier-20261029-level{args.grade}-trace-dynkin-canonical-pencil-v1.json'
+    raw = (ROOT / name).read_bytes()
+    P = json.loads(raw)
+    out = ROOT / f'frontier-20261029-level{args.grade}-trace-dynkin-canonical-determinant-v1.json'
+    if out.exists():
+        raise FileExistsError(out)
+    matrices = [[[Q(v) for v in entry] for entry in row] for row in P['matrix']]
+    assert len(matrices)==P['entire_primitive_dimension'] and all(len(row)==len(matrices) for row in matrices)
+    data, scale = prior.h.int_rows(matrices)
+    n = len(data)
+    points = [(i, j) for i in range(n + 1) for j in range(n + 1 - i)]
+    with Pool(args.workers, initializer=init, initargs=(data,)) as pool:
+        vals = {(i, j): v for i, j, v in pool.imap_unordered(determinant, points, chunksize=16)}
+    dx, dxy = {}, {}
+    for j in range(n + 1):
+        work = [vals[i, j] for i in range(n + 1 - j)]
+        for i in range(n + 1 - j):
+            dx[i, j] = work[0]
+            work = [b - a for a, b in zip(work, work[1:])]
+    for i in range(n + 1):
+        work = [dx[i, j] for j in range(n + 1 - i)]
+        for j in range(n + 1 - i):
+            dxy[i, j] = work[0]
+            work = [b - a for a, b in zip(work, work[1:])]
+    st = prior.stirling_rows(n)
+    factorials = [math.factorial(i) for i in range(n + 1)]
+    NF = factorials[n]
+    mixed = [[0] * (n + 1) for _ in range(n + 1)]
+    for (i, j), d in dxy.items():
+        if d:
+            multiplier = d * (NF // factorials[j])
+            for v, c in enumerate(st[j]):
+                if c:
+                    mixed[i][v] += multiplier * c
+    nums = {}
+    for v in range(n + 1):
+        for u in range(n + 1 - v):
+            z = sum(st[i][u] * (NF // factorials[i]) * mixed[i][v]
+                    for i in range(u, n + 1) if st[i][u] and mixed[i][v])
+            if z:
+                nums[u, v] = z
+    for i in range(n + 1):
+        powers = [i**u for u in range(n + 1)]
+        inner = [0] * (n + 1)
+        for (u, v), c in nums.items():
+            inner[v] += c * powers[u]
+        for j in range(n + 1 - i):
+            z = 0
+            for c in reversed(inner):
+                z = z * j + c
+            assert z == vals[i, j] * NF * NF
+    coefficients = [{'x_power': u, 'y_power': v, 'coefficient': str(Q(c, NF * NF * scale))}
+                    for (u, v), c in sorted(nums.items())]
+    result = {'degree': [args.grade,args.grade,args.grade], 'variables': f'x=r-{args.grade},y=s-{args.grade}', 'pencil': name,
+              'pencil_sha256': hashlib.sha256(raw).hexdigest(), 'entire_source_endomorphism': True, 'size': n,
+              'grid_points': len(points), 'all_grid_values_reproduced': True, 'coefficients': coefficients,
+              'determinant_backend': 'python-flint 0.9.0 exact fmpz_mat.det',
+              'interpolation_backend': 'Python integers, exact Newton/Stirling factorial scaling',
+              'source_interpolation_module_sha256': hashlib.sha256((ROOT / 'frontier-20261028-level6-minor-polynomial.py').read_bytes()).hexdigest(),
+              'positive_coefficients': sum(c>0 for c in nums.values()),
+              'negative_coefficients': sum(c<0 for c in nums.values()),
+              'constant_coefficient': str(Q(nums.get((0,0),0),NF*NF*scale)),
+              'status': 'CERTIFIED_WHOLE_CLOSED_QUADRANT_CANONICAL_NONZERO' if nums.get((0,0),0) and (all(c>0 for c in nums.values()) or all(c<0 for c in nums.values())) else 'MIXED_OR_ZERO_CANONICAL_MINOR_NO_GLOBAL_VERDICT',
+              'scope': 'entire canonical primitive endomorphism determinant on x,y>=0; D3-kernel containment, actual free-source transport and independent verification remain substantive gates'}
+    with out.open('x') as stream:
+        json.dump(result, stream, indent=2)
+        stream.write('\n')
+    print('DONE canonical determinant', P['degree'], 'size', n, 'terms', len(coefficients), 'signs', result['positive_coefficients'],result['negative_coefficients'],result['status'],out.name,flush=True)
+
+
+if __name__ == '__main__':
+    main()

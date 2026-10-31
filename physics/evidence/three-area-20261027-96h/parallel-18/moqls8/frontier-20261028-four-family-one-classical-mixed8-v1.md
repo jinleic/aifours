@@ -1,0 +1,15 @@
+# One classical member: seven mixed cells are impossible
+
+**WRITTEN author candidate; no catalogue, solver, witness or external theorem premise.** In an actual ordinary four-MOQLS(8) containing a classical member L, any nonclassical member Q has **at least eight mixed cells** relative to any actual Q basis line among the rows, columns and L-symbol lines. This is an additive strengthening of the separately review-pending ≥7 proof `frontier-20261028-four-family-one-classical-mixed7-v1.md`, SHA256 7eafc43e165d379c3fb7297ccf40afe9cb381f5da02442f68beaad71b4afafe8. That earlier WRITTEN result is a named input, not assumed reviewed.
+
+## Excluding exactly seven
+
+The rows, columns and L-symbol classes form a three-net, and Q is an actual ONB on every line. Use the chosen line as row 0 and its Q rays as coordinate axes. A *mixed* ray is not one of these axes. Any net line containing a mixed ray contains at least two mixed cells. A line with exactly two mixed rays forces them to share the same two-axis support; a line with exactly three mixed rays has at most one support-2 ray, because its mixed rays lie in three axes and two size-2 supports are either equal or meet in one coordinate.
+
+Suppose there are exactly seven mixed points. If a net line has k of them, each on-line point needs a mixed neighbor on both other class-lines; any outside mixed point can be adjacent to at most two on-line points, one per other class. Thus `2k≤2(7−k)`, so k≤3. Every class partitions the seven mixed points into lines of size at least two and at most three; the only possibility is `3+2+2`.
+
+Choose one such class, with its triple X and two parallel pairs Y,Z. Both rays on each of Y and Z have support size 2. On X at least two rays have support size 3; choose x among them. Each of the two other class-lines through x contains at least two mixed cells, and cannot contain exactly two, because that would force x to have support size 2. Such a line cannot contain a second point from X, nor two from Y or two from Z, because points already sharing one net line cannot share another. It therefore contains exactly one Y point and exactly one Z point, both support-2 rays. This contradicts the three-mixed-line lemma, which permits at most one support-2 ray. Seven is impossible.
+
+Together with the cited ≥7 result this gives **≥8**. In a q3 four-family, each of its three nonclassical members obeys this bound, yielding at least 24 total mixed-cell incidences and at least 24 units of summed off-first-row support surplus. These incidences may overlap; no contradiction with the upper budget, q3 exclusion, M(8), A10/A11 result or novelty claim is asserted. The catalogue-free ≥8 theorem for a QLS with two classical mates is separate and does not imply this one-classical result.
+
+A disjoint reviewer should reconstruct the support-2/support-3 line lemmas, the cross-adjacency count, the exhaustive `3+2+2` partition and the dependence on the earlier six-cell/fourth-mate argument before adopting the composed ≥8 conclusion.

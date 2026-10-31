@@ -1,0 +1,7 @@
+# The five-factor criterion exactly rules out its two-class q8 subcases
+
+**Status: WRITTEN with exact finite set accounting; scientific review pending.** In the ten-factor q=8 binary-XOR model, if a law has syndrome support `S={s,t}` and the difference mask `J=s xor t` contains the five factors `1,2,3,6,8`, then `Delta<=0`. More generally, any binary syndrome support with at least three distinct vectors can never satisfy the five-factor individual-identifiability hypothesis `frontier-20261028-five-factor-syndrome-criterion-v1.md` SHA-256 `ee2694c7c02b2d2bab934723d86d13fda7ede452d59ebf71a81faaa4368e1e49`, because each factor syndrome is only one bit.
+
+The positive aspect is that for nonbinary groups the five-factor hypothesis permits arbitrarily many syndrome values up to the smallest of the five group orders, so the general theorem is not merely a disguised two-state result. For example, choosing a common `m`-state selector and setting each syndrome equal to that selector meets individual identifiability whenever all relevant factor groups have order at least `m`.
+
+The negative aspect is that this particular five-factor criterion **cannot** exclude any genuinely three-syndrome q=8 support. Other choices of group structure, a stronger certificate with fewer individually identifying factors, or support-specific entropy inequalities are needed. This note makes no claim about three-syndrome law existence or nonexistence and gives no unrestricted guessing-number bound.

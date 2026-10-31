@@ -1,0 +1,6 @@
+# V33 additive inherited-documentary-status correction
+
+Recorded UTC 2026-10-31T01:42:06.819Z. V33 opening/evidence correctly cite the completed v31/v32 documentary outcome, but its inherited final paragraph still says v31/v32 require their changed-scope checks. Read that stale sentence as **v31/v32 checks are complete only at the exact scoped outcome, and v33 awaits its own changed-scope checks**. Original v33 is unchanged. This is ONE recurring parent report DOCUMENTARY MINOR, not a new science finding or retroactive reviewer pass. Future successors must correct the inherited prose rather than re-counting the same stale line. The unique documentary-score accounting in the v31/v32 outcome is unchanged.
+
+- V33 {"path":"/Users/jinleic/repos/aifours/institute/runs/three-area-2026-10-27-96h/rolling-report-20261030-v33.md","sha256":"21775f8824780d5f444536e4238b3fe8df126139b45975196b4dc86f185749a2","bytes":65965,"LF":42}
+- V31/v32 operative scoped outcome {"path":"/Users/jinleic/repos/aifours/institute/runs/three-area-2026-10-27-96h/rolling-report-20261030-v31-v32-documentary-audit-outcome-v1.json","sha256":"f97314ffefa9dcab783ce2c3c17f41f4cfe348d9e783b4184d673e5e865b42f8","bytes":4825,"LF":105}

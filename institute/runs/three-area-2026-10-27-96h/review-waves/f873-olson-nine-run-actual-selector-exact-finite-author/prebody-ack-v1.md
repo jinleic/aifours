@@ -1,0 +1,7 @@
+# Prebody acknowledgement — f873
+
+I have read the complete manifest, freeze receipt, final pre-dispatch binding, parent live metadata supply, actual-dispatch receipt, and every one of the 22 status-only controls listed in the manifest before reading any mathematical packet body. The dispatch identifies `VerifyF873OlsonExact`, the specified wave and one packet part. I have not yet read a packet mathematical body or engaged in packet-based mathematical reasoning.
+
+I will send this acknowledgement directly to Main before opening the packet. I will read the entire literal packet in order, in raw windows no longer than 20 LF and below 30,000 bytes per display, recovering any clipped material before reasoning. Linked original files and all genuine held episodes and all their consumers are not inputs. Controls are status/permissions only. This acknowledgment is not a cognitive-isolation certificate.
+
+This is a prospective GENERAL AUTHOR assignment, not a written-only reviewer duty. New source and narrative are exclusive in the assigned wave directory; frozen and prior outputs remain untouched. I will not run scientific code, tests, compilers, shell/child processes, network, external models or unlisted sources. Any prepared stdlib verifier remains UNRUN pending parent full-source review and a separate one-shot GO; it must impose the assigned time bounds and report partial work without overstating coverage. The cutoff remains 2026-10-31T21:23:27Z.

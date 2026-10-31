@@ -1,0 +1,50 @@
+# Unrestricted q1 exclusion conditional on the order-8 3-MOLS catalogue
+
+**Status: WRITTEN physical reduction + explicit finite CNF/RUP certificates, pending disjoint mathematical/encoding/checker review and strict independent parent replay.**
+
+Let **Hcat** assert that every ordinary triple of order-8 MOLS is paratopic, as a five-class strength-two orthogonal array, to one of the 39 triples in the two pinned local snapshots below. Under Hcat, any actual ordinary four-MOQLS(8) with at least three classical members is entirely classical. Equivalently, the **q=1 stratum**—exactly one nonclassical and three classical members—is empty.
+
+The fourth QLS may have arbitrary complex amplitudes and arbitrary support sizes: no flatness, realness, special phase, equal-magnitude or ray-component restriction is assumed. The claim requires the actual row and column ONBs and all six original pair-product ONBs. It does **not** exclude q=2, q=3 or q=4 for four-families; it does not establish all four-family classicality, M(8), A10/A11, formal verification, novelty or human/model-family acceptance. Hcat and the correspondence of the local snapshots to the published complete catalogue remain external assumptions, not newly proved classifications.
+
+## 1. All-variable reduction to 39 net cases
+
+Independently rotate each of the three classical members into its own coordinate basis. Their labels are three ordinary MOLS. Along a fixed symbol line of any classical mate, actual pair-product orthogonality forces the remaining Q rays to be pairwise orthogonal, so Q is an ONB on all five net classes: rows, columns and the three symbol classes. A species paratopy may permute these classes, their symbols and cells. Select representative classes as new rows/columns and use the other three as classical labels; all Q line-ONBs survive. This is reindexing of actual vectors, not construction of fictitious output bases.
+
+Choose an actual representative first-row Q basis `e_0,...,e_7` and normalize each of the three other symbols by its value there. For every off-first-row cell x, Q(x) is orthogonal to its four distinct first-row partners sharing its column and each of its three mate symbols. Hence its nonempty support S_x is contained in a known four-element set A_x. Q is nonclassical exactly when some S_x has at least two coordinates: otherwise all rays are first-row basis rays, while any classical Q must use the first-row ONB.
+
+For each net representative, encode the following *necessary* conditions for any actual nonclassical Q:
+
+- one Boolean for each of 56×4 allowed cell-coordinate incidences; every support nonempty;
+- on every actual net line, ONB completeness covers every first-row coordinate; when its first-row coordinate ray is not on the line, exactly four off-row cells can cover that coordinate;
+- any two rays sharing a net line cannot have support intersection of size one, because then their inner product has exactly one nonzero term;
+- for any three pairwise line-adjacent cells whose pairwise **allowed** intersections are the same two axes, those axes cannot both occur in all three supports: their nonzero projections would be three mutually orthogonal vectors in a two-dimensional space;
+- at least one support has size ≥2. Each nonclassicality auxiliary implies its selected two support bits, and at least one auxiliary is true.
+
+The clauses for two-axis triangle obstructions use no amplitude assumptions. The CNF may admit support patterns that do not come from quantum vectors; only the direction “physical q1 family ⇒ satisfying assignment” is used. Thus an UNSAT proof for the exact CNF excludes the physical q1 case for that net. A SAT support model would not be a physical witness.
+
+Under Hcat, all actual triples occur among the 39 pinned representatives. One orientation is enough per representative because any of its five net classes can be used as rows and columns, and Q's nonclassicality is invariant under that common cell reindexing. Cases 0–37 use representative classes (0,1), row symbol 0; case 38 uses classes (1,0), row symbol 0. Every resulting formula has been checked as below.
+
+## 2. Bound evidence and assurance
+
+The complete per-case hashes, lengths, chosen orientations and local check receipts are in `frontier-20261028-q1-39-species-local-proof-manifest-v1.json`, SHA256 **23113cb67e2653c196d9b1c3a2b9cf6f8bb881031c192862a4963e3436c7887f**. Its metadata-only inventory `frontier-20261028-q1-39-species-proof-inventory-v1.py` is SHA256 **8ddc15fdcac910413fc60e3f14381264b11b9f798d10eb406599cd4ece6ec88c**. It rehashes retained files and receipts, checks exact index coverage 0–38, orientation, final proof empties and matching local RUP counts. It does not rerun the proof checker or establish Hcat.
+
+The 39 CNFs total **3,746,545 bytes**, the retained ASCII proof traces **195,656 bytes**, and the two independently coded local RUP replayers each checked **23,712 RUP additions** in all, including 39 final empty clauses. All 39 cases report matching independently reconstructed full clause multisets. There were no proof deletion lines. Case 0 was run individually; the owner observed Kissat `s UNSATISFIABLE`/exit 20 but did not separately save that console text. For cases 1–38, each per-case receipt retains actual `s UNSATISFIABLE`, exit 20, empty stderr and no stop, plus all bound hashes. The two serial batch receipts are:
+
+- cases 1–5: `frontier-20261028-q1-support-batch-01-05-receipt-v1.json`, SHA256 3fb34ce6ce1168e7403a4542e8a0bc0aebe0417934af58c20854ded85befa228;
+- cases 6–38: `frontier-20261028-q1-support-batch-06-38-receipt-v1.json`, SHA256 05e60b55095c81f70d419c309f176c2183472e4dc9eac2cb93970a8f1ab085b1.
+
+The batch producer `frontier-20261028-q1-support-proof-batch-v1.py` is SHA256 22a99215f45b9d56ce975d58ff98786e3f19d5fc26be4e4bbe9e05d68ccb7215; it uses one owned Kissat child at a time, three-second solver and 20,000-conflict limits, a wall/disk/proof-size stop, and records each actual process outcome. Stop or unsupported proof is not a PASS. The solver binary is pinned in receipts. No claim is made that its macOS reported RSS field was accurate, or that these local checks meet a separate managed parent proof-replay protocol.
+
+The exact CNF producer `frontier-20261028-q1-support-cnf-v1.py` is SHA256 4c95605057d0dd540041b905f889b68e35fb6a8682011faed021a403c0cd4d53. Its independent direct-OA, full clause-multiset reconstructor `frontier-20261028-q1-support-cnf-check-v1.py` is SHA256 e824a35b1f304ce8472770d1d281a36d88ce983a95b480ce7de2697d0f19021b; it directly searches triples for triangle clauses, rather than using the producer's graph-neighbor iteration. The first proof and its explicit encoding/checker mutation controls are detailed in `frontier-20261028-q1-species0-rup-exclusion-v1.md` SHA256 58629d647618bcbac2eb636d4c831f00d8cc99f9ef274ee3cfcb680124154c2e.
+
+Local proof checkers are `frontier-20261028-rup-proof-check-v1.py` SHA256 82e0b595da1798a67e83fc2b80885856dab3c004b07abddadb04fb59f31c08cc (occurrence-based propagation) and `frontier-20261028-rup-scan-check-v1.py` SHA256 77fdc7f3918c6945adce1e7124c6e21552da1d57fbcedad3c52549e73c39321c (independent direct clause scans). They demand a final empty clause and reject a satisfiable-formula bogus empty proof; on case 0 they also reject a truncated proof and proof against a wrong CNF. Their results are local computer-assisted evidence, not a formal proof kernel or external drat-trim certification.
+
+An actual classical four-family positive control on the nonmaximal net checks **all 4,096 row/column Gram entries and all 24,576 pair-product Gram entries** and has a model of the necessary support CNF when its nonclassicality clause is omitted. A duplicate-cell negative control has physical Gram errors and is rejected. `frontier-20261028-q1-support-physical-control-v1.py` SHA256 ca8f42999f128a8f42a98c480c81eca747abeb60497af9513202f881d0234a8c; receipt `frontier-20261028-q1-support-physical-control-receipt-v1.json` SHA256 48d467c1493904d5b4c3108e12ac545875c72e438277a5597d697efb3bf80ef3. This is not a nonclassical quantum witness.
+
+## 3. Catalogue boundary and next review
+
+Maximal snapshot `frontier-20261028-source-wanless-max3-order8-v1.txt` SHA256 95943777fc50075220569c53fca1382bd30e79ccf7c1fc29efbee55a30322a67 contains 114 Latin squares grouped sequentially as 38 triples; nonmaximal snapshot `frontier-20261028-source-wanless-nonmax3-order8-v1.txt` SHA256 f8156dc17b3900e5d09796510acc630a3735d471ae08dcc248beebb9612be4b5 contains one triple. All listed triples were independently checked for Latin and pairwise MOLS properties. The maximal snapshot is reader-paged with normalized blank separators; `frontier-20261028-wanless-source-page-audit-v1.json` SHA256 07cc372190f3d2d3100f8d389c4efaf739ca1eed29afad439f8e346e9363ec8b compares all 913 nonblank lines against the retained complete reader output in order. The nonmaximal snapshot was observed equal to the complete raw-reader output. Neither observation establishes the remote HTTP byte representation or classification completeness.
+
+The primary [Wanless MOLS catalogue](https://users.monash.edu.au/~iwanless/data/MOLS/) describes its order-8 lists as exhaustive and lists 38 maximal plus one nonmaximal triple species; [file-format documentation](https://users.monash.edu.au/~iwanless/data/LSformat.html) and the [Egan–Wanless paper](https://arxiv.org/html/1406.3681) describe its data and species conventions. We import precisely Hcat, without independently reproducing that external classification.
+
+Before adoption, a disjoint reviewer must check the full five-line/paratopy reduction, the four-label forbidden sets, all support/coverage and triangle implications, auxiliary-variable soundness, source interpretation, every formula/proof binding and both local checker implementations. A parent-owned independently regenerated strict FIFO/DRAT replay and controls remain **unperformed**; these local ASCII RUP checks and the public catalogue do not substitute for it. The q=2,3,4 and unrestricted M(8) problems remain open within this work.

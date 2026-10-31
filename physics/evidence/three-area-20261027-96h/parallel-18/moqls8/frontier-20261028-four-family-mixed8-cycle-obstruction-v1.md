@@ -1,0 +1,19 @@
+# A nonclassical eight-cell row/column cycle cannot occur in a four-family
+
+**WRITTEN author candidate; no classical-mate, source catalogue, finite witness or solver premise. Disjoint review pending.** Let Q be a nonclassical member of an actual ordinary four-MOQLS(n). Relative to any Q first-row ONB, suppose Q has exactly eight mixed cells and their row/column incidence graph is a single eight-cycle. Then this is impossible. The other three QLS R,S,T may all be arbitrary complex and nonclassical. This is one genuine universal q4-relevant stratum exclusion, not a claim that every eight-mixed pattern is a cycle or that all four-families are classical.
+
+## 1. The Q trade and four-dimensional spaces for each mate
+
+Independently normalize Q,R,S,T on the chosen row to coordinate rays e_0,...,e_(n−1), with common column labels. A mixed Q cell is a ray not equal up to phase to any of Q's first-row rays. The cited catalogue-free written bound `frontier-20261028-three-qls-universal-mixed8-v1.md` SHA256 7464f79b7bddaf7c4345544b2fad332d6c1b56698238df4cee215bc790d63a7f shows any nonclassical member with two other orthogonal QLS has at least eight mixed cells; the present argument only analyzes the stated equality pattern and does not require that bound as a premise.
+
+On a row or column with exactly two mixed Q cells, all other n−2 rays are distinct light coordinate rays. The two mixed rays lie in the complementary two-axis subspace and, being non-singletons, each uses both axes. Along the assumed connected eight-cycle these two-axis supports coincide. Its bipartition has four vertices in each part, with Q rays collinear within a part and perpendicular between parts. Label them `p_1,...,p_4` and `m_1,...,m_4`.
+
+For any mate R, the four R_p rays are pairwise orthogonal because the corresponding Q rays are collinear and the Q⊗R product vectors are an ONB. The four R_m rays are likewise pairwise orthogonal. Let a be one of the common two support axes of Q_H. The cycle occupies four Q rows; each of the other n−4 rows is entirely light and has one Q=e_a cell. Their n−4 R rays are mutually orthogonal because their Q rays coincide, and each is orthogonal to all eight R_H rays because every Q_H ray has nonzero overlap with e_a. Hence `dim span(R_H)≤4`. The R_p and R_m quadruples are orthonormal, so each is an ONB of the **same** four-dimensional span. The same argument holds separately for S and T.
+
+## 2. Three unitary overlap patterns in only two slots
+
+For R define the 4×4 transition matrix `U^R_ij=⟨R_(p_i),R_(m_j)⟩` between those two ONBs. It is unitary. Define U^S and U^T analogously. If p_i,m_j are adjacent on the row/column eight-cycle, their R rays are orthogonal by R's actual row or column ONB; so that position is zero in **all three** matrices. Each p_i has exactly two adjacent m-points and therefore only two remaining cross-part positions can carry nonzero entries.
+
+For any i,j, actual pair-product orthogonality of R⊗S at the distinct cells p_i,m_j gives `U^R_ij U^S_ij=0`; similarly for R⊗T and S⊗T. Thus the supports of the three transition matrices are pairwise disjoint. But each unitary matrix must have at least one nonzero entry in row i, while there are at most **two** allowed positions in that row. Three pairwise disjoint nonempty choices cannot fit. Contradiction.
+
+The proof covers all complex phases and n where the stated eight-cycle pattern occurs. It does not assume the three mates are classical, or that their own mixed cells follow any pattern. Other eight-mixed row/column incidence shapes, Q members with more than eight mixed cells, and the global four-family alternative remain open. A disjoint reviewer should reconstruct the common Q support, four-dimensional spans, unitary transition matrices, and all three original pair-product constraints before adoption.

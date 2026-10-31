@@ -1,0 +1,11 @@
+# All-four-nonclassical stratum (q4) of ordinary four-MOQLS(8) families is excluded (parent composition of adopted same-harness gates)
+
+**Disposition: parent composition, conditional on the listed adopted gates; no new mathematics.** Let Q,R,S,T be any ordinary four-MOQLS(8). If all four members are nonclassical (each has a nontrivial intrinsic component), the prior-round Gate 4 budget gives Σ(real spans) ≤ 53, where a member's real span is its component real projector span plus its number of fixed rays. Inputs:
+
+1. Gate 1 GAP3, Gate 2 (no intrinsic C2/C3), Gate 3 (real span ≥2r−1 for an intrinsic C_r), Gate 4 (budget 53), Gate 7 (intrinsic C6 span ≥12), all WRITTEN_SUPPORTED in `/Users/jinleic/repos/aifours/institute/runs/three-area-2026-10-23-96h/MOQLS-unrestricted-four-family-ray-gap-intrinsic-and-local-span-budget-entire-parent-v1.md` (SHA-256 2e254b56d108994844cf337c31b98fa851effca15a68a847c6cb2db84552bee4);
+2. no intrinsic C4 component: `dispositions/physics-4-moqls8-no-intrinsic-four-dimensional-component-parent-v1.md` (SHA-256 08c3eaf1ae761c00daf05bdc1d8c6750550d89c281a5215d46ec314dd4d767fe);
+3. intrinsic C5 span ≥11: `dispositions/physics-4-moqls8-intrinsic-C5-real-projector-span-at-least-eleven-parent-v1.md` (SHA-256 95da380b371d91c288e434a224659d12669ed717f543ead318028a6755b5a89b).
+
+Composition (parent hand check): a nonclassical member has no component of dimension 2, 3 or 4, hence exactly one nontrivial intrinsic component of dimension r∈{5,6,7,8} and 8−r fixed rays; its real span is at least 11+3=14 (r=5), 12+2=14 (r=6), 13+1=14 (r=7), 15+0=15 (r=8). Four nonclassical members give Σ ≥ 4·14 = 56 > 53, contradicting Gate 4. Therefore **no ordinary four-MOQLS(8) has all four members nonclassical**; every four-MOQLS(8) family has at least one classical member (q4 excluded). This is exactly the author's §7 conditional composition (56>53), now composed by the parent from adopted records.
+
+Not adopted or decided: q1/q2/q3 (families with at least one classical member receive no budget statement from Gate 4), unrestricted four-family existence, numerical M(8), maximum-three, A10/GB15/18, A11, novelty. All inputs are same-harness written supports; the composition inherits every conditional (in particular GAP3) and is not human, independent-model-family, formal/kernel or novelty verification.

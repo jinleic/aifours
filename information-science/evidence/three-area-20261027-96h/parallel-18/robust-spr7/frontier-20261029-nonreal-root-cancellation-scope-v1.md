@@ -1,0 +1,3 @@
+# Scope of the nonreal-root statement
+
+The root-count conclusion in `frontier-20261029-common-numerator-nonreal-root-obstruction-v1.md` concerns the **literal exact-degree numerator polynomial** \(b\), with roots counted with multiplicity. It remains valid even when \(b\) and a denominator share factors; the argument compares \(b(i\omega)/a(i\omega)\) and never assumes the transfer fraction is reduced. It does **not** claim that the reduced transfer function has the same number of nonreal zeros, since cancellations may remove them. No formal, cross-vendor, novelty or arbitrary-box claim is added.

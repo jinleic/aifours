@@ -1,0 +1,27 @@
+# The 5×5, (3,3,2,2,2)/(3,3,2,2,2) 12-cell residual
+
+**WRITTEN author candidate; disjoint review pending.** In an order-8 QLS with 12 mixed cells on five rows and five columns, suppose both mixed-degree profiles are `(3,3,2,2,2)`. If it has even one orthogonal QLS mate, its support-2 boundary must have exactly two 2-cell paths and one 4-cell cycle, and the two paths must use distinct 2-axis supports. All other boundary shapes and the same-support alternative are excluded below. This is a precisely delimited residual, not an exclusion of the whole degree-profile stratum or of 12-cell four-families.
+
+## 1. Forced core and boundary
+
+Standardize the chosen actual Q row to coordinate axes. A degree-2 line has two mixed rays on the same 2-axis support, while a degree-3 line has at most one support-2 ray. Each of the two degree-3 rows must therefore meet both degree-3 columns and exactly one degree-2 column; similarly each high column meets both high rows and exactly one low row. The high/high core is a 2×2 board of four full-support-3 Q rays on a common coordinate 3-set T.
+
+All eight boundary cells meet a degree-2 row or column and therefore have support 2. Join boundary cells when they share a degree-2 line. Four high/low or low/high boundary cells have graph degree one, and the four low/low cells have graph degree two. Along a connected boundary path or cycle, the Q rays alternate between two orthogonal rays on one common support-2 set. Each path has endpoints on high lines, so its 2-support is a subset of T. The graph consists of two paths, with vertex counts `(2,6),(3,5),(4,4)`, or of two 2-paths plus one 4-cycle. A cycle, if present, uses all four degree-2 boundary vertices; the Q support W of that low/low 4-cycle need not lie in T.
+
+There are three Q rows with no mixed cells, including the chosen first row. For any coordinate a, these contain three Q=e_a cells, whose mate R rays are pairwise orthogonal by Q⊗R. They are orthogonal to every selected R ray whose Q component overlaps e_a.
+
+## 2. Identical path supports are impossible
+
+Let U,V⊂T be the two path supports. If U=V, each high/high Q ray has nonzero projection onto U and is orthogonal to the support-U boundary rays on its high row and high column. That projection forces those two boundary rays collinear. As the high core is complete, all four high-line boundary endpoints are the same ray p. Each path has collinear endpoints, so its vertex count is odd. The only possible boundary shape is therefore `(3,5)`; the endpoints of a 2- or 4- or 6-vertex path would be orthogonal.
+
+Let v be the ray in U perpendicular to p. The 3-path and 5-path contain three v-ray cells in total; their R rays are pairwise orthogonal by Q⊗R. The four core Q rays lie in the 2-space span{v,e_z}, where z is the third axis of T, and their actual 2×2 row/column orthogonality makes opposite corners collinear. The four core R rays are therefore pairwise orthogonal. Each core Q ray has full support T and nonzero overlap with v, so all four core R rays are orthogonal to all three v-cell R rays. Every one of these seven Q rays uses both axes of U, so its R ray is in the 6-dimensional complement of those first-row coordinate rays. Seven orthogonal R rays in that space are impossible.
+
+## 3. Distinct path supports exclude every non-cycle shape
+
+If U≠V, the two 2-subsets of T share exactly one axis a. Any Q ray on one path has nonzero inner product with any Q ray on the other, and every such ray overlaps e_a.
+
+For path sizes `(3,5)` or `(4,4)`, choose three consecutive cells from each path. Their mate rays are pairwise orthogonal within each selection: adjacent cells share a row or column, and cells two steps apart have collinear Q rays. Cross-path mate rays are orthogonal by the single shared Q coordinate a. Six selected R rays plus the three light-e_a R rays give nine orthogonal vectors in C^8, contradiction.
+
+For path sizes `(2,6)`, the two endpoints of the 2-path lie on high rows or on high columns, and the two endpoints of the 6-path lie on the other type of high line. Pick a high/high core cell at the intersection of one short-path endpoint's high line and one long-path endpoint's high line. In the short path, its Q ray is orthogonal to the first endpoint and, because it has full support T, overlaps the second; its R ray is orthogonal to both short-path R rays by the shared line and Q⊗R respectively. On the long path choose the three cells in the Q-ray class opposite to the endpoint at the core's high line. The core Q projection on V is nonzero, is perpendicular to the endpoint ray, and hence overlaps this opposite class. The three long-path R rays are orthogonal to one another because their Q rays are collinear; they are all orthogonal to the core R ray and to both short-path R rays. The core and five path Q rays all overlap e_a, so the three light-e_a R rays yield nine orthogonal vectors. Contradiction.
+
+Consequently only two 2-paths plus a 4-cycle can remain, and their path supports U,V must be distinct. In that case the cycle is on the four low/low cells and can have a support W not contained in T; no conclusion about W or the four-family extension is asserted here. This exact case is the next unresolved barrier, alongside the other 5×5 and 4×4/4×5 profiles. A10/A11 and the global q2/q3/q4 target remain open. Full independent review must check path-component classification, endpoint propagation, dimension 6 and the actual core/path selection; no formal, family, parent or novelty gate is claimed.

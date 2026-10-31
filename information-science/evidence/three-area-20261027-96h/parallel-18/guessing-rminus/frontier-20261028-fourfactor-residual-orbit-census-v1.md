@@ -1,0 +1,7 @@
+# Thirteen factor-automorphism orbits among 41 hard planes
+
+**Status: WRITTEN-CHECKED-IN-KERNEL; scientific review pending.** The 41 four-factor direction planes for which universal fractional reconstruction has optimum strictly greater than 3 form exactly **13** orbits under the four factor-preserving graph automorphisms: one orbit of size 1, four of size 2, and eight of size 4. Their complete representatives and members are in `frontier-20261028-fourfactor-residual-orbit-check-result.json` SHA-256 `abad9a3797b4d2aefb9f59d67e21f33fd9051f9405c28cf7897dc489727b2d5b`.
+
+One size-two orbit has the exact no-gap candidate theorem `frontier-20261028-fourfactor-paired-syndrome-theorem-v1.md` SHA-256 `5c89ccea176c60f253d2ba54abddea5824dd2eef30a186d626458197044d0c4f`. Thus, **conditional on scientific review of that theorem**, twelve orbits comprising 39 of the 41 planes remain unresolved by the combined universal-color and paired-syndrome Shannon methods. These 39 do not have proven strict gain, nor a general no-go.
+
+The independently written combinatorial checker `frontier-20261028-fourfactor-residual-orbit-check.py` SHA-256 `d069f0a9c2b88e2bcce2877ce066ff4f3dbcd88baa597d970dfd20133b0278d3` pins the exact 41-case screen and fractional certificate receipt, verifies graph and factor automorphisms, reconstructs every orbit, and checks the exhaustive size census. It is orbit bookkeeping, not an entropy certificate or independent review.

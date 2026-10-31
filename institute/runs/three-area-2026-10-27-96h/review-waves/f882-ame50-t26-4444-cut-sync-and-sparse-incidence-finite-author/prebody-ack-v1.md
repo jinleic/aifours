@@ -1,0 +1,7 @@
+# F882 prebody acknowledgement
+
+Before any mathematical packet body read or mathematical reasoning, I read the complete frozen manifest, freeze receipt, final pre-dispatch binding, parent live metadata supply, actual dispatch receipt, and every one of the 22 status-only controls listed in the manifest. The control records are permissions/status only, not mathematical premises. The actual dispatch receipt names VerifyF882AME26Sync and this wave. I have not read any literal packet body at the time of this acknowledgement. I will send this acknowledgement directly to Main before opening the packet.
+
+I will read the entire single literal packet in order, in raw windows of at most 20 LF and below 30000 displayed bytes, including endings and recovery of any clipped text, before mathematical reasoning. Links and held episode bodies and their downstream consumers are not inputs. I will not use network, old code, child scientific execution, solvers, tests, compilation, or any subprocess. The assigned fresh standalone verifier is to be prepared UNRUN; any execution requires parent's full source read and separate one-shot GO. I will write only new files under this wave, with no changes to frozen artifacts. The result will state limits and conditional imports, and will not claim global E/P enumeration or AME feasibility.
+
+No prior wave-specific mathematical exposure is claimed from this assignment; this acknowledgement is not a certificate of private cognition or prior provenance.

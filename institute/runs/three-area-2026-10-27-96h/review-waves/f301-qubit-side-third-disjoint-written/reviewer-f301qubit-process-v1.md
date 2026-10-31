@@ -1,0 +1,15 @@
+# Reviewer process record v1 — ReviewF301Qubit, wave f301-qubit-side-third-disjoint-written
+
+Native clocks (/bin/date -u), all observations actual: 2026-10-30T11:05:32Z (start, immediately after manifest read), 2026-10-30T11:06:35Z (post-read freeze-fidelity check), 2026-10-30T11:17:48Z (pre-write substantive checkpoint; derivation work completed between checkpoints within the <=30min cadence). Final write of review-v1.md at ~11:18Z. No checkpoint gap exceeded 30 minutes while active.
+
+Pre-body sequence (honored in order): read manifest-v1.json in full; read freeze-receipt-v1.json in full; verify by shasum -a 256 + wc the packet (f092268ab534ad84bb8267037352f5a54a89b3b7b292c36583f419c83f4bdca9, 9165 B, 121 LF) and S1 source (ce6a62889b044e898525b3478d78d227f0e3dc0686a087a396f7d3f6d8bcd02c, 8408 B, 119 LF, stable); read the five controls_before_body STATUS ONLY with hashes verified (5e18c2d4…, ba6b4bb9…, 12e118d8…, 8d2cb67b…, 18bac595…); send administrative pre-body ACK to Main (delivered before the first mathematical packet read); then read the packet.
+
+Packet read receipt: six raw windows, each ≤20 LF, endings included: lines 1-20, 21-40, 41-60, 61-80, 81-100, 101-121 (file ends at LF 121). No elision markers observed; freeze fidelity independently confirmed: tail -n +3 of the packet with the `S1|N|` prefixes stripped is byte-identical (cmp) to the S1 source; 119 lines match. Zero bytes unrecovered.
+
+Commands run (metadata only, complete list): ls (wave dir); shasum -a 256 and wc -c/-l on manifest, packet, five controls, S1 source; sed prefix-strip + cmp + wc for freeze fidelity; /bin/date. No other commands. No scientific code, CAS, interpreter, solver, enumeration, replay, build, lint, test, or formatter was executed at any point.
+
+Selected-instance discipline: no concrete operator, matrix, vector, state, array, entry, permutation, net, group, or fixed numeric configuration was chosen or evaluated at any time, privately or publicly, including as an optional sanity check, consistency illustration, boundary example, private probe, or symbolic chosen special type. All reasoning is universal algebra over free complex variables; degenerate and boundary cases (n=1; λ=0 and z=0 in the hollowing; zero source; rank-1 vs rank-2 marginal; Q=0 or T=0; G²=0; b=0; κ≠0 with opposite/coincident eigenvalues; rank R<2) were handled by general equations. Source line S1|41's illustrative family was read as part of the full-packet duty but not rederived, quoted, or used as a diagnostic, per the manifest audit rule.
+
+NONINPUT adherence: f284/f286 review bodies, verdicts, process files and their selected-instance contents were not opened; the controls naming them were read for status only; no prior reviewer body, sibling payload, held/ZERO content, or excluded link was used; the external T2/η definitions were not fetched.
+
+Outputs: review-v1.md (this wave directory only) and this process record. No other files created or modified; no deletions; no files outside the wave directory touched except the read-only comparisons noted above.

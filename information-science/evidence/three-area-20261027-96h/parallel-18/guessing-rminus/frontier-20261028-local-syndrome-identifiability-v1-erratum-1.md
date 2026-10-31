@@ -1,0 +1,7 @@
+# REQUIRED BEFORE SOURCE: vertex coverage correction
+
+Read this before `frontier-20261028-local-syndrome-identifiability-v1.md` SHA-256 `17c9bfffd71c9ff4dcdb393ab6e59cf476223217d45b6453125758875c89678a`. Its stated four-triangle-syndrome premise alone does **not** establish `Delta<=0` by the displayed proof: vertices 6 and 7 belong to none of the four triangles `123,145,389,4·8·10`. They have neighbours in those triangles, but that alone does not reconstruct any such triangle's syndrome. The erroneous coverage claim is withdrawn; no counterexample to the desired inequality is claimed.
+
+A correct sufficient premise is: the full syndrome vector `S` is determined by each of the four listed factor syndromes **and**, independently, is determined by at least one incident-factor syndrome for each of vertices 6 and 7. The latter may be the same factor `167` or `678`, or separate incident factors. Under this strengthened assumption, each of vertices `2,5,6,7,9,10` has an incident factor whose syndrome determines `S`; original graph decoding makes `S` a function of each corresponding neighbourhood. The four triangle conditional entropies also vanish directly. Thus the independently checked compact inequality (42) gives `Delta<=0`.
+
+Even more generally, the six neighbourhood and four triangle functional equalities listed in the source remain a valid sufficient criterion. The exact compact coefficient identity and unrestricted syndrome-defect inequality are unaffected. This is a scope correction only; scientific review remains pending.

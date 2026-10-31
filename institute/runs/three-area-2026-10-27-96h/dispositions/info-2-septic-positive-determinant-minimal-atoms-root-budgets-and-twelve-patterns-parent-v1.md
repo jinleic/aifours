@@ -1,0 +1,31 @@
+# Actual septic sparse dual: exact positive determinant test and root budgets
+
+Recorded UTC 2026-10-31T02:12:09.421Z. Fix ONE compact independent real monic-septic box whose EVERY actual member is strictly Hurwitz, and one same-box zero relation with grouped distinct positive nodes. At the existing barycentric moment interface, the following are exact algebraic/necessary refinements, not existence, nonexistence or a universal SPR/ROOT theorem. Parent read complete f784/f785/f816/f817 reconstructions and their named prior scopes.
+
+## Exact node coupling and prescribed-group atom minimum
+
+Let H(t)=∏(t−u_i), d=n−4 and A,B obey the exact endpoint moment constraints A(0)=(−1)^n λ∏u_i and [t^d]B=μ. Set T_i=sign(H′(u_i))(A(u_i),B(u_i)). At node i, choose a linear functional h_i strictly positive on the actual rectangle R_i (one of E,−E,O,−O according to an interval strictly separated from0). Let c range over its four actual corner values. The SAME positive-weight coupling exists iff
+
+    h_i(T_i)>0,      min_c det(c,T_i)≤0≤max_c det(c,T_i)
+
+at EVERY node. The strict first inequality is indispensable: determinant zero alone permits an antiparallel ray or zero. If some vertex determinant is zero, one positive corner atom suffices; otherwise exactly two are needed, and radial compression can use adjacent vertices. Therefore, **with the nodes and each node's full grouped contribution fixed**, the exact minimum finite corner-atom count is n+Σj_i, where j_i is0 for a zero vertex determinant and1 otherwise. Add z positive combined endpoint rays for total count. This is not a minimization allowing different nodes or redistribution between groups, and it does not treat arbitrary interior-member atoms as corner atoms.
+
+## All-endpoint root/physical-band budgets
+
+Both parities vary in any zero dual. With the classical strict Hermite–Biehler import, the six actual closed bands are strictly separated. Let N^O=Σ_j(max(k_j^O−1,0)) and N^E similarly count extra sampled nodes in each opposite-parity band; q_E,q_O count zero grouped parity values. Reverse pairs imply N^E,N^O≥1. The exact inequalities are
+
+    q_E+N^O ≤ d−1_(λ=0),      q_O+N^E ≤ d−1_(μ=0).
+
+Inside an odd band every actual E value has one strict sign, while H′ changes sign between consecutive nodes, forcing a distinct sign-changing root of A in each such gap; sampled E zeros and (when λ0) the root0 are additional distinct roots. The odd side follows similarly with B and its degree drop when μ0. Closed endpoints and individual zeros are retained. These are necessary degree budgets, not independently selectable roots or feasibility.
+
+## Six-node/no-endpoint physical patterns and quintic parity
+
+At n6, λ=μ=0, all grouped parity values are nonzero, each sign word has exactly4changes/1repeat, and the two reverse pairs occupy disjoint node gaps. Physical quadrant levels0…6 follow(++),(-+),(--),(+-),(++),(-+),(--). Each reverse gap lowers level by1; each other gap flips both signs and must increase level by2 (an increase6 would exceed the total physical range). With reverse gaps p<q, a=p−1,b=q−p−1≥1,c=5−q, their physical band indices satisfy s=r+2b−1, r≥2a and s−1+2c≤6. These give exactly12 necessary rows listed in f785/f817, not realizable marker configurations.
+
+For each actual corner, P_C(t)=k(t−β)E_C(t)−t(t−α)O_C(t) is monic quintic. At0,α,β and∞ its nonzero signs are fixed by the actual complementary-parity bands and sign(k)=sign(β−α). On the three intervals separated by the ordered α,β, let N_h count assigned singleton nodes of this corner, and ε_h the boundary sign changes. Then Σ_h[N_h+((ε_h−N_h)mod2)]≤5, where mod2 is0or1. This counts required root multiplicity, not just number of listed nodes. For k<0 a corner has at most4distinct positive roots; for k>0 total positive-root multiplicity is odd and≤5. All common positive weights, actual mixtures, eligibility and atom budgets remain required.
+
+The NEW f816 five-node single-endpoint exclusion/three residual patterns, and NEW f817 mixed-edge forced-gap budget/two specific support-pattern exclusions, are NOT adopted here pending their own focused check. The original general≥6 statement still retains its named≤5 strict-negative import and buffered enlargement; no same-box strictification is inferred. No eligible zero dual has been exhibited or universally excluded. All historical process/math/source findings remain; all held episodes AND ALL consumers NONINPUT. No new scientific execution, source identity, human/family/kernel, priority or novelty claim.
+
+- F784/F785 {"path":"/Users/jinleic/repos/aifours/institute/runs/three-area-2026-10-27-96h/review-waves/f784-septic-coupled-corner-barycentric-author/author-candidate-v1.md","sha256":"87dc831218af8309b041b50b39cfe686f51f20c5b4743a085ac6d59b200273e5","bytes":28518,"LF":228}; {"path":"/Users/jinleic/repos/aifours/institute/runs/three-area-2026-10-27-96h/review-waves/f785-septic-six-node-quadrant-scrutiny-author/author-candidate-v1.md","sha256":"458749db8e544f6373ddeb14f05428f385c5b77b059e3484ab20092ce4e5b293","bytes":28038,"LF":250}
+- F816/F817 {"path":"/Users/jinleic/repos/aifours/institute/runs/three-area-2026-10-27-96h/review-waves/f816-septic-determinant-minimal-atom-root-budget-proof-author/author-candidate-v1.md","sha256":"4915f3cbc2994c8275c2fc5000d6ff443e719405fc09827220a26b6dbb567f6f","bytes":26654,"LF":227}; {"path":"/Users/jinleic/repos/aifours/institute/runs/three-area-2026-10-27-96h/review-waves/f817-septic-twelve-reverse-pattern-quintic-proof-author/author-candidate-v1.md","sha256":"8d88c41020e504a278cf2c39c20c1455548e5155e7f5b0dad77f2132e5a01ad6","bytes":24845,"LF":189}
+- Prior coupled and band dispositions {"path":"/Users/jinleic/repos/aifours/institute/runs/three-area-2026-10-27-96h/dispositions/info-2-actual-septic-sparse-coupled-barycentric-and-six-node-frontier-parent-v1.md","sha256":"32db73ad861d2fcafb8fda19efec027f3b957ed5878dc0ae78b8244bc5789549","bytes":5607,"LF":33}; {"path":"/Users/jinleic/repos/aifours/institute/runs/three-area-2026-10-27-96h/dispositions/info-2-actual-septic-strict-band-quadrants-and-low-frequency-subcases-parent-v1.md","sha256":"90ce201156b0ee89e5f09e2e6cf3c4fa9d7eb2c6178a02795c84d84dbd7fa9af","bytes":5576,"LF":30}

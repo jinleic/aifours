@@ -1,0 +1,3 @@
+# Post-candidate source-read chronology addendum
+
+Native clock before this record: 2026-10-30T15:16:04-0700 PDT; not the time of the read or file creation. After writing `author-candidate-v1.md`, the author additionally searched for and read <https://math.stackexchange.com/questions/1246662/does-a5-have-a-subgroup-of-order-6> while considering a small-group fact. This source was read after the candidate was composed, is not an imported premise or independent verification, and did not change the candidate. The earlier GroupNames A5 page was read before composition, as disclosed there. No scientific executable or finite calculation was run. The candidate's classification import, proof obligations, and unaccepted status are unchanged.

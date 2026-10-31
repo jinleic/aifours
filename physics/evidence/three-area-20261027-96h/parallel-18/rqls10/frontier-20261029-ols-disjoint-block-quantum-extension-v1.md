@@ -1,0 +1,19 @@
+# A block-extension mechanism for 1-resolvable quantum Latin squares
+
+**WRITTEN AUTHOR CANDIDATE, UNREVIEWED.** Native `/bin/date`: **Thu Oct 29 00:09:47 PDT 2026**. This is a constructive reduction for the ORIGINAL target; its capacity at order10 is not yet established.
+
+## General construction
+
+Let `(A,L)` be a pair of orthogonal classical Latin squares of order N, with A giving colors and L transversal labels. Suppose there are pairwise-disjoint symbol sets `S_i`, row sets `R_i` and column sets `C_i`, each of size `k_i`, such that the cells colored by S_i INSIDE `R_i × C_i` form a Latin subsquare on S_i. Each color in S_i occurs k_i times inside this block and once in each other row, and it does not occur in those block rows outside the block. Assume also that the corresponding L-label sets `T_i` have size k_i and that `L` restricted to `R_i × C_i` is Latin on T_i. T_i need not be disjoint.
+
+Let `H=H_0 direct_sum H_1 direct_sum ...` with `dim H_i=k_i` and `dim H_0=N-sum k_i`. Assign a distinct standard basis ray in H0 to each color outside the S_i. For each S_i choose an orthonormal basis of H_i and assign its corresponding color ray to every occurrence of that color OUTSIDE the block. Inside `R_i × C_i`, place ANY QLS of order k_i on H_i whose rows and columns are orthonormal and whose L_i-symbol classes are also orthonormal bases. Then the full N×N array is a 1-resolvable QLS with resolution labels L.
+
+Indeed any global row or column intersecting a block sees its full local ONB there; a row or column disjoint from that block sees each S_i color exactly once and hence the corresponding standard basis of H_i. Any global L-label in T_i occurs k_i times inside the local block and therefore nowhere outside it with a color in S_i, by orthogonality of A and L; it sees the chosen local label ONB. A label outside T_i sees each S_i color once outside the block, hence the standard H_i basis. Other colors contribute mutually orthogonal H0 basis rays; distinct block sectors are orthogonal. Thus every global row, column and label class is an ONB. All label classes remain disjoint transversals because L is Latin.
+
+Assume each k_i<N. If block i has q_i distinct rays, and its local rays are disjoint from the chosen outside-block basis rays, the overall array has exactly `N+sum q_i` distinct rays: N original color rays remain outside the blocks and the q_i local rays are new. In general the number is N plus the number of genuinely new local rays. For example, a block of size3 whose local QLS has three new rays gives N+3. If some k_i=N, no original color ray from that full block remains outside it, so the formula must be adjusted. No existence of an order10 OLS pair with additional useful disjoint blocks is asserted here.
+
+## Existing explicit 13-ray instance and target gap
+
+The previously exactly verified 13-ray order10 1RQLS is an instance with one k=3 block: all ten original color rays persist outside it and the rotated three-dimensional triad adds three new rays, giving `10+3=13`. Its literal vectors/labels are in `frontier-20261028-exact-switch-grow-result-v1.json` SHA **2023d098dc9c81b437b698601ed8709161794b7434934f83abc2f4219a6dcb6e**; rows7–9 and columns7–9 form the block, and labels7–9 restrict to its cyclic resolution. The 3D local basis triad can be an arbitrary orthonormal basis, not just the one rationally chosen in that file.
+
+The original problem asks for 100 rays, and this finite block extension alone is not a solution unless its block packing and local maximal QLSs achieve 100. The next mathematical question is whether compatible OLS10s with useful disjoint block structure exist and, separately, whether genuinely maximal resolved QLSs exist inside those local dimensions. Classical transversal/parity restrictions on even blocks may make naive packings impossible. The reduction needs independent review, as do all candidate incidence and vector witnesses.

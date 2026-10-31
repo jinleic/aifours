@@ -1,0 +1,3 @@
+# Chronology clarification for author-candidate-v1
+
+The native clock command and the metadata SHA-256 command described in Section 8 of `author-candidate-v1.md` were invoked together in one parallel tool batch, after the ordered packet read. Both results were observed, but their relative execution order is not established. Replace the word “subsequent” in that chronology with “also invoked in the same parallel batch”; no backdated or ordered relation between the two commands is asserted. This additive clarification changes no mathematical claim or assurance boundary. CHILD SCIENTIFIC EXECUTION remains NOT RUN; the candidate and additional counterconditions remain unadopted pending independent review and parent disposition.

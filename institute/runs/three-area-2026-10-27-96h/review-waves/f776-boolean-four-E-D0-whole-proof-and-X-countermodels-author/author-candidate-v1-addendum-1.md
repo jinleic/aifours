@@ -1,0 +1,5 @@
+# F776 additive source-coverage wording correction
+
+This addendum preserves `author-candidate-v1.md` unchanged (SHA-256 `579fc1d614dd28f61555508645d59a8faaaedf426525e7a2263e3e234ba56760`) and corrects its Section 5 phrase “both lambda forms as *displayed singleton examples only*”. The seven explicit X arrays in the prepared replay ALL have singleton lambda. That source supplies NO four-point-lambda example, and its proposed F/t/quotient/census checks do not test the four-point-lambda branch. The separate written proof in Sections 2–3 covers both singleton and four-point possibilities by a uniform argument; that claim is not a source-run result and still needs the parent’s full independent read and disposition.
+
+The source `independent-x-replay-v1.py` remains unchanged and NOT RUN. Its SHA-256 is `3ec89f7f7ab13599ffdd9c1f1cc64ca3b28130cb23875230ad7aa6486824e730`; the required whole-source read, interpreter pin and new one-shot GO bounded by 55 seconds are unchanged. No U3/physical-caller witness or acceptance is asserted. Main was directly informed of the wording fault before this additive correction; no backdating or silent source/edit repair is claimed.

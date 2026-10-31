@@ -1,0 +1,7 @@
+# F782 additive control-read sequence qualification
+
+Native UTC observed before creation: `2026-10-31T01:25:14Z`. Read with unchanged `author-candidate-v1.md`, SHA-256 `bc808c02d109646fd95aa884433b58be4bedd9030d1260bd1a59491a86ba84b3`.
+
+Following Main's actual dispatch notice, I read the actual receipt and complete manifest, then read the **prepared metadata before the freeze receipt and final binding**, because that metadata supplied their paths. The assignment's control list names the freeze receipt and final binding before prepared metadata. This exact control-read sequence is disclosed rather than claiming strict list-order compliance; its procedural effect, if any, is for Main to decide. No mathematical result is adopted or invalidated by this status disclosure.
+
+All three documents and all 23 listed controls were read through their endings before the direct PREBODY ACK and before any packet body. The ACK accurately gave the control count and part LF counts, and no packet body, research or comparison had yet been undertaken. Thereafter both packet parts were read serially in ordered RAW windows of at most 20 LF through both endings before mathematical work. The original candidate's 'no packet-read sequence/presentation failure' refers to the packet-body pass and does not negate this control-read sequence qualification. No clock or disclosure is backdated; the sequence qualification was sent directly to Main after I recognized it.

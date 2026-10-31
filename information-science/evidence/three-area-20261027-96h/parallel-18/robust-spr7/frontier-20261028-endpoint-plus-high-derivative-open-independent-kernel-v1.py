@@ -1,0 +1,108 @@
+# Independent exact replay of a real four-dimensional endpoint-span
+# annihilator, strict stability, and an unrestricted common numerator.
+from pathlib import Path
+from hashlib import sha256
+from fractions import Fraction as F
+from math import lcm,comb
+import json
+root=Path('/Users/jinleic/repos/aifours/information-science/evidence/three-area-20261027-96h/parallel-18/robust-spr7')
+raw=(root/'frontier-20261028-actual-endpoint-span-obstruction-frozen-v1.json').read_bytes()
+if sha256(raw).hexdigest()!='95d943653a8ceca71d99950a326a4fe7a3fcd2fac0471c746de82570daab83fb':raise ValueError('PIN')
+f=json.loads(raw);lo=list(map(F,f['lower']));hi=list(map(F,f['upper']));b=list(map(F,f['good_numerator']))
+augraw=(root/'frontier-20261028-endpoint-plus-high-derivative-frozen-v1.json').read_bytes()
+if sha256(augraw).hexdigest()!='3b7436f72f4909f8f4a41638c123030463cb52f19172ef6952136fc8e14ccf36':raise ValueError('AUG_PIN')
+aug=json.loads(augraw)
+if not all(0<lo[j]<hi[j] for j in range(7)) or b[7]!=1 or not all(v>0 for v in b) or sum(hi)+1!=F(f['coefficient_sum_bound']):raise ValueError('INPUT')
+def corners(lo,hi):
+ out=[]
+ for e,o in ((0,0),(0,1),(1,0),(1,1)):
+  out.append([(lo[j] if not(e if j%2==0 else o) else hi[j]) if j%4 in (0,1) else (hi[j] if not(e if j%2==0 else o) else lo[j]) for j in range(7)]+[F(1)])
+ return out
+cs=corners(lo,hi);G=[]
+for ei in (0,1):G.append([cs[2*ei][j] if j%2==0 else F(0) for j in range(8)])
+for oi in (0,1):G.append([cs[oi][j] if j%2 else F(0) for j in range(8)])
+def det(A):
+ n=len(A);den=lcm(*(x.denominator for row in A for x in row));M=[[int(x*den) for x in row] for row in A];prev=1;sgn=1
+ for k in range(n-1):
+  if not M[k][k]:
+   q=next((i for i in range(k+1,n) if M[i][k]),None)
+   if q is None:return F(0)
+   M[q],M[k]=M[k],M[q];sgn=-sgn
+  p=M[k][k]
+  for i in range(k+1,n):
+   for j in range(k+1,n):
+    v=M[i][j]*p-M[i][k]*M[k][j]
+    if v%prev:raise ValueError('BAREISS')
+    M[i][j]=v//prev
+  for i in range(k+1,n):M[i][k]=0
+  prev=p
+ return F(sgn*M[-1][-1],den**n)
+for a in cs:
+ H=[[a[6-2*i+j] if 0<=6-2*i+j<=7 else F(0) for j in range(7)] for i in range(7)]
+ for n in range(1,8):
+  if det([row[:n] for row in H[:n]])<=0:raise ValueError('HURWITZ')
+def row(a,t):
+ return [sum(a[j]*(1 if ((k-j)//2)%2==0 else -1)*t**((j+k)//2) for j in range(8) if (j+k)%2==0) for k in range(8)]
+rows=[];weights=[]
+for atom in aug['support']:
+ t=F(atom['t']);w=F(atom['weight']);ci=atom['corner']
+ if not(t>0 and w>0 and 0<=ci<4):raise ValueError('ATOM')
+ rows.append(row(cs[ci],t));weights.append(w)
+if len(rows)!=5:raise ValueError('SUPPORT')
+M=[[sum(rows[i][j]*G[k][j] for j in range(8)) for i in range(5)] for k in range(4)];sums=[sum(M[k][i]*weights[i] for i in range(5)) for k in range(4)]
+if not all(v==0 for v in sums):raise ValueError('ANNIHILATOR')
+cof=[(-1)**i*det([[M[k][j] for j in range(5) if j!=i] for k in range(4)]) for i in range(5)]
+if not all(v>0 for v in cof) or not all(cof[i]*weights[0]==cof[0]*weights[i] for i in range(5)):raise ValueError('COFACTOR')
+mid=[(lo[j]+hi[j])/2 for j in range(7)]+[F(1)];ds=[mid]
+for k in range(1,8):ds.append([F(j+1)*ds[-1][j+1] for j in range(7)]+[F(0)])
+vectors=G+[ds[k] for k in (4,5,6,7)];basisdet=det([[vectors[j][i] for j in range(8)] for i in range(8)])
+if basisdet!=F(aug['basis_determinant']) or basisdet==0:raise ValueError('BASIS')
+derivative_sums=[sum(weights[i]*sum(rows[i][j]*ds[k][j] for j in range(8)) for i in range(5)) for k in (4,5,6,7)]
+if list(map(str,derivative_sums))!=aug['derivative_sums'] or not all(x<0 for x in derivative_sums):raise ValueError('DERIVATIVE_SIGNS')
+cofactor_derivative=[sum(cof[i]*sum(rows[i][j]*ds[k][j] for j in range(8)) for i in range(5)) for k in (4,5,6,7)]
+if min(cof)!=F(aug['minimum_cofactor']) or list(map(str,[-x for x in cofactor_derivative]))!=aug['cofactor_weighted_derivative_margins']:raise ValueError('COFACTOR_MARGINS')
+good_sum=sum(weights[i]*sum(rows[i][j]*b[j] for j in range(8)) for i in range(5))
+if good_sum!=F(aug['good_numerator_sum']) or good_sum<=0:raise ValueError('GOOD_SUM')
+def mul(a,b):
+ z=[F(0)]*(len(a)+len(b)-1)
+ for i,x in enumerate(a):
+  for j,y in enumerate(b):z[i+j]+=x*y
+ return z
+def pairing(a,b):
+ e=lambda p:[p[0],-p[2],p[4],-p[6]];o=lambda p:[p[1],-p[3],p[5],-p[7]];p=mul(e(a),e(b))+[F(0)]
+ for j,x in enumerate(mul(o(a),o(b))):p[j+1]+=x
+ return p
+def split(beta):
+ rows=[beta]
+ while len(rows[-1])>1:rows.append([(x+y)/2 for x,y in zip(rows[-1],rows[-1][1:])])
+ return [r[0] for r in rows],[r[-1] for r in rows[::-1]]
+def leaf(p,a,b):
+ n=len(p)-1;v=[p[j]/comb(n,j) for j in range(n+1)];l=F(0);r=F(1)
+ for _ in range(100):
+  if l==a and r==b:return v
+  m=(l+r)/2;L,R=split(v)
+  if b<=m:r=m;v=L
+  elif a>=m:l=m;v=R
+  else:raise ValueError('NON_DYADIC')
+ raise ValueError('DEPTH')
+minimum=None;counts=[]
+for ci,a in enumerate(cs):
+ p=pairing(a,b);last=F(0);count=0
+ for l,r in sorted(f['good_frequency_leaves'][ci],key=lambda x:F(x[0])):
+  l,r=F(l),F(r)
+  if l!=last or l>=r:raise ValueError('COVER')
+  q=leaf(p,l,r)
+  if not all(x>0 for x in q):raise ValueError('SIGN')
+  minimum=min(q) if minimum is None else min(minimum,min(q));last=r;count+=len(q)
+ if last!=1:raise ValueError('COVER')
+ counts.append(count)
+if minimum!=F(f['good_compactified_margin']):raise ValueError('MARGIN')
+print('augmented full-basis independent replay:',{'strict_hurwitz_minors':28,'positive_atoms':5,'zero_endpoint_sums':4,'strict_negative_high_derivatives':4,'basis_determinant':str(basisdet),'positive_cofactors':5,'good_numerator_sum':str(good_sum),'pairing_bernstein_counts':counts,'scope':'all common numerators have a negative high-derivative coordinate; an unrestricted common numerator exists'})
+
+openraw=(root/'frontier-20261028-endpoint-plus-high-derivative-open-frozen-v1.json').read_bytes()
+if sha256(openraw).hexdigest()!='72e9b13854b0c19690b67af03ad194e57768ed7fc2bb3807149c138216279217':raise ValueError('OPEN_PIN')
+g=json.loads(openraw);eps=F(g['radius']);minC=min(cof);minT=min(-x for x in cofactor_derivative);B=sum(b);delta=F(f['good_compactified_margin']);width=min(hi[j]-lo[j] for j in range(7));low=min(lo)
+if (minC,minT,basisdet,delta,B,width,low)!=(F(g['minimum_cofactor']),F(g['minimum_derivative_cofactor_margin']),F(g['basis_determinant']),F(g['good_pairing_margin']),F(g['good_numerator_l1']),F(g['minimum_width']),F(g['minimum_lower'])):raise ValueError('RECOMPUTE')
+checks=[eps<=1,4*eps<=width,2*eps<=low,14*eps*B<=delta,2*eps*10**56<minC,2*eps*10**75<minT,2*eps*10**52<abs(basisdet),max(hi)+1<100,all(F(a['t'])<9 for a in aug['support']),64*10000*9**7<10**14,64*201*9**7<10**12,24*(10**14)**4<10**58,96*(10**14)**3*(10**12)<10**56,64*100*504000*9**7<10**18,64*1013040*9**7<10**16,40320*8*(10**6)**7*10000<10**52]
+if not all(checks):raise ValueError('OPEN_BOUNDS')
+print('independent augmented full-basis open replay:',{'radius':str(eps),'endpoint_dimensions':14,'strict_cofactors':5,'strict_derivative_sums':4,'nonzero_basis_determinant':True,'exact_inequalities':len(checks),'scope':'any common numerator has some negative D4..D7 coordinate in its own endpoint-plus-midpoint basis; fixed unrestricted numerator works'})

@@ -1,0 +1,83 @@
+# Independent review: weighted grid charts
+
+Native clock observed immediately before creation: **Wed Oct 28 19:12:44 PDT 2026 (2026-10-28T19:12:44-0700)**.
+
+## Disposition
+
+| Frozen candidate | FATAL | MAJOR | MINOR | Disposition |
+|---|---:|---:|---:|---|
+| Weighted 4x5 entire-plane theorem | 0 | 0 | 0 | No defect found in the stated sufficient family and examples. |
+| 4x5 weighted mixture | 0 | 0 | 0 | No defect found in the stated Gram criterion, strict-improvement witness, or stated examples. |
+| 5x5 weighted coordinate cuts | 0 | 0 | 1 | The conic SR<=2 conclusion is supported; explicitly handle the zero-output/normalization boundary below. |
+| 5x5 one coordinate, arbitrary opposite | 0 | 0 | 1 | The conic SR<=2 conclusion is supported; the same zero-output/normalization boundary applies. |
+
+These are same-harness scientific reviews, not external-family, human, formal, or novelty verification. The two minor findings are the **same boundary issue** in separate candidate statements, not two mathematical counterexamples to the conic decomposition. No verdict extends to generic 4x4 PPT states.
+
+## Frozen input and procedure
+
+The binding `manifest-v1.json` has SHA-256 `a3819aa7a605d97edc386f9bda5b854aefb75c7e6fb963577efd313e92ab70dd`. I checked each input's full SHA-256, byte length, and LF count, then read each whole body in manifest order in raw windows. All eight matched; no input mismatch was found. The short `expected` fields in four checker entries are matching prefixes of the full `sha256` fields, not independent full hashes.
+
+| Manifest order, input basename | Full observed SHA-256 |
+|---|---|
+| `frontier-20261028-grid-weighted-entire-plane-v1.json` | `8a11286f1ec96cded986ef93d306791153dc1ace9ff601a12fdc2c83cab3f61b` |
+| `frontier-20261028-grid-weighted-three-support-check.py` | `3dd5a7f9cb96e054b0f580202a67895bf3fffe9f57fa963acb5d955763e6f88f` |
+| `frontier-20261028-grid-weighted-mixture-v1.json` | `6ab47d4f7c8daca603d52f130067d80b78a9a2888d83683a6bef1af93c0cfde0` |
+| `frontier-20261028-grid-weighted-mixture-check.py` | `68bd85cbe2a58c79445ae4078b79e36936151dd7cf3a31890dc9d54f768c3a51` |
+| `frontier-20261028-grid55-weighted-coordinate-theorem-v1.json` | `f1e892255a20d6c3b23afa42994a5fe90feea3be1cb63979a135e6da3ea702c6` |
+| `frontier-20261028-grid55-weighted-coordinate-check.py` | `06ccda149c67d34d6b4b2931189530ece1a3df60c05e26c8b49d76e05fb108ce` |
+| `frontier-20261028-grid55-one-coordinate-arbitrary-opposite-v1.json` | `d17fe2163bd7181e00af10ae6a3a5a933b355a06dad3866e52ee32a252a122a1` |
+| `frontier-20261028-grid55-single-coordinate-check.py` | `963dd8014c9f614b02433168325e37293f1375c8c2482f3da5bd3b6b35c7660f` |
+
+The independent code uses only standard-library `Fraction` Gaussian-rational arithmetic and sparse integer polynomials; it does **not** import or replay author code. It constructs the source from the displayed generators, forms partial transposes, performs Hermitian rational Schur elimination including zero residual blocks, checks every 3x3 minor of the relevant kets, and compares complete operator matrices. The second family of phase vectors is independently rephased using `1+i` and `1-i`, whose product is 2 and whose norms are sqrt(2); the written real-sqrt(2) formula was also checked algebraically. Finite tests are controls, not a substitute for the universal reasoning below.
+
+- `independent-exact-check-v1.py` SHA-256 `c8475f08b0c4c2eb166ac912621849a8336eda3261e8d29c58d797fb1a287599`; successful output `independent-exact-receipt-v1.json` SHA-256 `089dfa40e764abd92909893963ec97396ca93d88b43b883f8c4237cc5a630f45`.
+- `independent-boundary-check-v1.py` SHA-256 `22df3e2cec6eb1149d87b71f5caf692b3cb9ad99678c30c9b1ccf0174725355a`; successful output `independent-boundary-receipt-v1.json` SHA-256 `5127d027e77bef10a26118ecd214bd20c2425d2969b0c51fdf1002928d383908`. It reuses only the independent checker above.
+- The first invocation of the independent main checker stopped at its zero-weight control because it unnecessarily demanded rank <=2 of a generator whose coefficient was zero. I corrected that check to omit zero-weight terms and reran; the successful receipt is from the full corrected run. No failed run was recorded as a pass.
+
+## Candidate 1: weighted entire plane
+
+**Coverage and reconstruction.** `frontier-20261028-grid-weighted-entire-plane-v1.json:6-12` assumes nonnegative source weights, alpha,beta,epsilon,phi,eta,iota > 0, beta*delta >= alpha^2, K2=alpha^3/beta^2, K2*(1/epsilon+alpha/(phi*iota)) <= 1, and phi*eta >= K2*epsilon. It covers every surjective 5-to-4 Bob map with kernel in the projective plane span{|0>,|2>,|3>}; no source-PPT hypothesis is used in the SR<=2 conclusion. Source PPT implies output PPT by the local map. This is a sufficient, proper weighted family, not all weighted states or all kernels.
+
+For the chart with nonzero kernel |3> coefficient, invertible output changes yield K0=|0>, K1=|1>, K2=|2>, K3=v0|0>+v2|2>, K4=|3>. I reconstructed X=E'-v0G'-v2I'=|20> and W=-kX+s(F'-v0X). With the coefficient vector t1 in the candidate, W is exactly the linear combination of E',G',I',F'. The four phase factors on A',B',D',W are distinct, so the average has no cross terms. Direct expansion of the determinant on Alice rows 0,1,2 gives z^3*(alpha^(3/2)-beta*k); the extra |22> coefficient has zero cofactor. Thus each phase ket has rank <=2. The remaining Gram acts only on Alice rows 2,3, so PSD supplies SR<=2 vectors even at singular Gram boundaries. The optimal complex s and the cost Cw*K2/(1+Cw*phi*U) follow by completing the square.
+
+For V>0, Z=(F'-v0E'+v0^2G'+v0*v2 I')/v2=|22>. The q0/four-phase mixture consumes alpha[A']+beta[B']+(alpha^2/beta)[D']+alpha[Z]; its rank-two condition and Gram cost are as stated in line 10. To check the exhaustion without assuming an interval is nonempty, set m=K2-phi*U>0, A0=1/epsilon+U/eta. The first condition gives V<=V1=iota*(1/m-A0), the second V>=V2=alpha*(U*A0+1/phi)/(1-alpha*U/iota). The weight hypotheses give iota-alpha*U>0, and direct subtraction gives
+
+`V1-V2 = iota^2 * P(U) / (m*(iota-alpha*U))`,
+
+where `P(U)=1-K2/epsilon-alpha*K2/(phi*iota)+U*(phi/epsilon-K2/eta)+(phi/eta)*U^2`. All three coefficients are nonnegative by the stated assumptions; consequently V1>=V2>0. For U>=K2/phi the first condition holds directly. When the kernel has zero |3> coefficient, its intersection with span{|0>,|1>,|2>} is nonzero, so A' has rank <=2 and every other source generator already has rank <=2. This completes the advertised projective plane including V=0 and the projective boundary.
+
+**Independent exact points.** At the stated weights `(1,1,2,3,9,9,9,6,7)` and `(v0,v2)=(1/2,4)`, I obtained source trace 64, PSD source and output partial transposes, Cw=101/36, s=-202/117, costs 404/1053 and 13/256, PSD endpoint Grams, all relevant phase minors zero and both 256-entry decompositions exact. At the same weights with `(v0,v2)=(1/2+i/3,4+i/2)`, the costs are 7412/26681 and 26681/379080; both exact Grams and the output PT are PSD. At `(v0,v2)=(1/2+i/3,0)`, the first cost is 196/1933 and the first Gram is PSD.
+
+An independent **NPT** source control with weights `(4,4,4,3,8,16,4,8,2)` has K2=4, weight-condition value 5/8 and 64>=32; at `(v0,v2)=(1/2+i/4,4+i/3)`, both exact decompositions work, with costs 5108/6961 and 6961/37120. Its source and output are NPT, illustrating that PPT is not required for the sufficient SR<=2 statement. I also checked equality at weights `(1,1,1,1,2,2,1,1,1)`, where all three weight inequalities are saturated: at `v0=0, v2=(1+i)/2`, both costs equal 1 and both singular Grams are PSD. At `U=K2/phi=1/2` the first cost is 3/4. Separate projective-boundary controls with kernels `|0>+(1+i)|2>` and `|0>` have all nine projected generator ranks <=2 and PSD output PT for the stated PPT weights.
+
+## Candidate 2: mixture certificate
+
+**Coverage and reconstruction.** `frontier-20261028-grid-weighted-mixture-v1.json:7-10` assumes the same nonnegative 4x5 source and strictly positive alpha,beta,epsilon,phi,eta,iota, with beta*delta>=alpha^2, in the K3-head/K4-tail chart with V>0. For any real p in [0,1] and complex s, the written H(p,s)>=0 condition is sufficient, not necessary for SN<=2. The first certificate separately applies at V=0 when its own Gram is PSD. I checked the residual by direct vector expansion. If `L=[sqrt(p)t1, sqrt((1-p)*alpha)t2]`, H>=0 iff `I-L*D0^(-1)L>=0`; the two diagonal inequalities and the determinant in line 9 are precisely the 2x2 Hermitian PSD test, including p=0,1 and singular boundaries. The common residual support on Alice rows 2,3 supplies rank <=2 vectors. The endpoint cases p=0 and p=1 were additionally evaluated exactly in the boundary receipt.
+
+The line-12 PPT simplification follows from the actual source PT principal matrices on (01,10), (11,20), (23,30): respectively beta*delta>=alpha^2, alpha*epsilon>=delta^2, phi*eta>=epsilon^2. Thus epsilon>=K2 and phi*eta>=K2*epsilon. This does not make the first entire-plane weight inequality necessary.
+
+**Stated strict-improvement point.** For weights `(1,1,2,3,9,9,9,1/10,100)`, `v0=0`, `v2=8/25`, `p=1/2`, `s=0`, source trace is 1511/10 and the exact source and output PTs are PSD. Endpoint costs are 1277/1125 and 625/576, both greater than 1, while the mixed Gram has exact pivots `(17/2,9,973/21250,527/128)`. All phase 3x3 minors and the 256 matrix entries agree exactly. The 2x2 principal values are `973/2250`, `527/1152`, and determinant `512771/2592000`.
+
+The claimed **SN exactly 2** output is also justified. Its range matrix has core rows `[[a,b,c],[d,a,b],[e,-d,a+v2*f]]`. Two rank-one minors imply `2a^2=-v2*a*f`. The coefficient functionals are `a=q00` and `f=(q22-q00)/v2`; hence any product decomposition of this particular rho would obey sum|a|^2=alpha and sum|f|^2=phi. Cauchy-Schwarz forces `4*alpha<=phi*|v2|^2`, but here `phi*V=576/625<4`; the Gram decomposition gives the matching upper bound 2.
+
+**Own complex point.** With the same source, `v0=0`, `v2=(1+i)/4`, p=1/3 and s=0, the exact source and output PTs are PSD, costs are 49/36 and 8/9, and the mixed Gram pivots are `(26/3,9,59/1040,11/3)`; the full decomposition is exact. Here phi*V=9/8<4, so the same independent product-minor argument also proves this particular output has SN exactly 2.
+
+## Candidates 3 and 4: 5x5 coordinate families
+
+**Minor finding — zero projected operators** (`frontier-20261028-grid55-weighted-coordinate-theorem-v1.json:6,8-12`; `frontier-20261028-grid55-one-coordinate-arbitrary-opposite-v1.json:6,8-10`). Both allow arbitrary nonnegative weights and singular boundaries, but do not state a convention for the Schmidt number of the zero operator. Take the valid, nonzero PPT source `R=[00]`. Deleting Alice row 0 gives the zero 4x5 operator, and any further opposite map gives the zero 4x4 operator; similarly, nine of the 25 two-coordinate cuts are zero. The displayed nonnegative SR<=2 decomposition remains valid as a **cone-membership statement**, and the zero operator is PSD/PPT, but it cannot be normalized to a quantum state. State explicitly that zero belongs to the SR<=2 cone (or assign it SN 0 by convention), and restrict any normalized-state assertion to nonzero outputs. This is not a counterexample for nonzero states.
+
+**25 coordinate cuts.** The precise domain in candidate 3 is every nonnegative diagonal mixture of the 11 listed Figure-2 generators and each coordinate deletion on both sides, conditional only on **that cut** being PPT. There are 21 cuts where row or column 0,1,2 is removed; A' then has rank <=2 and the original nonnegative sum works without PPT. For the other four, the actual cut's PT has the claimed principal matrix: for deletions (3,3), (4,3), (4,4) it is `[[delta,alpha],[alpha,c]]` on (10,21), and for (3,4) it is `[[beta,alpha],[alpha,b]]` on (01,12). At alpha>0 the relevant loop weight is strictly positive and the determinant inequality leaves a nonnegative edge coefficient after the four-phase average. In each case the appropriate pair of head rows is proportional; no assumption on the unprojected source PPT is needed. For alpha=0 all positive-weight generators already have rank <=2.
+
+For the paper's trace-18 profile and the candidate's trace-24 profile, I independently checked source PPT, all 25 cut PTs, all 25 full 256-entry decompositions, and the rank minors. For my additional profile, weights in order `(A,V,W,B,C,Q,00,14,23,32,41)` equal `(4,9,16,4,4,4,4,4,8,8,4)`: source trace 89, source PPT, and all 25 cuts PPT with exact decompositions. As a control for the quantifier, the original profile with B weight increased from 1 to 100 has trace 216 and is NPT, yet 16 cuts are PPT, including three hard cuts; the stated cut-wise certificates work. The checker actually reconstructed all 25 of its cuts, including the NPT cuts, but the theorem does not require claiming their PPT status.
+
+**One coordinate, arbitrary opposite.** Candidate 4 assumes the unprojected nonnegative weighted source is PPT. Its two source PT principal minors give beta*b>=alpha^2 and delta*c>=alpha^2. Removing Alice rows 0,1,2 reduces A to rank <=2; removing row 3 isolates B'=|12> and uses V, while row 4 isolates C'=|21> and uses W. The same four-phase identity works before any opposite cut, on the entire 4x5 output. Tensor swap maps the family to itself with B/C, V/W and the two named loop pairs exchanged, proving the five Bob cases without assuming equal weights. The source-PPT hypothesis is sufficient for the proof, not asserted necessary. Local maps preserve both a conic rank-two decomposition and PPT, and a surjective map with coordinate kernel factors through that coordinate deletion followed by an invertible output map. Thus an arbitrary **complex** opposite map is covered; when it is rank four, so are all its projective kernel lines.
+
+For both the trace-24 source and my trace-89 profile, I independently checked all ten one-side PTs and their complete 400-entry decompositions. For each profile I then applied a genuinely complex, non-coordinate rank-four opposite map, `|4> -> (1/2+i)|0>+(1/3)|1>+(i/4)|2>-(1/2)|3>`, checking all four hard one-side cases: the complete 256-entry output decompositions, phase ranks and output PTs agree. This is an exact control, not an enumeration of arbitrary maps; their universal coverage is the preceding local-map argument.
+
+## Source-range imports and remaining limits
+
+The two explicit 4x5 sources are claimed SN 3 as well as PPT. I fetched the cited 2025 primary source directly at https://arxiv.org/html/2509.07086v1 and checked the stated nine-generator range against its Eq. 11. I also read the named correction `frontier-20261028-grid-state-five-projections-v1.json`, whose SHA-256 is `9863760e2ca2331164d12e62300f3ad7db5b6a17a3ef424e360d504d541004a9`, and independently verified its load-bearing claim using exact sparse-polynomial arithmetic: its five `g1,...,g5` are actual 3x3 minors up to sign and `2a(g5-g3-g4)-c*g1-e*g2=2a^4`. Thus every SR<=2 range vector has a=0, whereas each positive-weight example has A in its range. Every source generator has rank <=3, establishing SN=3. The **uncorrected** identity displayed after Eq. 12 of that v1 primary source is not valid: `(a,b,c,d,e)=(1,0,1,0,1)` gives its left/right sides 2 and 1. The reviewed candidate points to the corrected identity, which I checked; I did not use the erroneous original identity as proof.
+
+For the 5x5 source, I fetched https://arxiv.org/html/2402.12966v1 Figure 2 and Appendix B. Independently checking the displayed range matrix gives a minor `a*b*c`; in the b=0 branch the actual minors include `a^2*q` and `a^2*c`, and then `a^3` when b=c=q=0. The c=0 branch follows by transpose symmetry. Thus a=0 for every rank<=2 range vector, and the positive-weight original and trace-24 examples have SN exactly 3 by the same range argument and their rank<=3 generating decomposition.
+
+**Named imports not verified:** the author scripts' nested `frontier-20261028-grid-unbounded-plane-check.py` and its five prior unweighted replay cases, and `frontier-20261028-grid55-all-coordinate-sn2-check.py` and any of its nested helpers, were not independently read or replayed; none is used as a premise for this review. The unrelated five projections, prior script assertions and other historical claims inside the range-correction artifact were not audited. This review verifies the displayed source-range implications and finite examples as above, not all claims in those transitive artifacts. No literature-priority search, external-model review, formal proof, all weighted PPT-source plane result, generic complex-kernel 5x5 result, or 4x4 SN>=3 existence claim is made.

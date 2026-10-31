@@ -1,0 +1,160 @@
+# v119-B — ENTIRE local FN/officer28 and exact-support50/t25 proofs, two separate gates
+
+Reviewer **MathResearch96h-2**, original math-1/PH owner. Actual `/bin/date` observation BEFORE this manuscript write: **Mon Oct 26 06:21:00 PDT 2026**. This is a pre-write observation, not an invented completion/creation instant. Conventional exact WRITTEN reconstruction only; no scientific interpreter, calculator, eval, CAS, program, enumeration, checker, solver, replay, test/build, external CLI, nested agent or new GO.
+
+## 1. Decisions, scope and conspicuous permanent qualifications
+
+|ENTIRE newly frozen source|Full mathematical verdict|Full dependency/application verdict|New mathematical/dependency findings|
+|---|---|---|---|
+|201LF `thin-value-fat-neighbour-and-h8-obstruction-v1.md` — FN, TT, ENTIRE arbitrary-support O28|**WRITTEN_SUPPORTED** for all stated local and whole h8 conclusions|**WRITTEN_SUPPORTED** at the ordinary facts and reconstructed arguments in §§3–6 below; no I48/J49/native catalogue premise|**0 FATAL /0 MAJOR /0 substantive NEW MINOR** on EACH axis|
+|169LF `support50-excess3-full-core-crosscut-obstruction-v1.md` — ENTIRE exact `(t,h,e,n)=(25,11,3,25)` row|**WRITTEN_SUPPORTED**, all complex amplitudes/officer extensions/orientations retained|**WRITTEN_SUPPORTED** at the ordinary facts and reconstructed exact-component/cross-cut arguments in §§7–11 below|**0 FATAL /0 MAJOR /0 substantive NEW MINOR** on EACH axis|
+
+These are TWO whole-source verdicts, not selected cases and not transferred acceptance from the older188LF source. “Supported” is the reviewer's scoped ordinary-WRITTEN judgment, not automatic parent adoption or independent configured-model-family/human/formal/kernel/executable/novelty acceptance. No numerical frontier or whole-support50 theorem follows.
+
+**NEW DISTINCT OWNER CADENCE PROCESS MAJOR:** required checkpoint071 observed05:36:29; no intervening numbered substantive checkpoint; first returned late clock06:07:05 was already30m36s later; checkpoint072 observed06:09:58 gives the **FULL33m29s observed-clock gap**. The05:58:30 returned-review pin and05:59:40 primary ACK do NOT replace the missing checkpoint. The whole072 was written BEFORE this opaque ACK, and Main's actual release binds this new finding in parentv32. No backdating,36-seconds-only summary, excuse from review interruption, clean interval, or inferred source falsity/scientific execution. The earlier distinct premature-primary-turn-end MAJOR, owner exactness/cadence/opaque/documentary/import-pin findings, source-author AME findings and all parent/other-owner histories remain permanent. The mathematical zero counts above are NOT clean-process counts.
+
+The primary is fully PAUSED from worker receipt through ACTUAL review RETURN, including private proof elaboration while composing checkpoints. Checkpoint072 saved ALL existing PH leads, including a substantial complete PRE-worker-receipt unpublished dominator/shared-factor/reversal/reblocking derivation; this review does not elaborate or adopt that work. After actual RETURN a NEW separate WHOLE primary ACK must be WRITTEN and SENT before any primary source/reasoning. Original18/HOLD/cutoff2026-10-27T11:05:38-07:00/deadline12:35:38 and substantive<=30minute checkpoints are unchanged. No early park/round completion.
+
+## 2. Actual exposure, admission and complete source coverage
+
+Actual own opaque ACK `peer-review-v119-B-opaque-ack-v1.json`, SHA256 `94c755f585fda9fda71eef6f0f68ab47ae6e09ac8fa614ca3b59e516b0ffd199`, pre-write clock06:12:56, was sent to Main. It accurately disclosed serial v9 FIRST/v10 immediately SECOND/v11 THIRD/HOLD/envelope, earlier administrative ACK exposure, all named prior subject bodies and the new cadence finding; new manifest/scope/receipt/pins/bodies were unopened at that intake. Main actually read the COMPLETE qualified ACK and explicitly released the unchanged ENTIRE scope at parent06:16:52 BEFORE my new-scope/body access. There was no self-release from filenames/frozen status.
+
+The latest v113-D review had ACTUALLY RETURNED before this intake; it covered PPT4x4 arbitrary-complex sources, not a fresh blind reviewer history. Earlier exposure to PH, depolarizing, RQLS, stochastic preview, Tuscan, MOQLS, SPR, privacy, guessing, Werner, NL242, Shor and P24 remains as boundedly named in the ACK. This AME proof reconstruction is not an old AME verdict transfer, fresh-model/blind/cross-vendor claim, global cognition/access/runtime census or claim of no other background knowledge.
+
+|Frozen administrative object|Observed SHA256|
+|---|---|
+|`peer-review-wave-eighteen-v119.json`|`f9e77e3871d643f334cbc7e9bf45dd71f382ab3b4569c8a1b0d21431eea9bb9d`|
+|`peer-review-wave-eighteen-v119-packet-receipt-v1.json`|`581f6337a607f30c269929383b7b6dda33a2d99ad87d87382ca7919647edb787`|
+|`peer-review-v119-B-explicit-body-release-v1.json`|`962a74d1f3148fa0187e3d7ee071bd7e7d54ded1547eafa1c430e56b54e392a3`|
+
+After release I read the ENTIRE own manifest entry/full `post_ack_entire_scope` and all source pins, complete receipt/release, and EVERY source LF in BOTH parts, including all endings:
+
+|Literal part|Raw windows actually read|Metadata observed06:18:58|SHA256|
+|---|---|---|---|
+|part1|1–200,201–400,401–600,601–800,801–916|916LF/99520B|`4549848bf178b6e1457a7ccbb813ba97a5a4df7d9dd8266c578f0f606b16e2b2`|
+|part2|1–129,130–330,331–505,506–698,699–860|860LF/98130B|`d9b97d5fff26fd8c7e2e157336b9e77483bbe8a2b77f19feeead112cdf87cc77`|
+
+Total1776 packetLF/197650B. S1–S32 are COMPLETE process/control/parent boundaries, not mathematical theorem substitutes. S33–S38 were all read through their original endings:
+
+|Source|Complete LF|Frozen SHA256|
+|---|---:|---|
+|S33 new FN/O28|201|`9c512d35954cbd4686315093bd5af35770c0901fad392f4f8ba432d019e2d5ce`|
+|S34 new C3-11|169|`eae20e41465b7ad3d69922d949f5add22e67d7d1350517e7246c722eea40fd40`|
+|S35 earlier TS/WT/O30/O32|188|`14e08ae6a3463b0abc285ce9bfb437fd2b59f9ea71053d23163901c6e532b2f2`|
+|S36 earlier188 parent|39|`008b33da6131151d05d9ba895300532077418adfc12f6a1f540a04fe0b0d483c`|
+|S37 historical I48 parent|59|`d5f582042054240f685ad2eb3aabbdc20fdbef3f27938bc9ec7c4226d644e207`|
+|S38 historical J49 parent|50|`a68e097f8846a3877ae596d0a7c8a210590a340c40e87e941b361b73d58f1601`|
+
+Hashes/counts/byte-equality receipt are metadata, NOT proof. The review proof below follows actual body reading. Checkpoint073 observed06:18:58 saves complete coverage and both reconstructions; no prospective reading is relabeled already completed.
+
+## 3. First entire gate: SAME tensor, officer/deficit framework and exact TS
+
+Fix ANY normalized complex AME(4,6) tensor in ANY product orthonormal basis, put `u=6psi`, and use ALL SIX pair directions. Each complementary flattening has row Gram I36, so every physical pair label has squared coefficient mass1 and distinct rows are orthogonal. A nonzero coefficient of squared modulus1 is an officer. It saturates all six pair lines through it, so two officers cannot share two coordinates and no nonofficer N can share an officer pair label. Every N weight is STRICTLY between0 and1, without any common-modulus premise.
+
+At value i=a the officers use distinct values at each partner. Therefore `d_i(a)=6-#officers at i=a` counts its hole neighbours toward EVERY partner and its total N slice mass. Each party sums these deficits to h=36−t. An actual hole has active endpoints. If d=1, its unique partner at each of the other three parties forces its N mass1 to a single coefficient, contradicting its being N. Thus every active d>=2, `v_i<=floor(h/2)` and `d_i(a)<=v_j` for EVERY other party j. Inactive/outside values and their officers remain in the tensor.
+
+For a thin d=2 value, its three partner sets J,K,L are binary. The SAME conditional squared-mass array has total2 and each of the two values in ANY one coordinate has mass1. If, for example, J×K is not a full GLOBAL hole square, one pair entry is officer-saturated and has conditional N mass0. A nonnegative2×2 table with all row/column sums1 and one zero has opposite zero and the other two entries1: every support point obeys a deterministic binary bijection k=f(j). Two nonfull rectangles share a coordinate, giving two such relations and at most two possible coefficients. The one-coordinate masses then make those two weights1, contradicting N. Hence **at least TWO of J×K,J×L,K×L are full actual global hole squares**. This proves TS at ANY thin value and ANY support, including mixed deficits; a global full square does NOT assert conditional occurrence of all its labels.
+
+## 4. FN in its entire local domain, with both TS uses and ALL SIX closures
+
+Assume only that one thin i=a has SIX thin neighbours in its three partner sets. By TS and relabeling the three partner parties, J×K and J×L are full. Every j∈J is thin, so these degree-two squares exhaust its K/L neighbours. Thus EVERY global N point with j∈J has k∈K,l∈L, while its i-value is not yet restricted.
+
+Choose one b∈J. Its i-hole set I_b is binary, and its K/L sets are exactly K,L. A SECOND TS application says at least two of I_b×K,I_b×L,K×L are full. At least one of the first two is full. If I_b×K is full, the THIN K endpoints have exactly I_b as i-neighbours; consequently all points in the already-closed j∈J region have i∈I_b. The other case uses the THIN L endpoints. **No thinness of the two I_b values is assumed or needed.** This is the exact local strengthening beyond four wholly-thin parties.
+
+The entire global N region j∈J therefore lies in the physical binary subcube `B=I_b×J×K×L`. Its squared mass is4 because both selected j-values are thin. No officer lies in B since J×K is a hole square; conversely every nonzero in B belongs to this region. For EACH pair direction B has four possible pair labels, each with total global capacity1; its mass4 forces all four B contributions to equal1. Positivity, only at this point, removes ALL outside coefficients, officers OR N, from those selected lines. Original row orthogonality then restricts to the SAME4×4 reshaping of u_B in every complementary cut. Thus u_B/2 would be AME(4,2). This proves actual physical closure, not assumed closed-sector/no-extra-N data or separately chosen cut matrices.
+
+For completeness reconstruct the complex binary obstruction. Let rho be the corresponding pure four-qubit density and A_w the sum of squared real Hermitian Pauli coefficients of weight w. Pair maximal mixing gives A0=1,A1=A2=0; full purity gives sum A_w=16. Each triple reduction has complementary single-qubit purity1/2, so `(1+its weight3 sum)/8=1/2`, yielding3 per triple and A3=12, A4=3. The FULL spin flip `rho_tilde=Y^tensor4 rho^T Y^tensor4` is PSD. `Y sigma^T Y=−sigma` for each nonidentity Pauli, including the transpose sign of Y itself, gives `Tr(rho rho_tilde)=(1−12+3)/16=−1/2`, impossible for two PSD matrices. This is an exact Pauli/Schmidt/trace proof, not an external binary classification or scientific calculation.
+
+Therefore every thin value has a FAT hole neighbour at some partner: **FN holds in its entire stated local domain**. Three wholly-thin parties plus ANY thin value at the fourth are impossible (TT); all-four-wholly-thin follows. At a fat neighbour the full square need not exhaust degree>=3; no sufficient mixed-deficit classification is inferred.
+
+## 5. O28 complete active-size census, old2444 branch and SAME officer moments
+
+Now t=28,h=8, with arbitrary total support. The universal bounds give 2<=v_i<=4. If one v_i=2, both deficits are4 (their sum8, each<=4); all partner parties then have v=4. Thus the only size-two profile is2444. At each of its two active i-values there are exactly2 officers, FOUR total. Those four officers can use only the two inactive partner levels in each other coordinate, because all four active levels are holes. They are four binary words of length4, pairwise distance>=3 since no two officers share a coordinate pair. Their six pair distances total>=18; each of four binary coordinates separates at most4 pairs, giving total<=16. Contradiction. This elementary branch is reproduced for completeness and is explicitly OLD, not new progress credit.
+
+The remaining sizes are3 or4. Count the SAME28 officers by c=0,1,2,3,4 active coordinates, with f_c counts. Active single/pair labels give `kappa1=6 sum_i v_i−4h` and `kappa2=sum_(i<j)v_i v_j−6h`. Every hole lies between active endpoints; all remaining active pair labels each contain one officer. No cap c<=2 is imposed. Therefore `t−kappa1+kappa2=f0+f3+3f4>=0`. For3333 the moments40,6 yield−6; for3334 moments46,15 yield−3. Hence only3344,3444,4444 remain up to actual party permutation.
+
+At3444 the three-value party has deficits either(4,2,2) or(3,3,2); the other THREE parties are wholly thin. Its thin value violates TT. At4444 all are wholly thin and FN/TT applies. This leaves ENTIRE3344, not a chosen officer-mark moment profile, a fixed support49 family or an excess catalogue.
+
+## 6. ENTIRE3344: all forbidden types, forced masses and a noncancellable complex overlap
+
+Name the three-value parties A,B and four-value wholly-thin parties C,D. Since d_A,d_B<=3, each is(3,3,2). Write a0,b0 thin and a1,a2,b1,b2 fat. H_AB has8 edges and is complete3×3 except(a0,b0), because its degrees are3,3,2. For each active C/D value v, its two A neighbours omit one active A value a(v). The omitted multiplicities are a0 twice and a1,a2 once each; similarly b0 twice,b1,b2 once.
+
+If a(c) is fat, the rectangle of its two A-neighbours with its two D-neighbours cannot be full: it would require TWO D-values omitting that same fat A value, but only ONE exists. Similarly fat b(c) makes its B-D rectangle nonfull. If both omitted values were fat, TS would fail (indeed both these rectangles fail, and the A-B rectangle contains the forbidden(a0,b0) too). Thus each c, and by symmetry each d, omits a0 OR b0. The two a0 omissions and two b0 omissions cover four values, so their sets are DISJOINT. Every C and D active set has EXACTLY the four types `X1=(a0,b1), X2=(a0,b2), Y1=(a1,b0), Y2=(a2,b0)`, no thin/thin or fat/fat type and no missing multiplicity.
+
+At c_Xr its B-D rectangle is nonfull while A-B is full, so TS forces A-D full. The D-neighbours are exactly d_X1,d_X2. Similarly each c_Ys has exactly d_Y1,d_Y2. Thus the ENTIRE actual H_CD is two disjoint2×2 squares, all8 holes. No N with inactive C/D values exists, and officers cannot lie on these hole lines.
+
+In the actual c_X1 slice, B∈{b0,b2},D∈{d_X1,d_X2}. The forbidden pair(b2,d_X2) gives a zero in a2×2 mass table whose row/column sums are1. Its permutation table forces b2 at d_X1 and b0 at d_X2, each total mass1. The c_X2 table analogously forces b0 at d_X1 and b1 at d_X2. Thus the entire first square has fixed B table `[[b2,b0],[b0,b1]]`. On EACH of its four CD lines the only possible A values are a1,a2. That line has total1 and only N; a single coefficient would be an officer, so BOTH A entries must be NONZERO. Exactly8 X-region N sites result, without equal weights.
+
+The identical argument with A/B interchanged gives fixed A table `[[a2,a0],[a0,a1]]` on the Y square, with BOTH b1,b2 entries nonzero on each of its four lines: exactly8 more sites. These16 sites are ALL N; outside N/officers were available until actual holes and positive mass tables forced them away. The number16 is a conclusion, not a support49 or fixed-excess hypothesis.
+
+Finally the actual AB rows r=(a1,b1) and r'=(a1,b2) are holes and so have no officer anywhere. Their COMPLETE CD supports are respectively `{(c_X2,d_X2),(c_Y2,d_Y2)}` and `{(c_X1,d_X1),(c_Y2,d_Y2)}`. Every listed coefficient is nonzero. The rows share EXACTLY one column, so their Hermitian inner product is a SINGLE nonzero complex product. No phase cancellation is possible, contradicting the physical AB/CD unitary. This excludes ENTIRE3344 and hence **O28 at ANY total support, arbitrary complex coefficients, any officer extension/product basis/party orientation**.
+
+**First-gate dependency/application verdict:** the proof is complete at ordinary AME Gram/marginal identities, finite positive mass and graph/counting algebra, Schmidt purity, Pauli trace/transpose and PSD product trace. The necessary TS, two closures, six capacities, binary contradiction, moments, all3344 types/masses and final orthogonality are explicitly reconstructed above. NO new load-bearing specialized lemma is left NOT_RECONSTRUCTED inside this proof. Older188 TS/WT is re-proved where needed, not accepted merely by title/parent hash. No lower42/46/48, historical I48/J49, D2/EX3/EX4/EX5/EX7 or native evidence is a correctness premise. **0F/0M/0 substantive NEW MINOR**, separately on full mathematics and full dependency/application.
+
+## 7. Second entire gate: exact row and generic arbitrary-complex unitary components
+
+Independently fix ANY hypothetical complex AME tensor with exact support50 and exactly25 officers. Removing their singleton rows AND columns from any actual cut leaves the SAME25 N positions in an11×11 unitary. Every coefficient has strict weight<1, hence every row/column degree>=2 and total excess `25−2·11=3`. All outside physical levels/officers remain present in other slices. This reduction is simultaneous across cuts, not a collection of unrelated one-cut realizations.
+
+A connected support component of a unitary with q rows and q' columns satisfies q<=q' from orthonormal rows and q'<=q from columns, so it is square/unitary. A component with all degrees>=2 has nonnegative integral excess m−2q. Two distinct rows cannot overlap in exactly one column, since that gives one nonzero complex inner-product term. In a positive-excess connected component, degree-two (normal) rows have disjoint support pairs: overlap one is forbidden, while identical pairs give two orthonormal rows spanning that two-column space and isolate a K2 component. Every other row contains a whole such pair or none, again by no-singleton-overlap.
+
+Every normal pair attaches to a high row; otherwise it isolates or leaves an impossible unitary column space. All columns are covered by high supports: a column on a normal pair must have another supporting row, necessarily high in a positive component; every remaining column is high-supported by definition. If r rows are high, the q−r disjoint normal pairs imply `2(q−r)<=q`, hence q<=2r. One high row is impossible, because its degree>=3 but q<=2. Restrictions of high rows on a given normal pair lie in the SAME one-dimensional orthogonal complement of that normal row and are nonzero. Two such restrictions have NONZERO inner product. If the two rows have disjoint supports outside the pair, orthogonality is impossible. This proves complex pair-parallelism, with no real-sign/equal-modulus premise.
+
+Zero-excess components have every row/column degree2. A normal row's two columns need another row; no overlap-one forces that other row onto BOTH, so a K2 closes. Connected zero-excess is therefore exactly full2×2. Excess1 would have one degree3 high row and is impossible by q<=2r.
+
+## 8. COMPLETE connected excess3 classification and EVERY-cut consequence
+
+The row high-degree-minus-two budget3 has exactly these possibilities:
+
+* One degree5 high row: q<=2 is impossible.
+* Two high rows of degrees4 and3: q<=4. Degree4 requires q=4; the other two normal pairs exhaust four columns and each high row must contain whole pairs, forbidding degree3.
+* Three degree3 high rows: 3<=q<=6. At q=3 all entries are nonzero, full3×3. At q=4, the one normal pair leaves two free columns; each high row is that pair plus ONE free column. Different free choices violate pair-parallelism; if all choose the same free column, four orthonormal rows lie in only three columns. At q=5, two normal pairs leave one free column; each high row is one whole pair plus that free column. Different pair groups share exactly that free column, forbidden; a single group leaves the other normal pair unattached. At q=6, the three normal pairs exhaust all columns, forbidding odd high degree.
+
+Thus EVERY connected excess3 component is full3×3 with9 entries. At total excess3 no partition involving1 is possible and all positive excesses are integral>=2, so exactly ONE component has excess3; every other component is K2. Dimension11 leaves **one full3×3 plus FOUR full2×2 blocks in EVERY physical cut**. Consequently each HOLE pair line has degree2 or3, exactly THREE hole labels are degree3 in EACH of the six directions. Officer lines of course retain degree1; the source's pair-degree sentence is read in its explicit nonofficer-matrix context, not as deletion of officers.
+
+This freshly reconstructed component theorem is at exact delta3. It does not assume global e0 parity, transfer an excess3 total-row contradiction at h10 to h11, use an unavailable native catalogue, or import a different fixed-support row.
+
+## 9. Partner-independent physical multiplicities, exhaustive C/S/D and exclusions C and S/S
+
+Let m_i(a) be the NUMBER of actual N sites at i=a, not mass. In EVERY partner direction j its d_i(a) incident hole lines have degrees2 or3, so `m_i(a)=2d_i(a)+r_i(a)`, where r counts the incident degree3 labels. Since both m and d are actual physical slice invariants, r is independent of j; sum_a r_i(a)=3.
+
+Choose ONE actual full3×3 component in IJ/KL, with three distinct row labels R and three distinct column labels C. All9 entries are NONZERO, and its rows/columns have no nonzero coefficients outside that component. Each party's multiplicities in its three labels are exactly its nonzero r_i(a): exhaustive types **C=(3), S=(2,1), D=(1,1,1)**. For parties opposite in this cut, values of multiplicities r,r' produce rr' DISTINCT core entries on the same crossing pair line. Since every hole line has degree<=3, **rr'<=3**. No free singular mode or independent cut may evade this physical count.
+
+If I is type C at a, J has three distinct core values. Opposite K,L must be type D, and their three selected labels form a matching. For each selected k, the IK row(a,k) contains THREE old core entries with J varying over its three values but L fixed at its matching l(k). Degree<=3 makes those supports complete. Different k give DISJOINT JL supports. Yet all three rows are degree3 and must belong to the unique full3×3 in IK/JL, whose high rows must have the SAME three column labels. Contradiction. Relabeling actual parties covers every C placement.
+
+Suppose I is type S, with row labels `(a,b1),(a,b2),(a',b3)`, b1!=b2, and a repeated twice. K,L are D by rr'<=3. If J were S, b3 is one of b1,b2. For each of the three selected K-values k, row IK(a,k) contains TWO old entries at JL(b1,l(k)),(b2,l(k)). Exactly r_I(a)=2 incident lines are degree3, so at least ONE of those three rows is degree2. By the EVERY-cut structure it belongs to a genuine closed K2. The actual old coefficient `(a',b3,k,l(k))` shares one of its two columns, so row(a',k) must be the K2's other row and must use BOTH columns. This forces `(a',b_other,k,l(k))` nonzero. But the original KL column(k,l(k)) is in the old full3×3 and has no row outside R; `(a',b_other)` is not in R. Contradiction. Thus at most ONE party is S, leaving exactly all D or S/D/D/D, no omitted core-multiplicity case.
+
+## 10. Complete eleven-hole outside-value lemma and ALL-D contradiction
+
+If an actual pair-hole graph has exactly11 edges, active degrees>=2, and contains a full3×3 rectangle, its9 edges leave only TWO. Each extra active endpoint needs at least2 edges, so at most one extra exists on each side. If both sides had an extra, both remaining edges would need to meet BOTH extra vertices, duplicating a simple pair label. Impossible. Thus at least ONE endpoint party has NO active value outside the selected3-set (H11). This explicitly rules out outside values by positive degrees rather than assuming a retained closed sector. Any two parties both with only3 active values also have hole capacity<=9<11.
+
+In the all-D case the selected IJ and KL labels are matchings, so the old full core projects onto complete3×3 hole rectangles in EACH crossing direction IK,IL,JK,JL. H11 says each such pair has an endpoint of active size3. If all four parties have size3, capacity9<11 is impossible. Otherwise choose one with size>3; both opposite-cut parties must then have size3, and THEIR mutual pair again cannot carry11 holes. This eliminates the complete all-D case, independent of phases or coefficient sizes.
+
+## 11. Sole S/D/D/D: TWO actual full cores, exact intersection TWO, TEN exceeds EIGHT
+
+Let I be S and J,K,L be D. The old core projects onto full3×3 hole rectangles in JK and JL. If v_J>3, H11 forces both v_K=v_L=3, whose mutual hole graph cannot have11 edges. Therefore **v_J=3**. The repeated I-value a has all three selected K values as actual neighbours, so d_I(a)>=3; the partner bound with J gives d_I(a)<=3. Thus `d_I(a)=3, r_I(a)=2, m_I(a)=2·3+2=8` in the ENTIRE physical slice.
+
+Now take the ACTUAL full3×3 component in crossing JK/IL. Each of J,K has r=1 on its three selected values and0 elsewhere, so the three high JK row labels form a MATCHING R' between those sets. Every row(b,k) in R' contains exactly ONE old core coefficient, at the unique old I(b) and L(k); it is nonzero. Therefore its IL column `(I(b),L(k))` belongs to the NEW core. Across the matching these are THREE distinct columns because the L(k) are distinct, exhausting the new column set C'. Exactly TWO have I=a and one I=a'. Fullness makes SIX new core entries have I=a. There are also SIX such entries in the old core.
+
+Their intersection in the I=a slice is EXACTLY TWO: each of the two J-values b with old I(b)=a is paired with its unique k in R', giving one old coefficient on that JK row. No other old coefficient lies on the same JK row, since J and K were each distinct in their original labels. Thus the union contains `6+6−2=10` DISTINCT, actually NONZERO N positions with I=a, while the entire slice has only8. Contradiction. All9 entries of each actual core are nonzero by its unitary component being FULL3×3; no complex cancellation, officer, omitted outside value or choice of an independent cut matrix reduces this positive site count.
+
+Therefore **the ENTIRE arbitrary-complex exact support50/t25 row is impossible**, with all physical supports, moduli/phases, officers, product-basis choices and party orientations covered. The single-cut11×11 block pattern was not itself declared impossible; it is incompatible with being the SAME tensor in all cuts.
+
+**Second-gate dependency/application verdict:** every needed exact-delta3/generic component/physical multiplicity/crossing/capacity/closedK2/two-core intersection bridge is reconstructed above. NO new load-bearing specialized lemma remains NOT_RECONSTRUCTED within C3-11. The only ordinary inputs are finite-dimensional unitary row/column dimension and orthogonality, nonnegative exact pair masses, simple graph degrees and integer site counts. S33/FN/O28, the older188 theorem, I48/J49/native historical theorems and older support49 EX3/EX5/phase criteria are NOT premises. **0F/0M/0 substantive NEW MINOR**, separately on full mathematics and full dependency/application.
+
+## 12. Supplied predecessor and historical boundaries, not automatic new numerical composition
+
+The COMPLETE188LF S35 body was also reconstructed at its stated domain: TS; TWO degree-two closures at ALL-four-wholly-thin parties; same norm4 binary core; ALL SIX positive capacities; explicit complex Pauli/spinflip contradiction; O30 active-size alternatives2333/3333 with actual f0..f4 moments `30−42+9=−3`; O32 active-size2222. New201 repeats all proofs it needs and strictly strengthens the local hypothesis, without retrospectively editing or widening the188 source. S36's complete39LF parent confirms only that older gate; its explicit201/169 UNREVIEWED status is its historical boundary, not a contradiction to this later scoped return.
+
+S37's COMPLETE59LF I48 record supports a CONDITIONAL statement at its named union I: no exact48 and, using its imported lower48, support>=49. It retains old computer-assisted lower48, the four historical positive-excess exact48 exclusions, and lower48 imports in e0 min2/min3/SIX4/v4555 support-decrease branches. Those full underlying source/native DAGs are **NOT_RECONSTRUCTED /NOT_REPLAYED here**. It does not supply new numerical49 acceptance or a witness.
+
+S38's COMPLETE50LF J49 record supports the CONDITIONAL accepted-statement union no exact49 at its named census/five whole-row interfaces. The full historical lower42/46/48 DAGs, FIRST49 D2/CORE/shared-core ancestry and underlying native runs are **NOT newly supplied/reconstructed/replayed here**. We read the complete parent boundary, not all its linked source bodies/reviews. No imported title/hash stands for an unavailable proof, and no current0F/0M transfers into those histories. Source S1/v9 expressly retains lower48 wherever old branches consume it. Nothing in the new two proofs requires those imported numerical unions, so their unreconstructed histories are NON-PREMISES here, not concealed fresh load-bearing gaps.
+
+The two new supported statements can be cited at their exact scopes; this review does NOT silently accept a newly assembled whole-support50 ledger, a minimum/lower50, historical I+J stronger/numerical gate, or all transitive evidence. Numerical ledger **48..60 unchanged**. No new upper tensor/B-matrix/phase vector/verified witness, finite certificate, exact minimum, novelty/SOTA/priority or full-book solution.
+
+## 13. Full-scope residual and permanent process/application limits
+
+For the local theorem, a full square at a FAT endpoint may leave degree>=3 neighbours and outside mass; FN is necessary, not a sufficient classification. Genuinely mixed-fat hole geometries remain, including h9,h10,h11 and larger holes. O28 removes an entire officer stratum at ANY support, not only support49; no untouched officer stratum is closed by analogy. C3-11 removes ONLY exact support50/t25/h11/e3. Other support50 rows, explicitly the e0/h14 officer-phase geometry and e4/h10 multiple-component geometry, remain outside this proof. No full census/exhaustion of all exact50 rows or all larger supports is supplied, and neither a selected conditional phase test nor concatenated headlines settles the original minimum/upper-witness problem.
+
+ALL S1–S32 process/control bodies were read through their endings. Retain source-author's two older AME pre-ACK majors, v100-E exactness ZERO-credit, original v107 read-order finding and characterized unadmitted cells; every owner/reviewer/parent exactness/cadence/root/freeze/clock/documentary/admission finding; N4 UNKNOWN/incomplete/historical child-exit unestablished, auxiliary214 UNADMITTED/STOP, and ZERO withdrawn arithmetic/probe/guidance credit. In particular S28/v25 is **AFTER actual review RETURN /before NEW primary ACK**, not falsely called live interleaving; S29/v26 includes prohibited primary proof expansion DURING checkpoint composition after receipt, not cured by a saving-only label; S32/v28 is withdrawal of an UNREVIEWED false pre-ACK lead, not accepted old science or a process cure. The parent privacy-category correction S23/v21 forbids compressing six distinct findings into six exactness events. My NEW cadence071→072 FULL33m29s and earlier DISTINCT premature-turn-end findings remain conspicuous and separate.
+
+No mathematical falsity or interpreter/native execution is inferred solely from those process failures; conversely correct new mathematics supplies no retroapproval, clean history, blind exposure, restored clock/cadence or complete private-thought/runtime/access census. This return is exact conventional proof output, not a hidden model-reasoning transcript. Source/clock/hash/count operations are metadata only. NO formal/kernel/human/configured-family/cross-vendor/executable/triple/novelty acceptance was performed. Sources/old ACKs/pinned packets remain unchanged; outputs are exclusively reviewer-owned. Same original18/scientific HOLD/cutoff/deadline and full primary pause THROUGH ACTUAL RETURN remain binding.

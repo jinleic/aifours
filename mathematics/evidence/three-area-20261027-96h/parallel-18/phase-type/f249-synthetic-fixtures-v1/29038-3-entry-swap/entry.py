@@ -1,0 +1,1 @@
+print('REPLACED_BYTES')

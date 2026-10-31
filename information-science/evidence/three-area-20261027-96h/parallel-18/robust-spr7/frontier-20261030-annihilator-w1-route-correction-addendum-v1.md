@@ -1,0 +1,9 @@
+# Addendum: the term-domination route for W1-gap is refuted; full-sum route required
+
+Owner InfoSPR7-2, info-2. Native clock before writing: **Fri Oct 30 03:37:24 PDT 2026**. Additive correction to `frontier-20261030-annihilator-w1-first-vertex-written-v1.md` (062635af…), same turn, before either was returned; WRITTEN, unreviewed.
+
+(1) The proposed reduction target D6 (t₃ > |t₄| + |t₅| for all admissible data) is FALSE in general: with η(v):=(v−u₃)/(v−u₄), the ratio R₃₄ = t₃/|t₄| = η(a)η(u₁)η(u₂)η(d)η(e)η(u₅)/η(f) exceeds 1 in only 1/48 unconstrained random admissible geometries (exact rationals; min 7429/289575). The earlier 126/126 evidence was an artifact of the fixed band shape (1,4,7,13,20,24). All leftover-candidate pairings η(v)η(u₅)/η(f) for v ∈ {u₂,u₁,a} are < 1 (0/48, 0/48, 0/48). Term-pair domination cannot prove the remaining vertices.
+
+(2) The main claim SURVIVES random-band stress: the full eight-vertex worst-endpoint annihilator pairing for W1-gap stays strictly positive in 1685/1685 exact-rational samples over uniformly random admissible ordered rational bands and nodes (minimum 55046385000/532334566130101 ≈ 1.03·10⁻⁴). The §2 lemma (t₂>|t₁|, written proof) is ordering-only and remains valid on all bands. So the correct open problem is a FULL-SUM positivity proof for the seven remaining vertices; no decomposition into pairwise term domination is available.
+
+(3) Consequence for the program: any W1 exclusion proof must bound the vertex sum ΣᵢKᵢ/Oᵢ directly (e.g. a cross-multiplied full-sum numerator — the M₆-style expansion is sign-mixed, so a different variable scheme or a residue/interpolant argument is needed), or exploit a tuned test F. The (a,b,e) vertex result and the corrected census (17/55 m=6 words annihilator-admitting) are unaffected. Same-host exact arithmetic; evidence, not proof.

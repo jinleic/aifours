@@ -1,0 +1,16 @@
+# An open family with a genuinely cross-member root obstruction
+
+**Status: WRITTEN-checked-in-kernel; author candidate, not parent adoption.** The box of `frontier-20261029-cross-member-real-root-obstruction-v1.md` has a nonempty 14-dimensional open endpoint neighborhood with the same phenomenon. Perturb each of its 14 endpoints independently by at most \(\varepsilon=10^{-16}\). Every resulting box is strictly Hurwitz and shares one fixed unrestricted common numerator. Yet the cross-member phase criterion forces every common numerator to have a nonreal conjugate root pair, while none of the four individual parity corners satisfies that same criterion at the selected frequencies \(14,25\).
+
+The anchor's exact cross-member inequality and all four opposite same-corner comparisons have strict angular slack greater than \(1/1000\). At \(\omega\in\{14,25\}\), write \(a(i\omega)=E+i\omega O\). Endpoint perturbations obey
+\[
+|\Delta E|\le\varepsilon(1+t+t^2+t^3),\qquad
+|\Delta(\omega O)|\le\varepsilon\omega(1+t+t^2),\quad t=\omega^2.
+\]
+The independent replay verifies that all eight corner/frequency real and imaginary parts stay away from zero and that each corresponding phase changes by less than \(1/100000\). Indeed, if \(|\Delta z|/|z|<1/2\), the angular change is bounded by twice this ratio; the checker uses the conservative rational bound \(2(|\Delta E|+|\Delta(\omega O)|)/\max(|E|,|\omega O|)\). The phase branch cannot jump because the connecting coefficient path remains strictly stable, as shown below. Two phase errors are less than \(1/50000<1/1000\), so the cross-member strict inequality and all four same-corner strict nontrigger comparisons persist.
+
+The independently certified anchor numerator \(b\) has compactified pairing margin \(\delta\). The replay verifies positive interval widths and \(14\varepsilon\sum|b_j|\le\delta\). Project any perturbed denominator into the anchor box: the normalized pairing loses at most \(7\varepsilon\sum|b_j|\le\delta/2\), including along the connecting segment. Positive pairing rules out imaginary-axis roots, homotopy proves stability, and the same \(b\) works for every perturbed denominator. The nonreal-root result is therefore a **restricted root-geometry obstruction**, not a negative answer to unrestricted synthesis.
+
+Frozen phase-error bounds and positive-numerator margin: `frontier-20261029-cross-member-real-root-open-frozen-v1.json`, SHA-256 `c7cb51372254110849102c4516b7b6dac81ac388bb6070a9615125aa971d92c2`. Independent checker `frontier-20261029-cross-member-real-root-open-independent-kernel-v1.py`, SHA-256 `8e78daff22107689cb4da2219aa68d5222d16e3bc81736d470769fabd6e780e4`; receipt `frontier-20261029-cross-member-real-root-open-independent-result-v1.json`, SHA-256 `072bc7f2f5c0393c68e8206ae6ffc0ea97d8bf926958795bb3e3aabecb62a4d3`. The anchor theorem is SHA-256 `f20042bd4328d00b28e48aaee334f8ca24be55e3c5a542bd994c72d08c6715f7`.
+
+The phase and perturbation deductions are written mathematics; finite comparisons use exact integers and `fractions.Fraction` on one Python Eval host. No formal proof, cross-vendor review, novelty clearance, arbitrary-box verdict, or all-numerator negative certificate is claimed.

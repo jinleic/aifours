@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "kind": "OWNER_AUTHORIZED_QOA_RANGE_LOCATOR_ONE_SHOT_REPAIR",
+  "status": "FROZEN_BEFORE_THE_SINGLE_REPAIR_ATTEMPT",
+  "observed_clock_before_creation": "2026-10-28T13:09:41-0700 PDT",
+  "authorization": {
+    "path": "/Users/jinleic/repos/aifours/institute/runs/three-area-2026-10-27-96h/source-screens/qoa-p3-owner-bounded-repair-authorization-v1.json",
+    "sha256": "2fdd6302965c31627dd65460fdb68ddbff2c9456b63b37f4a8ba045a801a9c4c"
+  },
+  "previous_gate": {
+    "path": "/Users/jinleic/repos/aifours/institute/runs/three-area-2026-10-27-96h/source-screens/qoa-appendix-h-structural-range-gate-v1.json",
+    "sha256": "4b48b7f6795486f9d6e2c1716fa9bd602ddcfc12f6e8acf263ebb63c8c19bb0d"
+  },
+  "previous_stop": {
+    "path": "/Users/jinleic/repos/aifours/institute/runs/three-area-2026-10-27-96h/source-screens/qoa-appendix-h-structural-range-stop-v1.json",
+    "sha256": "fe80d4d399f9d5a20ddd26ec307bb06cd2bb52db6345c77028ab451692410183"
+  },
+  "prior_locator_receipt": {
+    "path": "/Users/jinleic/repos/aifours/institute/runs/three-area-2026-10-27-96h/source-screens/qoa-appendix-h-structural-locator-receipt-v1.json",
+    "sha256": "483dcbc47df64e60628a620d6b9b09aaf66b42e98a259d212821fecb80e09da4"
+  },
+  "source": {
+    "path": "/Users/jinleic/repos/aifours/institute/runs/three-area-2026-10-27-96h/public-sources/zang-facchi-tian-2111.04055v1.html",
+    "sha256": "9b5efb907f2172be70c7d463a8bbbbc25e63e9a1a7654d7e9015b988a34d724e"
+  },
+  "operation": {
+    "kind": "DOCUMENT_ONLY_EXACT_SECTION_RANGE_METADATA",
+    "python_source": "import hashlib, json, re\nfrom html.parser import HTMLParser\n\nclass ExactSectionBounds(HTMLParser):\n    def __init__(self, text):\n        super().__init__(convert_charrefs=True)\n        self.text = text\n        self.starts = [0]\n        for i, character in enumerate(text):\n            if character == '\\n':\n                self.starts.append(i + 1)\n        self.sections = []\n        self.matches = []\n        self.target_count = 0\n    def source_offset(self):\n        line, column = self.getpos()\n        return self.starts[line - 1] + column\n    def handle_starttag(self, tag, attrs):\n        fields = dict(attrs)\n        if tag == 'section':\n            section = {'id': fields.get('id'), 'start': self.source_offset(), 'start_line': self.getpos()[0], 'examples': 0}\n            if section['id'] == 'A8':\n                self.target_count += 1\n            self.sections.append(section)\n        classes = (fields.get('class') or '').split()\n        if 'ltx_theorem_example' in classes:\n            for section in self.sections:\n                section['examples'] += 1\n    def handle_startendtag(self, tag, attrs):\n        self.handle_starttag(tag, attrs)\n        self.handle_endtag(tag)\n    def handle_endtag(self, tag):\n        if tag == 'section' and self.sections:\n            section = self.sections.pop()\n            if section['id'] == 'A8':\n                close_start = self.source_offset()\n                close_end = self.text.find('>', close_start)\n                if close_end < 0:\n                    raise ValueError('missing closing tag')\n                close_end += 1\n                opening_valid = self.text[section['start']:section['start'] + 8].lower() == '<section'\n                closing_valid = re.fullmatch(r'</\\s*section\\s*>', self.text[close_start:close_end], re.IGNORECASE) is not None\n                if not opening_valid or not closing_valid:\n                    raise ValueError('invalid tag boundary')\n                start_byte = len(self.text[:section['start']].encode('utf-8'))\n                end_byte = len(self.text[:close_end].encode('utf-8'))\n                section_bytes = self.text[section['start']:close_end].encode('utf-8')\n                self.matches.append({'section_id': 'A8', 'start_line': section['start_line'], 'closing_tag_line': self.getpos()[0], 'start_character': section['start'], 'end_character_exclusive': close_end, 'start_byte': start_byte, 'end_byte_exclusive': end_byte, 'section_bytes': len(section_bytes), 'section_sha256': hashlib.sha256(section_bytes).hexdigest(), 'example_elements': section['examples'], 'tag_boundaries_valid': True})\n\ntry:\n    with open(SOURCE_PATH, 'rb') as f:\n        raw = f.read()\n    digest = hashlib.sha256(raw).hexdigest()\n    if digest != SOURCE_SHA256:\n        print(json.dumps({'state': 'SOURCE_HASH_MISMATCH', 'source_sha256': digest}, sort_keys=True))\n    else:\n        text = raw.decode('utf-8', errors='strict')\n        scanner = ExactSectionBounds(text)\n        scanner.feed(text)\n        scanner.close()\n        candidates = scanner.matches\n        if scanner.target_count != 1 or len(candidates) != 1:\n            state = 'ABSENT_OR_AMBIGUOUS_STOP'\n        elif candidates[0]['start_line'] != 2129 or candidates[0]['closing_tag_line'] != 2228:\n            state = 'STRUCTURE_MISMATCH_STOP'\n        elif candidates[0]['example_elements'] != 0:\n            state = 'EXAMPLE_ELEMENTS_PRESENT_STOP'\n        else:\n            state = 'STRUCTURAL_RANGE_ONLY'\n        print(json.dumps({'state': state, 'source_sha256': digest, 'matches': candidates}, sort_keys=True))\nexcept Exception as e:\n    print(json.dumps({'state': 'LOCATOR_ERROR_STOP', 'error_type': type(e).__name__}, sort_keys=True))",
+    "python_source_sha256": "ab70d2494bfb100a6c7f6483710a031649a99a77e9fd2039ccfaa716cde1d0d8",
+    "change": "Only rename the subclass method offset to source_offset and its two calls; reverse-transform recovers the complete original frozen operation byte-for-byte. No scientific or source-selection logic changed.",
+    "permitted_output": "Source SHA, unique section id, LF boundaries, 0-based character and byte offsets with exclusive ends, section-byte count, SHA-256, zero example-node count and structural validation status. The section bytes may be sliced in memory solely to compute the hash; no source prose, heading, formula, proof, example, bibliography or other source content is printed or saved.",
+    "stop_conditions": "Exactly one attempt. Hash mismatch, parser exception, zero/multiple A8 matches, line mismatch, invalid boundaries, any example element or any unexpected result => STOP. Do not rerun, broaden, read or reveal source content."
+  },
+  "preconditions": "Native source identity must match the same prior original HTML SHA. Program and gate hashes are checked before execution; operation may process data internally only to return the allowed structural metadata and hash, with no source-body display, saved excerpt or external access.",
+  "limits": "Document-only parsing and metadata; no scientific computation. This narrow owner-authorized single attempt does not waive any other STOP/HOLD/ZERO, source/method/recipient separation requirement, global source pause elsewhere, HOLDv2, N4 UNKNOWN or auxiliary214 STOP."
+}

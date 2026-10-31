@@ -1,0 +1,7 @@
+# F830 direct acknowledgment transport deviation
+
+The manifest's `direct_prebody_ack_required` required both the exclusive local prebody acknowledgment and a direct delivery to Main before packet-body access. I read the administrative files and all 23 status-only controls, and exclusively wrote `prebody-ack-v1.md` before accessing either packet body or doing mathematical reasoning. I did **not** deliver a direct acknowledgment to Main at that time.
+
+After the local acknowledgment I read both complete packet parts in the ordered raw windows declared in `author-candidate-v1.md`, then did mathematical reasoning and wrote that candidate. Only after Main's subsequent clarification did I send Main a qualified direct acknowledgment, explicitly reporting this chronology. No exact earlier acknowledgment or packet-access timestamp was independently observed; nothing is backdated. Main's administrative clarification classifies this as an **ACK-transport PROCESS MINOR**, not an automatic source-order mathematical hold; a separate parent scientific disposition remains necessary.
+
+This note supplements, and does not edit, the unchanged local acknowledgment and candidate. In the candidate's read declaration, the statement that the local acknowledgment preceded the body remains accurate, but it must not be understood as a timely direct parent delivery. No packet-source-order deviation, scientific execution, held-input access, family review, or mathematical verdict is inferred from this transport error.

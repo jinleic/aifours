@@ -1,0 +1,5 @@
+# Nontrivial finite control for the pure-CS quotient lattice
+
+**Status: SAME-AUTHOR EXACT FINITE CONTROL; not a universal proof or independent review.** This supplements, without editing, `frontier-20261028-pure-cs-quotient-lattice-v1.md`, SHA `21646707ddc27c5fe4a9e6ab2dc2ec118661ed123e5cd8e800fc8b800c0d59bf`.
+
+Take the 12-element rectangular group `S={0,1}×C₂×{0,1,2}` with `(i,g,λ)(j,h,μ)=(i,g+h,μ)`. Its actual idempotence-context quotient is C₂. Arbitrary partitions of its two rows and its three columns give `Bell(2)Bell(3)=2·5=10` onto pure CS maps, all with distinct kernels. `frontier-20261028-pure-cs-lattice-checker-v1.py`, SHA-256 `c515633f7fd41ecdcdcac2feb91f318b1315bb95fac7743ec31a5cac421b91c1`, ran in the Python eval kernel before Wed Oct 28 22:24:28 PDT 2026. It checks every source idempotence context, every source product for each of the ten target maps, purity and pairwise-distinct kernels. The program constructs those ten quotients but does NOT independently prove that no other pure quotient exists; that exhaustion is the written universal theorem under review.

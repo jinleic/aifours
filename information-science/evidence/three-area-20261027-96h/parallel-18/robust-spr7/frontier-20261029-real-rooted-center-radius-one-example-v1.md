@@ -1,0 +1,5 @@
+# Exact radius-one septic example
+
+For \(a(s)=\prod_{j=1}^7(s+j)\), the closed independent coefficient box of radius **one** satisfies the boundary theorem in `frontier-20261029-modulus-dominant-radius-one-boundary-v1.md`: \(a_0=5040>1\), so every denominator is strictly Hurwitz and \(a\) is common SPR. An independent exact replay checked 28 strict corner Hurwitz minors and 32 strict pairing Bernstein coefficients, with compactified margin at least 1.
+
+Frozen example: `frontier-20261029-real-rooted-center-radius-one-frozen-v1.json`, SHA-256 `241ae50ea5230fbe8df716950841fd043c65d122ae0c134f898061112a22a2df`. Checker `frontier-20261029-real-rooted-center-radius-one-independent-kernel-v1.py`, SHA-256 `b6bd2a177f132d2fb9189d4d38f785cd755f590141117ec7186d9ccabd47b804`; receipt `frontier-20261029-real-rooted-center-radius-one-independent-result-v1.json`, SHA-256 `a1a781c03bad3aca2277c6aea717fc71161efdadcc7de771b3f144fd47817d27`. The all-degree boundary theorem is written mathematics; no formal proof, cross-vendor review, novelty clearance or arbitrary-box verdict is claimed.

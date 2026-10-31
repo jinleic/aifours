@@ -1,0 +1,5 @@
+# Correction: one-free root caller not covered by the fixed/fixed census
+
+Native `/bin/date`: **Wed Oct 28 21:54:38 PDT 2026**. The asserted one-free closure in `frontier-20261028-n8-dita-generic-block-frontier-v1.md` SHA **252dd4bb7c44f4394d8f3e592bd1360c977f75b22664fb917a92f836a601998a**, §3, is **WITHDRAWN** as stated. The 421888 fixed/fixed branches were classified by the SAME-GROUP systems. They do not include a branch whose same-group equations leave alpha or beta FREE, merely because a cross minor later forces its value to an eighth root. Therefore the8192 one-free root-only gates require explicit specializations and cross-kernel rejection; the earlier packet's inference did not provide them.
+
+The finite caller/counter identities and the rejection gates that do not use this inference remain candidate evidence within their stated scopes. No blanket no-T result for arbitrary H4 blocks was claimed. This correction preserves the earlier bytes and does not assert that any root specialization is a solution. Main was notified immediately. A separate successor will bind the actual specialization result when available.

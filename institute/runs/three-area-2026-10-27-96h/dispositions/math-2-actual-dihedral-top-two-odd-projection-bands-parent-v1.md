@@ -1,0 +1,33 @@
+# Actual ordered dihedral words: the top two odd-projection-run bands
+
+**Disposition: same-harness written support plus independently authored exact actual-word verification, parent-run once.** For every ODD primep, an actual linear word inD_(2p) withF=3p−2 reflection occurrences and the named rotation assumptions (R≥p+1, singleton cyclic rotation gaps) has an original-order identity subsequence of EXACTLY2p reflection occurrences whenever its rotation-deleted cyclic projection has o_pi≥3p−4 odd-length constant-label runs. These are exactly the two possible bands o_pi=3p−4 or3p−2. The construction selects ZERO rotations; no unproved two-rotation selector is used.
+
+The proof retains actual occurrence order and group multiplication. It is not a result about freely reordered label lists. The remaining named high-run interval p+4≤o_pi≤3p−6, o_pi odd, remains unpaid by this theorem; in particularp5 leaveso_pi9. Lower bands, unrestricted ordered-Olson and all-group closure, avoiding words, source equivalence and novelty are not established.
+
+## Complete universal mechanism
+
+Use rho_u=(u,0), sigma_a=(a,1), with(x,e)(y,b)=(x+(−1)^e y,e+b). Thus two CHRONOLOGICAL reflections multiplytorho_(a−b). For a projectiontriple(a,b,c), Delta={a−b,a−c,b−c} consists of exactlyits achievable ordered-pair exponents. A nonconstanttriplehasatleasttwo; callit rich whenithasthree.
+
+A self-contained Lagrange-coefficientproof gives the usual finite-field sumsetbound abs(A+B)≥min(p,abs(A)+abs(B)−1), includingboundaryp. Its iterated form applies to independentchoices from DISJOINTchronologicalblocks, not incompatible selections fromoverlapping triples.
+
+If a richcyclictripleexists andatmostoneconstanttriplewindowexists, cutbeforetherichtriple. The remaining3p−5=3(p−3)+4 occurrences have two alternative partitions: twopairs followedbyp−3triples, orp−3triplesfollowedbytwopairs. Theirtriple-start residuesmod3differ, so theuniqueconstantwindowcannotbeatripleblockinboth. Choosea phasewithno constanttripleblock. Thereareexactlypblocks: onerichtriple,p−3othernonconstanttriples,twopairs. Their exponentsets give1+sum(abs(A_i)−1)≥1+2+(p−3)=p, sozeroisachievable. Selectingthecorrespondingtwoactualoccurrencesineachblockgives2pdistinctreflectionswithidentityproduct. Atp3 therearenoremainingtripleblocks, andthesameproofworks.
+
+The exactdeficitidentity F−o_pi=sum_(oddruns)(length−1)+sum_(evenruns)length permitsonlyall-singletons, one doublerun, orone triplerun whenF−o_pi≤2. Thesehaveatmostoneconstanttriplewindow. Ifnorichtripleexists, everyconsecutive triplewithunequaladjacentlabels forcesa−b=b−c. Henceanunequal-adjacencychainisarithmetic. Cuttheall-singletonlist arbitrarily; breakthedoublerunatthecut; orstartatthefinaltriplerunoccurrenceandendatitsfirst, omittingonlyitsmiddleoutside thechain. ThechainlengthsareF,F,F−1, all≥2p, withnoartificialinterioradjacencyintroduced. Itsfirst2plabelshavealternatingsum−pd=0modp.
+
+Bothbranchesinitiallyselectinacycliccut. ReturningthesameoccurrencestotheORIGINALlinearwordcyclicallyrotatestheirproduct:UV=1 impliesVU=U^−1(UV)U=1. Thisisconjugation, notcommutationofreflections. Unselectedrotations donotenterthesubsequenceproduct.
+
+## Actual supplied witness and scope
+
+Forp5,theauthor'sreflectionlabelsare(0,0,0,1,0,1,2,3,4,0,1,2,3), withrho1afterthefirstsixreflections. Itis anactual19-letterwordwith13reflections,6singleton-gaprotations ando_pi11. Reflectionoccurrences1,2,3,4,6,7,8,10,12,13 correspondtoactualwordpositions1,3,5,7,11,13,14,16,18,19. Theirorderedlabelsare0,0,0,1,1,2,3,0,2,3 andalternatingsumzero. Thisisnotanavoidingwordorproofbysingleexample.
+
+ThefirstunpaiddeficitF−o_pi4hasfivepossibletypes: one5run,one4run,two3runs,one3+one2run,ortwo2runs,allotherssingletons. Individualinstancescoveredbytherichtriplecertificateareallowed, butnouniformclosureofallfiveclasses isclaimed.
+
+## Evidence and exact finite replay
+
+[Completef495author](/Users/jinleic/repos/aifours/institute/runs/three-area-2026-10-27-96h/review-waves/f495-olson-actual-ordered-dihedral-projection-high-odd-run-frontier/review-v1.md) · [f543sumset/selectorwrittenreview](/Users/jinleic/repos/aifours/institute/runs/three-area-2026-10-27-96h/review-waves/f543-olson-high-odd-projection-rich-triple-partition-written-review/review-v1.md) · [f544whole-band/original-orderwrittenreview](/Users/jinleic/repos/aifours/institute/runs/three-area-2026-10-27-96h/review-waves/f544-olson-top-two-odd-run-bands-actual-order-complete-review/review-v1.md) · [f545independentactual-wordreport/source](/Users/jinleic/repos/aifours/institute/runs/three-area-2026-10-27-96h/review-waves/f545-olson-top-projection-bands-independent-actual-word-check/review-v1.md) · [materializedindependentchecker](/Users/jinleic/repos/aifours/institute/runs/three-area-2026-10-27-96h/review-waves/f545-olson-top-projection-bands-independent-actual-word-check/independent-actual-olson-word-checker-v1.py) · [actualparentone-shotreceipt](/Users/jinleic/repos/aifours/institute/runs/three-area-2026-10-27-96h/review-waves/f545-olson-top-projection-bands-independent-actual-word-check/parent-independent-finite-run-v1-receipt.json). Parentdisplayedall377author,207/369writtenreviewand662finite-report/sourcelogicallinesandreconstructedthefullsumset,partition,APandoriginal-orderarguments. Bothwrittenreviewsreport0F/0M/0m.
+
+Afterfullstaticread/GO,parentranindependentstdlibsourceONCE:exit0,emptystderr,0.2280s. Observedall2,187p3reflectionlists,ofwhich798meetthetopbands(756rich/42AP); eachwasinsertedintoanactualwordwithfourlegalrotations. TheconstructiveselectorwascomparedwithindependentfullGROUPsubsequenceDP. Togetherwith24boundedcasesEACHforp5/7/11 andtheassignedp5word,thisgave871actualcasechecks,21,904selectedidentitycutchecks and19nonidentityconjugationchecks. Thehigher-primecontrolsarenotclaimedexhaustiveordistinct. Alsoobservedall17,139nonemptysubsetpairsforp3/5/7 and1,826tripleDeltainterfacesforp3/5/7/11.
+
+Sevenimplementedmutationfamiliesseparatedwrongsign,quotient/orderloss,actualblocksversusprojectionruns,wrongblockcount,duplicatedpartitionphase,falsecyclic-productinvariance,andwrongselectionlength. Aproof-onlyomissionofaconjugationexplanationisexplicitlyNOTTESTED:valididentityproductsremainidentityateverycut,sothereisnothereafabricatedcounterexample. Thefinitecheckdoesnotprovetheall-prime theorem; itsuniversalclaimrestsontheseparatewrittenargument.
+
+NoimportfromanunprovidedP2caseargumentorheldepisodeisneeded. AllheldepisodesANDconsumersremainNONINPUT. Same-harnessproof/finiteevidenceisnotindependent-family,human,kernel,novelty,worldwidepriorityororiginal-sourceauthentication.
